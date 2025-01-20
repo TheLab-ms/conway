@@ -1,0 +1,92 @@
+package admin
+
+import (
+	"fmt"
+	"github.com/TheLab-ms/conway/modules/bootstrap"
+	"time"
+)
+
+type member struct {
+	ID           int64
+	Name         string
+	Email        string
+	Created      int64
+	AdminNotes   string
+	Leadership   bool
+	NonBillable  bool
+	StripeSubID  *string
+	StripeStatus *string
+}
+
+templ renderSingleMember(member *member) {
+	@bootstrap.View() {
+		@adminNav()
+		<div class="container my-5">
+			<div class="card">
+				<div class="card-body">
+					<h5 class="card-title">Basic Info</h5>
+					<h6 class="card-subtitle mb-3 text-muted">Account created on { time.Unix(member.Created, 0).Format("Mon, Jan 2 2006 at 15:04 MST") }</h6>
+					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/basics", member.ID)) } id="basic-info-form">
+						<div class="mb-3">
+							<label for="name" class="form-label">Name</label>
+							<input type="text" class="form-control" id="name" name="name" value={ member.Name }/>
+						</div>
+						<div class="mb-3">
+							<label for="email" class="form-label">Email</label>
+							<input type="email" class="form-control" id="email" name="email" value={ member.Email }/>
+						</div>
+						<div class="mb-3">
+							<label for="admin_notes" class="form-label">Admin Notes</label>
+							<textarea class="form-control" id="admin_notes" name="admin_notes" rows="4">{ member.AdminNotes }</textarea>
+						</div>
+						<button type="submit" class="btn btn-primary">Save</button>
+					</form>
+				</div>
+			</div>
+			<div class="card mt-3">
+				<div class="card-body">
+					<h5 class="card-title mb-4">Special Designations</h5>
+					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/designations", member.ID)) }>
+						<div class="mb-4 form-check">
+							<p class="card-subtitle mb-1 text-muted">
+								The leadership designation means grants admin access to Conway, and additional access to other applications connected by OAuth.
+								It's intended for directors and officers of the board only.
+							</p>
+							<input type="checkbox" class="form-check-input" id="leadership" name="leadership" checked?={ member.Leadership }/>
+							<label class="form-check-label" for="leadership">Leadership</label>
+						</div>
+						<div class="mb-4 form-check">
+							<p class="card-subtitle mb-1 text-muted">
+								Non-billable accounts are active without paying membership dues.
+								They should be reserved for special cases (e.g. landlord keys), or temporary measures (e.g. a member is having billing issues).
+							</p>
+							<input type="checkbox" class="form-check-input" id="non-billable" name="non-billable" checked?={ member.NonBillable }/>
+							<label class="form-check-label" for="non-billable">Non-billable</label>
+						</div>
+						<button type="submit" class="btn btn-primary">Save</button>
+					</form>
+				</div>
+			</div>
+			<div class="card mt-3">
+				<div class="card-body">
+					<h5 class="card-title">Stripe</h5>
+					<h6 class="card-subtitle mb-3 text-muted">
+						Subscription status: 
+						<b>
+							if member.StripeStatus == nil || *member.StripeStatus == "" {
+								unknown
+							} else {
+								{ *member.StripeStatus }
+							}
+						</b>
+					</h6>
+					if member.StripeSubID == nil || *member.StripeSubID == "" {
+						<a href="#" class="btn btn-secondary disabled" aria-disabled="true">View subscription in Stripe</a>
+					} else {
+						<a href={ templ.URL("https://dashboard.stripe.com/subscriptions/" + *member.StripeSubID) } target="_blank" class="btn btn-primary">View subscription in Stripe</a>
+					}
+				</div>
+			</div>
+		</div>
+	}
+}
