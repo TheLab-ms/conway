@@ -23,7 +23,7 @@ func TestLoginCleanup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Prove it isn't removed immediately
-	assert.True(t, w.cleanupLogins(context.Background()))
+	assert.False(t, w.cleanupLogins(context.Background()))
 
 	var count int
 	err = w.db.QueryRow("SELECT count(*) FROM logins").Scan(&count)
@@ -34,7 +34,7 @@ func TestLoginCleanup(t *testing.T) {
 	_, err = w.db.Exec("UPDATE logins SET created = strftime('%s', 'now') - 600 WHERE member = 1")
 	require.NoError(t, err)
 
-	assert.True(t, w.cleanupLogins(context.Background()))
+	assert.False(t, w.cleanupLogins(context.Background()))
 
 	err = w.db.QueryRow("SELECT count(*) FROM logins").Scan(&count)
 	require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestPruneSpamMembers(t *testing.T) {
 	_, err = w.db.Exec("INSERT INTO logins (member, code) VALUES (2, 666);")
 	require.NoError(t, err)
 
-	assert.True(t, w.pruneSpamMembers(context.Background()))
+	assert.False(t, w.pruneSpamMembers(context.Background()))
 
 	// Prove one member was pruned
 	var count int

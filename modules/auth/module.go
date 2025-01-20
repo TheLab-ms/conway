@@ -26,6 +26,8 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// TODO: Key rotation
+
 //go:generate templ generate
 
 type EmailConfig struct {
@@ -228,7 +230,7 @@ func (m *Module) cleanupLogins(ctx context.Context) bool {
 		slog.Error("unable to clean up logins", "error", err)
 		return false
 	}
-	return true
+	return false
 }
 
 // TODO: Emit events for pruned items
@@ -238,7 +240,7 @@ func (m *Module) pruneSpamMembers(ctx context.Context) bool {
 		slog.Error("unable to clean up spam members", "error", err)
 		return false
 	}
-	return true
+	return false
 }
 
 func (m *Module) processLoginEmail(ctx context.Context) bool {

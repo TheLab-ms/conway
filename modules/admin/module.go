@@ -10,8 +10,6 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-// TODO: Support linking alternate email addresses?
-
 // TODO: Move the waiver status to a separate table (view?)
 
 // TODO: Snapshot tests
