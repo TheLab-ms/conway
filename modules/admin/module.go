@@ -33,6 +33,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("GET", "/admin/members/:id", router.WithAuth(m.onlyLeadership(m.renderSingleMemberView)))
 	router.Handle("POST", "/admin/members/:id/updates/basics", router.WithAuth(m.onlyLeadership(m.updateMemberBasics)))
 	router.Handle("POST", "/admin/members/:id/updates/designations", router.WithAuth(m.onlyLeadership(m.updateMemberDesignations)))
+	router.Handle("POST", "/admin/members/:id/delete", router.WithAuth(m.onlyLeadership(m.deleteMember)))
 }
 
 func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
@@ -204,4 +205,15 @@ func (m *Module) updateMemberDesignations(r *http.Request, ps httprouter.Params)
 	}
 
 	return engine.Redirect(fmt.Sprintf("/admin/members/%s", id), http.StatusSeeOther)
+}
+
+func (m *Module) deleteMember(r *http.Request, ps httprouter.Params) engine.Response {
+	id := ps.ByName("id")
+
+	_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", id)
+	if err != nil {
+		return engine.Errorf("deleting member: %s", err)
+	}
+
+	return engine.Redirect("/admin/members", http.StatusSeeOther)
 }

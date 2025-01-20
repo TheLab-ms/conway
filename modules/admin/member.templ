@@ -40,6 +40,10 @@ templ renderSingleMember(member *member) {
 							<textarea class="form-control" id="admin_notes" name="admin_notes" rows="4">{ member.AdminNotes }</textarea>
 						</div>
 						<button type="submit" class="btn btn-primary">Save</button>
+						<button type="button" class="btn btn-danger" onclick="document.getElementById('delete-account-link').style.display='block'">Delete</button>
+					</form>
+					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/delete", member.ID)) }>
+						<button type="submit" class="btn btn-danger mt-3" id="delete-account-link" style="display:none;">Confirm Delete</button>
 					</form>
 				</div>
 			</div>
