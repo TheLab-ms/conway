@@ -10,8 +10,8 @@ CREATE TABLE IF NOT EXISTS members (
 
     leadership INTEGER NOT NULL DEFAULT false,
     non_billable INTEGER NOT NULL DEFAULT false,
-    price_amount REAL,
-    price_tier TEXT NOT NULL DEFAULT 'standard',
+    discount_type TEXT,
+    root_family_email TEXT,
 
     building_access_approver TEXT,
     waiver_signed INTEGER,
@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS members (
     stripe_customer_id TEXT,
     stripe_subscription_id TEXT,
     stripe_subscription_state TEXT,
-    stripe_cancelation_time INTEGER,
 
     paypal_subscription_id TEXT,
     paypal_price REAL,

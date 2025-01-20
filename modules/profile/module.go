@@ -8,8 +8,6 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-// TODO: Document lookup keys for prices, priceID/discountTypes for coupons
-
 //go:generate templ generate
 
 type Module struct {

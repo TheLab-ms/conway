@@ -10,16 +10,11 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
+// TODO: Support linking alternate email addresses?
+
 // TODO: Move the waiver status to a separate table (view?)
 
-// TODO: Remove stripe_cancelation_time?
-
-// TODO: Replace price_amount with actual price shared by paypal/stripe
-
-// TODO: Move paypal subscription ID to price column
-// - Also add "unknown" pricing tier
-
-// TODO: More generalizing and snapshot tests
+// TODO: Snapshot tests
 
 //go:generate templ generate
 

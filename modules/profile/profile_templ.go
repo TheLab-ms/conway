@@ -8,8 +8,6 @@ package profile
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// TODO: get rid of struct
-
 type member struct {
 	SubscriptionID string
 }

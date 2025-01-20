@@ -1,7 +1,5 @@
 package profile
 
-// TODO: get rid of struct
-
 type member struct {
 	SubscriptionID string
 }
@@ -11,15 +9,12 @@ templ renderProfile(member *member) {
 		<div class="status">
 			// TODO: Aggregated membership status here
 		</div>
-
 		<div class="keyfob">
 			<button>Pair Keyfob</button>
 		</div>
-
 		<div class="waiver">
 			<button>Sign Waiver</button>
 		</div>
-
 		<div class="payment">
 			@renderPayment(member)
 		</div>
@@ -29,8 +24,8 @@ templ renderProfile(member *member) {
 templ renderPayment(member *member) {
 	if member.SubscriptionID != "" {
 		<form action="/payment/checkout" method="post">
-			<input type="hidden" id="existing" name="existing" value="true">
- 	   		<input type="submit" value="Modify Subscription with Stripe">
+			<input type="hidden" id="existing" name="existing" value="true"/>
+			<input type="submit" value="Modify Subscription with Stripe"/>
 		</form>
 	} else {
 		<form action="/payment/checkout" method="post">
@@ -39,14 +34,11 @@ templ renderPayment(member *member) {
 				<option value="monthly">Monthly</option>
 				<option value="yearly">Yearly</option>
 			</select>
-
 			<label for="discount">Eligible for Discounted Rate:</label>
 			// TODO: Link to wiki
-			<input type="checkbox" id="discount" name="discount" value="true">
-
+			<input type="checkbox" id="discount" name="discount" value="true"/>
 			// TODO: Support separate family rate
-
- 	   		<input type="submit" value="Redirect to Stripe">
+			<input type="submit" value="Redirect to Stripe"/>
 		</form>
 	}
 }
