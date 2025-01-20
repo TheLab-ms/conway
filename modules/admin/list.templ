@@ -97,6 +97,7 @@ templ renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow) {
 						for _, meta := range rowMeta {
 							<th class={ fmt.Sprintf("col-%d", meta.Width) }>{ meta.Title }</th>
 						}
+						<th class="col-1">Actions</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -107,6 +108,9 @@ templ renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow) {
 									@col.Render()
 								</td>
 							}
+							<td>
+								<a href={ templ.URL(row.SelfLink) } class="btn btn-sm btn-primary">Edit</a>
+							</td>
 						</tr>
 					}
 				</tbody>
