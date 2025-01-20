@@ -169,8 +169,8 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 
 func (m *Module) renderSingleMemberView(r *http.Request, ps httprouter.Params) engine.Response {
 	mem := member{}
-	err := m.db.QueryRowContext(r.Context(), "SELECT id, name, email, created, admin_notes, leadership, non_billable, stripe_subscription_id, stripe_subscription_state FROM members WHERE id = $1", ps.ByName("id")).
-		Scan(&mem.ID, &mem.Name, &mem.Email, &mem.Created, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus)
+	err := m.db.QueryRowContext(r.Context(), "SELECT id, name, email, created, admin_notes, leadership, non_billable, stripe_subscription_id, stripe_subscription_state, paypal_subscription_id, paypal_last_payment, paypal_price FROM members WHERE id = $1", ps.ByName("id")).
+		Scan(&mem.ID, &mem.Name, &mem.Email, &mem.Created, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice)
 	if err != nil {
 		return engine.Errorf("querying the database: %s", err)
 	}
