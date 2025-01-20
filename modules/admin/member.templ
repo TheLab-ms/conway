@@ -21,6 +21,8 @@ type member struct {
 	PaypalSubID       *string
 	PaypalPrice       *float64
 	PaypalLastPayment *int64
+	DiscountType      *string
+	RootFamilyEmail   *string
 }
 
 templ renderSingleMember(member *member) {
@@ -56,23 +58,67 @@ templ renderSingleMember(member *member) {
 				<div class="card-body">
 					<h5 class="card-title mb-4">Special Designations</h5>
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/designations", member.ID)) }>
-						<div class="mb-4 form-check">
-							<p class="card-subtitle mb-1 text-muted">
-								The leadership designation means grants admin access to Conway, and additional access to other applications connected by OAuth.
-								It's intended for directors and officers of the board only.
-							</p>
+						<p class="card-subtitle mt-4 mb-1 text-muted">
+							The leadership designation means grants admin access to Conway, and additional access to other applications connected by OAuth.
+							It's intended for directors and officers of the board only.
+						</p>
+						<div class="form-check">
 							<input type="checkbox" class="form-check-input" id="leadership" name="leadership" checked?={ member.Leadership }/>
 							<label class="form-check-label" for="leadership">Leadership</label>
 						</div>
-						<div class="mb-4 form-check">
-							<p class="card-subtitle mb-1 text-muted">
-								Non-billable accounts are active without paying membership dues.
-								They should be reserved for special cases (e.g. landlord keys), or temporary measures (e.g. a member is having billing issues).
-							</p>
+						<p class="card-subtitle mt-4 mb-1 text-muted">
+							Non-billable accounts are active without paying membership dues.
+							They should be reserved for special cases (e.g. landlord keys), or temporary measures (e.g. a member is having billing issues).
+						</p>
+						<div class="form-check">
 							<input type="checkbox" class="form-check-input" id="non-billable" name="non-billable" checked?={ member.NonBillable }/>
 							<label class="form-check-label" for="non-billable">Non-billable</label>
 						</div>
-						<button type="submit" class="btn btn-primary">Save</button>
+						<button type="submit" class="btn btn-primary mt-4">Save</button>
+					</form>
+				</div>
+			</div>
+			<div class="card mt-3">
+				<div class="card-body">
+					<h5 class="card-title">Discounts</h5>
+					<p class="card-subtitle mt-4 mb-1 text-muted">
+						The discounted rate is only applied during Stripe checkout. Applying a new discount will not modify existing memberships until the member re-subscribes.
+					</p>
+					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/discounts", member.ID)) }>
+						<script>
+							document.addEventListener('DOMContentLoaded', (event) => {
+								const handler = () => {
+									let selector = document.getElementById('discount')
+									let field = document.getElementById('family-email-field')
+									if (selector.value === 'family') {
+										field.style.display = 'block'
+									} else {
+										field.style.display = 'none'
+										document.getElementById('family_email').value = ''
+									}
+								}
+
+								document.getElementById('discount').addEventListener('change', event => {
+									handler()
+								})
+								handler()
+							})
+						</script>
+						<select class="form-select" id="discount" name="discount">
+							<option value="" selected?={ member.DiscountType == nil || *member.DiscountType == "" }>None</option>
+							<option value="military" selected?={ member.DiscountType != nil && *member.DiscountType == "military" }>Military</option>
+							<option value="retired" selected?={ member.DiscountType != nil && *member.DiscountType == "retired" }>Retired</option>
+							<option value="unemployed" selected?={ member.DiscountType != nil && *member.DiscountType == "unemployed" }>Unemployed</option>
+							<option value="firstResponder" selected?={ member.DiscountType != nil && *member.DiscountType == "firstResponder" }>First Responder</option>
+							<option value="educator" selected?={ member.DiscountType != nil && *member.DiscountType == "educator" }>Educator</option>
+							<option value="emeritus" selected?={ member.DiscountType != nil && *member.DiscountType == "emeritus" }>Emeritus</option>
+							<option value="family" selected?={ member.DiscountType != nil && *member.DiscountType == "family" }>Family</option>
+						</select>
+						<div class="mb-3 mt-3" id="family-email-field" style="display:none;">
+							<label for="family_email" class="form-label">Root Family Account Email Address</label>
+							<input type="email" class="form-control" id="family_email" name="family_email" value={ *member.RootFamilyEmail }/>
+						</div>
+						<button type="submit" class="btn btn-primary mt-4">Save</button>
 					</form>
 				</div>
 			</div>
