@@ -135,7 +135,7 @@ func (m *Module) WithAuth(next engine.Handler) engine.Handler {
 
 		// Get the member from the DB
 		var meta UserMetadata
-		err = m.db.QueryRowContext(r.Context(), "SELECT email, leadership FROM members WHERE id = ? LIMIT 1", claims.Subject).Scan(&meta.Email, &meta.Leadership)
+		err = m.db.QueryRowContext(r.Context(), "SELECT email, active, leadership FROM members WHERE id = ? LIMIT 1", claims.Subject).Scan(&meta.Email, &meta.ActiveMember, &meta.Leadership)
 		if err != nil {
 			return engine.Redirect("/login?"+q.Encode(), http.StatusFound)
 		}

@@ -83,7 +83,6 @@ func TestLoginIntegration(t *testing.T) {
 			assert.Equal(t, 302, resp.StatusCode)
 			assert.Equal(t, "/barbaz", resp.Header.Get("Location"))
 			require.Len(t, resp.Cookies(), 1)
-			tok := resp.Cookies()[0].Value
 
 			// Hit the whoami endpoint to confirm the identity
 			resp, err = client.Get(a.URL + "/whoami")
@@ -91,7 +90,7 @@ func TestLoginIntegration(t *testing.T) {
 			assert.Equal(t, 200, resp.StatusCode)
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			assert.Equal(t, "{\"Email\":\"foobar\",\"Leadership\":false}\n", string(body))
+			assert.Equal(t, "{\"Email\":\"foobar\",\"ActiveMember\":false,\"Leadership\":false}\n", string(body))
 
 			// The code cannot be used again
 			resp, err = client.Post(a.URL+enterCodePageURL, "application/x-www-form-urlencoded", bytes.NewBufferString("code="+code))
@@ -117,7 +116,7 @@ func TestLoginIntegration(t *testing.T) {
 
 			m := map[string]any{}
 			require.NoError(t, json.NewDecoder(resp.Body).Decode(&m))
-			tok = m["access_token"].(string)
+			tok := m["access_token"].(string)
 			assert.NotEmpty(t, tok)
 
 			// Get the user's oauth2 metadata
@@ -132,6 +131,7 @@ func TestLoginIntegration(t *testing.T) {
 			require.NoError(t, json.NewDecoder(resp.Body).Decode(&m))
 			assert.Equal(t, "6b86b273-ff34-fce1-9d6b-804eff5a3f57", m["id"].(string))
 			assert.Equal(t, "foobar", m["email"].(string))
+			assert.Nil(t, m["groups"])
 			assert.Equal(t, "", m["name"].(string))
 		})
 	}

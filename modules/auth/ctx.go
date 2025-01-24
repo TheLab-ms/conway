@@ -5,8 +5,9 @@ import "context"
 type memberMetaKey struct{}
 
 type UserMetadata struct {
-	Email      string
-	Leadership bool
+	Email        string
+	ActiveMember bool
+	Leadership   bool
 }
 
 func withUserMeta(ctx context.Context, meta *UserMetadata) context.Context {

@@ -18,6 +18,8 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
+const tokenValidity = time.Hour * 8
+
 type Module struct {
 	db   *sql.DB
 	self *url.URL
@@ -115,14 +117,7 @@ func (m *Module) handleOauthToken(r *http.Request, p httprouter.Params) engine.R
 	}
 
 	// Generate an access JWT
-	const validity = time.Hour * 8
-	accessTok := jwt.NewWithClaims(jwt.SigningMethodRS512, &jwt.RegisteredClaims{
-		Issuer:    m.self.String(),
-		Subject:   strconv.FormatInt(memberID, 10),
-		Audience:  jwt.ClaimStrings{clientID},
-		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(validity)},
-	})
-	token, err := accessTok.SignedString(m.auth.SigningKey)
+	token, err := m.signToken(memberID, clientID)
 	if err != nil {
 		return engine.Errorf("signing jwt: %s", err)
 	}
@@ -132,9 +127,19 @@ func (m *Module) handleOauthToken(r *http.Request, p httprouter.Params) engine.R
 		IDToken:     token,
 		AccessToken: token,
 		Type:        "Bearer",
-		ExpiresIn:   int(validity.Seconds()),
+		ExpiresIn:   int(tokenValidity.Seconds()),
 	}
 	return engine.JSON(resp)
+}
+
+func (m *Module) signToken(memberID int64, clientID string) (string, error) {
+	accessTok := jwt.NewWithClaims(jwt.SigningMethodRS512, &jwt.RegisteredClaims{
+		Issuer:    m.self.String(),
+		Subject:   strconv.FormatInt(memberID, 10),
+		Audience:  jwt.ClaimStrings{clientID},
+		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(tokenValidity)},
+	})
+	return accessTok.SignedString(m.auth.SigningKey)
 }
 
 type oauthTokenResponse struct {
@@ -149,8 +154,6 @@ type oauthTokenResponse struct {
 func (m *Module) handleOauthUserInfo(r *http.Request, p httprouter.Params) engine.Response {
 	tokStr := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 
-	// TODO: Add a group to active members
-
 	// Parse the JWT
 	claims := &jwt.RegisteredClaims{}
 	tok, err := jwt.ParseWithClaims(tokStr, claims, func(token *jwt.Token) (interface{}, error) { return &m.auth.SigningKey.PublicKey, nil })
@@ -161,8 +164,9 @@ func (m *Module) handleOauthUserInfo(r *http.Request, p httprouter.Params) engin
 	// Get the member from the DB
 	var name string
 	var email string
+	var active bool
 	var leadership bool
-	err = m.db.QueryRowContext(r.Context(), "SELECT name, email, leadership FROM members WHERE id = ? LIMIT 1", claims.Subject).Scan(&name, &email, &leadership)
+	err = m.db.QueryRowContext(r.Context(), "SELECT name, email, active, leadership FROM members WHERE id = ? LIMIT 1", claims.Subject).Scan(&name, &email, &active, &leadership)
 	if err != nil {
 		return engine.Errorf("getting user from db: %s", err)
 	}
@@ -173,9 +177,13 @@ func (m *Module) handleOauthUserInfo(r *http.Request, p httprouter.Params) engin
 	uid := uuid.Must(uuid.FromBytes(hash[:16]))
 
 	resp := &oauthUserInfoResponse{
-		ID:    uid.String(),
-		Name:  name,
-		Email: email,
+		ID:     uid.String(),
+		Name:   name,
+		Email:  email,
+		Groups: []string{},
+	}
+	if active {
+		resp.Groups = append(resp.Groups, "member")
 	}
 	if leadership {
 		resp.Groups = append(resp.Groups, "admin")

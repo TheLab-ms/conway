@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS members (
     confirmed INTEGER NOT NULL DEFAULT false,
     admin_notes TEXT NOT NULL DEFAULT '',
 
+    active INTEGER GENERATED ALWAYS AS (CASE WHEN ((paypal_subscription_id IS NOT NULL OR stripe_subscription_id IS NOT NULL OR non_billable = 1) AND confirmed = 1) THEN 1 ELSE 0 END) VIRTUAL,
+
     leadership INTEGER NOT NULL DEFAULT false,
     non_billable INTEGER NOT NULL DEFAULT false,
     discount_type TEXT,
