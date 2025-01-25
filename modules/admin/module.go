@@ -59,7 +59,7 @@ func (m *Module) renderMembersListView(r *http.Request, ps httprouter.Params) en
 }
 
 func (m *Module) renderMembersSearchElements(r *http.Request, ps httprouter.Params) engine.Response {
-	q := "SELECT id, name, email, building_access_approver, waiver_signed, fob_id, stripe_subscription_state, paypal_subscription_id, non_billable FROM members"
+	q := "SELECT id, identifier, building_access_approver, waiver_signed, fob_id, stripe_subscription_state, paypal_subscription_id, non_billable FROM members"
 
 	search := r.PostFormValue("search")
 	if search != "" {
@@ -75,7 +75,6 @@ func (m *Module) renderMembersSearchElements(r *http.Request, ps httprouter.Para
 
 	rowMeta := []*tableRowMeta{
 		{Title: "Name", Width: 2},
-		{Title: "Email", Width: 2},
 		{Title: "Fob Status", Width: 1},
 		{Title: "Payment Status", Width: 1},
 	}
@@ -99,14 +98,13 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 	for results.Next() {
 		var id int64
 		var name string
-		var email string
 		var accessApprover *string
 		var waiverSigned *bool
 		var fobID *int64
 		var stripeState *string
 		var paypalSub *string
 		var nonBillable bool
-		results.Scan(&id, &name, &email, &accessApprover, &waiverSigned, &fobID, &stripeState, &paypalSub, &nonBillable)
+		results.Scan(&id, &name, &accessApprover, &waiverSigned, &fobID, &stripeState, &paypalSub, &nonBillable)
 
 		fobCell := &tableCell{Text: "Ready", BadgeType: "success"}
 		if fobID == nil {
@@ -160,7 +158,6 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 			SelfLink: fmt.Sprintf("/admin/members/%d", id),
 			Cells: []*tableCell{
 				{Text: name},
-				{Text: email},
 				fobCell,
 				paymentCell,
 			},
