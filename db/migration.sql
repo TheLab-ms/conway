@@ -8,16 +8,17 @@ CREATE TABLE IF NOT EXISTS members (
     confirmed INTEGER NOT NULL DEFAULT false,
     admin_notes TEXT NOT NULL DEFAULT '',
 
+    identifier TEXT GENERATED ALWAYS AS (CASE WHEN (name IS NOT NULL AND name != '') THEN name ELSE email END) VIRTUAL,
     active INTEGER GENERATED ALWAYS AS (CASE WHEN ((paypal_subscription_id IS NOT NULL OR stripe_subscription_id IS NOT NULL OR non_billable = 1) AND confirmed = 1) THEN 1 ELSE 0 END) VIRTUAL,
 
     leadership INTEGER NOT NULL DEFAULT false,
     non_billable INTEGER NOT NULL DEFAULT false,
     discount_type TEXT,
     root_family_email TEXT,
+    building_access_approver INTEGER REFERENCES members(id),
 
-    building_access_approver TEXT,
     waiver_signed INTEGER,
-    waiver_id INTEGER,
+    waiver_id INTEGER REFERENCES waivers(id),
     fob_id INTEGER,
 
     stripe_customer_id TEXT,
@@ -26,9 +27,7 @@ CREATE TABLE IF NOT EXISTS members (
 
     paypal_subscription_id TEXT,
     paypal_price REAL,
-    paypal_last_payment INTEGER,
-
-    FOREIGN KEY(waiver_id) REFERENCES waivers(id)
+    paypal_last_payment INTEGER
 ) STRICT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS members_email_idx ON members (email);

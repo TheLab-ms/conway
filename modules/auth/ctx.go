@@ -5,6 +5,7 @@ import "context"
 type memberMetaKey struct{}
 
 type UserMetadata struct {
+	ID           int64
 	Email        string
 	ActiveMember bool
 	Leadership   bool

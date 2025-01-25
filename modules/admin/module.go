@@ -32,6 +32,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("POST", "/admin/members/:id/updates/basics", router.WithAuth(m.onlyLeadership(m.updateMemberBasics)))
 	router.Handle("POST", "/admin/members/:id/updates/designations", router.WithAuth(m.onlyLeadership(m.updateMemberDesignations)))
 	router.Handle("POST", "/admin/members/:id/updates/discounts", router.WithAuth(m.onlyLeadership(m.updateMemberDiscounts)))
+	router.Handle("POST", "/admin/members/:id/updates/building_access", router.WithAuth(m.onlyLeadership(m.updateMemberBuildingAccess)))
 	router.Handle("POST", "/admin/members/:id/delete", router.WithAuth(m.onlyLeadership(m.deleteMember)))
 }
 
@@ -170,8 +171,12 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 
 func (m *Module) renderSingleMemberView(r *http.Request, ps httprouter.Params) engine.Response {
 	mem := member{}
-	err := m.db.QueryRowContext(r.Context(), "SELECT id, name, email, created, admin_notes, leadership, non_billable, stripe_subscription_id, stripe_subscription_state, paypal_subscription_id, paypal_last_payment, paypal_price, discount_type, root_family_email FROM members WHERE id = $1", ps.ByName("id")).
-		Scan(&mem.ID, &mem.Name, &mem.Email, &mem.Created, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail)
+	err := m.db.QueryRowContext(r.Context(), `
+		SELECT m.id, m.name, m.email, m.created, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, m.root_family_email, ba.identifier
+		FROM members m
+		LEFT JOIN members ba ON m.building_access_approver = ba.id
+		WHERE m.id = $1`, ps.ByName("id")).
+		Scan(&mem.ID, &mem.Name, &mem.Email, &mem.Created, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BuildingAccessApprover)
 	if err != nil {
 		return engine.Errorf("querying the database: %s", err)
 	}
@@ -216,6 +221,23 @@ func (m *Module) updateMemberDiscounts(r *http.Request, ps httprouter.Params) en
 	rootEmail := r.FormValue("family_email")
 
 	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET discount_type = $1, root_family_email = $2 WHERE id = $3", discountType, rootEmail, id)
+	if err != nil {
+		return engine.Errorf("updating member discounts: %s", err)
+	}
+
+	return engine.Redirect(fmt.Sprintf("/admin/members/%s", id), http.StatusSeeOther)
+}
+
+func (m *Module) updateMemberBuildingAccess(r *http.Request, ps httprouter.Params) engine.Response {
+	id := ps.ByName("id")
+	approved := r.FormValue("approved") == "true"
+
+	var err error
+	if approved {
+		_, err = m.db.ExecContext(r.Context(), "UPDATE members SET building_access_approver = $1 WHERE id = $2", auth.GetUserMeta(r.Context()).ID, id)
+	} else {
+		_, err = m.db.ExecContext(r.Context(), "UPDATE members SET building_access_approver = NULL WHERE id = $1", id)
+	}
 	if err != nil {
 		return engine.Errorf("updating member discounts: %s", err)
 	}
