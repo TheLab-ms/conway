@@ -47,3 +47,27 @@ func TestMemberActive(t *testing.T) {
 		}
 	}
 }
+
+func TestMemberIdentifier(t *testing.T) {
+	db := NewTest(t)
+
+	t.Run("no name", func(t *testing.T) {
+		_, err := db.Exec("INSERT INTO members (email) VALUES ('foo@bar.com')")
+		require.NoError(t, err)
+
+		var actual string
+		err = db.QueryRow("SELECT identifier FROM members WHERE email = 'foo@bar.com'").Scan(&actual)
+		require.NoError(t, err)
+		assert.Equal(t, "foo@bar.com", actual)
+	})
+
+	t.Run("name", func(t *testing.T) {
+		_, err := db.Exec("INSERT INTO members (email, name) VALUES ('baz@bar.com', 'Foo Bar')")
+		require.NoError(t, err)
+
+		var actual string
+		err = db.QueryRow("SELECT identifier FROM members WHERE email = 'baz@bar.com'").Scan(&actual)
+		require.NoError(t, err)
+		assert.Equal(t, "Foo Bar", actual)
+	})
+}

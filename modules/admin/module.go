@@ -59,7 +59,7 @@ func (m *Module) renderMembersListView(r *http.Request, ps httprouter.Params) en
 }
 
 func (m *Module) renderMembersSearchElements(r *http.Request, ps httprouter.Params) engine.Response {
-	q := "SELECT id, identifier, building_access_approver, waiver_signed, fob_id, stripe_subscription_state, paypal_subscription_id, non_billable FROM members"
+	q := "SELECT id, identifier, building_access_approver, waiver IS NOT NULL AS waiver_signed, fob_id, stripe_subscription_state, paypal_subscription_id, non_billable FROM members"
 
 	search := r.PostFormValue("search")
 	if search != "" {

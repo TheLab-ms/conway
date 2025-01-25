@@ -1,30 +1,37 @@
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS members (
+    /* Identifiers */
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    name TEXT NOT NULL DEFAULT '',
     email TEXT NOT NULL DEFAULT '',
     confirmed INTEGER NOT NULL DEFAULT false,
+
+    /* Metadata */
+    name TEXT NOT NULL DEFAULT '',
     admin_notes TEXT NOT NULL DEFAULT '',
-
     identifier TEXT GENERATED ALWAYS AS (CASE WHEN (name IS NOT NULL AND name != '') THEN name ELSE email END) VIRTUAL,
-    active INTEGER GENERATED ALWAYS AS (CASE WHEN ((paypal_subscription_id IS NOT NULL OR stripe_subscription_id IS NOT NULL OR non_billable = 1) AND confirmed = 1) THEN 1 ELSE 0 END) VIRTUAL,
 
-    leadership INTEGER NOT NULL DEFAULT false,
-    non_billable INTEGER NOT NULL DEFAULT false,
+    /* Payment / Discounts */
+    active INTEGER GENERATED ALWAYS AS (CASE WHEN ((paypal_subscription_id IS NOT NULL OR stripe_subscription_id IS NOT NULL OR non_billable = 1) AND confirmed = 1) THEN 1 ELSE 0 END) VIRTUAL,
     discount_type TEXT,
     root_family_email TEXT,
-    building_access_approver INTEGER REFERENCES members(id),
 
-    waiver_signed INTEGER,
-    waiver_id INTEGER REFERENCES waivers(id),
+    /* Building Access */
+    waiver INTEGER REFERENCES waivers(id),
+    building_access_approver INTEGER REFERENCES members(id),
     fob_id INTEGER,
 
+    /* Designations */
+    leadership INTEGER NOT NULL DEFAULT false,
+    non_billable INTEGER NOT NULL DEFAULT false,
+
+    /* Stripe */
     stripe_customer_id TEXT,
     stripe_subscription_id TEXT,
     stripe_subscription_state TEXT,
 
+    /* Paypal */
     paypal_subscription_id TEXT,
     paypal_price REAL,
     paypal_last_payment INTEGER
