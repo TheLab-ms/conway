@@ -90,7 +90,7 @@ func TestLoginIntegration(t *testing.T) {
 			assert.Equal(t, 200, resp.StatusCode)
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			assert.Equal(t, "{\"Email\":\"foobar\",\"ActiveMember\":false,\"Leadership\":false}\n", string(body))
+			assert.Equal(t, "{\"ID\":1,\"Email\":\"foobar\",\"ActiveMember\":false,\"Leadership\":false}\n", string(body))
 
 			// The code cannot be used again
 			resp, err = client.Post(a.URL+enterCodePageURL, "application/x-www-form-urlencoded", bytes.NewBufferString("code="+code))
@@ -131,7 +131,7 @@ func TestLoginIntegration(t *testing.T) {
 			require.NoError(t, json.NewDecoder(resp.Body).Decode(&m))
 			assert.Equal(t, "6b86b273-ff34-fce1-9d6b-804eff5a3f57", m["id"].(string))
 			assert.Equal(t, "foobar", m["email"].(string))
-			assert.Nil(t, m["groups"])
+			assert.Empty(t, m["groups"])
 			assert.Equal(t, "", m["name"].(string))
 		})
 	}

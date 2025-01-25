@@ -179,7 +179,7 @@ func (m *Module) updateMemberDiscounts(r *http.Request, ps httprouter.Params) en
 	discountType := r.FormValue("discount")
 	rootEmail := r.FormValue("family_email")
 
-	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET discount_type = $1, root_family_email = $2 WHERE id = $3", discountType, rootEmail, id)
+	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET discount_type = $1, root_family_member = (SELECT id FROM members WHERE email = $2 AND root_family_member IS NULL) WHERE id = $3", discountType, rootEmail, id)
 	if err != nil {
 		return engine.Errorf("updating member discounts: %s", err)
 	}

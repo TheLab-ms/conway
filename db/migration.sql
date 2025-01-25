@@ -1,6 +1,10 @@
 PRAGMA foreign_keys = ON;
 
 /* TODO: Inherit active status from root family email */
+/* TODO: Can't be one's own family account root */
+/* TODO: Constrain discount type on family member ref */
+/* TODO: Check root_family_member_active in the access_status column */
+/* TODO: Rename active column to paying? */
 
 CREATE TABLE IF NOT EXISTS members (
     /* Identifiers */
@@ -17,7 +21,8 @@ CREATE TABLE IF NOT EXISTS members (
     /* Payment and Discounts */
     active INTEGER GENERATED ALWAYS AS (CASE WHEN ((paypal_subscription_id IS NOT NULL OR stripe_subscription_state = 'active' OR non_billable = 1) AND confirmed = 1) THEN 1 ELSE 0 END) VIRTUAL,
     discount_type TEXT,
-    root_family_email TEXT,
+    root_family_member INTEGER REFERENCES members(id),
+    root_family_member_active INTEGER,
 
     /* Building Access */
     waiver INTEGER REFERENCES waivers(id),
@@ -49,6 +54,20 @@ CREATE TABLE IF NOT EXISTS members (
 CREATE UNIQUE INDEX IF NOT EXISTS members_email_idx ON members (email);
 CREATE UNIQUE INDEX IF NOT EXISTS members_fob_idx ON members (fob_id);
 CREATE INDEX IF NOT EXISTS members_pending_idx ON members (confirmed, created);
+CREATE INDEX IF NOT EXISTS members_root_family_idx ON members (root_family_member);
+
+CREATE TRIGGER IF NOT EXISTS members_family_relationship_update
+AFTER UPDATE ON members
+BEGIN
+  UPDATE members SET root_family_member_active = NEW.active WHERE root_family_member = NEW.id;
+  UPDATE members SET root_family_member_active = (SELECT active FROM members WHERE id = NEW.root_family_member) WHERE id = NEW.id AND root_family_member IS NOT NULL;
+END;
+
+CREATE TRIGGER IF NOT EXISTS members_family_relationship_delete
+BEFORE DELETE ON members
+BEGIN
+  UPDATE members SET root_family_member_active = 0, root_family_member = NULL WHERE root_family_member = OLD.id;
+END;
 
 CREATE TABLE IF NOT EXISTS waivers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
