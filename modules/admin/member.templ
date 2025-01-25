@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
+	"strconv"
 	"time"
 )
 
@@ -16,6 +17,7 @@ type member struct {
 	AdminNotes             string
 	Leadership             bool
 	NonBillable            bool
+	FobID                  *int64
 	StripeSubID            *string
 	StripeStatus           *string
 	PaypalSubID            *string
@@ -42,6 +44,10 @@ templ renderSingleMember(member *member) {
 						<div class="mb-3">
 							<label for="email" class="form-label">Email</label>
 							<input type="email" class="form-control" id="email" name="email" value={ member.Email }/>
+						</div>
+						<div class="mb-3">
+							<label for="fob_id" class="form-label">Keyfob ID</label>
+							<input type="number" class="form-control" id="fob_id" name="fob_id" value={ strconv.FormatInt(*member.FobID, 10) }/>
 						</div>
 						<div class="mb-3">
 							<label for="admin_notes" class="form-label">Admin Notes</label>

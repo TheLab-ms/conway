@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
@@ -172,17 +173,20 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 func (m *Module) renderSingleMemberView(r *http.Request, ps httprouter.Params) engine.Response {
 	mem := member{}
 	err := m.db.QueryRowContext(r.Context(), `
-		SELECT m.id, m.name, m.email, m.created, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, m.root_family_email, ba.identifier
+		SELECT m.id, m.name, m.email, m.created, m.fob_id, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, m.root_family_email, ba.identifier
 		FROM members m
 		LEFT JOIN members ba ON m.building_access_approver = ba.id
 		WHERE m.id = $1`, ps.ByName("id")).
-		Scan(&mem.ID, &mem.Name, &mem.Email, &mem.Created, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BuildingAccessApprover)
+		Scan(&mem.ID, &mem.Name, &mem.Email, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BuildingAccessApprover)
 	if err != nil {
 		return engine.Errorf("querying the database: %s", err)
 	}
 
 	if mem.RootFamilyEmail == nil {
 		mem.RootFamilyEmail = new(string)
+	}
+	if mem.FobID == nil {
+		mem.FobID = new(int64)
 	}
 
 	return engine.Component(renderSingleMember(&mem))
@@ -192,9 +196,10 @@ func (m *Module) updateMemberBasics(r *http.Request, ps httprouter.Params) engin
 	id := ps.ByName("id")
 	name := r.FormValue("name")
 	email := r.FormValue("email")
+	fobID, _ := strconv.ParseInt(r.FormValue("fob_id"), 10, 64)
 	adminNotes := r.FormValue("admin_notes")
 
-	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET name = $1, email = $2, admin_notes = $3 WHERE id = $4", name, email, adminNotes, id)
+	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET name = $1, email = $2,  fob_id = $3, admin_notes = $4 WHERE id = $5", name, email, fobID, adminNotes, id)
 	if err != nil {
 		return engine.Errorf("updating member: %s", err)
 	}
