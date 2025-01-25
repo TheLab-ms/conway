@@ -11,6 +11,7 @@ const timeFormat = "Mon, Jan 2 2006 at 15:04 MST"
 
 type member struct {
 	ID                     int64
+	AccessStatus           string
 	Name                   string
 	Email                  string
 	Confirmed              bool
@@ -35,14 +36,14 @@ templ renderSingleMember(member *member) {
 		<div class="container my-5">
 			<div class="card">
 				<div class="card-body">
-					<h5 class="card-title">Basic Info</h5>
-					<h6 class="card-subtitle mb-3 text-muted">Account created on { time.Unix(member.Created, 0).Format(timeFormat) }</h6>
+					<h5 class="card-title mb-2">Basic Info</h5>
+					<h6 class="card-subtitle mb-2 text-muted">Account created on { time.Unix(member.Created, 0).Format(timeFormat) }</h6>
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/basics", member.ID)) } id="basic-info-form">
-						<div class="form-floating mb-3">
+						<div class="form-floating mb-2">
 							<input type="text" class="form-control" id="name" name="name" value={ member.Name }/>
 							<label for="name" class="form-label">Name</label>
 						</div>
-						<div class="input-group mb-3">
+						<div class="input-group mb-2">
 							<div class="form-floating">
 								<input type="email" class="form-control" id="email" name="email" value={ member.Email }/>
 								<label for="email">Email</label>
@@ -52,11 +53,11 @@ templ renderSingleMember(member *member) {
 								<input type="checkbox" class="form-check-input mt-0" id="confirmed" name="confirmed" checked?={ member.Confirmed }/>
 							</div>
 						</div>
-						<div class="form-floating mb-3">
+						<div class="form-floating mb-2">
 							<input type="number" class="form-control" id="fob_id" name="fob_id" value={ strconv.FormatInt(*member.FobID, 10) }/>
 							<label for="fob_id" class="form-label">Keyfob ID</label>
 						</div>
-						<div class="form-floating mb-3">
+						<div class="form-floating mb-2">
 							<textarea class="form-control" id="admin_notes" name="admin_notes" style="height: 100px">{ member.AdminNotes }</textarea>
 							<label for="admin_notes" class="form-label">Admin Notes</label>
 						</div>
@@ -68,22 +69,24 @@ templ renderSingleMember(member *member) {
 					</form>
 				</div>
 			</div>
-			<div class="card mt-3">
+			<div class="card mt-2">
 				<div class="card-body">
-					<h5 class="card-title mb-4">
+					<h5 class="card-title mb-2">
 						Building Access
-						if member.BuildingAccessApprover == nil || *member.BuildingAccessApprover == "" {
-							<span class="badge text-bg-danger">!</span>
+						if member.AccessStatus != "Ready" {
+							<span class={ "badge text-bg-danger" }>{ member.AccessStatus }</span>
+						} else {
+							<span class={ "badge text-bg-secondary" }>{ member.AccessStatus }</span>
 						}
 					</h5>
 					if member.BuildingAccessApprover == nil || *member.BuildingAccessApprover == "" {
 						<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/building_access", member.ID)) }>
 							<input type="hidden" value="true" name="approved"/>
-							<h6 class="card-subtitle mb-3 text-muted">Not Approved</h6>
+							<h6 class="card-subtitle mb-2 text-muted">Not Approved</h6>
 							<button type="submit" class="btn btn-primary">Approve</button>
 						</form>
 					} else {
-						<h6 class="card-subtitle mb-3 text-muted">Approved By: <strong>{ *member.BuildingAccessApprover }</strong></h6>
+						<h6 class="card-subtitle mb-2 text-muted">Approved By: <strong>{ *member.BuildingAccessApprover }</strong></h6>
 						<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/building_access", member.ID)) }>
 							<input type="hidden" value="false" name="approved"/>
 							<button type="submit" class="btn btn-secondary">Revoke</button>
@@ -93,7 +96,7 @@ templ renderSingleMember(member *member) {
 			</div>
 			<div class="card mt-3">
 				<div class="card-body">
-					<h5 class="card-title mb-4">Discounts</h5>
+					<h5 class="card-title mb-2">Discounts</h5>
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/discounts", member.ID)) }>
 						<script>
 							document.addEventListener('DOMContentLoaded', (event) => {
@@ -124,14 +127,14 @@ templ renderSingleMember(member *member) {
 							<option value="emeritus" selected?={ member.DiscountType != nil && *member.DiscountType == "emeritus" }>Emeritus</option>
 							<option value="family" selected?={ member.DiscountType != nil && *member.DiscountType == "family" }>Family</option>
 						</select>
-						<div class="mb-3 mt-3" id="family-email-field" style="display:none;">
+						<div class="mb-2 mt-2" id="family-email-field" style="display:none;">
 							<label for="family_email" class="form-label">Root Family Account Email Address</label>
 							<input type="email" class="form-control" id="family_email" name="family_email" value={ *member.RootFamilyEmail }/>
 						</div>
-						<p class="card-subtitle mt-4 text-muted">
+						<p class="card-subtitle mt-2 text-muted">
 							The discounted rate is only applied during Stripe checkout. Applying a new discount will not modify existing memberships until the member re-subscribes.
 						</p>
-						<button type="submit" class="btn btn-primary mt-4">Save</button>
+						<button type="submit" class="btn btn-primary mt-2">Save</button>
 					</form>
 				</div>
 			</div>
@@ -143,7 +146,7 @@ templ renderSingleMember(member *member) {
 							<span class="badge text-bg-danger">!</span>
 						}
 					</h5>
-					<h6 class="card-subtitle mb-3 text-muted">
+					<h6 class="card-subtitle mb-2 text-muted">
 						Subscription status: 
 						<b>
 							if member.StripeStatus == nil || *member.StripeStatus == "" {
@@ -165,13 +168,13 @@ templ renderSingleMember(member *member) {
 					<div class="card-body">
 						<h5 class="card-title">Paypal</h5>
 						if member.PaypalLastPayment != nil {
-							<h6 class="card-subtitle mb-3 text-muted">
+							<h6 class="card-subtitle mb-2 text-muted">
 								Last payment processed:
 								<b>{ time.Unix(*member.PaypalLastPayment, 0).Format(timeFormat) }</b>
 							</h6>
 						}
 						if member.PaypalPrice != nil {
-							<h6 class="card-subtitle mb-3 text-muted">
+							<h6 class="card-subtitle mb-2 text-muted">
 								Subscription price:
 								<b>{ fmt.Sprintf("%.2f", *member.PaypalPrice) }</b>
 							</h6>
@@ -181,7 +184,7 @@ templ renderSingleMember(member *member) {
 			}
 			<div class="card mt-3">
 				<div class="card-body">
-					<h5 class="card-title mb-4">Designations</h5>
+					<h5 class="card-title mb-2">Designations</h5>
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/designations", member.ID)) }>
 						<div class="form-check">
 							<input type="checkbox" class="form-check-input" id="leadership" name="leadership" checked?={ member.Leadership }/>
@@ -191,7 +194,7 @@ templ renderSingleMember(member *member) {
 							<input type="checkbox" class="form-check-input" id="non-billable" name="non-billable" checked?={ member.NonBillable }/>
 							<label class="form-check-label" for="non-billable">Non-billable <i>(landlord fobs, lifetime members, etc.)</i></label>
 						</div>
-						<button type="submit" class="btn btn-primary mt-4">Save</button>
+						<button type="submit" class="btn btn-primary mt-2">Save</button>
 					</form>
 				</div>
 			</div>

@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS members (
     access_status TEXT GENERATED ALWAYS AS ( CASE 
             WHEN (confirmed IS NOT 1) THEN "Unconfirmed Email"
             WHEN (waiver IS NULL) THEN "Missing Waiver"
-            WHEN (fob_id IS NULL) THEN "Key Fob Not Assigned"
+            WHEN (fob_id IS NULL OR fob_id = 0) THEN "Key Fob Not Assigned"
             WHEN (building_access_approver IS NULL) THEN "Access Not Approved"
             WHEN (active IS NOT 1) THEN "Membership Inactive"
         ELSE "Ready" END) VIRTUAL,

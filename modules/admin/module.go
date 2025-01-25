@@ -11,8 +11,6 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-// TODO: Move the waiver status to a separate table (view?)
-
 // TODO: Snapshot tests
 
 //go:generate templ generate
@@ -102,7 +100,7 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 		var accessStatus string
 		results.Scan(&id, &name, &active, &accessStatus)
 
-		accessCell := &tableCell{Text: accessStatus, BadgeType: "info"}
+		accessCell := &tableCell{Text: accessStatus, BadgeType: "secondary"}
 		if accessCell.Text != "Ready" {
 			accessCell.BadgeType = "warning"
 		}
@@ -110,7 +108,7 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 		paymentCell := &tableCell{Text: "Inactive", BadgeType: "warning"}
 		if active {
 			paymentCell.Text = "Active"
-			paymentCell.BadgeType = "info"
+			paymentCell.BadgeType = "secondary"
 		}
 
 		rows = append(rows, &tableRow{
@@ -129,11 +127,11 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 func (m *Module) renderSingleMemberView(r *http.Request, ps httprouter.Params) engine.Response {
 	mem := member{}
 	err := m.db.QueryRowContext(r.Context(), `
-		SELECT m.id, m.name, m.email, m.confirmed, m.created, m.fob_id, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, m.root_family_email, ba.identifier
+		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, m.fob_id, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, m.root_family_email, ba.identifier
 		FROM members m
 		LEFT JOIN members ba ON m.building_access_approver = ba.id
 		WHERE m.id = $1`, ps.ByName("id")).
-		Scan(&mem.ID, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BuildingAccessApprover)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BuildingAccessApprover)
 	if err != nil {
 		return engine.Errorf("querying the database: %s", err)
 	}
