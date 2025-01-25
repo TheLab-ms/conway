@@ -59,7 +59,7 @@ func (m *Module) renderMembersListView(r *http.Request, ps httprouter.Params) en
 }
 
 func (m *Module) renderMembersSearchElements(r *http.Request, ps httprouter.Params) engine.Response {
-	q := "SELECT id, identifier, building_access_approver, waiver IS NOT NULL AS waiver_signed, fob_id, stripe_subscription_state, paypal_subscription_id, non_billable FROM members"
+	q := "SELECT id, identifier, active, access_status FROM members"
 
 	search := r.PostFormValue("search")
 	if search != "" {
@@ -98,59 +98,18 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 	for results.Next() {
 		var id int64
 		var name string
-		var accessApprover *string
-		var waiverSigned *bool
-		var fobID *int64
-		var stripeState *string
-		var paypalSub *string
-		var nonBillable bool
-		results.Scan(&id, &name, &accessApprover, &waiverSigned, &fobID, &stripeState, &paypalSub, &nonBillable)
+		var active bool
+		var accessStatus string
+		results.Scan(&id, &name, &active, &accessStatus)
 
-		fobCell := &tableCell{Text: "Ready", BadgeType: "success"}
-		if fobID == nil {
-			fobCell.Text = "Missing Fob ID"
-			fobCell.BadgeType = "warning"
-		}
-		if waiverSigned == nil || !*waiverSigned {
-			fobCell.Text = "Missing Waiver"
-			fobCell.BadgeType = "warning"
-		}
-		if accessApprover == nil {
-			fobCell.Text = "Access Not Approved"
-			fobCell.BadgeType = "warning"
+		accessCell := &tableCell{Text: accessStatus, BadgeType: "info"}
+		if accessCell.Text != "Ready" {
+			accessCell.BadgeType = "warning"
 		}
 
 		paymentCell := &tableCell{Text: "Inactive", BadgeType: "warning"}
-		if stripeState != nil {
-			switch *stripeState {
-			case "inactive":
-				// Leave the default
-			case "incomplete":
-				paymentCell.Text = "Incomplete (Stripe)"
-				paymentCell.BadgeType = "warning"
-			case "past_due":
-				paymentCell.Text = "Past Due (Stripe)"
-				paymentCell.BadgeType = "warning"
-			case "canceled":
-				paymentCell.Text = "Canceled (Stripe)"
-				paymentCell.BadgeType = "warning"
-			case "unpaid":
-				paymentCell.Text = "Unpaid (Stripe)"
-				paymentCell.BadgeType = "warning"
-			case "paused":
-				paymentCell.Text = "Paused (Stripe)"
-				paymentCell.BadgeType = "warning"
-			default:
-				paymentCell.Text = "Active (Stripe)"
-				paymentCell.BadgeType = "success"
-			}
-		}
-		if paypalSub != nil && *paypalSub != "" {
-			paymentCell.Text = "Active (Paypal)"
-			paymentCell.BadgeType = "success"
-		}
-		if nonBillable {
-			paymentCell.Text = "Active (Non-Billable)"
+		if active {
+			paymentCell.Text = "Active"
 			paymentCell.BadgeType = "info"
 		}
 
@@ -158,7 +117,7 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 			SelfLink: fmt.Sprintf("/admin/members/%d", id),
 			Cells: []*tableCell{
 				{Text: name},
-				fobCell,
+				accessCell,
 				paymentCell,
 			},
 		})

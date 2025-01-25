@@ -86,7 +86,7 @@ templ renderSingleMember(member *member) {
 						<h6 class="card-subtitle mb-3 text-muted">Approved By: <strong>{ *member.BuildingAccessApprover }</strong></h6>
 						<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/building_access", member.ID)) }>
 							<input type="hidden" value="false" name="approved"/>
-							<button type="submit" class="btn btn-danger">Revoke</button>
+							<button type="submit" class="btn btn-secondary">Revoke</button>
 						</form>
 					}
 				</div>

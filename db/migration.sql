@@ -1,5 +1,7 @@
 PRAGMA foreign_keys = ON;
 
+/* TODO: Inherit active status from root family email */
+
 CREATE TABLE IF NOT EXISTS members (
     /* Identifiers */
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -12,8 +14,8 @@ CREATE TABLE IF NOT EXISTS members (
     admin_notes TEXT NOT NULL DEFAULT '',
     identifier TEXT GENERATED ALWAYS AS (CASE WHEN (name IS NOT NULL AND name != '') THEN name ELSE email END) VIRTUAL,
 
-    /* Payment / Discounts */
-    active INTEGER GENERATED ALWAYS AS (CASE WHEN ((paypal_subscription_id IS NOT NULL OR stripe_subscription_id IS NOT NULL OR non_billable = 1) AND confirmed = 1) THEN 1 ELSE 0 END) VIRTUAL,
+    /* Payment and Discounts */
+    active INTEGER GENERATED ALWAYS AS (CASE WHEN ((paypal_subscription_id IS NOT NULL OR stripe_subscription_state = 'active' OR non_billable = 1) AND confirmed = 1) THEN 1 ELSE 0 END) VIRTUAL,
     discount_type TEXT,
     root_family_email TEXT,
 
@@ -21,6 +23,13 @@ CREATE TABLE IF NOT EXISTS members (
     waiver INTEGER REFERENCES waivers(id),
     building_access_approver INTEGER REFERENCES members(id),
     fob_id INTEGER,
+    access_status TEXT GENERATED ALWAYS AS ( CASE 
+            WHEN (confirmed IS NOT 1) THEN "Unconfirmed Email"
+            WHEN (waiver IS NULL) THEN "Missing Waiver"
+            WHEN (fob_id IS NULL) THEN "Key Fob Not Assigned"
+            WHEN (building_access_approver IS NULL) THEN "Access Not Approved"
+            WHEN (active IS NOT 1) THEN "Membership Inactive"
+        ELSE "Ready" END) VIRTUAL,
 
     /* Designations */
     leadership INTEGER NOT NULL DEFAULT false,
