@@ -13,6 +13,7 @@ type member struct {
 	ID                     int64
 	Name                   string
 	Email                  string
+	Confirmed              bool
 	Created                int64
 	AdminNotes             string
 	Leadership             bool
@@ -37,21 +38,27 @@ templ renderSingleMember(member *member) {
 					<h5 class="card-title">Basic Info</h5>
 					<h6 class="card-subtitle mb-3 text-muted">Account created on { time.Unix(member.Created, 0).Format(timeFormat) }</h6>
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/basics", member.ID)) } id="basic-info-form">
-						<div class="mb-3">
-							<label for="name" class="form-label">Name</label>
+						<div class="form-floating mb-3">
 							<input type="text" class="form-control" id="name" name="name" value={ member.Name }/>
+							<label for="name" class="form-label">Name</label>
 						</div>
-						<div class="mb-3">
-							<label for="email" class="form-label">Email</label>
-							<input type="email" class="form-control" id="email" name="email" value={ member.Email }/>
+						<div class="input-group mb-3">
+							<div class="form-floating">
+								<input type="email" class="form-control" id="email" name="email" value={ member.Email }/>
+								<label for="email">Email</label>
+							</div>
+							<div class="input-group-text">
+								<label class="form-check-label" for="confirmed" style="margin-right: 5px;">Confirmed</label>
+								<input type="checkbox" class="form-check-input mt-0" id="confirmed" name="confirmed" checked?={ member.Confirmed }/>
+							</div>
 						</div>
-						<div class="mb-3">
-							<label for="fob_id" class="form-label">Keyfob ID</label>
+						<div class="form-floating mb-3">
 							<input type="number" class="form-control" id="fob_id" name="fob_id" value={ strconv.FormatInt(*member.FobID, 10) }/>
+							<label for="fob_id" class="form-label">Keyfob ID</label>
 						</div>
-						<div class="mb-3">
+						<div class="form-floating mb-3">
+							<textarea class="form-control" id="admin_notes" name="admin_notes" style="height: 100px">{ member.AdminNotes }</textarea>
 							<label for="admin_notes" class="form-label">Admin Notes</label>
-							<textarea class="form-control" id="admin_notes" name="admin_notes" rows="4">{ member.AdminNotes }</textarea>
 						</div>
 						<button type="submit" class="btn btn-primary">Save</button>
 						<button type="button" class="btn btn-secondary" onclick="document.getElementById('delete-account-link').style.display='block'">Delete</button>
