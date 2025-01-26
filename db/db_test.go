@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,20 +34,20 @@ func TestMemberActive(t *testing.T) {
 	_, err = db.Exec("INSERT INTO members (email, non_billable, confirmed) VALUES ('non_billable_active', 1, 1)")
 	require.NoError(t, err)
 
-	results, err := db.Query("SELECT email, active FROM members")
+	results, err := db.Query("SELECT email, payment_status FROM members")
 	require.NoError(t, err)
 	defer results.Close()
 
 	for results.Next() {
 		var email string
-		var active bool
-		err = results.Scan(&email, &active)
+		var status *string
+		err = results.Scan(&email, &status)
 		require.NoError(t, err)
 
 		if email == "inactive" || email == "stripe_inactive" || email == "unconfirmed" {
-			assert.False(t, active, email)
+			assert.Nil(t, status, email)
 		} else {
-			assert.True(t, active, email)
+			assert.Contains(t, *status, "Active ", email)
 		}
 	}
 }
@@ -156,6 +157,10 @@ func TestMemberAccessStatus(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Root Family Member Inactive", actual)
 	})
+
+	assert.Equal(t, []string{
+		`AccessStatusChanged - Building access status changed from "Ready" to "Root Family Member Inactive"`,
+	}, eventsToStrings(t, db))
 }
 
 func TestMemberFamilyDiscountPropagation(t *testing.T) {
@@ -201,4 +206,46 @@ func TestMemberFamilyDiscountPropagation(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, actual)
 	assert.Nil(t, id)
+}
+
+func TestMemberEvents(t *testing.T) {
+	db := NewTest(t)
+
+	_, err := db.Exec("INSERT INTO members (email, confirmed, non_billable) VALUES ('root@family.com', 1, 1)")
+	require.NoError(t, err)
+
+	_, err = db.Exec("INSERT INTO members (email) VALUES ('foo@bar.com')")
+	require.NoError(t, err)
+
+	_, err = db.Exec("UPDATE members SET name = 'foobar', discount_type = 'anything', leadership = 1, building_access_approver = 1, confirmed = 1, non_billable = 1 WHERE id = 2")
+	require.NoError(t, err)
+
+	_, err = db.Exec("UPDATE members SET leadership = 0, building_access_approver = NULL, non_billable = 0 WHERE id = 2")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		`BuildingAccessApproved - Building access was approved by "root@family.com"`,
+		"LeadershipStatusAdded - Designated as leadership",
+		`AccessStatusChanged - Building access status changed from "Unconfirmed Email" to "Missing Waiver"`,
+		`DiscountTypeModified - Discount changed from "NULL" to "anything"`,
+		`NameModified - Name changed from "" to "foobar"`,
+		"BuildingAccessRevoked - Building access was revoked",
+		"LeadershipStatusRemoved - No longer designated as leadership",
+	}, eventsToStrings(t, db))
+}
+
+func eventsToStrings(t *testing.T, db *sql.DB) []string {
+	results, err := db.Query("SELECT event, details FROM member_events ")
+	require.NoError(t, err)
+	defer results.Close()
+
+	all := []string{}
+	for results.Next() {
+		var event, details string
+		err = results.Scan(&event, &details)
+		require.NoError(t, err)
+		all = append(all, event+" - "+details)
+	}
+	require.NoError(t, results.Err())
+	return all
 }

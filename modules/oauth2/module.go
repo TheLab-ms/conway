@@ -166,7 +166,7 @@ func (m *Module) handleOauthUserInfo(r *http.Request, p httprouter.Params) engin
 	var email string
 	var active bool
 	var leadership bool
-	err = m.db.QueryRowContext(r.Context(), "SELECT name, email, active, leadership FROM members WHERE id = ? LIMIT 1", claims.Subject).Scan(&name, &email, &active, &leadership)
+	err = m.db.QueryRowContext(r.Context(), "SELECT name, email, payment_status IS NOT NULL, leadership FROM members WHERE id = ? LIMIT 1", claims.Subject).Scan(&name, &email, &active, &leadership)
 	if err != nil {
 		return engine.Errorf("getting user from db: %s", err)
 	}

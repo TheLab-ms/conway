@@ -57,7 +57,7 @@ func (m *Module) renderMembersListView(r *http.Request, ps httprouter.Params) en
 }
 
 func (m *Module) renderMembersSearchElements(r *http.Request, ps httprouter.Params) engine.Response {
-	q := "SELECT id, identifier, active, access_status FROM members"
+	q := "SELECT id, identifier, COALESCE(payment_status, 'Inactive') AS payment_status, access_status FROM members"
 
 	search := r.PostFormValue("search")
 	if search != "" {
@@ -96,19 +96,17 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 	for results.Next() {
 		var id int64
 		var name string
-		var active bool
-		var accessStatus string
-		results.Scan(&id, &name, &active, &accessStatus)
+		var paymentStatus, accessStatus string
+		results.Scan(&id, &name, &paymentStatus, &accessStatus)
 
 		accessCell := &tableCell{Text: accessStatus, BadgeType: "secondary"}
 		if accessCell.Text != "Ready" {
 			accessCell.BadgeType = "warning"
 		}
 
-		paymentCell := &tableCell{Text: "Inactive", BadgeType: "warning"}
-		if active {
-			paymentCell.Text = "Active"
-			paymentCell.BadgeType = "secondary"
+		paymentCell := &tableCell{Text: paymentStatus, BadgeType: "secondary"}
+		if paymentCell.Text == "Inactive" {
+			paymentCell.BadgeType = "warning"
 		}
 
 		rows = append(rows, &tableRow{
@@ -127,11 +125,12 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 func (m *Module) renderSingleMemberView(r *http.Request, ps httprouter.Params) engine.Response {
 	mem := member{}
 	err := m.db.QueryRowContext(r.Context(), `
-		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, m.fob_id, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, m.root_family_email, ba.identifier
+		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, m.fob_id, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, ba.identifier, rfm.email
 		FROM members m
 		LEFT JOIN members ba ON m.building_access_approver = ba.id
+		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, ps.ByName("id")).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BuildingAccessApprover)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.BuildingAccessApprover, &mem.RootFamilyEmail)
 	if err != nil {
 		return engine.Errorf("querying the database: %s", err)
 	}
