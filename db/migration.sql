@@ -63,6 +63,12 @@ BEGIN
   UPDATE members SET root_family_member_active = (SELECT active FROM members WHERE id = NEW.root_family_member) WHERE id = NEW.id AND root_family_member IS NOT NULL;
 END;
 
+CREATE TRIGGER IF NOT EXISTS members_family_relationship_insert
+AFTER INSERT ON members
+BEGIN
+  UPDATE members SET root_family_member_active = (SELECT active FROM members WHERE id = NEW.root_family_member) WHERE id = NEW.id AND root_family_member IS NOT NULL;
+END;
+
 CREATE TRIGGER IF NOT EXISTS members_family_relationship_delete
 BEFORE DELETE ON members
 BEGIN
