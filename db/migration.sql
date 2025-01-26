@@ -1,5 +1,17 @@
 PRAGMA foreign_keys = ON;
 
+/* TODO: Event for toggling non-billable */
+/* TODO: Separate table for emails */
+
+CREATE TABLE IF NOT EXISTS waivers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    pdf TEXT
+) STRICT;
+
+/* Create a placeholder waiver for migrating members from old system(s) */
+INSERT INTO waivers (id) VALUES (1) ON CONFLICT DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS members (
     /* Identifiers */
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,7 +42,7 @@ CREATE TABLE IF NOT EXISTS members (
     non_billable INTEGER NOT NULL DEFAULT false,
 
     /* Payment and Discounts */
-    discount_type TEXT CHECK (discount_type != 'family' OR root_family_member IS NOT NULL),
+    discount_type TEXT,
     root_family_member INTEGER REFERENCES members(id) CHECK (root_family_member != id),
     root_family_member_active INTEGER,
     payment_status TEXT GENERATED ALWAYS AS ( CASE
@@ -72,10 +84,14 @@ BEGIN
   UPDATE members SET root_family_member_active = 0, root_family_member = NULL WHERE root_family_member = OLD.id;
 END;
 
+/* Create a placeholder building access approver for migrating members from old system(s) */
+INSERT INTO members (id, email, name) VALUES (9001, "cto@thelab.ms", "Legacy Building Access Approver") ON CONFLICT DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS member_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     member INTEGER REFERENCES members(id),
+    important INTEGER NOT NULL DEFAULT true,
     event TEXT NOT NULL DEFAULT '',
     details TEXT NOT NULL DEFAULT ''
 );
@@ -88,12 +104,6 @@ END;
 CREATE TRIGGER IF NOT EXISTS members_discount_type_update AFTER UPDATE OF discount_type ON members
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'DiscountTypeModified', 'Discount changed from "' || COALESCE(OLD.discount_type, 'NULL') || '" to "' || COALESCE(NEW.discount_type, 'NULL') || '"');
-END;
-
-/* TODO: why doesn't this work? */
-CREATE TRIGGER IF NOT EXISTS members_payment_status_update AFTER UPDATE ON members WHEN OLD.payment_status != NEW.payment_status
-BEGIN
-INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'PaymentStatusChanged', 'Payment status changed from "' || COALESCE(OLD.payment_status, 'NULL') || '" to "' || COALESCE(NEW.payment_status, 'NULL') || '"');
 END;
 
 CREATE TRIGGER IF NOT EXISTS members_access_status_update AFTER UPDATE ON members WHEN OLD.access_status != NEW.access_status
@@ -120,12 +130,6 @@ CREATE TRIGGER IF NOT EXISTS members_building_access_revoked AFTER UPDATE OF bui
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'BuildingAccessRevoked', 'Building access was revoked');
 END;
-
-CREATE TABLE IF NOT EXISTS waivers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    pdf TEXT
-) STRICT;
 
 CREATE TABLE IF NOT EXISTS logins (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

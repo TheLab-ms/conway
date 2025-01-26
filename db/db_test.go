@@ -44,7 +44,7 @@ func TestMemberActive(t *testing.T) {
 		err = results.Scan(&email, &status)
 		require.NoError(t, err)
 
-		if email == "inactive" || email == "stripe_inactive" || email == "unconfirmed" {
+		if email == "inactive" || email == "stripe_inactive" || email == "unconfirmed" || email == "cto@thelab.ms" {
 			assert.Nil(t, status, email)
 		} else {
 			assert.Contains(t, *status, "Active ", email)
@@ -79,10 +79,7 @@ func TestMemberIdentifier(t *testing.T) {
 func TestMemberAccessStatus(t *testing.T) {
 	db := NewTest(t)
 
-	_, err := db.Exec("INSERT INTO waivers (id) VALUES (1)")
-	require.NoError(t, err)
-
-	_, err = db.Exec("INSERT INTO members (id) VALUES (1)")
+	_, err := db.Exec("INSERT INTO members (id) VALUES (1)")
 	require.NoError(t, err)
 
 	t.Run("happy path", func(t *testing.T) {
@@ -211,20 +208,20 @@ func TestMemberFamilyDiscountPropagation(t *testing.T) {
 func TestMemberEvents(t *testing.T) {
 	db := NewTest(t)
 
-	_, err := db.Exec("INSERT INTO members (email, confirmed, non_billable) VALUES ('root@family.com', 1, 1)")
+	_, err := db.Exec("INSERT INTO members (id, email, confirmed, non_billable) VALUES (1, 'root@family.com', 1, 1)")
 	require.NoError(t, err)
 
-	_, err = db.Exec("INSERT INTO members (email) VALUES ('foo@bar.com')")
+	_, err = db.Exec("INSERT INTO members (id, email) VALUES (2, 'foo@bar.com')")
 	require.NoError(t, err)
 
-	_, err = db.Exec("UPDATE members SET name = 'foobar', discount_type = 'anything', leadership = 1, building_access_approver = 1, confirmed = 1, non_billable = 1 WHERE id = 2")
+	_, err = db.Exec("UPDATE members SET name = 'foobar', discount_type = 'anything', leadership = 1, building_access_approver = 9001, confirmed = 1, non_billable = 1 WHERE id = 2")
 	require.NoError(t, err)
 
 	_, err = db.Exec("UPDATE members SET leadership = 0, building_access_approver = NULL, non_billable = 0 WHERE id = 2")
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		`BuildingAccessApproved - Building access was approved by "root@family.com"`,
+		`BuildingAccessApproved - Building access was approved by "Legacy Building Access Approver"`,
 		"LeadershipStatusAdded - Designated as leadership",
 		`AccessStatusChanged - Building access status changed from "Unconfirmed Email" to "Missing Waiver"`,
 		`DiscountTypeModified - Discount changed from "NULL" to "anything"`,
@@ -235,7 +232,7 @@ func TestMemberEvents(t *testing.T) {
 }
 
 func eventsToStrings(t *testing.T, db *sql.DB) []string {
-	results, err := db.Query("SELECT event, details FROM member_events ")
+	results, err := db.Query("SELECT event, details FROM member_events")
 	require.NoError(t, err)
 	defer results.Close()
 
