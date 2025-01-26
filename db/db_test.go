@@ -143,6 +143,19 @@ func TestMemberAccessStatus(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Membership Inactive", actual)
 	})
+
+	t.Run("inactive root family member", func(t *testing.T) {
+		_, err = db.Exec("INSERT INTO members (email, confirmed) VALUES ('root@family.com', 1)")
+		require.NoError(t, err)
+
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id, building_access_approver, root_family_member) VALUES ('7@test.com', 1, 1, 1, 7, 1, (SELECT id FROM members WHERE email = 'root@family.com'))")
+		require.NoError(t, err)
+
+		var actual string
+		err = db.QueryRow("SELECT access_status FROM members WHERE email = '7@test.com'").Scan(&actual)
+		require.NoError(t, err)
+		assert.Equal(t, "Root Family Member Inactive", actual)
+	})
 }
 
 func TestMemberFamilyDiscountPropagation(t *testing.T) {
@@ -150,6 +163,10 @@ func TestMemberFamilyDiscountPropagation(t *testing.T) {
 
 	_, err := db.Exec("INSERT INTO members (email, confirmed, non_billable) VALUES ('root@family.com', 1, 1)")
 	require.NoError(t, err)
+
+	// can't become your own root family member
+	_, err = db.Exec("UPDATE members SET root_family_member = 1 WHERE email = 'root@family.com'")
+	require.Error(t, err)
 
 	_, err = db.Exec("INSERT INTO members (email, root_family_member) VALUES ('leaf@family.com', (SELECT id FROM members WHERE email = 'root@family.com'))")
 	require.NoError(t, err)
