@@ -221,11 +221,13 @@ func TestMemberEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
+		"NonBillableStatusAdded - The member has been marked as non-billable",
 		`BuildingAccessApproved - Building access was approved by "Legacy Building Access Approver"`,
 		"LeadershipStatusAdded - Designated as leadership",
 		`AccessStatusChanged - Building access status changed from "Unconfirmed Email" to "Missing Waiver"`,
 		`DiscountTypeModified - Discount changed from "NULL" to "anything"`,
 		`NameModified - Name changed from "" to "foobar"`,
+		"NonBillableStatusRemoved - The member is no longer marked as non-billable",
 		"BuildingAccessRevoked - Building access was revoked",
 		"LeadershipStatusRemoved - No longer designated as leadership",
 	}, eventsToStrings(t, db))

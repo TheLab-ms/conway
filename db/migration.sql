@@ -1,6 +1,5 @@
 PRAGMA foreign_keys = ON;
 
-/* TODO: Event for toggling non-billable */
 /* TODO: Separate table for emails */
 
 CREATE TABLE IF NOT EXISTS waivers (
@@ -25,8 +24,8 @@ CREATE TABLE IF NOT EXISTS members (
     identifier TEXT GENERATED ALWAYS AS (CASE WHEN (name IS NOT NULL AND name != '') THEN name ELSE email END) VIRTUAL,
 
     /* Building Access */
-    waiver INTEGER REFERENCES waivers(id),
-    building_access_approver INTEGER REFERENCES members(id),
+    waiver INTEGER REFERENCES waivers(id) ON DELETE SET NULL,
+    building_access_approver INTEGER REFERENCES members(id) ON DELETE SET NULL,
     fob_id INTEGER,
     access_status TEXT NOT NULL GENERATED ALWAYS AS ( CASE
             WHEN (confirmed IS NOT 1) THEN "Unconfirmed Email"
@@ -43,7 +42,7 @@ CREATE TABLE IF NOT EXISTS members (
 
     /* Payment and Discounts */
     discount_type TEXT,
-    root_family_member INTEGER REFERENCES members(id) CHECK (root_family_member != id),
+    root_family_member INTEGER REFERENCES members(id) ON DELETE SET NULL CHECK (root_family_member != id),
     root_family_member_active INTEGER,
     payment_status TEXT GENERATED ALWAYS AS ( CASE
             WHEN (confirmed != 1) THEN NULL
@@ -90,7 +89,7 @@ INSERT INTO members (id, email, name) VALUES (9001, "cto@thelab.ms", "Legacy Bui
 CREATE TABLE IF NOT EXISTS member_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    member INTEGER REFERENCES members(id),
+    member INTEGER REFERENCES members(id) ON DELETE SET NULL,
     important INTEGER NOT NULL DEFAULT true,
     event TEXT NOT NULL DEFAULT '',
     details TEXT NOT NULL DEFAULT ''
@@ -131,6 +130,16 @@ BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'BuildingAccessRevoked', 'Building access was revoked');
 END;
 
+CREATE TRIGGER IF NOT EXISTS members_non_billable_added AFTER UPDATE OF non_billable ON members WHEN NEW.non_billable IS true
+BEGIN
+INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'NonBillableStatusAdded', 'The member has been marked as non-billable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS members_non_billable_removed AFTER UPDATE OF non_billable ON members WHEN NEW.non_billable IS false
+BEGIN
+INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'NonBillableStatusRemoved', 'The member is no longer marked as non-billable');
+END;
+
 CREATE TABLE IF NOT EXISTS logins (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -138,7 +147,7 @@ CREATE TABLE IF NOT EXISTS logins (
     member INTEGER,
     code INTEGER NOT NULL DEFAULT 0,
     UNIQUE(code),
-    FOREIGN KEY(member) REFERENCES members(id) ON DELETE CASCADE
+    FOREIGN KEY(member) REFERENCES members(id) ON DELETE SET NULL
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS logins_send_at_idx ON logins (send_email_at);
