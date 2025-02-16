@@ -23,15 +23,13 @@ CREATE TABLE IF NOT EXISTS members (
 
     /* Building Access */
     waiver INTEGER REFERENCES waivers(id) ON DELETE SET NULL,
-    building_access_approver INTEGER REFERENCES members(id) ON DELETE SET NULL,
     fob_id INTEGER,
     access_status TEXT NOT NULL GENERATED ALWAYS AS ( CASE
             WHEN (confirmed IS NOT 1) THEN "UnconfirmedEmail"
             WHEN (waiver IS NULL) THEN "MissingWaiver"
-            WHEN (fob_id IS NULL OR fob_id = 0) THEN "MissingKeyFob"
-            WHEN (building_access_approver IS NULL) THEN "NotApproved"
-            WHEN (root_family_member IS NOT NULL AND root_family_member_active = 0) THEN "FamilyInactive"
             WHEN (payment_status IS NULL) THEN "PaymentInactive"
+            WHEN (fob_id IS NULL OR fob_id = 0) THEN "MissingKeyFob"
+            WHEN (root_family_member IS NOT NULL AND root_family_member_active = 0) THEN "FamilyInactive"
         ELSE "Ready" END) VIRTUAL,
 
     /* Designations */
@@ -80,9 +78,6 @@ CREATE TRIGGER IF NOT EXISTS members_family_relationship_delete BEFORE DELETE ON
 BEGIN
   UPDATE members SET root_family_member_active = 0, root_family_member = NULL WHERE root_family_member = OLD.id;
 END;
-
-/* Create a placeholder building access approver for migrating members from old system(s) */
-INSERT INTO members (id, email, name) VALUES (9001, "cto@thelab.ms", "Legacy Building Access Approver") ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS member_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,16 +143,6 @@ END;
 CREATE TRIGGER IF NOT EXISTS members_leadership_unset AFTER UPDATE OF leadership ON members WHEN NEW.leadership = 0
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'LeadershipStatusRemoved', 'No longer designated as leadership');
-END;
-
-CREATE TRIGGER IF NOT EXISTS members_building_access_approved AFTER UPDATE OF building_access_approver ON members WHEN NEW.building_access_approver IS NOT NULL
-BEGIN
-INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'BuildingAccessApproved', 'Building access was approved by "' || COALESCE((SELECT identifier FROM members WHERE id = NEW.building_access_approver), 'Unknown') || '"');
-END;
-
-CREATE TRIGGER IF NOT EXISTS members_building_access_revoked AFTER UPDATE OF building_access_approver ON members WHEN NEW.building_access_approver IS NULL
-BEGIN
-INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'BuildingAccessRevoked', 'Building access was revoked');
 END;
 
 CREATE TRIGGER IF NOT EXISTS members_non_billable_added AFTER UPDATE OF non_billable ON members WHEN NEW.non_billable IS true

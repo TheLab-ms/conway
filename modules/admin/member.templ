@@ -10,24 +10,23 @@ import (
 const timeFormat = "Mon, Jan 2 2006 at 15:04 MST"
 
 type member struct {
-	ID                     int64
-	AccessStatus           string
-	Name                   string
-	Email                  string
-	Confirmed              bool
-	Created                int64
-	AdminNotes             string
-	Leadership             bool
-	NonBillable            bool
-	FobID                  *int64
-	StripeSubID            *string
-	StripeStatus           *string
-	PaypalSubID            *string
-	PaypalPrice            *float64
-	PaypalLastPayment      *int64
-	DiscountType           *string
-	RootFamilyEmail        *string
-	BuildingAccessApprover *string
+	ID                int64
+	AccessStatus      string
+	Name              string
+	Email             string
+	Confirmed         bool
+	Created           int64
+	AdminNotes        string
+	Leadership        bool
+	NonBillable       bool
+	FobID             *int64
+	StripeSubID       *string
+	StripeStatus      *string
+	PaypalSubID       *string
+	PaypalPrice       *float64
+	PaypalLastPayment *int64
+	DiscountType      *string
+	RootFamilyEmail   *string
 }
 
 templ renderSingleMember(member *member) {
@@ -38,6 +37,9 @@ templ renderSingleMember(member *member) {
 				<div class="card-body">
 					<h5 class="card-title mb-2">Basic Info</h5>
 					<h6 class="card-subtitle mb-2 text-muted">Account created on { time.Unix(member.Created, 0).Format(timeFormat) }</h6>
+					if member.AccessStatus != "Ready" {
+						<span class="badge text-bg-danger mb-3">{ member.AccessStatus }</span>
+					}
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/basics", member.ID)) } id="basic-info-form">
 						<div class="form-floating mb-2">
 							<input type="text" class="form-control" id="name" name="name" value={ member.Name }/>
@@ -67,31 +69,6 @@ templ renderSingleMember(member *member) {
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/delete", member.ID)) }>
 						<button type="submit" class="btn btn-danger mt-3" id="delete-account-link" style="display:none;">Confirm Delete</button>
 					</form>
-				</div>
-			</div>
-			<div class="card mt-2">
-				<div class="card-body">
-					<h5 class="card-title mb-2">
-						Building Access
-						if member.AccessStatus != "Ready" {
-							<span class={ "badge text-bg-danger" }>{ member.AccessStatus }</span>
-						} else {
-							<span class={ "badge text-bg-secondary" }>{ member.AccessStatus }</span>
-						}
-					</h5>
-					if member.BuildingAccessApprover == nil || *member.BuildingAccessApprover == "" {
-						<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/building_access", member.ID)) }>
-							<input type="hidden" value="true" name="approved"/>
-							<h6 class="card-subtitle mb-2 text-muted">Not Approved</h6>
-							<button type="submit" class="btn btn-primary">Approve</button>
-						</form>
-					} else {
-						<h6 class="card-subtitle mb-2 text-muted">Approved By: <strong>{ *member.BuildingAccessApprover }</strong></h6>
-						<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/building_access", member.ID)) }>
-							<input type="hidden" value="false" name="approved"/>
-							<button type="submit" class="btn btn-secondary">Revoke</button>
-						</form>
-					}
 				</div>
 			</div>
 			<div class="card mt-3">

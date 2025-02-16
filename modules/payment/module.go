@@ -94,17 +94,18 @@ func (m *Module) updateMemberStripeMetadata(ctx context.Context, cust *stripe.Cu
 // handleCheckoutForm redirects users to the appropriate Stripe Checkout workflow.
 func (m *Module) handleCheckoutForm(r *http.Request, ps httprouter.Params) engine.Response {
 	var email string
+	var discountType *string
 	var existingCustomerID *string
 	var existingSubID *string
-	err := m.db.QueryRowContext(r.Context(), "SELECT email, stripe_customer_id, stripe_subscription_id FROM members WHERE id = ?", auth.GetUserMeta(r.Context()).ID).Scan(&email, &existingCustomerID, &existingSubID)
+	err := m.db.QueryRowContext(r.Context(), "SELECT email, discount_type, stripe_customer_id, stripe_subscription_id FROM members WHERE id = ?", auth.GetUserMeta(r.Context()).ID).Scan(&email, &discountType, &existingCustomerID, &existingSubID)
 	if err != nil {
 		return engine.Errorf("querying db for member: %s", err)
 	}
 
-	return m.initiateCheckout(r, email, existingSubID, existingCustomerID)
+	return m.initiateCheckout(r, email, discountType, existingSubID, existingCustomerID)
 }
 
-func (m *Module) initiateCheckout(r *http.Request, email string, subID, custID *string) engine.Response {
+func (m *Module) initiateCheckout(r *http.Request, email string, discountType, subID, custID *string) engine.Response {
 	// Allow existing subscriptions to be modified
 	if subID != nil {
 		sessionParams := &stripe.BillingPortalSessionParams{
@@ -145,15 +146,12 @@ func (m *Module) initiateCheckout(r *http.Request, email string, subID, custID *
 	checkoutParams.LineItems[0].Price = &price.ID
 
 	// Apply discount(s)
-	discount := r.FormValue("discount")
-	if discount != "" {
+	if discountType != nil {
 		coupIter := coupon.List(&stripe.CouponListParams{})
 
 		for coupIter.Next() {
 			coup := coupIter.Coupon()
-			if coup.Metadata == nil || !coup.Valid ||
-				coup.Metadata["priceID"] != price.ID ||
-				slices.Contains(strings.Split(coup.Metadata["discountTypes"], ","), discount) {
+			if coup.Metadata == nil || !coup.Valid || !slices.Contains(strings.Split(strings.ToLower(coup.Metadata["discountTypes"]), ","), strings.ToLower(*discountType)) {
 				continue
 			}
 			checkoutParams.Discounts = []*stripe.CheckoutSessionDiscountParams{{
