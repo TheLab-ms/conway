@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS members (
 
     /* Payment and Discounts */
     discount_type TEXT,
-    bill_annually INTEGER NOT NULL DEFAULT false,
     root_family_member INTEGER REFERENCES members(id) ON DELETE SET NULL CHECK (root_family_member != id),
     root_family_member_active INTEGER,
     payment_status TEXT GENERATED ALWAYS AS ( CASE

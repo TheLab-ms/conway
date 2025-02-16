@@ -28,7 +28,6 @@ type member struct {
 	DiscountType           *string
 	RootFamilyEmail        *string
 	BuildingAccessApprover *string
-	BillAnnually           bool
 }
 
 templ renderSingleMember(member *member) {
@@ -57,10 +56,6 @@ templ renderSingleMember(member *member) {
 						<div class="form-floating mb-2">
 							<input type="number" class="form-control" id="fob_id" name="fob_id" value={ strconv.FormatInt(*member.FobID, 10) }/>
 							<label for="fob_id" class="form-label">Keyfob ID</label>
-						</div>
-						<div class="input-group mb-2">
-							<input type="checkbox" class="form-check-input" id="bill_annually" name="bill_annually" checked?={ member.BillAnnually }/>
-							<label class="form-check-label" for="bill_annually" style="margin-left: 5px;">Bill Annually</label>
 						</div>
 						<div class="form-floating mb-2">
 							<textarea class="form-control" id="admin_notes" name="admin_notes" style="height: 100px">{ member.AdminNotes }</textarea>
