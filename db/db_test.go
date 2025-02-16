@@ -47,7 +47,7 @@ func TestMemberActive(t *testing.T) {
 		if email == "inactive" || email == "stripe_inactive" || email == "unconfirmed" || email == "cto@thelab.ms" {
 			assert.Nil(t, status, email)
 		} else {
-			assert.Contains(t, *status, "Active ", email)
+			assert.Contains(t, *status, "Active", email)
 		}
 	}
 }
@@ -99,7 +99,7 @@ func TestMemberAccessStatus(t *testing.T) {
 		var actual string
 		err = db.QueryRow("SELECT access_status FROM members WHERE email = '2@test.com'").Scan(&actual)
 		require.NoError(t, err)
-		assert.Equal(t, "Unconfirmed Email", actual)
+		assert.Equal(t, "UnconfirmedEmail", actual)
 	})
 
 	t.Run("missing waiver", func(t *testing.T) {
@@ -109,7 +109,7 @@ func TestMemberAccessStatus(t *testing.T) {
 		var actual string
 		err = db.QueryRow("SELECT access_status FROM members WHERE email = '3@test.com'").Scan(&actual)
 		require.NoError(t, err)
-		assert.Equal(t, "Missing Waiver", actual)
+		assert.Equal(t, "MissingWaiver", actual)
 	})
 
 	t.Run("missing fob", func(t *testing.T) {
@@ -119,7 +119,7 @@ func TestMemberAccessStatus(t *testing.T) {
 		var actual string
 		err = db.QueryRow("SELECT access_status FROM members WHERE email = '4@test.com'").Scan(&actual)
 		require.NoError(t, err)
-		assert.Equal(t, "Key Fob Not Assigned", actual)
+		assert.Equal(t, "MissingKeyFob", actual)
 	})
 
 	t.Run("missing access approver", func(t *testing.T) {
@@ -129,7 +129,7 @@ func TestMemberAccessStatus(t *testing.T) {
 		var actual string
 		err = db.QueryRow("SELECT access_status FROM members WHERE email = '5@test.com'").Scan(&actual)
 		require.NoError(t, err)
-		assert.Equal(t, "Access Not Approved", actual)
+		assert.Equal(t, "NotApproved", actual)
 	})
 
 	t.Run("inactive membership", func(t *testing.T) {
@@ -139,7 +139,7 @@ func TestMemberAccessStatus(t *testing.T) {
 		var actual string
 		err = db.QueryRow("SELECT access_status FROM members WHERE email = '6@test.com'").Scan(&actual)
 		require.NoError(t, err)
-		assert.Equal(t, "Membership Inactive", actual)
+		assert.Equal(t, "PaymentInactive", actual)
 	})
 
 	t.Run("inactive root family member", func(t *testing.T) {
@@ -152,11 +152,11 @@ func TestMemberAccessStatus(t *testing.T) {
 		var actual string
 		err = db.QueryRow("SELECT access_status FROM members WHERE email = '7@test.com'").Scan(&actual)
 		require.NoError(t, err)
-		assert.Equal(t, "Root Family Member Inactive", actual)
+		assert.Equal(t, "FamilyInactive", actual)
 	})
 
 	assert.Equal(t, []string{
-		`AccessStatusChanged - Building access status changed from "Ready" to "Root Family Member Inactive"`,
+		`AccessStatusChanged - Building access status changed from "Ready" to "FamilyInactive"`,
 	}, eventsToStrings(t, db))
 }
 
@@ -224,7 +224,7 @@ func TestMemberEvents(t *testing.T) {
 		"NonBillableStatusAdded - The member has been marked as non-billable",
 		`BuildingAccessApproved - Building access was approved by "Legacy Building Access Approver"`,
 		"LeadershipStatusAdded - Designated as leadership",
-		`AccessStatusChanged - Building access status changed from "Unconfirmed Email" to "Missing Waiver"`,
+		`AccessStatusChanged - Building access status changed from "UnconfirmedEmail" to "MissingWaiver"`,
 		`DiscountTypeModified - Discount changed from "NULL" to "anything"`,
 		`NameModified - Name changed from "" to "foobar"`,
 		"NonBillableStatusRemoved - The member is no longer marked as non-billable",

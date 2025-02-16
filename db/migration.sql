@@ -1,7 +1,5 @@
 PRAGMA foreign_keys = ON;
 
-/* TODO: Separate table for emails */
-
 CREATE TABLE IF NOT EXISTS waivers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -28,12 +26,12 @@ CREATE TABLE IF NOT EXISTS members (
     building_access_approver INTEGER REFERENCES members(id) ON DELETE SET NULL,
     fob_id INTEGER,
     access_status TEXT NOT NULL GENERATED ALWAYS AS ( CASE
-            WHEN (confirmed IS NOT 1) THEN "Unconfirmed Email"
-            WHEN (waiver IS NULL) THEN "Missing Waiver"
-            WHEN (fob_id IS NULL OR fob_id = 0) THEN "Key Fob Not Assigned"
-            WHEN (building_access_approver IS NULL) THEN "Access Not Approved"
-            WHEN (root_family_member IS NOT NULL AND root_family_member_active = 0) THEN "Root Family Member Inactive"
-            WHEN (payment_status IS NULL) THEN "Membership Inactive"
+            WHEN (confirmed IS NOT 1) THEN "UnconfirmedEmail"
+            WHEN (waiver IS NULL) THEN "MissingWaiver"
+            WHEN (fob_id IS NULL OR fob_id = 0) THEN "MissingKeyFob"
+            WHEN (building_access_approver IS NULL) THEN "NotApproved"
+            WHEN (root_family_member IS NOT NULL AND root_family_member_active = 0) THEN "FamilyInactive"
+            WHEN (payment_status IS NULL) THEN "PaymentInactive"
         ELSE "Ready" END) VIRTUAL,
 
     /* Designations */
@@ -46,9 +44,9 @@ CREATE TABLE IF NOT EXISTS members (
     root_family_member_active INTEGER,
     payment_status TEXT GENERATED ALWAYS AS ( CASE
             WHEN (confirmed != 1) THEN NULL
-            WHEN (paypal_subscription_id IS NOT NULL) THEN "Active (Paypal)"
-            WHEN (stripe_subscription_state = "active") THEN "Active (Stripe)"
-            WHEN (non_billable = 1) THEN "Active (non-billable)"
+            WHEN (paypal_subscription_id IS NOT NULL) THEN "ActivePaypal"
+            WHEN (stripe_subscription_state = "active") THEN "ActiveStripe"
+            WHEN (non_billable = 1) THEN "ActiveNonBillable"
         ELSE NULL END) VIRTUAL,
 
     /* Stripe */
@@ -95,6 +93,38 @@ CREATE TABLE IF NOT EXISTS member_events (
     details TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS logins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    send_email_at INTEGER DEFAULT (strftime('%s', 'now')),
+    member INTEGER,
+    code INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(code),
+    FOREIGN KEY(member) REFERENCES members(id) ON DELETE SET NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS logins_send_at_idx ON logins (send_email_at);
+CREATE INDEX IF NOT EXISTS logins_created_idx ON logins (created);
+CREATE UNIQUE INDEX IF NOT EXISTS logins_code_idx ON logins (code);
+
+CREATE TABLE IF NOT EXISTS keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    label TEXT NOT NULL DEFAULT '',
+    key_pem TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    label TEXT NOT NULL DEFAULT '',
+    token TEXT NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_idx ON api_tokens (token);
+
+
+/* NOTHING BELOW THIS POINT EXCEPT TRIGGERS THAT PUBLISH MEMBER EVENTS */
 CREATE TRIGGER IF NOT EXISTS members_name_update AFTER UPDATE OF name ON members
 BEGIN
   INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'NameModified', 'Name changed from "' || OLD.name || '" to "' || NEW.name || '"');
@@ -139,33 +169,3 @@ CREATE TRIGGER IF NOT EXISTS members_non_billable_removed AFTER UPDATE OF non_bi
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'NonBillableStatusRemoved', 'The member is no longer marked as non-billable');
 END;
-
-CREATE TABLE IF NOT EXISTS logins (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    send_email_at INTEGER DEFAULT (strftime('%s', 'now')),
-    member INTEGER,
-    code INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(code),
-    FOREIGN KEY(member) REFERENCES members(id) ON DELETE SET NULL
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS logins_send_at_idx ON logins (send_email_at);
-CREATE INDEX IF NOT EXISTS logins_created_idx ON logins (created);
-CREATE UNIQUE INDEX IF NOT EXISTS logins_code_idx ON logins (code);
-
-CREATE TABLE IF NOT EXISTS keys (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    label TEXT NOT NULL DEFAULT '',
-    key_pem TEXT NOT NULL
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS api_tokens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    label TEXT NOT NULL DEFAULT '',
-    token TEXT NOT NULL
-) STRICT;
-
-CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_idx ON api_tokens (token);
