@@ -92,20 +92,21 @@ func (m *Module) handleCheckoutForm(r *http.Request, ps httprouter.Params) engin
 	var email string
 	var existingCustomerID *string
 	var existingSubID *string
-	err := m.db.QueryRowContext(r.Context(), "SELECT email, stripe_customer_id, stripe_subscription_id FROM members WHERE id = ?", auth.GetUserMeta(r.Context()).ID).Scan(&email, &existingCustomerID, &existingSubID)
+	var annual bool
+	err := m.db.QueryRowContext(r.Context(), "SELECT email, stripe_customer_id, stripe_subscription_id, bill_annually FROM members WHERE id = ?", auth.GetUserMeta(r.Context()).ID).Scan(&email, &existingCustomerID, &existingSubID, &annual)
 	if err != nil {
 		return engine.Errorf("querying db for member: %s", err)
 	}
 
-	return m.initiateCheckout(r, email, existingSubID, existingCustomerID)
+	return m.initiateCheckout(r, email, existingSubID, existingCustomerID, annual)
 }
 
-func (m *Module) initiateCheckout(r *http.Request, email string, subID, custID *string) engine.Response {
+func (m *Module) initiateCheckout(r *http.Request, email string, subID, custID *string, annual bool) engine.Response {
 	// Allow existing subscriptions to be modified
 	if subID != nil {
 		sessionParams := &stripe.BillingPortalSessionParams{
 			Customer:  custID,
-			ReturnURL: stripe.String(m.self.String() + "/profile"),
+			ReturnURL: stripe.String(m.self.String()),
 		}
 		sessionParams.Context = r.Context()
 
@@ -120,16 +121,16 @@ func (m *Module) initiateCheckout(r *http.Request, email string, subID, custID *
 	// Create a new checkout session
 	checkoutParams := &stripe.CheckoutSessionParams{
 		Mode:       stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		SuccessURL: stripe.String(m.self.String() + "/profile"),
-		CancelURL:  stripe.String(m.self.String() + "/profile"),
+		SuccessURL: stripe.String(m.self.String()),
+		CancelURL:  stripe.String(m.self.String()),
 		LineItems:  []*stripe.CheckoutSessionLineItemParams{{Quantity: stripe.Int64(1)}},
 	}
 	checkoutParams.Context = r.Context()
 
 	// Set the requested payment frequency
-	freq := r.FormValue("freq")
-	if freq != "monthly" && freq != "yearly" {
-		return engine.Errorf("invalid interval")
+	freq := "monthly"
+	if annual {
+		freq = "yearly"
 	}
 	pricesIter := price.Search(&stripe.PriceSearchParams{
 		SearchParams: stripe.SearchParams{
@@ -176,6 +177,5 @@ func (m *Module) initiateCheckout(r *http.Request, email string, subID, custID *
 		return engine.Errorf("creating stripe checkout session: %s", err)
 	}
 
-	// TODO: Publish event (both branches)
 	return engine.Redirect(s.URL, http.StatusSeeOther)
 }

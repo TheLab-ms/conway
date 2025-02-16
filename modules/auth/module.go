@@ -194,7 +194,7 @@ func (s *Module) handleLoginCodeFormPost(r *http.Request, p httprouter.Params) e
 		Name:     "token",
 		Value:    token,
 		Path:     "/",
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		Expires:  exp,
 		Secure:   strings.Contains(s.self.Scheme, "s"),
 	}
