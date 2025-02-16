@@ -83,7 +83,12 @@ func (m *Module) handleStripeWebhook(r *http.Request, ps httprouter.Params) engi
 }
 
 func (m *Module) updateMemberStripeMetadata(ctx context.Context, cust *stripe.Customer, sub *stripe.Subscription) error {
-	_, err := m.db.ExecContext(ctx, "UPDATE members WHERE email = ? SET stripe_customer_id = ?, stripe_subscription_id = ?, stripe_subscription_status = ?", cust.Email, cust.ID, sub.ID, sub.Status)
+	if sub.CanceledAt > 0 {
+		_, err := m.db.ExecContext(ctx, "UPDATE members SET stripe_subscription_id = NULL, stripe_subscription_state = NULL WHERE email = $1", cust.Email)
+		return err
+	}
+
+	_, err := m.db.ExecContext(ctx, "UPDATE members SET stripe_customer_id = $2, stripe_subscription_id = $3, stripe_subscription_state = $4, name = $5 WHERE email = $1", cust.Email, cust.ID, sub.ID, sub.Status, cust.Name)
 	return err
 }
 

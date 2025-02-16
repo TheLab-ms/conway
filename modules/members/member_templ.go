@@ -118,7 +118,7 @@ func renderMembershipStatus(member *member) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		case "PaymentInactive":
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Pending Dues Payment</h4>Your membership is currently inactive because your dues payment has not been received. Use the button below to manage your payment.</div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Pending Dues Payment</h4>Use the button below to set up payment with our secure payment processor.</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
