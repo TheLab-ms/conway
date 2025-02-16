@@ -36,7 +36,7 @@ func New(db *sql.DB, webhookKey string, self *url.URL) *Module {
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("POST", "/webhooks/stripe", m.handleStripeWebhook)
-	router.Handle("POST", "/payment/checkout", router.WithAuth(m.handleCheckoutForm))
+	router.Handle("GET", "/payment/checkout", router.WithAuth(m.handleCheckoutForm))
 }
 
 func (m *Module) handleStripeWebhook(r *http.Request, ps httprouter.Params) engine.Response {
@@ -90,9 +90,9 @@ func (m *Module) updateMemberStripeMetadata(ctx context.Context, cust *stripe.Cu
 // handleCheckoutForm redirects users to the appropriate Stripe Checkout workflow.
 func (m *Module) handleCheckoutForm(r *http.Request, ps httprouter.Params) engine.Response {
 	var email string
-	var existingCustomerID string
-	var existingSubID string
-	err := m.db.QueryRowContext(r.Context(), "SELECT email, stripe_customer_id, stripe_subscription_id FROM members WHERE email = ?", auth.GetUserMeta(r.Context())).Scan(&email, &existingCustomerID, &existingSubID)
+	var existingCustomerID *string
+	var existingSubID *string
+	err := m.db.QueryRowContext(r.Context(), "SELECT email, stripe_customer_id, stripe_subscription_id FROM members WHERE id = ?", auth.GetUserMeta(r.Context()).ID).Scan(&email, &existingCustomerID, &existingSubID)
 	if err != nil {
 		return engine.Errorf("querying db for member: %s", err)
 	}
@@ -100,11 +100,11 @@ func (m *Module) handleCheckoutForm(r *http.Request, ps httprouter.Params) engin
 	return m.initiateCheckout(r, email, existingSubID, existingCustomerID)
 }
 
-func (m *Module) initiateCheckout(r *http.Request, email, subID, custID string) engine.Response {
+func (m *Module) initiateCheckout(r *http.Request, email string, subID, custID *string) engine.Response {
 	// Allow existing subscriptions to be modified
-	if r.FormValue("existing") == "true" {
+	if subID != nil {
 		sessionParams := &stripe.BillingPortalSessionParams{
-			Customer:  stripe.String(subID),
+			Customer:  custID,
 			ReturnURL: stripe.String(m.self.String() + "/profile"),
 		}
 		sessionParams.Context = r.Context()
@@ -165,10 +165,10 @@ func (m *Module) initiateCheckout(r *http.Request, email, subID, custID string) 
 
 	// The member will already have a Stripe customer ID if they've had an active subscription previously.
 	// We should pass it so Stripe won't create a duplicate customer object.
-	if custID == "" {
+	if custID == nil {
 		checkoutParams.CustomerEmail = &email
 	} else {
-		checkoutParams.Customer = &custID
+		checkoutParams.Customer = custID
 	}
 
 	s, err := session.New(checkoutParams)

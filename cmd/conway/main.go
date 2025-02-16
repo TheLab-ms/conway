@@ -16,6 +16,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/api"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/members"
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
 	"github.com/caarlos0/env/v11"
@@ -94,6 +95,7 @@ func newApp(db *sql.DB, httpAddr, stripeWebhookKey string, self *url.URL, ec *au
 	a.Add(oauth2.New(db, self, authModule))
 	a.Add(payment.New(db, stripeWebhookKey, self))
 	a.Add(admin.New(db))
+	a.Add(members.New(db))
 
 	return a, authModule, nil
 }
