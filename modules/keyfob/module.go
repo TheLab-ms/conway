@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -48,7 +49,12 @@ func (m *Module) findTrustedIP(ctx context.Context) bool {
 	conn.Close()
 
 	ip := conn.RemoteAddr().(*net.UDPAddr).IP
-	m.trustedIP.Store(&ip)
+	old := m.trustedIP.Swap(&ip)
+
+	if old == nil || !old.Equal(ip) {
+		slog.Info("updated trusted IP", "new", ip)
+	}
+
 	return false
 }
 
@@ -59,9 +65,10 @@ func (m *Module) atPhysicalSpace(next engine.Handler) engine.Handler {
 		if addr == "" {
 			addr = r.RemoteAddr
 		}
-		ipStr, _, _ := net.SplitHostPort(addr)
-		ip := net.ParseIP(ipStr)
+		ip := net.ParseIP(strings.Split(addr, ":")[0])
 		if trusted := m.trustedIP.Load(); trusted == nil || !ip.Equal(*trusted) {
+			user := auth.GetUserMeta(r.Context())
+			slog.Info("not allowing member to bind keyfob from this IP", "addr", addr, "ip", ip, "trusted", trusted, "memberID", user.ID)
 			return engine.Component(renderOffsiteError())
 		}
 		return next(r, ps)
