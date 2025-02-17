@@ -56,7 +56,7 @@ func renderMember(member *member) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"mt-3\"><a href=\"/payment/checkout\" class=\"btn btn-outline-success\">Manage Payment</a> <a href=\"/keyfob/bind\" class=\"btn btn-outline-success\">Bind Key Fob</a></div></div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"mt-3\"><a href=\"/payment/checkout\" class=\"btn btn-outline-success\">Manage Payment</a> <a href=\"/keyfob/bind\" class=\"btn btn-outline-success\">Bind Key Fob</a> <a href=\"/logout\" class=\"btn btn-outline-secondary\">Logout</a></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
