@@ -3,7 +3,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS waivers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    pdf TEXT
+    content TEXT
 ) STRICT;
 
 /* Create a placeholder waiver for migrating members from old system(s) */
