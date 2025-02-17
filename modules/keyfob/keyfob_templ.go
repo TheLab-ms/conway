@@ -120,7 +120,7 @@ func renderKeyfob(failed bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<script>\n\t\tlet buffer = ''\n\t\tlet timeout\n\n\t\tdocument.addEventListener('keypress', function(event) {\n\t\t\tbuffer += event.key\n\t\t\tclearTimeout(timeout)\n\t\t\ttimeout = setTimeout(() => {\n\t\t\t\tdocument.getElementById('fobid').value = buffer\n\t\t\t\tdocument.getElementById('fobform').submit()\n\t\t\t\tbuffer = ''\n\t\t\t}, 1000)\n\t\t})\n\t</script>")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<script>\n\t\tlet buffer = ''\n\t\tlet timeout\n\n\t\tdocument.addEventListener('keypress', function(event) {\n\t\t\tbuffer += event.key\n\t\t\tclearTimeout(timeout)\n\t\t\ttimeout = setTimeout(() => {\n\t\t\t\tdocument.getElementById('fobid').value = buffer\n\t\t\t\tdocument.getElementById('fobform').submit()\n\t\t\t\tbuffer = ''\n\t\t\t}, 250)\n\t\t})\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

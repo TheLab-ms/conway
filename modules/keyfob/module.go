@@ -84,29 +84,9 @@ func (m *Module) handleBindKeyfob(r *http.Request, ps httprouter.Params) engine.
 		return engine.Redirect("/keyfob/bind?e=rror", http.StatusSeeOther)
 	}
 
-	tx, err := m.db.BeginTx(r.Context(), nil)
+	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET fob_id = ? WHERE id = ?", fobID, user.ID)
 	if err != nil {
-		return engine.Errorf("starting db txn: %s", err)
-	}
-	defer tx.Rollback()
-
-	var exists bool
-	err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM members WHERE fob_id = ? AND id != ?)", fobID, user.ID).Scan(&exists)
-	if err != nil {
-		return engine.Errorf("checking for existing fob: %s", err)
-	}
-	if exists {
 		return engine.Redirect("/keyfob/bind?e=rror", http.StatusSeeOther)
-	}
-
-	_, err = tx.ExecContext(r.Context(), "UPDATE members SET fob_id = ? WHERE id = ?", fobID, user.ID)
-	if err != nil {
-		return engine.Errorf("binding fob to member: %s", err)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		return engine.Errorf("committing db txn: %s", err)
 	}
 
 	return engine.Redirect("/", http.StatusSeeOther)
