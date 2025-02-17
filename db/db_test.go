@@ -83,7 +83,7 @@ func TestMemberAccessStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("happy path", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id, building_access_approver) VALUES ('1@test.com', 1, 1, 1, 1, 1)")
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('1@test.com', 1, 1, 1, 1)")
 		require.NoError(t, err)
 
 		var actual string
@@ -93,7 +93,7 @@ func TestMemberAccessStatus(t *testing.T) {
 	})
 
 	t.Run("unconfirmed", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO members (email, non_billable, waiver, fob_id, building_access_approver) VALUES ('2@test.com', 1, 1, 2, 1)")
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('2@test.com', 1, 0, 1, 2)")
 		require.NoError(t, err)
 
 		var actual string
@@ -103,7 +103,7 @@ func TestMemberAccessStatus(t *testing.T) {
 	})
 
 	t.Run("missing waiver", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, fob_id, building_access_approver) VALUES ('3@test.com', 1, 1, 3, 1)")
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('3@test.com', 1, 1, NULL, 3)")
 		require.NoError(t, err)
 
 		var actual string
@@ -113,7 +113,7 @@ func TestMemberAccessStatus(t *testing.T) {
 	})
 
 	t.Run("missing fob", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, building_access_approver) VALUES ('4@test.com', 1, 1, 1, 1)")
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('4@test.com', 1, 1, 1, NULL)")
 		require.NoError(t, err)
 
 		var actual string
@@ -122,22 +122,12 @@ func TestMemberAccessStatus(t *testing.T) {
 		assert.Equal(t, "MissingKeyFob", actual)
 	})
 
-	t.Run("missing access approver", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('5@test.com', 1, 1, 1, 4)")
+	t.Run("inactive membership", func(t *testing.T) {
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('5@test.com', 0, 1, 1, 5)")
 		require.NoError(t, err)
 
 		var actual string
 		err = db.QueryRow("SELECT access_status FROM members WHERE email = '5@test.com'").Scan(&actual)
-		require.NoError(t, err)
-		assert.Equal(t, "NotApproved", actual)
-	})
-
-	t.Run("inactive membership", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO members (email, confirmed, waiver, fob_id, building_access_approver) VALUES ('6@test.com', 1, 1, 5, 1)")
-		require.NoError(t, err)
-
-		var actual string
-		err = db.QueryRow("SELECT access_status FROM members WHERE email = '6@test.com'").Scan(&actual)
 		require.NoError(t, err)
 		assert.Equal(t, "PaymentInactive", actual)
 	})
@@ -146,18 +136,14 @@ func TestMemberAccessStatus(t *testing.T) {
 		_, err = db.Exec("INSERT INTO members (email, confirmed) VALUES ('root@family.com', 1)")
 		require.NoError(t, err)
 
-		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id, building_access_approver, root_family_member) VALUES ('7@test.com', 1, 1, 1, 7, 1, (SELECT id FROM members WHERE email = 'root@family.com'))")
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id, root_family_member) VALUES ('6@test.com', 1, 1, 1, 6, (SELECT id FROM members WHERE email = 'root@family.com'))")
 		require.NoError(t, err)
 
 		var actual string
-		err = db.QueryRow("SELECT access_status FROM members WHERE email = '7@test.com'").Scan(&actual)
+		err = db.QueryRow("SELECT access_status FROM members WHERE email = '6@test.com'").Scan(&actual)
 		require.NoError(t, err)
 		assert.Equal(t, "FamilyInactive", actual)
 	})
-
-	assert.Equal(t, []string{
-		`AccessStatusChanged - Building access status changed from "Ready" to "FamilyInactive"`,
-	}, eventsToStrings(t, db))
 }
 
 func TestMemberFamilyDiscountPropagation(t *testing.T) {
@@ -214,21 +200,18 @@ func TestMemberEvents(t *testing.T) {
 	_, err = db.Exec("INSERT INTO members (id, email) VALUES (2, 'foo@bar.com')")
 	require.NoError(t, err)
 
-	_, err = db.Exec("UPDATE members SET name = 'foobar', discount_type = 'anything', leadership = 1, building_access_approver = 9001, confirmed = 1, non_billable = 1 WHERE id = 2")
+	_, err = db.Exec("UPDATE members SET discount_type = 'anything', leadership = 1, confirmed = 1, non_billable = 1 WHERE id = 2")
 	require.NoError(t, err)
 
-	_, err = db.Exec("UPDATE members SET leadership = 0, building_access_approver = NULL, non_billable = 0 WHERE id = 2")
+	_, err = db.Exec("UPDATE members SET leadership = 0, non_billable = 0 WHERE id = 2")
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
 		"NonBillableStatusAdded - The member has been marked as non-billable",
-		`BuildingAccessApproved - Building access was approved by "Legacy Building Access Approver"`,
 		"LeadershipStatusAdded - Designated as leadership",
 		`AccessStatusChanged - Building access status changed from "UnconfirmedEmail" to "MissingWaiver"`,
 		`DiscountTypeModified - Discount changed from "NULL" to "anything"`,
-		`NameModified - Name changed from "" to "foobar"`,
 		"NonBillableStatusRemoved - The member is no longer marked as non-billable",
-		"BuildingAccessRevoked - Building access was revoked",
 		"LeadershipStatusRemoved - No longer designated as leadership",
 	}, eventsToStrings(t, db))
 }

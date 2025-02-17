@@ -122,11 +122,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_idx ON api_tokens (token);
 
 
 /* NOTHING BELOW THIS POINT EXCEPT TRIGGERS THAT PUBLISH MEMBER EVENTS */
-CREATE TRIGGER IF NOT EXISTS members_name_update AFTER UPDATE OF name ON members
-BEGIN
-  INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'NameModified', 'Name changed from "' || OLD.name || '" to "' || NEW.name || '"');
-END;
-
 CREATE TRIGGER IF NOT EXISTS members_discount_type_update AFTER UPDATE OF discount_type ON members
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'DiscountTypeModified', 'Discount changed from "' || COALESCE(OLD.discount_type, 'NULL') || '" to "' || COALESCE(NEW.discount_type, 'NULL') || '"');
