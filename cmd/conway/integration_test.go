@@ -160,7 +160,7 @@ func newTestApp(t *testing.T) *testApp {
 	addr.Close()
 
 	db := db.NewTest(t)
-	a, auth, err := newApp(db, addr.Addr().String(), "", &url.URL{Host: "localhost"}, nil)
+	a, auth, err := newApp(db, Config{HttpAddr: addr.Addr().String()}, &url.URL{Host: "localhost"}, nil)
 	require.NoError(t, err)
 
 	return &testApp{

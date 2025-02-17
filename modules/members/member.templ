@@ -9,8 +9,6 @@ type member struct {
 
 templ renderMember(member *member) {
 	@bootstrap.View() {
-		<style>
-		</style>
 		<div class="container my-5">
 			@renderMembershipStatus(member)
 			<div class="mt-3">

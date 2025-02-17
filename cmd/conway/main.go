@@ -16,6 +16,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/api"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/keyfob"
 	"github.com/TheLab-ms/conway/modules/members"
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
@@ -24,6 +25,11 @@ import (
 )
 
 type Config struct {
+	HttpAddr string `envDefault:":8080"`
+
+	// SpaceHost is a hostname that resolves to the public IP used to egress the makerspace LAN.
+	SpaceHost string `envDefault:"localhost"`
+
 	StripeKey        string
 	StripeWebhookKey string
 
@@ -55,7 +61,7 @@ func main() {
 		panic(err)
 	}
 
-	app, _, err := newApp(db, ":8080", conf.StripeWebhookKey, getSelfURL(), ec)
+	app, _, err := newApp(db, conf, getSelfURL(), ec)
 	if err != nil {
 		panic(err)
 	}
@@ -76,8 +82,8 @@ func getSelfURL() *url.URL {
 	return self
 }
 
-func newApp(db *sql.DB, httpAddr, stripeWebhookKey string, self *url.URL, ec *auth.EmailConfig) (*engine.App, *auth.Module, error) {
-	a := engine.NewApp(httpAddr)
+func newApp(db *sql.DB, conf Config, self *url.URL, ec *auth.EmailConfig) (*engine.App, *auth.Module, error) {
+	a := engine.NewApp(conf.HttpAddr)
 
 	authModule, err := auth.New(db, self, ec)
 	if err != nil {
@@ -93,9 +99,10 @@ func newApp(db *sql.DB, httpAddr, stripeWebhookKey string, self *url.URL, ec *au
 	a.Add(apiModule)
 
 	a.Add(oauth2.New(db, self, authModule))
-	a.Add(payment.New(db, stripeWebhookKey, self))
+	a.Add(payment.New(db, conf.StripeWebhookKey, self))
 	a.Add(admin.New(db))
 	a.Add(members.New(db))
+	a.Add(keyfob.New(db, conf.SpaceHost))
 
 	return a, authModule, nil
 }

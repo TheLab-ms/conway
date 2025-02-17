@@ -1,0 +1,54 @@
+package keyfob
+
+import "github.com/TheLab-ms/conway/modules/bootstrap"
+
+type member struct {
+	ID           int64
+	AccessStatus string
+}
+
+templ renderOffsiteError() {
+	@bootstrap.View() {
+		<div class="container my-5">
+			<div class="alert alert-danger">
+				<h4 class="alert-heading">Uh oh</h4>
+				You need to be at the physical makerspace to assign keyfobs.
+			</div>
+		</div>
+	}
+}
+
+templ renderKeyfob(failed bool) {
+	@bootstrap.View() {
+		<div class="container my-5">
+			if failed {
+				<div class="alert alert-danger">
+					<h4 class="alert-heading">Uh Oh</h4>
+					The key fob you scanned cannot be used, please try another one.
+				</div>
+			} else {
+				<div class="alert alert-primary">
+					<h4 class="alert-heading">Assign Key Fob</h4>
+					Take an unused fob from the drawer and hold it near the reader.
+				</div>
+			}
+			<form id="fobform" method="POST" action="">
+				<input type="hidden" id="fobid" name="fobid" value=""/>
+			</form>
+		</div>
+	}
+	<script>
+		let buffer = ''
+		let timeout
+
+		document.addEventListener('keypress', function(event) {
+			buffer += event.key
+			clearTimeout(timeout)
+			timeout = setTimeout(() => {
+				document.getElementById('fobid').value = buffer
+				document.getElementById('fobform').submit()
+				buffer = ''
+			}, 1000)
+		})
+	</script>
+}
