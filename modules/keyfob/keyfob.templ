@@ -41,14 +41,21 @@ templ renderKeyfob(failed bool) {
 		let buffer = ''
 		let timeout
 
-		document.addEventListener('keypress', function(event) {
+		const flush = () => {
+			document.getElementById('fobid').value = buffer
+			document.getElementById('fobform').submit()
+			buffer = ''
+		}
+
+		document.addEventListener('keypress', event => {
+			if (event.key === 'Enter') {
+				flush()
+				return
+			}
+
 			buffer += event.key
 			clearTimeout(timeout)
-			timeout = setTimeout(() => {
-				document.getElementById('fobid').value = buffer
-				document.getElementById('fobform').submit()
-				buffer = ''
-			}, 250)
+			timeout = setTimeout(flush, 1000)
 		})
 	</script>
 }
