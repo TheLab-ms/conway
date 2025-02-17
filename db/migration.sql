@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS members (
     /* Building Access */
     waiver INTEGER REFERENCES waivers(id) ON DELETE SET NULL,
     fob_id INTEGER,
+    fob_last_seen INTEGER,
     access_status TEXT NOT NULL GENERATED ALWAYS AS ( CASE
             WHEN (confirmed IS NOT 1) THEN "UnconfirmedEmail"
             WHEN (waiver IS NULL) THEN "MissingWaiver"
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS members (
 
 CREATE UNIQUE INDEX IF NOT EXISTS members_email_idx ON members (email);
 CREATE UNIQUE INDEX IF NOT EXISTS members_fob_idx ON members (fob_id);
+CREATE INDEX IF NOT EXISTS members_fob_last_seen_idx ON members (fob_last_seen);
 CREATE INDEX IF NOT EXISTS members_pending_idx ON members (confirmed, created);
 CREATE INDEX IF NOT EXISTS members_root_family_idx ON members (root_family_member);
 
