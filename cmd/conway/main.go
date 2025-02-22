@@ -20,6 +20,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/members"
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
+	"github.com/TheLab-ms/conway/modules/waiver"
 	"github.com/caarlos0/env/v11"
 	"github.com/stripe/stripe-go/v78"
 )
@@ -102,6 +103,7 @@ func newApp(db *sql.DB, conf Config, self *url.URL, ec *auth.EmailConfig) (*engi
 	a.Add(payment.New(db, conf.StripeWebhookKey, self))
 	a.Add(admin.New(db))
 	a.Add(members.New(db))
+	a.Add(waiver.New(db))
 	a.Add(keyfob.New(db, conf.SpaceHost))
 
 	return a, authModule, nil
