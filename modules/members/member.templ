@@ -30,27 +30,28 @@ templ renderMembershipStatus(member *member) {
 		case "MissingWaiver":
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Missing Liability Waiver</h4>
-				You will need to sign our liability waiver before entering the space: <a href="https://waiver.thalab.ms">https://waiver.thalab.ms</a>
+				<p>You will need to sign our liability waiver before entering the space.</p>
+				<a href="/waiver" class="btn btn-success">Sign Waiver</a>
 			</div>
 		case "MissingKeyFob":
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Missing Key Fob</h4>
-				Your account doesn't have a key fob on record. If you're at the space, you can add one using the button below.
+				<p>Your account doesn't have a key fob on record. If you're at the space, you can add one using the button below.</p>
 			</div>
 		case "NotApproved":
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Waiting for Approval</h4>
-				Your account needs to be approved by another member before your key fob will be activated.
+				<p>Your account needs to be approved by another member before your key fob will be activated.</p>
 			</div>
 		case "FamilyInactive":
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Family Member Inactive</h4>
-				Your membership is part of a family discount that is no longer valid due to the "root" member's account becoming inactive.
+				<p>Your membership is part of a family discount that is no longer valid due to the "root" member's account becoming inactive.</p>
 			</div>
 		case "PaymentInactive":
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Pending Dues Payment</h4>
-				Use the button below to set up payment with our secure payment processor.
+				<p>Use the button below to set up payment with our secure payment processor.</p>
 			</div>
 	}
 }

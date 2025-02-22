@@ -98,27 +98,27 @@ func renderMembershipStatus(member *member) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		case "MissingWaiver":
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Missing Liability Waiver</h4>You will need to sign our liability waiver before entering the space: <a href=\"https://waiver.thalab.ms\">https://waiver.thalab.ms</a></div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Missing Liability Waiver</h4><p>You will need to sign our liability waiver before entering the space.</p><a href=\"/waiver\" class=\"btn btn-success\">Sign Waiver</a></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		case "MissingKeyFob":
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Missing Key Fob</h4>Your account doesn't have a key fob on record. If you're at the space, you can add one using the button below.</div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Missing Key Fob</h4><p>Your account doesn't have a key fob on record. If you're at the space, you can add one using the button below.</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		case "NotApproved":
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Waiting for Approval</h4>Your account needs to be approved by another member before your key fob will be activated.</div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Waiting for Approval</h4><p>Your account needs to be approved by another member before your key fob will be activated.</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		case "FamilyInactive":
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Family Member Inactive</h4>Your membership is part of a family discount that is no longer valid due to the \"root\" member's account becoming inactive.</div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Family Member Inactive</h4><p>Your membership is part of a family discount that is no longer valid due to the \"root\" member's account becoming inactive.</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		case "PaymentInactive":
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Pending Dues Payment</h4>Use the button below to set up payment with our secure payment processor.</div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Pending Dues Payment</h4><p>Use the button below to set up payment with our secure payment processor.</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
