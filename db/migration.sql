@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS waivers (
     email TEXT NOT NULL
 ) STRICT;
 
+CREATE INDEX IF NOT EXISTS waivers_email_idx ON waivers (email);
+
 /* Create a placeholder waiver for migrating members from old system(s) */
 INSERT INTO waivers (id, version, name, email) VALUES (1, 0, '', '') ON CONFLICT DO NOTHING;
 
@@ -157,4 +159,9 @@ END;
 CREATE TRIGGER IF NOT EXISTS members_non_billable_removed AFTER UPDATE OF non_billable ON members WHEN NEW.non_billable IS false
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'NonBillableStatusRemoved', 'The member is no longer marked as non-billable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS waiver_signed AFTER INSERT ON waivers
+BEGIN
+INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'WaiverSigned', 'Waiver signed by ' || NEW.name || ' (' || NEW.email || ')');
 END;

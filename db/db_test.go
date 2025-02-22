@@ -206,6 +206,9 @@ func TestMemberEvents(t *testing.T) {
 	_, err = db.Exec("UPDATE members SET leadership = 0, non_billable = 0 WHERE id = 2")
 	require.NoError(t, err)
 
+	_, err = db.Exec("INSERT INTO waivers (name, email, version) VALUES ('foo', 'foo@bar.com', 1)")
+	require.NoError(t, err)
+
 	assert.Equal(t, []string{
 		"NonBillableStatusAdded - The member has been marked as non-billable",
 		"LeadershipStatusAdded - Designated as leadership",
@@ -214,6 +217,7 @@ func TestMemberEvents(t *testing.T) {
 		"EmailConfirmed - Email address confirmed",
 		"NonBillableStatusRemoved - The member is no longer marked as non-billable",
 		"LeadershipStatusRemoved - No longer designated as leadership",
+		"WaiverSigned - Waiver signed by foo (foo@bar.com)",
 	}, eventsToStrings(t, db))
 }
 
