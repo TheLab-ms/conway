@@ -217,8 +217,41 @@ func TestMemberEvents(t *testing.T) {
 		"EmailConfirmed - Email address confirmed",
 		"NonBillableStatusRemoved - The member is no longer marked as non-billable",
 		"LeadershipStatusRemoved - No longer designated as leadership",
-		"WaiverSigned - Waiver signed by foo (foo@bar.com)",
+		"WaiverSigned - Waiver signed",
+		"AccessStatusChanged - Building access status changed from \"MissingWaiver\" to \"PaymentInactive\"",
 	}, eventsToStrings(t, db))
+}
+
+func TestMemberWaiverRelation(t *testing.T) {
+	t.Run("signed after signup", func(t *testing.T) {
+		db := NewTest(t)
+
+		_, err := db.Exec("INSERT INTO members (id, email, confirmed) VALUES (1, 'foo@bar.com', 1)")
+		require.NoError(t, err)
+
+		_, err = db.Exec("INSERT INTO waivers (name, email, version) VALUES ('foo', 'foo@bar.com', 1)")
+		require.NoError(t, err)
+
+		var waiverID int
+		err = db.QueryRow("SELECT waiver FROM members WHERE email = 'foo@bar.com'").Scan(&waiverID)
+		require.NoError(t, err)
+		assert.Equal(t, 2, waiverID)
+	})
+
+	t.Run("signed before signup", func(t *testing.T) {
+		db := NewTest(t)
+
+		_, err := db.Exec("INSERT INTO waivers (name, email, version) VALUES ('foo', 'foo@bar.com', 1)")
+		require.NoError(t, err)
+
+		_, err = db.Exec("INSERT INTO members (id, email, confirmed) VALUES (1, 'foo@bar.com', 1)")
+		require.NoError(t, err)
+
+		var waiverID int
+		err = db.QueryRow("SELECT waiver FROM members WHERE email = 'foo@bar.com'").Scan(&waiverID)
+		require.NoError(t, err)
+		assert.Equal(t, 2, waiverID)
+	})
 }
 
 func eventsToStrings(t *testing.T, db *sql.DB) []string {

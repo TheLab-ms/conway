@@ -85,6 +85,16 @@ BEGIN
   UPDATE members SET root_family_member_active = 0, root_family_member = NULL WHERE root_family_member = OLD.id;
 END;
 
+CREATE TRIGGER IF NOT EXISTS members_accept_signed_waiver AFTER INSERT ON waivers
+BEGIN
+UPDATE members SET waiver = NEW.id WHERE email = NEW.email;
+END;
+
+CREATE TRIGGER IF NOT EXISTS members_resolve_waiver AFTER INSERT ON members
+BEGIN
+UPDATE members SET waiver = (SELECT id FROM waivers WHERE email = NEW.email) WHERE email = NEW.email AND EXISTS (SELECT 1 FROM waivers WHERE email = NEW.email);
+END;
+
 CREATE TABLE IF NOT EXISTS member_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -161,7 +171,7 @@ BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'NonBillableStatusRemoved', 'The member is no longer marked as non-billable');
 END;
 
-CREATE TRIGGER IF NOT EXISTS waiver_signed AFTER INSERT ON waivers
+CREATE TRIGGER IF NOT EXISTS waiver_signed AFTER UPDATE OF waiver ON members WHEN OLD.waiver IS NULL AND NEW.waiver IS NOT NULL
 BEGIN
-INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'WaiverSigned', 'Waiver signed by ' || NEW.name || ' (' || NEW.email || ')');
+INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'WaiverSigned', 'Waiver signed');
 END;
