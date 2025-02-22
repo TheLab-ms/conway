@@ -2,7 +2,7 @@ package waiver
 
 import "github.com/TheLab-ms/conway/modules/bootstrap"
 
-templ renderWaiver(signed bool, name string, email string) {
+templ renderWaiver(signed bool, name string, email string, isMember bool) {
 	@bootstrap.View() {
 		<style>
 		.large-checkbox {
@@ -13,8 +13,13 @@ templ renderWaiver(signed bool, name string, email string) {
 		<div class="container my-5" style="max-width: 800px;">
 			if signed {
 				<div class="alert alert-success" role="alert">
-					Waiver has been submitted successfully.
-					You can print or screenshot this page for your records.
+					<p>
+						Waiver has been submitted successfully.
+						You can print or screenshot this page for your records.
+					</p>
+					if isMember {
+						<a href="/" class="btn btn-outline-success">Return to Your Profile</a>
+					}
 				</div>
 			}
 			<h1>TheLab Liability Waiver</h1>

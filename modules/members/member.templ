@@ -5,6 +5,7 @@ import "github.com/TheLab-ms/conway/modules/bootstrap"
 type member struct {
 	ID           int64
 	AccessStatus string
+	Email        string
 }
 
 templ renderMember(member *member) {
@@ -31,27 +32,27 @@ templ renderMembershipStatus(member *member) {
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Missing Liability Waiver</h4>
 				<p>You will need to sign our liability waiver before entering the space.</p>
-				<a href="/waiver" class="btn btn-success">Sign Waiver</a>
+				<a href={ templ.SafeURL("/waiver?email=" + member.Email) } class="btn btn-success">Sign Waiver</a>
 			</div>
 		case "MissingKeyFob":
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Missing Key Fob</h4>
-				<p>Your account doesn't have a key fob on record. If you're at the space, you can add one using the button below.</p>
+				Your account doesn't have a key fob on record. If you're at the space, you can add one using the button below.
 			</div>
 		case "NotApproved":
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Waiting for Approval</h4>
-				<p>Your account needs to be approved by another member before your key fob will be activated.</p>
+				Your account needs to be approved by another member before your key fob will be activated.
 			</div>
 		case "FamilyInactive":
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Family Member Inactive</h4>
-				<p>Your membership is part of a family discount that is no longer valid due to the "root" member's account becoming inactive.</p>
+				Your membership is part of a family discount that is no longer valid due to the "root" member's account becoming inactive.
 			</div>
 		case "PaymentInactive":
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Pending Dues Payment</h4>
-				<p>Use the button below to set up payment with our secure payment processor.</p>
+				Use the button below to set up payment with our secure payment processor.
 			</div>
 	}
 }
