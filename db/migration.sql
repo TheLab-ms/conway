@@ -2,12 +2,14 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS waivers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version INTEGER NOT NULL,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    content TEXT
+    name TEXT NOT NULL,
+    email TEXT NOT NULL
 ) STRICT;
 
 /* Create a placeholder waiver for migrating members from old system(s) */
-INSERT INTO waivers (id) VALUES (1) ON CONFLICT DO NOTHING;
+INSERT INTO waivers (id, version, name, email) VALUES (1, 0, '', '') ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS members (
     /* Identifiers */
@@ -122,6 +124,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_idx ON api_tokens (token);
 
 
 /* NOTHING BELOW THIS POINT EXCEPT TRIGGERS THAT PUBLISH MEMBER EVENTS */
+CREATE TRIGGER IF NOT EXISTS members_confirmed_email AFTER UPDATE OF confirmed ON members WHEN OLD.confirmed = 0
+BEGIN
+INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'EmailConfirmed', 'Email address confirmed');
+END;
+
 CREATE TRIGGER IF NOT EXISTS members_discount_type_update AFTER UPDATE OF discount_type ON members
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'DiscountTypeModified', 'Discount changed from "' || COALESCE(OLD.discount_type, 'NULL') || '" to "' || COALESCE(NEW.discount_type, 'NULL') || '"');

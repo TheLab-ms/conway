@@ -211,6 +211,7 @@ func TestMemberEvents(t *testing.T) {
 		"LeadershipStatusAdded - Designated as leadership",
 		`AccessStatusChanged - Building access status changed from "UnconfirmedEmail" to "MissingWaiver"`,
 		`DiscountTypeModified - Discount changed from "NULL" to "anything"`,
+		"EmailConfirmed - Email address confirmed",
 		"NonBillableStatusRemoved - The member is no longer marked as non-billable",
 		"LeadershipStatusRemoved - No longer designated as leadership",
 	}, eventsToStrings(t, db))
