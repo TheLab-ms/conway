@@ -30,9 +30,9 @@ CREATE TABLE IF NOT EXISTS members (
     fob_id INTEGER,
     fob_last_seen INTEGER,
     access_status TEXT NOT NULL GENERATED ALWAYS AS ( CASE
-            WHEN (confirmed IS NOT TRUE) THEN "UnconfirmedEmail"
+            WHEN (confirmed IS NOT TRUE AND non_billable IS NOT TRUE) THEN "UnconfirmedEmail"
             WHEN (waiver IS NULL AND non_billable IS NOT TRUE) THEN "MissingWaiver"
-            WHEN (payment_status IS NULL) THEN "PaymentInactive"
+            WHEN (payment_status IS NULL AND non_billable IS NOT TRUE) THEN "PaymentInactive"
             WHEN (fob_id IS NULL OR fob_id = 0) THEN "MissingKeyFob"
             WHEN (root_family_member IS NOT NULL AND root_family_member_active = 0) THEN "FamilyInactive"
         ELSE "Ready" END) VIRTUAL,

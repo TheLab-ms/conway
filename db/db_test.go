@@ -93,13 +93,23 @@ func TestMemberAccessStatus(t *testing.T) {
 	})
 
 	t.Run("unconfirmed", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('2@test.com', 1, 0, 1, 2)")
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('2@test.com', 0, 0, 1, 2)")
 		require.NoError(t, err)
 
 		var actual string
 		err = db.QueryRow("SELECT access_status FROM members WHERE email = '2@test.com'").Scan(&actual)
 		require.NoError(t, err)
 		assert.Equal(t, "UnconfirmedEmail", actual)
+	})
+
+	t.Run("unconfirmed non-billable", func(t *testing.T) {
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('2.5@test.com', 1, 0, 1, 20)")
+		require.NoError(t, err)
+
+		var actual string
+		err = db.QueryRow("SELECT access_status FROM members WHERE email = '2.5@test.com'").Scan(&actual)
+		require.NoError(t, err)
+		assert.Equal(t, "Ready", actual)
 	})
 
 	t.Run("missing waiver", func(t *testing.T) {
