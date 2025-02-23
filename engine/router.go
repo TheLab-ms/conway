@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/a-h/templ"
@@ -54,7 +55,9 @@ func invokeHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params, 
 
 	e, _ := resp.(*httpError)
 	if e == nil {
-		logger.Info("handled http request")
+		if !strings.HasPrefix(r.URL.Path, "/api/glider") { // suppress noisy Glider logs
+			logger.Info("handled http request")
+		}
 	} else {
 		logger.Error("handled http request", "error", e.DetailedMessage, "status", e.StatusCode)
 	}
