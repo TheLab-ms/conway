@@ -322,6 +322,21 @@ func TestActiveFobsLogic(t *testing.T) {
 	assert.Equal(t, 3, gliderRev)
 }
 
+func TestFobSwipes(t *testing.T) {
+	db := NewTest(t)
+
+	_, err := db.Exec("INSERT INTO members (id, email, fob_id) VALUES (1, 'foo@bar.com', 123)")
+	require.NoError(t, err)
+
+	_, err = db.Exec("INSERT INTO fob_swipes (uid, fob_id, timestamp) VALUES ('yeet', 123, 9001)")
+	require.NoError(t, err)
+
+	var lastSwipe int
+	err = db.QueryRow("SELECT fob_last_seen FROM members").Scan(&lastSwipe)
+	require.NoError(t, err)
+	assert.Equal(t, 9001, lastSwipe)
+}
+
 func eventsToStrings(t *testing.T, db *sql.DB) []string {
 	results, err := db.Query("SELECT event, details FROM member_events")
 	require.NoError(t, err)
