@@ -138,8 +138,38 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 
 CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_idx ON api_tokens (token);
 
+CREATE TABLE IF NOT EXISTS glider_state (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    revision INTEGER NOT NULL
+);
 
-/* NOTHING BELOW THIS POINT EXCEPT TRIGGERS THAT PUBLISH MEMBER EVENTS */
+INSERT INTO glider_state (id, revision) VALUES (1, 1) ON CONFLICT DO NOTHING;
+
+CREATE TRIGGER IF NOT EXISTS glider_invalidate_fob_change AFTER UPDATE ON members WHEN NEW.fob_id != OLD.fob_id OR (NEW.access_status != OLD.access_status AND (NEW.access_status = "Ready" OR OLD.access_status = "Ready"))
+BEGIN
+UPDATE glider_state SET revision = revision + 1 WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS glider_invalidate_member_deletion AFTER DELETE ON members WHEN OLD.access_status = "Ready"
+BEGIN
+UPDATE glider_state SET revision = revision + 1 WHERE id = 1;
+END;
+
+CREATE TABLE IF NOT EXISTS fob_swipes (
+    uid TEXT PRIMARY KEY,
+    timestamp INTEGER NOT NULL,
+    fob_id INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS fob_swipes_fob_id_idx ON fob_swipes (fob_id);
+
+CREATE TRIGGER IF NOT EXISTS fob_swipe_to_member AFTER INSERT ON fob_swipes
+BEGIN
+UPDATE members SET fob_last_seen = NEW.timestamp WHERE fob_id = NEW.fob_id;
+END;
+
+
+
 CREATE TRIGGER IF NOT EXISTS members_confirmed_email AFTER UPDATE OF confirmed ON members WHEN OLD.confirmed = 0
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'EmailConfirmed', 'Email address confirmed');
@@ -178,34 +208,4 @@ END;
 CREATE TRIGGER IF NOT EXISTS waiver_signed AFTER UPDATE OF waiver ON members WHEN OLD.waiver IS NULL AND NEW.waiver IS NOT NULL
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'WaiverSigned', 'Waiver signed');
-END;
-
-CREATE TABLE IF NOT EXISTS glider_state (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    revision INTEGER NOT NULL
-);
-
-INSERT INTO glider_state (id, revision) VALUES (1, 1) ON CONFLICT DO NOTHING;
-
-CREATE TRIGGER IF NOT EXISTS glider_invalidate_fob_change AFTER UPDATE ON members WHEN NEW.fob_id != OLD.fob_id OR (NEW.access_status != OLD.access_status AND (NEW.access_status = "Ready" OR OLD.access_status = "Ready"))
-BEGIN
-UPDATE glider_state SET revision = revision + 1 WHERE id = 1;
-END;
-
-CREATE TRIGGER IF NOT EXISTS glider_invalidate_member_deletion AFTER DELETE ON members WHEN OLD.access_status = "Ready"
-BEGIN
-UPDATE glider_state SET revision = revision + 1 WHERE id = 1;
-END;
-
-CREATE TABLE IF NOT EXISTS fob_swipes (
-    uid TEXT PRIMARY KEY,
-    timestamp INTEGER NOT NULL,
-    fob_id INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS fob_swipes_fob_id_idx ON fob_swipes (fob_id);
-
-CREATE TRIGGER IF NOT EXISTS fob_swipe_to_member AFTER INSERT ON fob_swipes
-BEGIN
-UPDATE members SET fob_last_seen = NEW.timestamp WHERE fob_id = NEW.fob_id;
 END;
