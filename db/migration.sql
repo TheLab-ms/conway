@@ -155,6 +155,11 @@ BEGIN
 UPDATE glider_state SET revision = revision + 1 WHERE id = 1;
 END;
 
+CREATE TRIGGER IF NOT EXISTS glider_invalidate_member_insertion AFTER INSERT ON members WHEN NEW.access_status = "Ready" AND NEW.fob_id IS NOT NULL
+BEGIN
+UPDATE glider_state SET revision = revision + 1 WHERE id = 1;
+END;
+
 CREATE TABLE IF NOT EXISTS fob_swipes (
     uid TEXT PRIMARY KEY,
     timestamp INTEGER NOT NULL,
