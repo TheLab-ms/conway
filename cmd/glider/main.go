@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"math/rand"
 	"time"
@@ -25,11 +26,11 @@ func main() {
 	}
 	client := api.NewGliderClient(conf.ConwayURL, conf.ConwayToken, conf.StateDir)
 
-	// Flush buffered events to the server periodically
+	// Loop to asynchronously flush events to Conway
 	go func() {
 		for {
 			jitterSleep(time.Second / 2)
-			err = client.FlushGliderEvents()
+			err = client.FlushEvents()
 			if err != nil {
 				slog.Error("failed to flush events to server", "error", err)
 				continue
@@ -37,25 +38,41 @@ func main() {
 		}
 	}()
 
-	var lastRevision int64
-	for {
-		jitterSleep(time.Second)
-
-		// Get the current expected state from the Conway server
-		state, err := client.GetGliderState(lastRevision)
-		if err != nil {
-			slog.Error("failed to get state from server", "error", err)
-			continue
+	// Loop to asynchronously warm the Conway state cache
+	go func() {
+		for {
+			jitterSleep(time.Second)
+			err = client.WarmCache()
+			if err != nil {
+				slog.Error("failed to warm Conway cache", "error", err)
+				continue
+			}
 		}
-		if state == nil {
-			continue // nothing has changed
-		}
-		slog.Info("got state from server", "revision", state.Revision, "lastRevision", lastRevision)
-		lastRevision = state.Revision
+	}()
 
-		// Sync the access controller
-		// TODO
-	}
+	// Loop to sync the access controller
+	go func() {
+		ticker := time.NewTicker(time.Second * 30)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+			case <-client.StateTransitions:
+			}
+
+			state := client.GetState()
+			if state == nil {
+				slog.Info("refusing to sync access controller because Conway state is unknown")
+				continue
+			}
+
+			slog.Info("syncing access controller", "fobCount", len(state.EnabledFobs))
+			// TODO
+		}
+	}()
+
+	<-context.Background().Done() // run the other goroutines forever
 }
 
 func jitterSleep(dur time.Duration) {

@@ -30,8 +30,12 @@ func TestApiIntegration(t *testing.T) {
 	c := NewGliderClient(svr.URL, token, t.TempDir())
 
 	// Get initial state
-	state, err := c.GetGliderState(0)
-	require.NoError(t, err)
+	state := c.GetState()
+	require.Nil(t, state)
+
+	// Get initial sync'd state
+	require.NoError(t, c.WarmCache())
+	state = c.GetState()
 	require.NotNil(t, state)
 	assert.Equal(t, 0, len(state.EnabledFobs))
 
@@ -48,33 +52,29 @@ func TestApiIntegration(t *testing.T) {
 	require.Equal(t, "Ready", status)
 
 	// One fob should be visible now
-	state, err = c.GetGliderState(state.Revision)
-	require.NoError(t, err)
+	require.NoError(t, c.WarmCache())
+	require.NoError(t, c.WarmCache())
+	state = c.GetState()
 	require.NotNil(t, state)
 	assert.Equal(t, []int64{123}, state.EnabledFobs)
 
-	// Empty response since we have the latest version
-	state, err = c.GetGliderState(state.Revision)
-	require.NoError(t, err)
-	assert.Nil(t, state)
-
 	// Buffer some invalid events
-	c.BufferGliderEvent(&GliderEvent{})
-	c.BufferGliderEvent(&GliderEvent{
+	c.BufferEvent(&GliderEvent{})
+	c.BufferEvent(&GliderEvent{
 		UID:       uuid.NewString(),
 		Timestamp: time.Now().Unix(),
 	})
-	c.BufferGliderEvent(&GliderEvent{
+	c.BufferEvent(&GliderEvent{
 		Timestamp: time.Now().Unix(),
 		FobSwipe:  &FobSwipeEvent{FobID: 1},
 	})
-	c.BufferGliderEvent(&GliderEvent{
+	c.BufferEvent(&GliderEvent{
 		UID:      uuid.NewString(),
 		FobSwipe: &FobSwipeEvent{FobID: 2},
 	})
 
 	// Buffer a couple of valid events to disc
-	c.BufferGliderEvent(&GliderEvent{
+	c.BufferEvent(&GliderEvent{
 		UID:       uuid.NewString(),
 		Timestamp: time.Now().Unix(),
 		FobSwipe:  &FobSwipeEvent{FobID: 101},
@@ -84,12 +84,12 @@ func TestApiIntegration(t *testing.T) {
 		Timestamp: time.Now().Unix(),
 		FobSwipe:  &FobSwipeEvent{FobID: 102},
 	}
-	c.BufferGliderEvent(valid102)
-	c.BufferGliderEvent(valid102)
+	c.BufferEvent(valid102)
+	c.BufferEvent(valid102)
 
 	// Flush out the events and confirm that they were processed correctly
-	require.NoError(t, c.FlushGliderEvents())
-	require.NoError(t, c.FlushGliderEvents())
+	require.NoError(t, c.FlushEvents())
+	require.NoError(t, c.FlushEvents())
 
 	var rows int
 	err = db.QueryRow("SELECT COUNT(*) FROM fob_swipes").Scan(&rows)

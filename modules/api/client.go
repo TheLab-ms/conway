@@ -32,36 +32,88 @@ type FobSwipeEvent struct {
 
 type GliderClient struct {
 	baseURL, token, stateDir string
+	StateTransitions         chan struct{}
 }
 
 func NewGliderClient(baseURL, token, stateDir string) *GliderClient {
 	if err := os.MkdirAll(filepath.Join(stateDir, "events"), 0755); err != nil {
 		panic(err)
 	}
-	return &GliderClient{baseURL, token, stateDir}
+	return &GliderClient{baseURL, token, stateDir, make(chan struct{}, 2)}
 }
 
-func (c *GliderClient) GetGliderState(after int64) (*GliderState, error) {
+func (c *GliderClient) GetState() *GliderState {
+	state := &GliderState{}
+	f, err := os.Open(filepath.Join(c.stateDir, "state.json"))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		slog.Error("unexpected error while reading cached state", "error", err)
+		return nil
+	}
+	defer f.Close()
+
+	err = json.NewDecoder(f).Decode(state)
+	if err != nil {
+		slog.Error("unexpected error while parsing cached state", "error", err)
+		return nil
+	}
+	return state
+}
+
+func (c *GliderClient) WarmCache() error {
+	var after int64
+	state := c.GetState()
+	if state != nil {
+		after = state.Revision
+	}
+
+	// Roundtrip to the server
 	resp, err := c.roundtrip(http.MethodGet, fmt.Sprintf("/api/glider/state?after=%d", after), nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode == http.StatusNoContent {
-		return nil, nil // state hasn't changed since we last saw it
+		return nil // state hasn't changed since we last saw it
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	state := &GliderState{}
-	return state, json.NewDecoder(resp.Body).Decode(state)
+	// Write the response to a temp file
+	tmpPath := filepath.Join(c.stateDir, ".state.json")
+	file, err := os.Create(tmpPath)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		file.Close()
+		return err
+	}
+	file.Close()
+
+	// Swap the temp file into place (atomic)
+	err = os.Rename(tmpPath, filepath.Join(c.stateDir, "state.json"))
+	if err != nil {
+		return err
+	}
+	slog.Info("updated cache from Conway")
+
+	// Signal the state transition if someone is listening
+	select {
+	case c.StateTransitions <- struct{}{}:
+	default:
+	}
+
+	return nil
 }
 
 var eventLock sync.Mutex
 
-func (c *GliderClient) BufferGliderEvent(event *GliderEvent) {
+func (c *GliderClient) BufferEvent(event *GliderEvent) {
 	eventLock.Lock()
 	defer eventLock.Unlock()
 
@@ -82,7 +134,7 @@ func (c *GliderClient) BufferGliderEvent(event *GliderEvent) {
 	time.Sleep(time.Nanosecond) // dirty hack to make sure every timestamp is unique
 }
 
-func (c *GliderClient) FlushGliderEvents() error {
+func (c *GliderClient) FlushEvents() error {
 	filenames := []string{}
 	events := [][]byte{}
 
