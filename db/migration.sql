@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS member_events (
     details TEXT NOT NULL DEFAULT ''
 );
 
+CREATE VIEW active_keyfobs AS SELECT fob_id FROM members WHERE access_status = "Ready";
+
 CREATE TABLE IF NOT EXISTS logins (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -175,3 +177,28 @@ CREATE TRIGGER IF NOT EXISTS waiver_signed AFTER UPDATE OF waiver ON members WHE
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'WaiverSigned', 'Waiver signed');
 END;
+
+CREATE TABLE IF NOT EXISTS glider_state (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    revision INTEGER NOT NULL
+);
+
+INSERT INTO glider_state (id, revision) VALUES (1, 1) ON CONFLICT DO NOTHING;
+
+CREATE TRIGGER IF NOT EXISTS glider_invalidate_fob_change AFTER UPDATE ON members WHEN NEW.fob_id != OLD.fob_id OR (NEW.access_status != OLD.access_status AND (NEW.access_status = "Ready" OR OLD.access_status = "Ready"))
+BEGIN
+UPDATE glider_state SET revision = revision + 1 WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS glider_invalidate_member_deletion AFTER DELETE ON members WHEN OLD.access_status = "Ready"
+BEGIN
+UPDATE glider_state SET revision = revision + 1 WHERE id = 1;
+END;
+
+CREATE TABLE IF NOT EXISTS fob_swipes (
+    uid TEXT PRIMARY KEY,
+    timestamp INTEGER NOT NULL,
+    fob_id INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS fob_swipes_fob_id_idx ON fob_swipes (fob_id);

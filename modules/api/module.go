@@ -2,9 +2,11 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/TheLab-ms/conway/engine"
@@ -33,6 +35,8 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("GET", "/api/members", m.withAuth(m.handleListMembers))
 	router.Handle("PATCH", "/api/members/:id", m.withAuth(m.handlePatchMember))
 	router.Handle("DELETE", "/api/members/:id", m.withAuth(m.handleDeleteMember))
+	router.Handle("GET", "/api/glider/state", m.withAuth(m.handleGetGliderState))
+	router.Handle("POST", "/api/glider/events", m.withAuth(m.handlePostGliderEvents))
 }
 
 func (m *Module) withAuth(next engine.Handler) engine.Handler {
@@ -78,4 +82,94 @@ func (m *Module) handleDeleteMember(r *http.Request, ps httprouter.Params) engin
 		return engine.NotFoundf("member not found")
 	}
 	return engine.Empty()
+}
+
+func (m *Module) handleGetGliderState(r *http.Request, ps httprouter.Params) engine.Response {
+	tx, err := m.db.BeginTx(r.Context(), &sql.TxOptions{Isolation: sql.LevelLinearizable, ReadOnly: true})
+	if err != nil {
+		return engine.Error(err)
+	}
+	defer tx.Rollback()
+
+	var resp GliderState
+	err = tx.QueryRowContext(r.Context(), "SELECT revision FROM glider_state WHERE id = 1").Scan(&resp.Revision)
+	if err != nil {
+		return engine.Error(err)
+	}
+
+	// Bail out if we don't have a newer state than the client
+	if after, err := strconv.ParseInt(r.URL.Query().Get("after"), 10, 0); err == nil && after >= resp.Revision {
+		return engine.Empty()
+	}
+
+	q, err := tx.QueryContext(r.Context(), "SELECT fob_id FROM active_keyfobs")
+	if err != nil {
+		return engine.Error(err)
+	}
+	defer q.Close()
+
+	for q.Next() {
+		var id int64
+		if err := q.Scan(&id); err != nil {
+			return engine.Error(err)
+		}
+		resp.EnabledFobs = append(resp.EnabledFobs, id)
+	}
+
+	return engine.JSON(&resp)
+}
+
+type GliderState struct {
+	Revision    int64   `json:"revision"`
+	EnabledFobs []int64 `json:"enabled_fobs"`
+}
+
+func (m *Module) handlePostGliderEvents(r *http.Request, ps httprouter.Params) engine.Response {
+	events := []*GliderEvent{}
+	dec := json.NewDecoder(r.Body)
+	for {
+		event := &GliderEvent{}
+		err := dec.Decode(event)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return engine.ClientErrorf("invalid request: %s", err)
+		}
+		events = append(events, event)
+	}
+
+	tx, err := m.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		return engine.Error(err)
+	}
+	defer tx.Rollback()
+
+	for _, event := range events {
+		if event.FobSwipe != nil {
+			_, err = tx.ExecContext(r.Context(), "INSERT INTO fob_swipes (uid, timestamp, fob_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", event.UID, event.Timestamp, event.FobSwipe.FobID)
+			if err != nil {
+				return engine.Error(err)
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return engine.Error(err)
+	}
+
+	slog.Info("stored Glider events", "count", len(events))
+	return engine.Empty()
+}
+
+type GliderEvent struct {
+	UID       string `json:"uid"`
+	Timestamp int64  `json:"timestamp"` // UTC unix epoch millis
+
+	// Only one field can be set per event
+	FobSwipe *FobSwipeEvent `json:"fob_swipe"`
+}
+
+type FobSwipeEvent struct {
+	FobID int64 `json:"fob_id"`
 }

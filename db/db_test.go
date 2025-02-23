@@ -254,6 +254,53 @@ func TestMemberWaiverRelation(t *testing.T) {
 	})
 }
 
+func TestActiveFobsLogic(t *testing.T) {
+	db := NewTest(t)
+
+	// Signup
+	_, err := db.Exec("INSERT INTO members (id, email, confirmed, fob_id) VALUES (1, 'foo@bar.com', TRUE, 123)")
+	require.NoError(t, err)
+	assert.Equal(t, []int64{}, activeFobs(t, db))
+
+	// Sign waiver
+	_, err = db.Exec("INSERT INTO waivers (name, email, version) VALUES ('foo', 'foo@bar.com', 1)")
+	require.NoError(t, err)
+	assert.Equal(t, []int64{}, activeFobs(t, db))
+
+	// Glider cache hasn't been invalidated yet
+	var gliderRev int
+	err = db.QueryRow("SELECT revision FROM glider_state").Scan(&gliderRev)
+	require.NoError(t, err)
+	assert.Equal(t, 1, gliderRev)
+
+	// Stripe
+	_, err = db.Exec("UPDATE members SET stripe_subscription_state = 'active' WHERE email = 'foo@bar.com'")
+	require.NoError(t, err)
+	assert.Equal(t, []int64{123}, activeFobs(t, db))
+
+	// Glider cache has been invalidated
+	err = db.QueryRow("SELECT revision FROM glider_state").Scan(&gliderRev)
+	require.NoError(t, err)
+	assert.Equal(t, 2, gliderRev)
+
+	// Updating some other field doesn't invalidate the Glider cache
+	_, err = db.Exec("UPDATE members SET admin_notes = 'v cool dood' WHERE email = 'foo@bar.com'")
+	require.NoError(t, err)
+	assert.Equal(t, []int64{123}, activeFobs(t, db))
+
+	err = db.QueryRow("SELECT revision FROM glider_state").Scan(&gliderRev)
+	require.NoError(t, err)
+	assert.Equal(t, 2, gliderRev)
+
+	// Deleting the member invalidates the cache again
+	_, err = db.Exec("DELETE FROM members")
+	require.NoError(t, err)
+
+	err = db.QueryRow("SELECT revision FROM glider_state").Scan(&gliderRev)
+	require.NoError(t, err)
+	assert.Equal(t, 3, gliderRev)
+}
+
 func eventsToStrings(t *testing.T, db *sql.DB) []string {
 	results, err := db.Query("SELECT event, details FROM member_events")
 	require.NoError(t, err)
@@ -265,6 +312,22 @@ func eventsToStrings(t *testing.T, db *sql.DB) []string {
 		err = results.Scan(&event, &details)
 		require.NoError(t, err)
 		all = append(all, event+" - "+details)
+	}
+	require.NoError(t, results.Err())
+	return all
+}
+
+func activeFobs(t *testing.T, db *sql.DB) []int64 {
+	results, err := db.Query("SELECT fob_id FROM active_keyfobs")
+	require.NoError(t, err)
+	defer results.Close()
+
+	all := []int64{}
+	for results.Next() {
+		var val int64
+		err = results.Scan(&val)
+		require.NoError(t, err)
+		all = append(all, val)
 	}
 	require.NoError(t, results.Err())
 	return all
