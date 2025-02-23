@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS member_events (
     details TEXT NOT NULL DEFAULT ''
 );
 
-CREATE VIEW active_keyfobs AS SELECT fob_id FROM members WHERE access_status = "Ready";
+CREATE VIEW IF NOT EXISTS active_keyfobs AS SELECT fob_id FROM members WHERE access_status = "Ready";
 
 CREATE TABLE IF NOT EXISTS logins (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

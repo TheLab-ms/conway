@@ -44,7 +44,8 @@ func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
 }
 
 func (m *Module) renderAdminView(r *http.Request, ps httprouter.Params) engine.Response {
-	return engine.Component(renderAdmin())
+	// TODO: return engine.Component(renderAdmin())
+	return engine.Redirect("/admin/members", http.StatusSeeOther)
 }
 
 func (m *Module) renderMembersListView(r *http.Request, ps httprouter.Params) engine.Response {
