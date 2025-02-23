@@ -104,6 +104,10 @@ func (c *GliderClient) FlushGliderEvents() error {
 		}
 	}
 
+	if len(files) == 0 {
+		return nil // nothing to do
+	}
+
 	// Write the events to the server
 	resp, err := c.roundtrip(http.MethodPost, "/api/glider/events", bytes.NewReader(bytes.Join(events, []byte("\n"))))
 	if err != nil {
