@@ -119,11 +119,6 @@ func (m *Module) handleGetGliderState(r *http.Request, ps httprouter.Params) eng
 	return engine.JSON(&resp)
 }
 
-type GliderState struct {
-	Revision    int64   `json:"revision"`
-	EnabledFobs []int64 `json:"enabled_fobs"`
-}
-
 func (m *Module) handlePostGliderEvents(r *http.Request, ps httprouter.Params) engine.Response {
 	events := []*GliderEvent{}
 	dec := json.NewDecoder(r.Body)
@@ -160,16 +155,4 @@ func (m *Module) handlePostGliderEvents(r *http.Request, ps httprouter.Params) e
 
 	slog.Info("stored Glider events", "count", len(events))
 	return engine.Empty()
-}
-
-type GliderEvent struct {
-	UID       string `json:"uid"`
-	Timestamp int64  `json:"timestamp"` // UTC unix epoch millis
-
-	// Only one field can be set per event
-	FobSwipe *FobSwipeEvent `json:"fob_swipe"`
-}
-
-type FobSwipeEvent struct {
-	FobID int64 `json:"fob_id"`
 }

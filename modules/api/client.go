@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"bytes"
@@ -11,12 +11,38 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
-	"github.com/TheLab-ms/conway/modules/api"
 )
 
-func getState(conf *Config, after int64) (*api.GliderState, error) {
-	resp, err := roundtripToConway(conf, http.MethodGet, fmt.Sprintf("/api/glider/state?after=%d", after), nil)
+type GliderState struct {
+	Revision    int64   `json:"revision"`
+	EnabledFobs []int64 `json:"enabled_fobs"`
+}
+
+type GliderEvent struct {
+	UID       string `json:"uid"`
+	Timestamp int64  `json:"timestamp"` // UTC unix epoch millis
+
+	// Only one field can be set per event
+	FobSwipe *FobSwipeEvent `json:"fob_swipe"`
+}
+
+type FobSwipeEvent struct {
+	FobID int64 `json:"fob_id"`
+}
+
+type GliderClient struct {
+	baseURL, token, stateDir string
+}
+
+func NewGliderClient(baseURL, token, stateDir string) *GliderClient {
+	if err := os.MkdirAll(filepath.Join(stateDir, "events"), 0755); err != nil {
+		panic(err)
+	}
+	return &GliderClient{baseURL, token, stateDir}
+}
+
+func (c *GliderClient) GetGliderState(after int64) (*GliderState, error) {
+	resp, err := c.roundtrip(http.MethodGet, fmt.Sprintf("/api/glider/state?after=%d", after), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -29,13 +55,13 @@ func getState(conf *Config, after int64) (*api.GliderState, error) {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	state := &api.GliderState{}
+	state := &GliderState{}
 	return state, json.NewDecoder(resp.Body).Decode(state)
 }
 
 var eventLock sync.Mutex
 
-func bufferEvent(conf *Config, event *api.GliderEvent) {
+func (c *GliderClient) BufferGliderEvent(event *GliderEvent) {
 	eventLock.Lock()
 	defer eventLock.Unlock()
 
@@ -44,8 +70,8 @@ func bufferEvent(conf *Config, event *api.GliderEvent) {
 		panic(err)
 	}
 
-	tmp := filepath.Join(conf.StateDir, "events", ".tmp")
-	fp := filepath.Join(conf.StateDir, "events", time.Now().Format(time.RFC3339Nano))
+	tmp := filepath.Join(c.stateDir, "events", ".tmp")
+	fp := filepath.Join(c.stateDir, "events", time.Now().Format(time.RFC3339Nano))
 	if err := os.WriteFile(tmp, js, 0644); err != nil {
 		panic(fmt.Sprintf("buffering event to disk: %s", err))
 	}
@@ -56,17 +82,17 @@ func bufferEvent(conf *Config, event *api.GliderEvent) {
 	time.Sleep(time.Nanosecond) // dirty hack to make sure every timestamp is unique
 }
 
-func flushEvents(conf *Config) error {
+func (c *GliderClient) FlushGliderEvents() error {
 	filenames := []string{}
 	events := [][]byte{}
 
 	// Read the buffered events from disk (if any)
-	files, err := os.ReadDir(filepath.Join(conf.StateDir, "events"))
+	files, err := os.ReadDir(filepath.Join(c.stateDir, "events"))
 	if err != nil {
 		return err
 	}
 	for _, file := range files {
-		fullPath := filepath.Join(conf.StateDir, "events", file.Name())
+		fullPath := filepath.Join(c.stateDir, "events", file.Name())
 		js, err := os.ReadFile(fullPath)
 		if err != nil {
 			return err
@@ -79,7 +105,7 @@ func flushEvents(conf *Config) error {
 	}
 
 	// Write the events to the server
-	resp, err := roundtripToConway(conf, http.MethodPost, "/api/glider/events", bytes.NewReader(bytes.Join(events, []byte("\n"))))
+	resp, err := c.roundtrip(http.MethodPost, "/api/glider/events", bytes.NewReader(bytes.Join(events, []byte("\n"))))
 	if err != nil {
 		return err
 	}
@@ -102,13 +128,13 @@ func flushEvents(conf *Config) error {
 
 var client = &http.Client{Timeout: 5 * time.Second}
 
-func roundtripToConway(conf *Config, method, path string, body io.Reader) (*http.Response, error) {
-	uri := fmt.Sprintf("%s/%s", conf.ConwayURL, path)
+func (c *GliderClient) roundtrip(method, path string, body io.Reader) (*http.Response, error) {
+	uri := fmt.Sprintf("%s/%s", c.baseURL, path)
 	req, err := http.NewRequest(method, uri, body)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+conf.ConwayToken)
+	req.Header.Set("Authorization", "Bearer "+c.token)
 
 	return client.Do(req)
 }

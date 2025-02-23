@@ -6,10 +6,9 @@ package main
 import (
 	"log/slog"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"time"
 
+	"github.com/TheLab-ms/conway/modules/api"
 	"github.com/caarlos0/env/v11"
 )
 
@@ -24,17 +23,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	err = os.MkdirAll(filepath.Join(conf.StateDir, "events"), 0755)
-	if err != nil {
-		panic(err)
-	}
+	client := api.NewGliderClient(conf.ConwayURL, conf.ConwayToken, conf.StateDir)
 
 	// Flush buffered events to the server periodically
 	go func() {
 		for {
 			jitterSleep(time.Second / 2)
-			err = flushEvents(&conf)
+			err = client.FlushGliderEvents()
 			if err != nil {
 				slog.Error("failed to flush events to server", "error", err)
 				continue
@@ -47,7 +42,7 @@ func main() {
 		jitterSleep(time.Second)
 
 		// Get the current expected state from the Conway server
-		state, err := getState(&conf, lastRevision)
+		state, err := client.GetGliderState(lastRevision)
 		if err != nil {
 			slog.Error("failed to get state from server", "error", err)
 			continue
