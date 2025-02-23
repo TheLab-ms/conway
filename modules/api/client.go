@@ -20,7 +20,7 @@ type GliderState struct {
 
 type GliderEvent struct {
 	UID       string `json:"uid"`
-	Timestamp int64  `json:"timestamp"` // UTC unix epoch millis
+	Timestamp int64  `json:"timestamp"` // UTC unix epoch seconds
 
 	// Only one field can be set per event
 	FobSwipe *FobSwipeEvent `json:"fob_swipe"`
@@ -144,6 +144,9 @@ func (c *GliderClient) FlushEvents() error {
 		return err
 	}
 	for _, file := range files {
+		if file.Name() == ".tmp" {
+			continue
+		}
 		fullPath := filepath.Join(c.stateDir, "events", file.Name())
 		js, err := os.ReadFile(fullPath)
 		if err != nil {
