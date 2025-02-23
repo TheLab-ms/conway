@@ -3,7 +3,6 @@ package gac
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -41,11 +40,11 @@ type Client struct {
 	conn net.Conn
 }
 
-func (c *Client) AddCard(ctx context.Context, num int, name string) error {
+func (c *Client) AddCard(num int, name string) error {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
-	if err := c.login(ctx); err != nil {
+	if err := c.login(); err != nil {
 		return fmt.Errorf("logging in: %w", err)
 	}
 
@@ -78,27 +77,27 @@ func (c *Client) AddCard(ctx context.Context, num int, name string) error {
 	}
 }
 
-func (c *Client) RemoveCard(ctx context.Context, id int) error {
+func (c *Client) RemoveCard(id int) error {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
-	if err := c.login(ctx); err != nil {
+	if err := c.login(); err != nil {
 		return fmt.Errorf("logging in: %w", err)
 	}
-	if err := c.reset(ctx); err != nil {
+	if err := c.reset(); err != nil {
 		return fmt.Errorf("resetting: %w", err)
 	}
-	if err := c.startRemoving(ctx, id); err != nil {
+	if err := c.startRemoving(id); err != nil {
 		return fmt.Errorf("starting removal: %w", err)
 	}
-	if err := c.confirmRemoving(ctx, id); err != nil {
+	if err := c.confirmRemoving(id); err != nil {
 		return fmt.Errorf("confirming removal: %w", err)
 	}
 
 	return nil
 }
 
-func (c *Client) startRemoving(ctx context.Context, id int) error {
+func (c *Client) startRemoving(id int) error {
 	q := fmt.Sprintf("D%d=Delete", id-1)
 	req, err := http.NewRequest("POST", "http://"+c.Addr+"/ACT_ID_324", strings.NewReader(q))
 	if err != nil {
@@ -123,7 +122,7 @@ func (c *Client) startRemoving(ctx context.Context, id int) error {
 	return nil
 }
 
-func (c *Client) confirmRemoving(ctx context.Context, id int) error {
+func (c *Client) confirmRemoving(id int) error {
 	q := fmt.Sprintf("X%d=OK", id-1)
 	req, err := http.NewRequest("POST", "http://"+c.Addr+"/ACT_ID_324", strings.NewReader(q))
 	if err != nil {
@@ -148,21 +147,21 @@ func (c *Client) confirmRemoving(ctx context.Context, id int) error {
 	return nil
 }
 
-func (c *Client) ListCards(ctx context.Context) ([]*Card, error) {
+func (c *Client) ListCards() ([]*Card, error) {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
-	if err := c.login(ctx); err != nil {
+	if err := c.login(); err != nil {
 		return nil, fmt.Errorf("logging in: %w", err)
 	}
-	if err := c.reset(ctx); err != nil {
+	if err := c.reset(); err != nil {
 		return nil, fmt.Errorf("resetting: %w", err)
 	}
 
 	startID := -19
 	all := []*Card{}
 	for {
-		cards, err := c.listCardPage(ctx, startID)
+		cards, err := c.listCardPage(startID)
 		if err != nil {
 			return nil, err
 		}
@@ -174,7 +173,7 @@ func (c *Client) ListCards(ctx context.Context) ([]*Card, error) {
 	}
 }
 
-func (c *Client) listCardPage(ctx context.Context, startID int) ([]*Card, error) {
+func (c *Client) listCardPage(startID int) ([]*Card, error) {
 	form := url.Values{}
 
 	if startID == -19 {
@@ -203,14 +202,14 @@ func (c *Client) listCardPage(ctx context.Context, startID int) ([]*Card, error)
 
 // ListSwipes lists all card swipes going back to a particular swipe ID.
 // To travel all the way back to the beginning of the log, set earliestID to -1.
-func (c *Client) ListSwipes(ctx context.Context, earliestID int, fn func(*CardSwipe) error) error {
+func (c *Client) ListSwipes(earliestID int, fn func(*CardSwipe) error) error {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
 	i := 0
 	latestID := -1
 	for {
-		page, err := c.listSwipePage(ctx, latestID)
+		page, err := c.listSwipePage(latestID)
 		if err != nil {
 			return err
 		}
@@ -230,7 +229,7 @@ func (c *Client) ListSwipes(ctx context.Context, earliestID int, fn func(*CardSw
 	}
 }
 
-func (c *Client) listSwipePage(ctx context.Context, earliestID int) ([]*CardSwipe, error) {
+func (c *Client) listSwipePage(earliestID int) ([]*CardSwipe, error) {
 	req, err := c.newListSwipePageRequest(earliestID)
 	if err != nil {
 		return nil, err
@@ -259,7 +258,7 @@ func (c *Client) newListSwipePageRequest(latestID int) (*http.Request, error) {
 	return http.NewRequest("POST", "http://"+c.Addr+"/ACT_ID_345", strings.NewReader(form.Encode()))
 }
 
-func (c *Client) login(ctx context.Context) error {
+func (c *Client) login() error {
 	// this controller is so insecure I have no concern about committing its "password" here.
 	// most endpoints don't even require it, those that do are open for a window of time after password is sent - no cookie/token/etc needed.
 	q := "username=abc&pwd=654321&logId=20101222"
@@ -287,7 +286,7 @@ func (c *Client) login(ctx context.Context) error {
 	return errors.New("unknown error")
 }
 
-func (c *Client) reset(ctx context.Context) error {
+func (c *Client) reset() error {
 	req, err := http.NewRequest("POST", "http://"+c.Addr+"/ACT_ID_21", strings.NewReader("s2=Users"))
 	if err != nil {
 		return err
