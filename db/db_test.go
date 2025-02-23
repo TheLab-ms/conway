@@ -103,7 +103,7 @@ func TestMemberAccessStatus(t *testing.T) {
 	})
 
 	t.Run("missing waiver", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('3@test.com', 1, 1, NULL, 3)")
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('3@test.com', 0, 1, NULL, 3)")
 		require.NoError(t, err)
 
 		var actual string
@@ -112,22 +112,32 @@ func TestMemberAccessStatus(t *testing.T) {
 		assert.Equal(t, "MissingWaiver", actual)
 	})
 
-	t.Run("missing fob", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('4@test.com', 1, 1, 1, NULL)")
+	t.Run("missing waiver non-billable", func(t *testing.T) {
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('4@test.com', TRUE, 1, NULL, 4)")
 		require.NoError(t, err)
 
 		var actual string
 		err = db.QueryRow("SELECT access_status FROM members WHERE email = '4@test.com'").Scan(&actual)
 		require.NoError(t, err)
-		assert.Equal(t, "MissingKeyFob", actual)
+		assert.Equal(t, "Ready", actual)
 	})
 
-	t.Run("inactive membership", func(t *testing.T) {
-		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('5@test.com', 0, 1, 1, 5)")
+	t.Run("missing fob", func(t *testing.T) {
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('5@test.com', 1, 1, 1, NULL)")
 		require.NoError(t, err)
 
 		var actual string
 		err = db.QueryRow("SELECT access_status FROM members WHERE email = '5@test.com'").Scan(&actual)
+		require.NoError(t, err)
+		assert.Equal(t, "MissingKeyFob", actual)
+	})
+
+	t.Run("inactive membership", func(t *testing.T) {
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id) VALUES ('6@test.com', 0, 1, 1, 5)")
+		require.NoError(t, err)
+
+		var actual string
+		err = db.QueryRow("SELECT access_status FROM members WHERE email = '6@test.com'").Scan(&actual)
 		require.NoError(t, err)
 		assert.Equal(t, "PaymentInactive", actual)
 	})
@@ -136,11 +146,11 @@ func TestMemberAccessStatus(t *testing.T) {
 		_, err = db.Exec("INSERT INTO members (email, confirmed) VALUES ('root@family.com', 1)")
 		require.NoError(t, err)
 
-		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id, root_family_member) VALUES ('6@test.com', 1, 1, 1, 6, (SELECT id FROM members WHERE email = 'root@family.com'))")
+		_, err := db.Exec("INSERT INTO members (email, non_billable, confirmed, waiver, fob_id, root_family_member) VALUES ('7@test.com', 1, 1, 1, 6, (SELECT id FROM members WHERE email = 'root@family.com'))")
 		require.NoError(t, err)
 
 		var actual string
-		err = db.QueryRow("SELECT access_status FROM members WHERE email = '6@test.com'").Scan(&actual)
+		err = db.QueryRow("SELECT access_status FROM members WHERE email = '7@test.com'").Scan(&actual)
 		require.NoError(t, err)
 		assert.Equal(t, "FamilyInactive", actual)
 	})
@@ -212,11 +222,12 @@ func TestMemberEvents(t *testing.T) {
 	assert.Equal(t, []string{
 		"NonBillableStatusAdded - The member has been marked as non-billable",
 		"LeadershipStatusAdded - Designated as leadership",
-		`AccessStatusChanged - Building access status changed from "UnconfirmedEmail" to "MissingWaiver"`,
+		"AccessStatusChanged - Building access status changed from \"UnconfirmedEmail\" to \"MissingKeyFob\"",
 		`DiscountTypeModified - Discount changed from "NULL" to "anything"`,
 		"EmailConfirmed - Email address confirmed",
 		"NonBillableStatusRemoved - The member is no longer marked as non-billable",
 		"LeadershipStatusRemoved - No longer designated as leadership",
+		"AccessStatusChanged - Building access status changed from \"MissingKeyFob\" to \"MissingWaiver\"",
 		"WaiverSigned - Waiver signed",
 		"AccessStatusChanged - Building access status changed from \"MissingWaiver\" to \"PaymentInactive\"",
 	}, eventsToStrings(t, db))
