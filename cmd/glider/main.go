@@ -50,7 +50,7 @@ func main() {
 		}
 	}()
 
-	// Loop to sync the access controller
+	// Loop to sync the access controller configurations
 	go func() {
 		ticker := time.NewTicker(time.Second * 30)
 		defer ticker.Stop()
