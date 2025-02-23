@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS members (
     stripe_customer_id TEXT,
     stripe_subscription_id TEXT,
     stripe_subscription_state TEXT,
+    stripe_paid_through INTEGER,
 
     /* Paypal */
     paypal_subscription_id TEXT,

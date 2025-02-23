@@ -148,9 +148,14 @@ func (m *Module) updateMemberBasics(r *http.Request, ps httprouter.Params) engin
 	id := ps.ByName("id")
 	name := r.FormValue("name")
 	email := r.FormValue("email")
-	fobID, _ := strconv.ParseInt(r.FormValue("fob_id"), 10, 64)
 	adminNotes := r.FormValue("admin_notes")
 	billAnnually := r.FormValue("bill_annually") == "on"
+
+	fobIDInt, _ := strconv.ParseInt(r.FormValue("fob_id"), 10, 64)
+	var fobID *int64
+	if fobIDInt > 0 {
+		fobID = &fobIDInt
+	}
 
 	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET name = $1, email = $2,  fob_id = $3, admin_notes = $4, bill_annually = $5 WHERE id = $6", name, email, fobID, adminNotes, billAnnually, id)
 	if err != nil {
