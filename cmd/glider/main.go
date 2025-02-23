@@ -150,8 +150,12 @@ func syncAccessControllerConfig(state *api.GliderState, client *gac.Client) erro
 			continue // still active
 		}
 
-		slog.Info("removing fob from access controller", "fob", card.Number)
-		// TODO
+		err := client.RemoveCard(card.ID)
+		if err == nil {
+			slog.Info("removed fob from access controller", "fob", card.Number)
+		} else {
+			slog.Error("error while removing card from access controller", "error", err)
+		}
 	}
 
 	// Forward reconciliation
@@ -160,8 +164,12 @@ func syncAccessControllerConfig(state *api.GliderState, client *gac.Client) erro
 			continue // already active
 		}
 
-		slog.Info("adding fob to access controller", "fob", fob)
-		// TODO
+		err := client.AddCard(int(fob), fmt.Sprintf("conway%d", fob))
+		if err == nil {
+			slog.Info("added fob to access controller", "fob", fob)
+		} else {
+			slog.Error("error while adding card to access controller", "error", err)
+		}
 	}
 
 	return nil
