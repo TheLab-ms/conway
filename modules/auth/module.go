@@ -88,7 +88,6 @@ read:
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	mgr.Add(engine.Poll(time.Minute, m.cleanupLogins))
 	mgr.Add(engine.Poll(time.Second, m.processLoginEmail))
-	mgr.Add(engine.Poll(time.Minute, m.pruneSpamMembers))
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -228,16 +227,6 @@ func (m *Module) cleanupLogins(ctx context.Context) bool {
 	_, err := m.db.ExecContext(ctx, "DELETE FROM logins WHERE created <= strftime('%s', 'now') - 300 OR send_email_at <= strftime('%s', 'now') - 300;")
 	if err != nil {
 		slog.Error("unable to clean up logins", "error", err)
-		return false
-	}
-	return false
-}
-
-// TODO: Emit events for pruned items
-func (m *Module) pruneSpamMembers(ctx context.Context) bool {
-	_, err := m.db.ExecContext(ctx, "DELETE FROM members WHERE created <= strftime('%s', 'now') - 86400 AND confirmed = 0;")
-	if err != nil {
-		slog.Error("unable to clean up spam members", "error", err)
 		return false
 	}
 	return false
