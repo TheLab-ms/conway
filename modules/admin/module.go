@@ -125,11 +125,11 @@ func membersListToRows(results *sql.Rows) []*tableRow {
 func (m *Module) renderSingleMemberView(r *http.Request, ps httprouter.Params) engine.Response {
 	mem := member{}
 	err := m.db.QueryRowContext(r.Context(), `
-		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, m.fob_id, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, rfm.email
+		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, m.fob_id, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, rfm.email, m.bill_annually
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, ps.ByName("id")).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually)
 	if err != nil {
 		return engine.Errorf("querying the database: %s", err)
 	}
@@ -150,8 +150,9 @@ func (m *Module) updateMemberBasics(r *http.Request, ps httprouter.Params) engin
 	email := r.FormValue("email")
 	fobID, _ := strconv.ParseInt(r.FormValue("fob_id"), 10, 64)
 	adminNotes := r.FormValue("admin_notes")
+	billAnnually := r.FormValue("bill_annually") == "on"
 
-	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET name = $1, email = $2,  fob_id = $3, admin_notes = $4 WHERE id = $5", name, email, fobID, adminNotes, id)
+	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET name = $1, email = $2,  fob_id = $3, admin_notes = $4, bill_annually = $5 WHERE id = $6", name, email, fobID, adminNotes, billAnnually, id)
 	if err != nil {
 		return engine.Errorf("updating member: %s", err)
 	}

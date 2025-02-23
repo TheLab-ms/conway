@@ -3,6 +3,7 @@ package payment
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -97,15 +98,16 @@ func (m *Module) handleCheckoutForm(r *http.Request, ps httprouter.Params) engin
 	var discountType *string
 	var existingCustomerID *string
 	var existingSubID *string
-	err := m.db.QueryRowContext(r.Context(), "SELECT email, discount_type, stripe_customer_id, stripe_subscription_id FROM members WHERE id = ?", auth.GetUserMeta(r.Context()).ID).Scan(&email, &discountType, &existingCustomerID, &existingSubID)
+	var annual bool
+	err := m.db.QueryRowContext(r.Context(), "SELECT email, discount_type, stripe_customer_id, stripe_subscription_id, bill_annually FROM members WHERE id = ?", auth.GetUserMeta(r.Context()).ID).Scan(&email, &discountType, &existingCustomerID, &existingSubID, &annual)
 	if err != nil {
 		return engine.Errorf("querying db for member: %s", err)
 	}
 
-	return m.initiateCheckout(r, email, discountType, existingSubID, existingCustomerID)
+	return m.initiateCheckout(r, email, discountType, existingSubID, existingCustomerID, annual)
 }
 
-func (m *Module) initiateCheckout(r *http.Request, email string, discountType, subID, custID *string) engine.Response {
+func (m *Module) initiateCheckout(r *http.Request, email string, discountType, subID, custID *string, annual bool) engine.Response {
 	// Allow existing subscriptions to be modified
 	if subID != nil {
 		sessionParams := &stripe.BillingPortalSessionParams{
@@ -132,11 +134,15 @@ func (m *Module) initiateCheckout(r *http.Request, email string, discountType, s
 	checkoutParams.Context = r.Context()
 
 	// Set the requested payment frequency
+	freq := "monthly"
+	if annual {
+		freq = "yearly"
+	}
 	pricesIter := price.Search(&stripe.PriceSearchParams{
 		SearchParams: stripe.SearchParams{
 			Context: r.Context(),
 			Limit:   stripe.Int64(1),
-			Query:   "active:'true' AND lookup_key:'monthly'",
+			Query:   fmt.Sprintf("active:'true' AND lookup_key:'%s'", freq),
 		},
 	})
 	if !pricesIter.Next() {
