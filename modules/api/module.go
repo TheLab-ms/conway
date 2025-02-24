@@ -32,9 +32,6 @@ func New(db *sql.DB) (*Module, error) {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("GET", "/api/members", m.withAuth(m.handleListMembers))
-	router.Handle("PATCH", "/api/members/:id", m.withAuth(m.handlePatchMember))
-	router.Handle("DELETE", "/api/members/:id", m.withAuth(m.handleDeleteMember))
 	router.Handle("GET", "/api/glider/state", m.withAuth(m.handleGetGliderState))
 	router.Handle("POST", "/api/glider/events", m.withAuth(m.handlePostGliderEvents))
 }
@@ -49,39 +46,6 @@ func (m *Module) withAuth(next engine.Handler) engine.Handler {
 		}
 		return next(r, ps)
 	}
-}
-
-func (m *Module) handleListMembers(r *http.Request, ps httprouter.Params) engine.Response {
-	val, err := queryToJSON(m.db, "SELECT * FROM members")
-	if err != nil {
-		return engine.Error(err)
-	}
-	return engine.JSON(val)
-}
-
-func (m *Module) handlePatchMember(r *http.Request, ps httprouter.Params) engine.Response {
-	raw, err := io.ReadAll(r.Body)
-	if err != nil {
-		return engine.ClientErrorf("reading request body: %s", err)
-	}
-
-	err = jsonToTable(m.db, "members", "email", ps.ByName("id"), raw)
-	if err != nil {
-		return engine.Error(err)
-	}
-
-	return engine.Empty()
-}
-
-func (m *Module) handleDeleteMember(r *http.Request, ps httprouter.Params) engine.Response {
-	result, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE email = $1", ps.ByName("id"))
-	if err != nil {
-		return engine.Error(err)
-	}
-	if n, _ := result.RowsAffected(); n == 0 {
-		return engine.NotFoundf("member not found")
-	}
-	return engine.Empty()
 }
 
 func (m *Module) handleGetGliderState(r *http.Request, ps httprouter.Params) engine.Response {
