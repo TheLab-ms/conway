@@ -97,6 +97,11 @@ BEGIN
 UPDATE members SET waiver = (SELECT id FROM waivers WHERE email = NEW.email) WHERE email = NEW.email AND EXISTS (SELECT 1 FROM waivers WHERE email = NEW.email);
 END;
 
+CREATE TRIGGER IF NOT EXISTS no_discount_after_cancelation AFTER UPDATE ON members WHEN OLD.payment_status IS NOT NULL AND NEW.payment_status IS NULL
+BEGIN
+UPDATE members SET discount_type = NULL WHERE id = NEW.id;
+END;
+
 CREATE TABLE IF NOT EXISTS member_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),

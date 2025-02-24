@@ -238,6 +238,7 @@ func TestMemberEvents(t *testing.T) {
 		"NonBillableStatusRemoved - The member is no longer marked as non-billable",
 		"LeadershipStatusRemoved - No longer designated as leadership",
 		"AccessStatusChanged - Building access status changed from \"MissingKeyFob\" to \"MissingWaiver\"",
+		"DiscountTypeModified - Discount changed from \"anything\" to \"NULL\"",
 		"WaiverSigned - Waiver signed",
 		"AccessStatusChanged - Building access status changed from \"MissingWaiver\" to \"PaymentInactive\"",
 	}, eventsToStrings(t, db))
@@ -335,6 +336,30 @@ func TestFobSwipes(t *testing.T) {
 	err = db.QueryRow("SELECT fob_last_seen FROM members").Scan(&lastSwipe)
 	require.NoError(t, err)
 	assert.Equal(t, 9001, lastSwipe)
+}
+
+func TestDiscountCancelation(t *testing.T) {
+	db := NewTest(t)
+
+	_, err := db.Exec("INSERT INTO members (id, email, confirmed, discount_type, stripe_subscription_state) VALUES (1, 'foo@bar.com', TRUE, 'anything', 'active')")
+	require.NoError(t, err)
+
+	// Unrelated write to prove that the discount wasn't incorrectly removed
+	_, err = db.Exec("UPDATE members SET fob_id = 123")
+	require.NoError(t, err)
+
+	var discount *string
+	err = db.QueryRow("SELECT discount_type FROM members").Scan(&discount)
+	require.NoError(t, err)
+	assert.Equal(t, "anything", *discount)
+
+	// Cancel, prove that discount was removed
+	_, err = db.Exec("UPDATE members SET stripe_subscription_state = NULL")
+	require.NoError(t, err)
+
+	err = db.QueryRow("SELECT discount_type FROM members").Scan(&discount)
+	require.NoError(t, err)
+	assert.Nil(t, discount)
 }
 
 func eventsToStrings(t *testing.T, db *sql.DB) []string {
