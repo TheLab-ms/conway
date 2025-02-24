@@ -1,3 +1,4 @@
+// Peering implements a simple HTTP protocol used to communicate between Conway and Glider.
 package peering
 
 import (
