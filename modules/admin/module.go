@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
@@ -180,8 +181,13 @@ func (m *Module) updateMemberDesignations(r *http.Request, ps httprouter.Params)
 
 func (m *Module) updateMemberDiscounts(r *http.Request, ps httprouter.Params) engine.Response {
 	id := ps.ByName("id")
-	discountType := r.FormValue("discount")
 	rootEmail := r.FormValue("family_email")
+	discountTypeStr := r.FormValue("discount")
+
+	var discountType *string
+	if discountTypeStr != "" && !strings.EqualFold(discountTypeStr, "none") {
+		discountType = &discountTypeStr
+	}
 
 	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET discount_type = $1, root_family_member = (SELECT id FROM members WHERE email = $2 AND root_family_member IS NULL) WHERE id = $3", discountType, rootEmail, id)
 	if err != nil {
