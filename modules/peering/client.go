@@ -13,12 +13,12 @@ import (
 	"time"
 )
 
-type GliderState struct {
+type State struct {
 	Revision    int64   `json:"revision"`
 	EnabledFobs []int64 `json:"enabled_fobs"`
 }
 
-type GliderEvent struct {
+type Event struct {
 	UID       string `json:"uid"`
 	Timestamp int64  `json:"timestamp"` // UTC unix epoch seconds
 
@@ -30,20 +30,20 @@ type FobSwipeEvent struct {
 	FobID int64 `json:"fob_id"`
 }
 
-type GliderClient struct {
+type Client struct {
 	baseURL, token, stateDir string
 	StateTransitions         chan struct{}
 }
 
-func NewGliderClient(baseURL, token, stateDir string) *GliderClient {
+func NewClient(baseURL, token, stateDir string) *Client {
 	if err := os.MkdirAll(filepath.Join(stateDir, "events"), 0755); err != nil {
 		panic(err)
 	}
-	return &GliderClient{baseURL, token, stateDir, make(chan struct{}, 2)}
+	return &Client{baseURL, token, stateDir, make(chan struct{}, 2)}
 }
 
-func (c *GliderClient) GetState() *GliderState {
-	state := &GliderState{}
+func (c *Client) GetState() *State {
+	state := &State{}
 	f, err := os.Open(filepath.Join(c.stateDir, "state.json"))
 	if os.IsNotExist(err) {
 		return nil
@@ -62,7 +62,7 @@ func (c *GliderClient) GetState() *GliderState {
 	return state
 }
 
-func (c *GliderClient) WarmCache() error {
+func (c *Client) WarmCache() error {
 	var after int64
 	state := c.GetState()
 	if state != nil {
@@ -113,7 +113,7 @@ func (c *GliderClient) WarmCache() error {
 
 var eventLock sync.Mutex
 
-func (c *GliderClient) BufferEvent(event *GliderEvent) {
+func (c *Client) BufferEvent(event *Event) {
 	eventLock.Lock()
 	defer eventLock.Unlock()
 
@@ -134,7 +134,7 @@ func (c *GliderClient) BufferEvent(event *GliderEvent) {
 	time.Sleep(time.Nanosecond) // dirty hack to make sure every timestamp is unique
 }
 
-func (c *GliderClient) FlushEvents() error {
+func (c *Client) FlushEvents() error {
 	filenames := []string{}
 	events := [][]byte{}
 
@@ -187,7 +187,7 @@ func (c *GliderClient) FlushEvents() error {
 
 var client = &http.Client{Timeout: 5 * time.Second}
 
-func (c *GliderClient) roundtrip(method, path string, body io.Reader) (*http.Response, error) {
+func (c *Client) roundtrip(method, path string, body io.Reader) (*http.Response, error) {
 	uri := fmt.Sprintf("%s/%s", c.baseURL, path)
 	req, err := http.NewRequest(method, uri, body)
 	if err != nil {

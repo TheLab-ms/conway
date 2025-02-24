@@ -27,7 +27,7 @@ func TestApiIntegration(t *testing.T) {
 	err = db.QueryRow("SELECT token FROM api_tokens").Scan(&token)
 	require.NoError(t, err)
 
-	c := NewGliderClient(svr.URL, token, t.TempDir())
+	c := NewClient(svr.URL, token, t.TempDir())
 
 	// Get initial state
 	state := c.GetState()
@@ -59,27 +59,27 @@ func TestApiIntegration(t *testing.T) {
 	assert.Equal(t, []int64{123}, state.EnabledFobs)
 
 	// Buffer some invalid events
-	c.BufferEvent(&GliderEvent{})
-	c.BufferEvent(&GliderEvent{
+	c.BufferEvent(&Event{})
+	c.BufferEvent(&Event{
 		UID:       uuid.NewString(),
 		Timestamp: time.Now().Unix(),
 	})
-	c.BufferEvent(&GliderEvent{
+	c.BufferEvent(&Event{
 		Timestamp: time.Now().Unix(),
 		FobSwipe:  &FobSwipeEvent{FobID: 1},
 	})
-	c.BufferEvent(&GliderEvent{
+	c.BufferEvent(&Event{
 		UID:      uuid.NewString(),
 		FobSwipe: &FobSwipeEvent{FobID: 2},
 	})
 
 	// Buffer a couple of valid events to disc
-	c.BufferEvent(&GliderEvent{
+	c.BufferEvent(&Event{
 		UID:       uuid.NewString(),
 		Timestamp: time.Now().Unix(),
 		FobSwipe:  &FobSwipeEvent{FobID: 101},
 	})
-	valid102 := &GliderEvent{
+	valid102 := &Event{
 		UID:       uuid.NewString(),
 		Timestamp: time.Now().Unix(),
 		FobSwipe:  &FobSwipeEvent{FobID: 102},

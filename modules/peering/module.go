@@ -55,7 +55,7 @@ func (m *Module) handleGetGliderState(r *http.Request, ps httprouter.Params) eng
 	}
 	defer tx.Rollback()
 
-	var resp GliderState
+	var resp State
 	err = tx.QueryRowContext(r.Context(), "SELECT revision FROM glider_state WHERE id = 1").Scan(&resp.Revision)
 	if err != nil {
 		return engine.Error(err)
@@ -84,10 +84,10 @@ func (m *Module) handleGetGliderState(r *http.Request, ps httprouter.Params) eng
 }
 
 func (m *Module) handlePostGliderEvents(r *http.Request, ps httprouter.Params) engine.Response {
-	events := []*GliderEvent{}
+	events := []*Event{}
 	dec := json.NewDecoder(r.Body)
 	for {
-		event := &GliderEvent{}
+		event := &Event{}
 		err := dec.Decode(event)
 		if err == io.EOF {
 			break
