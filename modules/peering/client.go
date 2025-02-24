@@ -70,7 +70,7 @@ func (c *GliderClient) WarmCache() error {
 	}
 
 	// Roundtrip to the server
-	resp, err := c.roundtrip(http.MethodGet, fmt.Sprintf("/api/glider/state?after=%d", after), nil)
+	resp, err := c.roundtrip(http.MethodGet, fmt.Sprintf("/api/peering/state?after=%d", after), nil)
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func (c *GliderClient) FlushEvents() error {
 	}
 
 	// Write the events to the server
-	resp, err := c.roundtrip(http.MethodPost, "/api/glider/events", bytes.NewReader(bytes.Join(events, []byte("\n"))))
+	resp, err := c.roundtrip(http.MethodPost, "/api/peering/events", bytes.NewReader(bytes.Join(events, []byte("\n"))))
 	if err != nil {
 		return err
 	}

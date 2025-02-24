@@ -32,8 +32,8 @@ func New(db *sql.DB) (*Module, error) {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("GET", "/api/glider/state", m.withAuth(m.handleGetGliderState))
-	router.Handle("POST", "/api/glider/events", m.withAuth(m.handlePostGliderEvents))
+	router.Handle("GET", "/api/peering/state", m.withAuth(m.handleGetGliderState))
+	router.Handle("POST", "/api/peering/events", m.withAuth(m.handlePostGliderEvents))
 }
 
 func (m *Module) withAuth(next engine.Handler) engine.Handler {
