@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/TheLab-ms/conway/modules/api"
 	gac "github.com/TheLab-ms/conway/modules/generic-access-controller"
+	"github.com/TheLab-ms/conway/modules/peering"
 	"github.com/caarlos0/env/v11"
 )
 
@@ -30,7 +30,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	client := api.NewGliderClient(conf.ConwayURL, conf.ConwayToken, conf.StateDir)
+	client := peering.NewGliderClient(conf.ConwayURL, conf.ConwayToken, conf.StateDir)
 	gacClient := gac.Client{Addr: conf.AccessControllerHost, Timeout: time.Second * 5}
 
 	// Loop to asynchronously flush events to Conway
@@ -89,10 +89,10 @@ func main() {
 							ts = time.Now()
 						}
 
-						client.BufferEvent(&api.GliderEvent{
+						client.BufferEvent(&peering.GliderEvent{
 							UID:       fmt.Sprintf("gac-%d", cs.ID),
 							Timestamp: ts.Unix(),
-							FobSwipe: &api.FobSwipeEvent{
+							FobSwipe: &peering.FobSwipeEvent{
 								FobID: int64(cs.CardID),
 							},
 						})
@@ -131,7 +131,7 @@ func jitterSleep(dur time.Duration) {
 	time.Sleep(dur + time.Duration(float64(dur)*0.2*(rand.Float64()-0.5)))
 }
 
-func syncAccessControllerConfig(state *api.GliderState, client *gac.Client) error {
+func syncAccessControllerConfig(state *peering.GliderState, client *gac.Client) error {
 	cards, err := client.ListCards()
 	if err != nil {
 		return err

@@ -14,12 +14,12 @@ import (
 	"github.com/TheLab-ms/conway/db"
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/admin"
-	"github.com/TheLab-ms/conway/modules/api"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/keyfob"
 	"github.com/TheLab-ms/conway/modules/members"
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
+	"github.com/TheLab-ms/conway/modules/peering"
 	"github.com/TheLab-ms/conway/modules/waiver"
 	"github.com/caarlos0/env/v11"
 	"github.com/stripe/stripe-go/v78"
@@ -93,11 +93,11 @@ func newApp(db *sql.DB, conf Config, self *url.URL, ec *auth.EmailConfig) (*engi
 	a.Add(authModule)
 	a.Router.Authenticator = authModule // IMPORTANT
 
-	apiModule, err := api.New(db)
+	peeringModule, err := peering.New(db)
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating api module: %w", err)
+		return nil, nil, fmt.Errorf("creating peering module: %w", err)
 	}
-	a.Add(apiModule)
+	a.Add(peeringModule)
 
 	a.Add(oauth2.New(db, self, authModule))
 	a.Add(payment.New(db, conf.StripeWebhookKey, self))
