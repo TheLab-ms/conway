@@ -477,22 +477,12 @@ func formatLastFobSwipe(ts time.Time) string {
 
 	const day = time.Hour * 24
 	switch {
-	case dur > day*365*5:
-		return ">5yr ago"
-	case dur > day*365*2:
-		return ">2yr ago"
-	case dur > day*365:
-		return ">1yr ago"
-	case dur > day*30*60:
-		return ">6mo ago"
 	case dur > day*30:
-		return ">1mo ago"
-	case dur > day*7:
-		return ">1wk ago"
+		return "on " + ts.Format(timeFormat)
 	case dur > day:
-		return ">1 day ago"
+		return fmt.Sprintf("%d days ago", int(dur/day))
 	default:
-		return "today"
+		return "within the last day"
 	}
 }
 
