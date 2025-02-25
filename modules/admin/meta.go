@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+
+	"github.com/TheLab-ms/conway/engine"
 )
 
 type listView struct {
@@ -70,4 +72,16 @@ var listViews = []listView{
 			return rows
 		},
 	},
+}
+
+type formHandler struct {
+	Path    string
+	Handler *engine.PostFormHandler
+}
+
+var formHandlers = []*formHandler{}
+
+func handlePostForm(fh formHandler) formHandler {
+	formHandlers = append(formHandlers, &fh)
+	return fh
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 	"strconv"
 	"time"
@@ -76,6 +77,40 @@ func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*
 
 	return &mem, events, nil
 }
+
+var _ = handlePostForm(formHandler{
+	Path: "/admin/members/:id/updates/basics",
+	Handler: &engine.PostFormHandler{
+		Fields: []string{"name", "email", "confirmed", "fob_id", "admin_notes", "bill_annually"},
+		Query: `UPDATE members SET name = :name, email = :email, admin_notes = :admin_notes,
+			confirmed = (CASE WHEN :confirmed = 'on' THEN 1 ELSE 0 END),
+			bill_annually = (CASE WHEN :bill_annually = 'on' THEN 1 ELSE 0 END),
+			fob_id = (CASE WHEN CAST(:fob_id AS INTEGER) = 0 THEN NULL ELSE CAST(:fob_id AS INTEGER) END)
+			WHERE id = :route_id`,
+	},
+})
+
+var _ = handlePostForm(formHandler{
+	Path: "/admin/members/:id/updates/designations",
+	Handler: &engine.PostFormHandler{
+		Fields: []string{"leadership", "non_billable"},
+		Query: `UPDATE members SET
+			leadership = (CASE WHEN :leadership = 'on' THEN 1 ELSE 0 END),
+			non_billable = (CASE WHEN :non_billable = 'on' THEN 1 ELSE 0 END)
+			WHERE id = :route_id`,
+	},
+})
+
+var _ = handlePostForm(formHandler{
+	Path: "/admin/members/:id/updates/discounts",
+	Handler: &engine.PostFormHandler{
+		Fields: []string{"family_email", "discount"},
+		Query: `UPDATE members SET
+			discount_type = (CASE WHEN :discount = 'None' THEN NULL ELSE :discount END),
+			root_family_member = (SELECT id FROM members WHERE email = :family_email AND root_family_member IS NULL)
+			WHERE id = :route_id`,
+	},
+})
 
 templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent) {
 	@bootstrap.View() {
@@ -223,7 +258,7 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 							<label class="form-check-label" for="leadership">Leadership <i>(Conway admin access)</i></label>
 						</div>
 						<div class="form-check">
-							<input type="checkbox" class="form-check-input" id="non-billable" name="non-billable" checked?={ member.NonBillable }/>
+							<input type="checkbox" class="form-check-input" id="non-billable" name="non_billable" checked?={ member.NonBillable }/>
 							<label class="form-check-label" for="non-billable">Non-billable <i>(landlord fobs, lifetime members, etc.)</i></label>
 						</div>
 						<button type="submit" class="btn btn-primary mt-2">Save</button>
