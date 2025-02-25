@@ -25,13 +25,33 @@ func New(db *sql.DB) *Module {
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("GET", "/admin", router.WithAuth(m.onlyLeadership(m.renderAdminView)))
-	router.Handle("GET", "/admin/members", router.WithAuth(m.onlyLeadership(m.renderMembersListView)))
-	router.Handle("POST", "/admin/search/members", router.WithAuth(m.onlyLeadership(m.renderMembersSearchElements)))
 	router.Handle("GET", "/admin/members/:id", router.WithAuth(m.onlyLeadership(m.renderSingleMemberView)))
 	router.Handle("POST", "/admin/members/:id/updates/basics", router.WithAuth(m.onlyLeadership(m.updateMemberBasics)))
 	router.Handle("POST", "/admin/members/:id/updates/designations", router.WithAuth(m.onlyLeadership(m.updateMemberDesignations)))
 	router.Handle("POST", "/admin/members/:id/updates/discounts", router.WithAuth(m.onlyLeadership(m.updateMemberDiscounts)))
 	router.Handle("POST", "/admin/members/:id/delete", router.WithAuth(m.onlyLeadership(m.deleteMember)))
+
+	for _, view := range listViews {
+		router.Handle("GET", "/admin"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
+			return engine.Component(renderAdminList("Members", "/admin/search"+view.RelPath))
+		})))
+
+		router.Handle("POST", "/admin/search"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
+			q, args := view.BuildQuery(r)
+			results, err := m.db.QueryContext(r.Context(), q, args...)
+			if err != nil {
+				return engine.Errorf("querying the database: %s", err)
+			}
+			defer results.Close()
+
+			rows := view.BuildRows(results)
+			if err := results.Err(); err != nil {
+				return engine.Errorf("scanning the query results: %s", err)
+			}
+
+			return engine.Component(renderAdminListElements(view.Rows, rows))
+		})))
+	}
 }
 
 func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
@@ -46,75 +66,6 @@ func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
 func (m *Module) renderAdminView(r *http.Request, ps httprouter.Params) engine.Response {
 	// TODO: return engine.Component(renderAdmin())
 	return engine.Redirect("/admin/members", http.StatusSeeOther)
-}
-
-func (m *Module) renderMembersListView(r *http.Request, ps httprouter.Params) engine.Response {
-	return engine.Component(renderAdminList("Members", "/admin/search/members"))
-}
-
-func (m *Module) renderMembersSearchElements(r *http.Request, ps httprouter.Params) engine.Response {
-	q := "SELECT id, identifier, COALESCE(payment_status, 'Inactive') AS payment_status, access_status FROM members"
-
-	search := r.PostFormValue("search")
-	if search != "" {
-		q += " WHERE name LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%' OR CAST(fob_id AS TEXT) LIKE '%' || $1 || '%'"
-	}
-
-	if search == "" {
-		q += " ORDER BY created DESC"
-	} else {
-		q += " ORDER BY identifier ASC"
-	}
-
-	rowMeta := []*tableRowMeta{
-		{Title: "Name", Width: 2},
-		{Title: "Fob Status", Width: 1},
-		{Title: "Payment Status", Width: 1},
-	}
-
-	results, err := m.db.QueryContext(r.Context(), q, search)
-	if err != nil {
-		return engine.Errorf("querying the database: %s", err)
-	}
-	defer results.Close()
-
-	rows := membersListToRows(results)
-	if err := results.Err(); err != nil {
-		return engine.Errorf("scanning the query results: %s", err)
-	}
-
-	return engine.Component(renderAdminListElements(rowMeta, rows))
-}
-
-func membersListToRows(results *sql.Rows) []*tableRow {
-	rows := []*tableRow{}
-	for results.Next() {
-		var id int64
-		var name string
-		var paymentStatus, accessStatus string
-		results.Scan(&id, &name, &paymentStatus, &accessStatus)
-
-		accessCell := &tableCell{Text: accessStatus, BadgeType: "secondary"}
-		if accessCell.Text != "Ready" {
-			accessCell.BadgeType = "warning"
-		}
-
-		paymentCell := &tableCell{Text: paymentStatus, BadgeType: "secondary"}
-		if paymentCell.Text == "Inactive" {
-			paymentCell.BadgeType = "warning"
-		}
-
-		rows = append(rows, &tableRow{
-			SelfLink: fmt.Sprintf("/admin/members/%d", id),
-			Cells: []*tableCell{
-				{Text: name},
-				accessCell,
-				paymentCell,
-			},
-		})
-	}
-
-	return rows
 }
 
 func (m *Module) renderSingleMemberView(r *http.Request, ps httprouter.Params) engine.Response {
