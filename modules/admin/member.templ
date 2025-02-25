@@ -99,7 +99,7 @@ var _ = handlePostForm(formHandler{
 	Post: &engine.PostFormHandler{
 		Fields: []string{"family_email", "discount"},
 		Query: `UPDATE members SET
-			discount_type = (CASE WHEN :discount = 'None' THEN NULL ELSE :discount END),
+			discount_type = (CASE WHEN :discount = '' THEN NULL ELSE :discount END),
 			root_family_member = (SELECT id FROM members WHERE email = :family_email AND root_family_member IS NULL)
 			WHERE id = :route_id`,
 	},
