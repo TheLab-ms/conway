@@ -60,7 +60,7 @@ func (m *Module) renderMembersSearchElements(r *http.Request, ps httprouter.Para
 
 	search := r.PostFormValue("search")
 	if search != "" {
-		q += " WHERE name LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%'"
+		q += " WHERE name LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%' OR CAST(fob_id AS TEXT) LIKE '%' || $1 || '%'"
 	}
 
 	switch r.URL.Query().Get("sort") {
