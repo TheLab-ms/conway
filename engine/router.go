@@ -55,7 +55,7 @@ func invokeHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params, 
 
 	e, _ := resp.(*httpError)
 	if e == nil {
-		if !strings.HasPrefix(r.URL.Path, "/api/glider") { // suppress noisy Glider logs
+		if !strings.HasPrefix(r.URL.Path, "/api/peering") { // suppress noisy Glider logs
 			logger.Info("handled http request")
 		}
 	} else {
