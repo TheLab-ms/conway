@@ -28,6 +28,7 @@ type member struct {
 	DiscountType      *string
 	RootFamilyEmail   *string
 	BillAnnually      bool
+	FobLastSeen       *int64
 }
 
 templ renderSingleMember(member *member) {
@@ -38,6 +39,9 @@ templ renderSingleMember(member *member) {
 				<div class="card-body">
 					<h5 class="card-title mb-2">Basic Info</h5>
 					<h6 class="card-subtitle mb-2 text-muted">Account created on { time.Unix(member.Created, 0).Format(timeFormat) }</h6>
+					if member.FobLastSeen != nil {
+						<h6 class="card-subtitle mb-2 text-muted">Last fob'd in { formatLastFobSwipe(time.Unix(*member.FobLastSeen, 0)) }</h6>
+					}
 					if member.AccessStatus != "Ready" {
 						<span class="badge text-bg-danger mb-3">{ member.AccessStatus }</span>
 					}
@@ -181,5 +185,31 @@ templ renderSingleMember(member *member) {
 				</div>
 			</div>
 		</div>
+	}
+}
+
+func formatLastFobSwipe(ts time.Time) string {
+	dur := time.Since(ts)
+
+	const day = time.Hour * 24
+	switch {
+	case dur > day*365*5:
+		return ">5yr ago"
+	case dur > day*365*2:
+		return ">2yr ago"
+	case dur > day*365:
+		return ">1yr ago"
+	case dur > day*30*60:
+		return ">6mo ago"
+	case dur > day*30:
+		return ">1mo ago"
+	case dur > day*7:
+		return ">1wk ago"
+	case dur > day*2:
+		return ">1 day ago"
+	case dur < day:
+		return "today"
+	default:
+		return "???"
 	}
 }
