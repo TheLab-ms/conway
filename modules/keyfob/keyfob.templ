@@ -18,44 +18,45 @@ templ renderOffsiteError() {
 	}
 }
 
-templ renderKeyfob(failed bool) {
+templ renderKiosk(qrImg []byte) {
 	@bootstrap.View() {
 		<div class="container my-5">
-			if failed {
-				<div class="alert alert-danger">
-					<h4 class="alert-heading">Uh Oh</h4>
-					The key fob you scanned cannot be used, please try another one.
+			<form id="fobform" method="GET">
+				<input type="hidden" id="fobid" name="fobid" value=""/>
+			</form>
+			if qrImg == nil {
+				<div class="alert alert-primary">
+					<h4 class="alert-heading">Scan Key Fob</h4>
+					Take an unused fob from the drawer and hold it near the reader.
 				</div>
 			} else {
 				<div class="alert alert-primary">
-					<h4 class="alert-heading">Assign Key Fob</h4>
-					Take an unused fob from the drawer and hold it near the reader.
+					<h4 class="alert-heading">Link to Your Account</h4>
+					Scan the QR from your device to link the key fob to your account.
 				</div>
+				<img src={ "data:image/png;base64," + string(qrImg) } class="img-fluid"/>
 			}
-			<form id="fobform" method="POST" action="">
-				<input type="hidden" id="fobid" name="fobid" value=""/>
-			</form>
 		</div>
-	}
-	<script>
-		let buffer = ''
-		let timeout
+		<script>
+			let buffer = ''
+			let timeout
 
-		const flush = () => {
-			document.getElementById('fobid').value = buffer
-			document.getElementById('fobform').submit()
-			buffer = ''
-		}
-
-		document.addEventListener('keypress', event => {
-			if (event.key === 'Enter') {
-				flush()
-				return
+			const flush = () => {
+				document.getElementById('fobid').value = buffer
+				document.getElementById('fobform').submit()
+				buffer = ''
 			}
 
-			buffer += event.key
-			clearTimeout(timeout)
-			timeout = setTimeout(flush, 1000)
-		})
-	</script>
+			document.addEventListener('keypress', event => {
+				if (event.key === 'Enter') {
+					flush()
+					return
+				}
+
+				buffer += event.key
+				clearTimeout(timeout)
+				timeout = setTimeout(flush, 1000)
+			})
+		</script>
+	}
 }

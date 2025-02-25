@@ -151,7 +151,7 @@ type componentResponse struct {
 	Component templ.Component
 }
 
-func Component(comp templ.Component) *componentResponse {
+func Component(comp templ.Component) Response {
 	return &componentResponse{Component: comp}
 }
 

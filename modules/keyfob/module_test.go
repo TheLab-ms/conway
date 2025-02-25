@@ -8,7 +8,7 @@ import (
 )
 
 func TestFindTrustedIP(t *testing.T) {
-	m := New(nil, "google.com")
+	m := New(nil, nil, "google.com")
 	assert.False(t, m.findTrustedIP(context.Background()))
 	assert.NotNil(t, *m.trustedIP.Load())
 }

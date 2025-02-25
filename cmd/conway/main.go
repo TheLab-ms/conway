@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/smtp"
 	"net/url"
@@ -62,7 +63,7 @@ func main() {
 		panic(err)
 	}
 
-	app, _, err := newApp(db, conf, getSelfURL(), ec)
+	app, _, err := newApp(db, conf, getSelfURL(conf), ec)
 	if err != nil {
 		panic(err)
 	}
@@ -70,10 +71,18 @@ func main() {
 	app.Run(context.TODO())
 }
 
-func getSelfURL() *url.URL {
-	str := "http://localhost:8080"
-	if env := os.Getenv("SELF_URL"); env != "" {
-		str = env
+func getSelfURL(conf Config) *url.URL {
+	str := os.Getenv("SELF_URL")
+	if str == "" {
+		conn, err := net.Dial("udp4", "8.8.8.8:53")
+		if err != nil {
+			panic(err)
+		}
+		conn.Close()
+
+		_, port, _ := net.SplitHostPort(conf.HttpAddr)
+		str = fmt.Sprintf("http://%s:%s", conn.LocalAddr().(*net.UDPAddr).IP, port)
+		slog.Info("discovered self URL", "url", str)
 	}
 
 	self, err := url.Parse(str)
@@ -104,7 +113,7 @@ func newApp(db *sql.DB, conf Config, self *url.URL, ec *auth.EmailConfig) (*engi
 	a.Add(admin.New(db))
 	a.Add(members.New(db))
 	a.Add(waiver.New(db))
-	a.Add(keyfob.New(db, conf.SpaceHost))
+	a.Add(keyfob.New(db, self, conf.SpaceHost))
 
 	return a, authModule, nil
 }

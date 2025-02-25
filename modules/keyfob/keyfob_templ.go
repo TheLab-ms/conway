@@ -62,7 +62,7 @@ func renderOffsiteError() templ.Component {
 	})
 }
 
-func renderKeyfob(failed bool) templ.Component {
+func renderKiosk(qrImg []byte) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -95,32 +95,41 @@ func renderKeyfob(failed bool) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"container my-5\">")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"container my-5\"><form id=\"fobform\" method=\"GET\"><input type=\"hidden\" id=\"fobid\" name=\"fobid\" value=\"\"></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if failed {
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-danger\"><h4 class=\"alert-heading\">Uh Oh</h4>The key fob you scanned cannot be used, please try another one.</div>")
+			if qrImg == nil {
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-primary\"><h4 class=\"alert-heading\">Scan Key Fob</h4>Take an unused fob from the drawer and hold it near the reader.</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-primary\"><h4 class=\"alert-heading\">Assign Key Fob</h4>Take an unused fob from the drawer and hold it near the reader.</div>")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-primary\"><h4 class=\"alert-heading\">Link to Your Account</h4>Scan the QR from your device to link the key fob to your account.</div><img src=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var5 string
+				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs("data:image/png;base64," + string(qrImg))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `keyfob.templ`, Line: 37, Col: 55}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("\" class=\"img-fluid\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<form id=\"fobform\" method=\"POST\" action=\"\"><input type=\"hidden\" id=\"fobid\" name=\"fobid\" value=\"\"></form></div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</div><script>\n\t\t\tlet buffer = ''\n\t\t\tlet timeout\n\n\t\t\tconst flush = () => {\n\t\t\t\tdocument.getElementById('fobid').value = buffer\n\t\t\t\tdocument.getElementById('fobform').submit()\n\t\t\t\tbuffer = ''\n\t\t\t}\n\n\t\t\tdocument.addEventListener('keypress', event => {\n\t\t\t\tif (event.key === 'Enter') {\n\t\t\t\t\tflush()\n\t\t\t\t\treturn\n\t\t\t\t}\n\n\t\t\t\tbuffer += event.key\n\t\t\t\tclearTimeout(timeout)\n\t\t\t\ttimeout = setTimeout(flush, 1000)\n\t\t\t})\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return templ_7745c5c3_Err
 		})
 		templ_7745c5c3_Err = bootstrap.View().Render(templ.WithChildren(ctx, templ_7745c5c3_Var4), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<script>\n\t\tlet buffer = ''\n\t\tlet timeout\n\n\t\tconst flush = () => {\n\t\t\tdocument.getElementById('fobid').value = buffer\n\t\t\tdocument.getElementById('fobform').submit()\n\t\t\tbuffer = ''\n\t\t}\n\n\t\tdocument.addEventListener('keypress', event => {\n\t\t\tif (event.key === 'Enter') {\n\t\t\t\tflush()\n\t\t\t\treturn\n\t\t\t}\n\n\t\t\tbuffer += event.key\n\t\t\tclearTimeout(timeout)\n\t\t\ttimeout = setTimeout(flush, 1000)\n\t\t})\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

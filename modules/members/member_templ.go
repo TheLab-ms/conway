@@ -57,7 +57,7 @@ func renderMember(member *member) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"mt-3\"><a href=\"/payment/checkout\" class=\"btn btn-outline-success\">Manage Payment</a> <a href=\"/keyfob/bind\" class=\"btn btn-outline-success\">Bind Key Fob</a> <a href=\"/logout\" class=\"btn btn-outline-secondary\">Logout</a></div></div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"mt-3\"><a href=\"/payment/checkout\" class=\"btn btn-outline-success\">Manage Payment</a> <a href=\"/logout\" class=\"btn btn-outline-secondary\">Logout</a></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -113,7 +113,7 @@ func renderMembershipStatus(member *member) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		case "MissingKeyFob":
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Missing Key Fob</h4>Your account doesn't have a key fob on record. If you're at the space, you can add one using the button below.</div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Missing Key Fob</h4>Your account doesn't have a key fob on record. If you're at the space, you can add one using the kiosk near the front door.</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
