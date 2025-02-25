@@ -31,7 +31,13 @@ type member struct {
 	FobLastSeen       *int64
 }
 
-templ renderSingleMember(member *member) {
+type memberEvent struct {
+	Created time.Time
+	Event   string
+	Details string
+}
+
+templ renderSingleMember(member *member, events []*memberEvent) {
 	@bootstrap.View() {
 		@adminNav()
 		<div class="container my-5">
@@ -182,6 +188,32 @@ templ renderSingleMember(member *member) {
 						</div>
 						<button type="submit" class="btn btn-primary mt-2">Save</button>
 					</form>
+				</div>
+			</div>
+			<div class="card mt-3">
+				<div class="card-body">
+					<h5 class="card-title mb-2">Events</h5>
+					if len(events) > 9 {
+						<h6 class="card-subtitle mb-2 text-muted">Only the 10 most recent events are shown</h6>
+					}
+					<table class="table">
+						<thead>
+							<tr>
+								<th scope="col">Time</th>
+								<th scope="col">Event</th>
+								<th scope="col">Details</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, event := range events {
+								<tr>
+									<td>{ event.Created.Format(time.RFC3339) }</td>
+									<td><strong>{ event.Event }</strong></td>
+									<td>{ event.Details }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
 				</div>
 			</div>
 		</div>

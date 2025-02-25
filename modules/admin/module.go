@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
@@ -140,7 +141,23 @@ func (m *Module) renderSingleMemberView(r *http.Request, ps httprouter.Params) e
 		mem.FobID = new(int64)
 	}
 
-	return engine.Component(renderSingleMember(&mem))
+	var events []*memberEvent
+	results, err := m.db.QueryContext(r.Context(), "SELECT created, event, details FROM member_events WHERE member = $1 ORDER BY created DESC LIMIT 10", mem.ID)
+	if err != nil {
+		return engine.Errorf("querying the database: %s", err)
+	}
+	defer results.Close()
+
+	for results.Next() {
+		var created int64
+		event := &memberEvent{}
+		if results.Scan(&created, &event.Event, &event.Details) == nil {
+			event.Created = time.Unix(created, 0)
+			events = append(events, event)
+		}
+	}
+
+	return engine.Component(renderSingleMember(&mem, events))
 }
 
 func (m *Module) updateMemberBasics(r *http.Request, ps httprouter.Params) engine.Response {
