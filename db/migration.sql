@@ -175,7 +175,7 @@ CREATE INDEX IF NOT EXISTS fob_swipes_fob_id_idx ON fob_swipes (fob_id);
 
 CREATE TRIGGER IF NOT EXISTS fob_swipe_to_member AFTER INSERT ON fob_swipes
 BEGIN
-UPDATE members SET fob_last_seen = NEW.timestamp WHERE fob_id = NEW.fob_id;
+UPDATE members SET fob_last_seen = MAX(COALESCE(fob_last_seen, 0), NEW.timestamp) WHERE fob_id = NEW.fob_id;
 END;
 
 

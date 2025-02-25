@@ -332,6 +332,9 @@ func TestFobSwipes(t *testing.T) {
 	_, err = db.Exec("INSERT INTO fob_swipes (uid, fob_id, timestamp) VALUES ('yeet', 123, 9001)")
 	require.NoError(t, err)
 
+	_, err = db.Exec("INSERT INTO fob_swipes (uid, fob_id, timestamp) VALUES ('yeeet', 123, 8999)")
+	require.NoError(t, err)
+
 	var lastSwipe int
 	err = db.QueryRow("SELECT fob_last_seen FROM members").Scan(&lastSwipe)
 	require.NoError(t, err)
