@@ -3,27 +3,7 @@ package admin
 import (
 	"fmt"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
-	"net/http"
 )
-
-type sort struct {
-	OptionValue string
-	Label       string
-	Active      bool
-}
-
-func newSort(r *http.Request, label, option string) *sort {
-	return &sort{Label: label, OptionValue: option, Active: r.URL.Query().Get("sort") == option}
-}
-
-func findActiveSort(sorts []*sort) string {
-	for _, sort := range sorts {
-		if sort.Active {
-			return sort.OptionValue
-		}
-	}
-	return ""
-}
 
 script navigateToSelf(link string) {
 	window.location = link
@@ -52,7 +32,7 @@ templ (t tableCell) Render() {
 	}
 }
 
-templ renderAdminList(typeName, searchURL string, sorts []*sort) {
+templ renderAdminList(typeName, searchURL string) {
 	@bootstrap.View() {
 		@adminNav()
 		<div class="container my-5">
@@ -67,19 +47,12 @@ templ renderAdminList(typeName, searchURL string, sorts []*sort) {
 								placeholder="Search..."
 								style="width: 200px;"
 								name="search"
-								hx-post={ fmt.Sprintf("%s?sort=%s", searchURL, findActiveSort(sorts)) }
+								hx-post={ searchURL }
 								hx-trigger="input changed delay:500ms, keyup[key=='Enter'], load"
 								hx-target="#results"
 								hx-include="[name='search']"
 							/>
 						</div>
-						<form method="GET" action="" class="d-flex">
-							<select name="sort" class="form-select form-select-sm me-2" style="width: 200px;" onchange="this.form.submit()">
-								for _, sort := range sorts {
-									<option value={ sort.OptionValue } selected?={ sort.Active }>{ sort.Label }</option>
-								}
-							</select>
-						</form>
 					</div>
 				</div>
 				<span id="results"></span>

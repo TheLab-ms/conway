@@ -49,11 +49,7 @@ func (m *Module) renderAdminView(r *http.Request, ps httprouter.Params) engine.R
 }
 
 func (m *Module) renderMembersListView(r *http.Request, ps httprouter.Params) engine.Response {
-	sorts := []*sort{
-		newSort(r, "Sort by creation date", "date"),
-		newSort(r, "Sort by name", "name"),
-	}
-	return engine.Component(renderAdminList("Members", "/admin/search/members", sorts))
+	return engine.Component(renderAdminList("Members", "/admin/search/members"))
 }
 
 func (m *Module) renderMembersSearchElements(r *http.Request, ps httprouter.Params) engine.Response {
@@ -64,11 +60,10 @@ func (m *Module) renderMembersSearchElements(r *http.Request, ps httprouter.Para
 		q += " WHERE name LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%' OR CAST(fob_id AS TEXT) LIKE '%' || $1 || '%'"
 	}
 
-	switch r.URL.Query().Get("sort") {
-	case "", "date":
+	if search == "" {
 		q += " ORDER BY created DESC"
-	case "name":
-		q += " ORDER BY name ASC"
+	} else {
+		q += " ORDER BY identifier ASC"
 	}
 
 	rowMeta := []*tableRowMeta{
