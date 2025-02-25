@@ -82,8 +82,7 @@ func (m *Module) atPhysicalSpace(next engine.Handler) engine.Handler {
 		}
 		ip := net.ParseIP(strings.Split(addr, ":")[0])
 		if trusted := m.trustedIP.Load(); trusted == nil || !ip.Equal(*trusted) {
-			user := auth.GetUserMeta(r.Context())
-			slog.Info("not allowing member to bind keyfob from this IP", "addr", addr, "ip", ip, "trusted", trusted, "memberID", user.ID)
+			slog.Info("not allowing member to bind keyfob from this IP", "addr", addr, "ip", ip, "trusted", trusted)
 			return engine.Component(renderOffsiteError())
 		}
 		return next(r, ps)
