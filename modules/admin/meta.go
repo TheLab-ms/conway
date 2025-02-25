@@ -7,6 +7,7 @@ import (
 )
 
 type listView struct {
+	Title      string
 	RelPath    string
 	Rows       []*tableRowMeta
 	BuildQuery func(*http.Request) (query string, args []any)
@@ -15,6 +16,7 @@ type listView struct {
 
 var listViews = []listView{
 	{
+		Title:   "Members",
 		RelPath: "/members",
 		Rows: []*tableRowMeta{
 			{Title: "Name", Width: 2},

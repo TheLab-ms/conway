@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
@@ -24,34 +23,56 @@ func New(db *sql.DB) *Module {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("GET", "/admin", router.WithAuth(m.onlyLeadership(m.renderAdminView)))
-	router.Handle("GET", "/admin/members/:id", router.WithAuth(m.onlyLeadership(m.renderSingleMemberView)))
+	var nav []*navbarTab
+	for _, view := range listViews {
+		route := "/admin" + view.RelPath
+		nav = append(nav, &navbarTab{Title: view.Title, Path: route})
+
+		router.Handle("GET", route, router.WithAuth(
+			m.onlyLeadership(
+				func(r *http.Request, ps httprouter.Params) engine.Response {
+					return engine.Component(renderAdminList(nav, "Members", "/admin/search"+view.RelPath))
+				})))
+
+		router.Handle("POST", "/admin/search"+view.RelPath, router.WithAuth(
+			m.onlyLeadership(
+				func(r *http.Request, ps httprouter.Params) engine.Response {
+					q, args := view.BuildQuery(r)
+					results, err := m.db.QueryContext(r.Context(), q, args...)
+					if err != nil {
+						return engine.Errorf("querying the database: %s", err)
+					}
+					defer results.Close()
+
+					rows := view.BuildRows(results)
+					if err := results.Err(); err != nil {
+						return engine.Errorf("scanning the query results: %s", err)
+					}
+
+					return engine.Component(renderAdminListElements(view.Rows, rows))
+				})))
+	}
+
+	router.Handle("GET", "/admin", router.WithAuth(
+		m.onlyLeadership(
+			func(r *http.Request, ps httprouter.Params) engine.Response {
+				return engine.Redirect(nav[0].Path, http.StatusSeeOther)
+			})))
+
+	router.Handle("GET", "/admin/members/:id", router.WithAuth(
+		m.onlyLeadership(
+			func(r *http.Request, ps httprouter.Params) engine.Response {
+				mem, events, err := querySingleMember(r.Context(), m.db, ps.ByName("id"))
+				if err != nil {
+					return engine.Errorf("querying the database: %s", err)
+				}
+				return engine.Component(renderSingleMember(nav, mem, events))
+			})))
+
 	router.Handle("POST", "/admin/members/:id/updates/basics", router.WithAuth(m.onlyLeadership(m.updateMemberBasics)))
 	router.Handle("POST", "/admin/members/:id/updates/designations", router.WithAuth(m.onlyLeadership(m.updateMemberDesignations)))
 	router.Handle("POST", "/admin/members/:id/updates/discounts", router.WithAuth(m.onlyLeadership(m.updateMemberDiscounts)))
 	router.Handle("POST", "/admin/members/:id/delete", router.WithAuth(m.onlyLeadership(m.deleteMember)))
-
-	for _, view := range listViews {
-		router.Handle("GET", "/admin"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
-			return engine.Component(renderAdminList("Members", "/admin/search"+view.RelPath))
-		})))
-
-		router.Handle("POST", "/admin/search"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
-			q, args := view.BuildQuery(r)
-			results, err := m.db.QueryContext(r.Context(), q, args...)
-			if err != nil {
-				return engine.Errorf("querying the database: %s", err)
-			}
-			defer results.Close()
-
-			rows := view.BuildRows(results)
-			if err := results.Err(); err != nil {
-				return engine.Errorf("scanning the query results: %s", err)
-			}
-
-			return engine.Component(renderAdminListElements(view.Rows, rows))
-		})))
-	}
 }
 
 func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
@@ -61,49 +82,6 @@ func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
 		}
 		return next(r, ps)
 	}
-}
-
-func (m *Module) renderAdminView(r *http.Request, ps httprouter.Params) engine.Response {
-	// TODO: return engine.Component(renderAdmin())
-	return engine.Redirect("/admin/members", http.StatusSeeOther)
-}
-
-func (m *Module) renderSingleMemberView(r *http.Request, ps httprouter.Params) engine.Response {
-	mem := member{}
-	err := m.db.QueryRowContext(r.Context(), `
-		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, m.fob_id, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, rfm.email, m.bill_annually, m.fob_last_seen
-		FROM members m
-		LEFT JOIN members rfm ON m.root_family_member = rfm.id
-		WHERE m.id = $1`, ps.ByName("id")).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen)
-	if err != nil {
-		return engine.Errorf("querying the database: %s", err)
-	}
-
-	if mem.RootFamilyEmail == nil {
-		mem.RootFamilyEmail = new(string)
-	}
-	if mem.FobID == nil {
-		mem.FobID = new(int64)
-	}
-
-	var events []*memberEvent
-	results, err := m.db.QueryContext(r.Context(), "SELECT created, event, details FROM member_events WHERE member = $1 ORDER BY created DESC LIMIT 10", mem.ID)
-	if err != nil {
-		return engine.Errorf("querying the database: %s", err)
-	}
-	defer results.Close()
-
-	for results.Next() {
-		var created int64
-		event := &memberEvent{}
-		if results.Scan(&created, &event.Event, &event.Details) == nil {
-			event.Created = time.Unix(created, 0)
-			events = append(events, event)
-		}
-	}
-
-	return engine.Component(renderSingleMember(&mem, events))
 }
 
 func (m *Module) updateMemberBasics(r *http.Request, ps httprouter.Params) engine.Response {

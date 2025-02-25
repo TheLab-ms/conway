@@ -32,9 +32,9 @@ templ (t tableCell) Render() {
 	}
 }
 
-templ renderAdminList(typeName, searchURL string) {
+templ renderAdminList(tabs []*navbarTab, typeName, searchURL string) {
 	@bootstrap.View() {
-		@adminNav()
+		@adminNav(tabs)
 		<div class="container my-5">
 			<h1 class="mb-4">{ typeName }</h1>
 			<div class="card">

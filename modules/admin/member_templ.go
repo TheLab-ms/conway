@@ -9,6 +9,8 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 	"strconv"
@@ -45,7 +47,45 @@ type memberEvent struct {
 	Details string
 }
 
-func renderSingleMember(member *member, events []*memberEvent) templ.Component {
+func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
+	mem := member{}
+	err := db.QueryRowContext(ctx, `
+		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, m.fob_id, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, rfm.email, m.bill_annually, m.fob_last_seen
+		FROM members m
+		LEFT JOIN members rfm ON m.root_family_member = rfm.id
+		WHERE m.id = $1`, id).
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if mem.RootFamilyEmail == nil {
+		mem.RootFamilyEmail = new(string)
+	}
+	if mem.FobID == nil {
+		mem.FobID = new(int64)
+	}
+
+	var events []*memberEvent
+	results, err := db.QueryContext(ctx, "SELECT created, event, details FROM member_events WHERE member = $1 ORDER BY created DESC LIMIT 10", mem.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer results.Close()
+
+	for results.Next() {
+		var created int64
+		event := &memberEvent{}
+		if results.Scan(&created, &event.Event, &event.Details) == nil {
+			event.Created = time.Unix(created, 0)
+			events = append(events, event)
+		}
+	}
+
+	return &mem, events, nil
+}
+
+func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -78,7 +118,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = adminNav().Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = adminNav(tabs).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -89,7 +129,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(member.Created, 0).Format(timeFormat))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 47, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 87, Col: 115}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -107,7 +147,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(formatLastFobSwipe(time.Unix(*member.FobLastSeen, 0)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 49, Col: 117}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 89, Col: 117}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -126,7 +166,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(member.AccessStatus)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 52, Col: 67}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 92, Col: 67}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -153,7 +193,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(member.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 56, Col: 88}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 96, Col: 88}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -166,7 +206,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(member.Email)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 61, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 101, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -189,7 +229,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(*member.FobID, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 70, Col: 119}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 110, Col: 119}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -212,7 +252,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(member.AdminNotes)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 78, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 118, Col: 115}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -323,7 +363,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(*member.RootFamilyEmail)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 124, Col: 117}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 164, Col: 117}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -352,7 +392,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(*member.StripeStatus)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 147, Col: 30}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 187, Col: 30}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -400,7 +440,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 					var templ_7745c5c3_Var16 string
 					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(*member.PaypalLastPayment, 0).Format(timeFormat))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 165, Col: 71}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 205, Col: 71}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {
@@ -419,7 +459,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 					var templ_7745c5c3_Var17 string
 					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f", *member.PaypalPrice))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 171, Col: 53}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 211, Col: 53}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {
@@ -486,7 +526,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(event.Created.Format(time.RFC3339))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 210, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 250, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -499,7 +539,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(event.Event)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 211, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 251, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -512,7 +552,7 @@ func renderSingleMember(member *member, events []*memberEvent) templ.Component {
 				var templ_7745c5c3_Var21 string
 				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 212, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 252, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {
