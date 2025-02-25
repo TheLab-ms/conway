@@ -43,20 +43,13 @@ type memberEvent struct {
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
 	mem := member{}
 	err := db.QueryRowContext(ctx, `
-		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, m.fob_id, m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, rfm.email, m.bill_annually, m.fob_last_seen
+		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, id).
 		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	if mem.RootFamilyEmail == nil {
-		mem.RootFamilyEmail = new(string)
-	}
-	if mem.FobID == nil {
-		mem.FobID = new(int64)
 	}
 
 	var events []*memberEvent
