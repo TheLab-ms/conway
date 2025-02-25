@@ -73,7 +73,7 @@ func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*
 
 var _ = handlePostForm(formHandler{
 	Path: "/admin/members/:id/updates/basics",
-	Handler: &engine.PostFormHandler{
+	Post: &engine.PostFormHandler{
 		Fields: []string{"name", "email", "confirmed", "fob_id", "admin_notes", "bill_annually"},
 		Query: `UPDATE members SET name = :name, email = :email, admin_notes = :admin_notes,
 			confirmed = (CASE WHEN :confirmed = 'on' THEN 1 ELSE 0 END),
@@ -85,7 +85,7 @@ var _ = handlePostForm(formHandler{
 
 var _ = handlePostForm(formHandler{
 	Path: "/admin/members/:id/updates/designations",
-	Handler: &engine.PostFormHandler{
+	Post: &engine.PostFormHandler{
 		Fields: []string{"leadership", "non_billable"},
 		Query: `UPDATE members SET
 			leadership = (CASE WHEN :leadership = 'on' THEN 1 ELSE 0 END),
@@ -96,12 +96,20 @@ var _ = handlePostForm(formHandler{
 
 var _ = handlePostForm(formHandler{
 	Path: "/admin/members/:id/updates/discounts",
-	Handler: &engine.PostFormHandler{
+	Post: &engine.PostFormHandler{
 		Fields: []string{"family_email", "discount"},
 		Query: `UPDATE members SET
 			discount_type = (CASE WHEN :discount = 'None' THEN NULL ELSE :discount END),
 			root_family_member = (SELECT id FROM members WHERE email = :family_email AND root_family_member IS NULL)
 			WHERE id = :route_id`,
+	},
+})
+
+var _ = handlePostForm(formHandler{
+	Path: "/admin/members/:id/delete",
+	Delete: &engine.DeleteFormHandler{
+		Table:    "members",
+		Redirect: "/admin/members",
 	},
 })
 

@@ -75,8 +75,16 @@ var listViews = []listView{
 }
 
 type formHandler struct {
-	Path    string
-	Handler *engine.PostFormHandler
+	Path   string
+	Post   *engine.PostFormHandler
+	Delete *engine.DeleteFormHandler
+}
+
+func (f *formHandler) BuildHandler(db *sql.DB) engine.Handler {
+	if f.Post != nil {
+		return f.Post.Handler(db)
+	}
+	return f.Delete.Handler(db)
 }
 
 var formHandlers = []*formHandler{}

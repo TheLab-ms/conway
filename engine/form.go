@@ -29,3 +29,18 @@ func (p *PostFormHandler) Handler(db *sql.DB) Handler {
 		return Redirect(r.Referer(), http.StatusSeeOther)
 	}
 }
+
+type DeleteFormHandler struct {
+	Table    string
+	Redirect string
+}
+
+func (d *DeleteFormHandler) Handler(db *sql.DB) Handler {
+	return func(r *http.Request, ps httprouter.Params) Response {
+		_, err := db.ExecContext(r.Context(), "DELETE FROM "+d.Table+" WHERE id = $1", ps.ByName("id"))
+		if err != nil {
+			return Errorf("deleting from database: %s", err)
+		}
+		return Redirect(d.Redirect, http.StatusSeeOther)
+	}
+}

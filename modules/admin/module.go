@@ -59,10 +59,8 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	})))
 
 	for _, handle := range formHandlers {
-		router.Handle("POST", handle.Path, router.WithAuth(m.onlyLeadership(handle.Handler.Handler(m.db))))
+		router.Handle("POST", handle.Path, router.WithAuth(m.onlyLeadership(handle.BuildHandler(m.db))))
 	}
-
-	router.Handle("POST", "/admin/members/:id/delete", router.WithAuth(m.onlyLeadership(m.deleteMember)))
 }
 
 func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
@@ -72,15 +70,4 @@ func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
 		}
 		return next(r, ps)
 	}
-}
-
-func (m *Module) deleteMember(r *http.Request, ps httprouter.Params) engine.Response {
-	id := ps.ByName("id")
-
-	_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", id)
-	if err != nil {
-		return engine.Errorf("deleting member: %s", err)
-	}
-
-	return engine.Redirect("/admin/members", http.StatusSeeOther)
 }
