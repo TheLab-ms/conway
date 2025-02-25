@@ -146,7 +146,7 @@ func (m *Module) WithAuth(next engine.Handler) engine.Handler {
 
 // handleLoginFormPost starts a login flow for the given member (by email).
 func (s *Module) handleLoginFormPost(r *http.Request, p httprouter.Params) engine.Response {
-	email := r.FormValue("email")
+	email := strings.ToLower(r.FormValue("email"))
 
 	// Find the corresponding member ID or insert a new row if one doesn't exist for this email address
 	var memberID int64
