@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const timeFormat = "Mon, Jan 2 2006 at 15:04 MST"
+const timeFormat = "Mon, Jan 2 2006"
 
 type member struct {
 	ID                int64
@@ -489,12 +489,10 @@ func formatLastFobSwipe(ts time.Time) string {
 		return ">1mo ago"
 	case dur > day*7:
 		return ">1wk ago"
-	case dur > day*2:
+	case dur > day:
 		return ">1 day ago"
-	case dur < day:
-		return "today"
 	default:
-		return "???"
+		return "today"
 	}
 }
 

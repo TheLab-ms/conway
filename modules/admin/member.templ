@@ -205,11 +205,9 @@ func formatLastFobSwipe(ts time.Time) string {
 		return ">1mo ago"
 	case dur > day*7:
 		return ">1wk ago"
-	case dur > day*2:
+	case dur > day:
 		return ">1 day ago"
-	case dur < day:
-		return "today"
 	default:
-		return "???"
+		return "today"
 	}
 }
