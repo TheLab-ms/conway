@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -121,12 +122,12 @@ func (m *Module) handleBindKeyfob(r *http.Request, ps httprouter.Params) engine.
 
 	fobID, ok := m.verifyQR(r.FormValue("val"))
 	if !ok {
-		return engine.Redirect("/keyfob/bind?e=rror", http.StatusSeeOther)
+		return engine.ClientErrorf(400, "Invalid QR code")
 	}
 
-	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET fob_id = ? WHERE id = ?", fobID, user.ID)
+	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET fob_id = $1 WHERE id = $2 AND fob_id != $1", fobID, user.ID)
 	if err != nil {
-		return engine.Redirect("/keyfob/bind?e=rror", http.StatusSeeOther)
+		return engine.ClientErrorf(500, "inserting fob id into db: %s", err)
 	}
 	slog.Info("bound keyfob to member", "fobid", fobID, "memberID", user.ID)
 
@@ -153,10 +154,12 @@ func (m *Module) verifyQR(val string) (int64, bool) {
 	}
 
 	sig, _ := base64.StdEncoding.DecodeString(parts[2])
-	data := fmt.Sprintf("%s.%d", id, expiration)
 	h := hmac.New(sha256.New, m.signingKey)
-	h.Write([]byte(data))
+	io.WriteString(h, strings.Join(parts[:2], "."))
+	if !hmac.Equal(sig, h.Sum(nil)) {
+		return 0, false
+	}
 
 	fobID, err := strconv.ParseInt(id, 10, 0)
-	return fobID, err == nil && hmac.Equal(sig, h.Sum(nil))
+	return fobID, err == nil
 }
