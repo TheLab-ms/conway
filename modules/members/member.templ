@@ -35,13 +35,9 @@ templ renderMembershipStatus(member *member) {
 			</div>
 		case "MissingKeyFob":
 			<div class="alert alert-warning">
-				<h4 class="alert-heading">Missing Key Fob</h4>
-				Your account doesn't have a key fob on record. If you're at the space, you can add one using the kiosk near the front door.
-			</div>
-		case "NotApproved":
-			<div class="alert alert-warning">
-				<h4 class="alert-heading">Waiting for Approval</h4>
-				Your account needs to be approved by another member before your key fob will be activated.
+				<h4 class="alert-heading">Pick Up Your Key</h4>
+				You need an RFID key fob to access the space, but your account isn't currently linked to one.
+				If you're at the space, you can add one using the kiosk near the front door.
 			</div>
 		case "FamilyInactive":
 			<div class="alert alert-warning">
@@ -50,7 +46,7 @@ templ renderMembershipStatus(member *member) {
 			</div>
 		case "PaymentInactive":
 			<div class="alert alert-warning">
-				<h4 class="alert-heading">Pending Dues Payment</h4>
+				<h4 class="alert-heading">Missing Billing Information</h4>
 				Use the button below to set up payment with our secure payment processor.
 			</div>
 	}

@@ -113,12 +113,7 @@ func renderMembershipStatus(member *member) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		case "MissingKeyFob":
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Missing Key Fob</h4>Your account doesn't have a key fob on record. If you're at the space, you can add one using the kiosk near the front door.</div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		case "NotApproved":
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Waiting for Approval</h4>Your account needs to be approved by another member before your key fob will be activated.</div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Pick Up Your Key</h4>You need an RFID key fob to access the space, but your account isn't currently linked to one. If you're at the space, you can add one using the kiosk near the front door.</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -128,7 +123,7 @@ func renderMembershipStatus(member *member) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		case "PaymentInactive":
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Pending Dues Payment</h4>Use the button below to set up payment with our secure payment processor.</div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"alert alert-warning\"><h4 class=\"alert-heading\">Missing Billing Information</h4>Use the button below to set up payment with our secure payment processor.</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
