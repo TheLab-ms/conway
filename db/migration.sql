@@ -185,7 +185,7 @@ BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'EmailConfirmed', 'Email address confirmed');
 END;
 
-CREATE TRIGGER IF NOT EXISTS members_discount_type_update AFTER UPDATE OF discount_type ON members WHEN OLD.discount_type != NEW.discount_type
+CREATE TRIGGER IF NOT EXISTS members_discount_type_update AFTER UPDATE OF discount_type ON members
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'DiscountTypeModified', 'Discount changed from "' || COALESCE(OLD.discount_type, 'NULL') || '" to "' || COALESCE(NEW.discount_type, 'NULL') || '"');
 END;
@@ -213,6 +213,11 @@ END;
 CREATE TRIGGER IF NOT EXISTS members_non_billable_removed AFTER UPDATE OF non_billable ON members WHEN NEW.non_billable IS false
 BEGIN
 INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'NonBillableStatusRemoved', 'The member is no longer marked as non-billable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS members_fob_changed AFTER UPDATE OF fob_id ON members WHEN OLD.fob_id != NEW.fob_id
+BEGIN
+INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'FobChanged', 'The fob ID changed from ' || COALESCE(OLD.fob_id, 'NULL') || ' to ' || COALESCE(NEW.fob_id, 'NULL'));
 END;
 
 CREATE TRIGGER IF NOT EXISTS waiver_signed AFTER UPDATE OF waiver ON members WHEN OLD.waiver IS NULL AND NEW.waiver IS NOT NULL
