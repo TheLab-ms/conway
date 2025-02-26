@@ -1,3 +1,10 @@
+// Keyfob is responsible for scanning and binding physical RFID fobs to member accounts.
+//
+// It does this securely by only accepting fob IDs sent from the makerspace's public IP
+// and signing a string containing the trusted keyfob id, which can then be transferred
+// over a less trusted channel (the internet) to the member's device.
+//
+// This obviously isn't perfect, but it's plenty good considering the tensile strength of drywall.
 package keyfob
 
 import (
@@ -25,6 +32,8 @@ import (
 
 //go:generate templ generate
 
+const sigTTL = time.Minute * 5 // length of time a signed QR code is valid
+
 type Module struct {
 	db         *sql.DB
 	self       *url.URL
@@ -35,13 +44,16 @@ type Module struct {
 }
 
 func New(db *sql.DB, self *url.URL, trustedHostname string) *Module {
-	key := make([]byte, 32)
+	m := &Module{db: db, self: self, trustedHostname: trustedHostname}
+	m.initSigningKey()
+	return m
+}
 
-	if _, err := rand.Read(key); err != nil {
+func (m *Module) initSigningKey() {
+	m.signingKey = make([]byte, 32)
+	if _, err := rand.Read(m.signingKey); err != nil {
 		panic(err)
 	}
-
-	return &Module{db: db, self: self, signingKey: key, trustedHostname: trustedHostname}
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
@@ -93,11 +105,7 @@ func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Respo
 	id := r.FormValue("fobid")
 	var png []byte
 	if id != "" {
-		h := hmac.New(sha256.New, m.signingKey)
-		h.Write([]byte(id))
-
-		val := fmt.Sprintf("%s.%s", id, base64.StdEncoding.EncodeToString(h.Sum(nil)))
-		url := fmt.Sprintf("%s/keyfob/bind?val=%s", m.self, val)
+		url := fmt.Sprintf("%s/keyfob/bind?val=%s", m.self, m.signQR(id, time.Now().Add(sigTTL)))
 		p, err := qrcode.Encode(url, qrcode.Medium, 512)
 		if err != nil {
 			return engine.Error(err)
@@ -105,41 +113,50 @@ func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Respo
 		png = make([]byte, base64.StdEncoding.EncodedLen(len(p)))
 		base64.StdEncoding.Encode(png, p)
 	}
-
 	return engine.Component(renderKiosk(png))
 }
 
 func (m *Module) handleBindKeyfob(r *http.Request, ps httprouter.Params) engine.Response {
 	user := auth.GetUserMeta(r.Context())
 
-	// Parse the value+signature string
-	val := r.FormValue("val")
-	parts := strings.Split(val, ".")
-	if len(parts) != 2 {
+	fobID, ok := m.verifyQR(r.FormValue("val"))
+	if !ok {
 		return engine.Redirect("/keyfob/bind?e=rror", http.StatusSeeOther)
 	}
 
-	// Verify the signature
-	id := parts[0]
-	sig, _ := base64.StdEncoding.DecodeString(parts[1])
-	h := hmac.New(sha256.New, m.signingKey)
-	h.Write([]byte(id))
-
-	if !hmac.Equal(sig, h.Sum(nil)) {
-		return engine.Redirect("/keyfob/bind?e=rror", http.StatusSeeOther)
-	}
-
-	fobID, err := strconv.Atoi(id)
-	if err != nil {
-		return engine.Redirect("/keyfob/bind?e=rror", http.StatusSeeOther)
-	}
-
-	// Assign it!
-	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET fob_id = ? WHERE id = ?", fobID, user.ID)
+	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET fob_id = ? WHERE id = ?", fobID, user.ID)
 	if err != nil {
 		return engine.Redirect("/keyfob/bind?e=rror", http.StatusSeeOther)
 	}
 	slog.Info("bound keyfob to member", "fobid", fobID, "memberID", user.ID)
 
 	return engine.Redirect("/", http.StatusSeeOther)
+}
+
+func (m *Module) signQR(id string, exp time.Time) string {
+	data := fmt.Sprintf("%s.%d", id, exp.Unix())
+	h := hmac.New(sha256.New, m.signingKey)
+	h.Write([]byte(data))
+	return fmt.Sprintf("%s.%s", data, base64.StdEncoding.EncodeToString(h.Sum(nil)))
+}
+
+func (m *Module) verifyQR(val string) (int64, bool) {
+	parts := strings.Split(val, ".")
+	if len(parts) != 3 {
+		return 0, false
+	}
+
+	id := parts[0]
+	expiration, _ := strconv.ParseInt(parts[1], 10, 64)
+	if time.Now().Unix() > expiration {
+		return 0, false
+	}
+
+	sig, _ := base64.StdEncoding.DecodeString(parts[2])
+	data := fmt.Sprintf("%s.%d", id, expiration)
+	h := hmac.New(sha256.New, m.signingKey)
+	h.Write([]byte(data))
+
+	fobID, err := strconv.ParseInt(id, 10, 0)
+	return fobID, err == nil && hmac.Equal(sig, h.Sum(nil))
 }
