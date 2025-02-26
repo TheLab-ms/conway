@@ -173,7 +173,7 @@ func (s *Module) handleLoginCodeFormPost(r *http.Request, p httprouter.Params) e
 	var memberID int64
 	err := s.db.QueryRowContext(r.Context(), "DELETE FROM logins WHERE code = ? RETURNING member;", code).Scan(&memberID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return engine.Errorf("attempt to log in with unknown code")
+		return engine.ClientErrorf(403, "Login code is incorrect or has expired")
 	}
 	if err != nil {
 		return engine.Errorf("invalidating login code: %s", err)

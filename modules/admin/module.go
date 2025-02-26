@@ -66,7 +66,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
 	return func(r *http.Request, ps httprouter.Params) engine.Response {
 		if meta := auth.GetUserMeta(r.Context()); meta == nil || !meta.Leadership {
-			return engine.ClientErrorf("You must be a member of leadership to access this page")
+			return engine.ClientErrorf(403, "You must be a member of leadership to access this page")
 		}
 		return next(r, ps)
 	}

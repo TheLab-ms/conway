@@ -100,7 +100,7 @@ func (m *Module) handleOauthToken(r *http.Request, p httprouter.Params) engine.R
 	// This means clients should treat oauth tokens as relatively low trust which is fine for this use-case.
 	clientID, _, _ := r.BasicAuth()
 	if clientID == "conway" {
-		return engine.ClientErrorf("cannot create token for reserved audience")
+		return engine.ClientErrorf(400, "cannot create token for reserved audience")
 	}
 
 	claims := &jwt.RegisteredClaims{}

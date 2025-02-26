@@ -31,7 +31,7 @@ func (m *Module) handleSubmitWaiver(r *http.Request, ps httprouter.Params) engin
 	a1 := r.FormValue("agree1")
 	a2 := r.FormValue("agree2")
 	if a1 != "on" || a2 != "on" {
-		return engine.ClientErrorf("you must agree to all terms")
+		return engine.ClientErrorf(400, "you must agree to all terms")
 	}
 
 	name := r.FormValue("name")
@@ -42,6 +42,6 @@ func (m *Module) handleSubmitWaiver(r *http.Request, ps httprouter.Params) engin
 	}
 
 	var isMember bool
-	err = m.db.QueryRowContext(r.Context(), "SELECT 1 FROM members WHERE email = $1", email).Scan(&isMember)
+	m.db.QueryRowContext(r.Context(), "SELECT 1 FROM members WHERE email = $1", email).Scan(&isMember)
 	return engine.Component(renderWaiver(true, name, email, isMember))
 }

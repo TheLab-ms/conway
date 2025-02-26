@@ -12,6 +12,8 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
+//go:generate templ generate
+
 type Handler func(r *http.Request, ps httprouter.Params) Response
 
 type Response interface {
@@ -59,13 +61,12 @@ func invokeHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params, 
 			logger.Info("handled http request")
 		}
 	} else {
-		logger.Error("handled http request", "error", e.DetailedMessage, "status", e.StatusCode)
+		logger.Error("handled http request", "error", e.Message, "details", e.DetailedMessage, "status", e.StatusCode)
 	}
 
 	if resp == nil {
 		return
 	}
-
 	if err := resp.write(w, r); err != nil {
 		slog.Warn("error while writing http response", "error", err)
 		return
@@ -79,41 +80,30 @@ type httpError struct {
 }
 
 func (e *httpError) write(w http.ResponseWriter, r *http.Request) error {
-	http.Error(w, e.Message, e.StatusCode)
-	return nil
+	if r.Header.Get("Accept") == "application/json" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(e.StatusCode)
+		return json.NewEncoder(w).Encode(map[string]string{"error": e.Message})
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	return renderError(e).Render(r.Context(), w)
 }
 
 func Errorf(templ string, args ...any) Response {
 	return &httpError{
 		DetailedMessage: fmt.Sprintf(templ, args...),
-		Message:         "internal error",
+		Message:         "Internal error",
 		StatusCode:      500,
 	}
 }
 
-func ClientErrorf(templ string, args ...any) Response {
+func ClientErrorf(status int, templ string, args ...any) Response {
 	msg := fmt.Sprintf(templ, args...)
 	return &httpError{
 		DetailedMessage: msg,
 		Message:         msg,
-		StatusCode:      400,
-	}
-}
-
-func NotFoundf(templ string, args ...any) Response {
-	msg := fmt.Sprintf(templ, args...)
-	return &httpError{
-		DetailedMessage: msg,
-		Message:         msg,
-		StatusCode:      404,
-	}
-}
-
-func Unauthorized(err error) Response {
-	return &httpError{
-		DetailedMessage: err.Error(),
-		Message:         "invalid token",
-		StatusCode:      401,
+		StatusCode:      status,
 	}
 }
 

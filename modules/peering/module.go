@@ -43,7 +43,7 @@ func (m *Module) withAuth(next engine.Handler) engine.Handler {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		err := m.db.QueryRowContext(r.Context(), "SELECT id FROM api_tokens WHERE token = $1", token).Scan(&id)
 		if err != nil {
-			return engine.Unauthorized(err)
+			return engine.ClientErrorf(401, "unauthenticated")
 		}
 		return next(r, ps)
 	}
@@ -94,7 +94,7 @@ func (m *Module) handlePostGliderEvents(r *http.Request, ps httprouter.Params) e
 			break
 		}
 		if err != nil {
-			return engine.ClientErrorf("invalid request: %s", err)
+			return engine.ClientErrorf(400, "invalid request: %s", err)
 		}
 		events = append(events, event)
 	}
