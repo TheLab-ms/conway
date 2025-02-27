@@ -107,7 +107,7 @@ func (m *Module) handlePostGliderEvents(r *http.Request, ps httprouter.Params) e
 
 	for _, event := range events {
 		if event.FobSwipe != nil {
-			_, err = tx.ExecContext(r.Context(), "INSERT INTO fob_swipes (uid, timestamp, fob_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", event.UID, event.Timestamp, event.FobSwipe.FobID)
+			_, err = tx.ExecContext(r.Context(), "INSERT INTO fob_swipes (uid, timestamp, fob_id, member) VALUES ($1, $2, $3, (SELECT id FROM members WHERE fob_id = $3)) ON CONFLICT DO NOTHING", event.UID, event.Timestamp, event.FobSwipe.FobID)
 			if err != nil {
 				return engine.Error(err)
 			}

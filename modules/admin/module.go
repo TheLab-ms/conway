@@ -3,6 +3,7 @@ package admin
 import (
 	"database/sql"
 	"net/http"
+	"strconv"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
@@ -22,27 +23,46 @@ func New(db *sql.DB) *Module {
 func (m *Module) AttachRoutes(router *engine.Router) {
 	var nav []*navbarTab
 	for _, view := range listViews {
+		view := view
 		route := "/admin" + view.RelPath
 		nav = append(nav, &navbarTab{Title: view.Title, Path: route})
 
 		router.Handle("GET", route, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
-			return engine.Component(renderAdminList(nav, "Members", "/admin/search"+view.RelPath))
+			return engine.Component(renderAdminList(nav, view.Title, "/admin/search"+view.RelPath))
 		})))
 
 		router.Handle("POST", "/admin/search"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
-			q, args := view.BuildQuery(r)
-			results, err := m.db.QueryContext(r.Context(), q, args...)
+			const limit = 20
+			txn, err := m.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+			if err != nil {
+				return engine.Errorf("starting db transaction: %s", err)
+			}
+			defer txn.Rollback()
+
+			q, rowCountQuery, args := view.BuildQuery(r)
+
+			// Get the row count
+			var rowCount int64
+			err = txn.QueryRowContext(r.Context(), rowCountQuery, args...).Scan(&rowCount)
+			if err != nil {
+				return engine.Errorf("getting row count: %s", err)
+			}
+			currentPage, _ := strconv.ParseInt(r.FormValue("currentpage"), 10, 0)
+
+			// Query
+			args = append(args, sql.Named("limit", limit), sql.Named("offset", max(currentPage-1, 0)*limit))
+			results, err := txn.QueryContext(r.Context(), q, args...)
 			if err != nil {
 				return engine.Errorf("querying the database: %s", err)
 			}
 			defer results.Close()
 
-			rows := view.BuildRows(results)
-			if err := results.Err(); err != nil {
+			rows, err := view.BuildRows(results)
+			if err != nil {
 				return engine.Errorf("scanning the query results: %s", err)
 			}
 
-			return engine.Component(renderAdminListElements(view.Rows, rows))
+			return engine.Component(renderAdminListElements(view.Rows, rows, max(currentPage, 1), max(rowCount/limit, 1)))
 		})))
 	}
 

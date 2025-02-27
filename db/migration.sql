@@ -168,10 +168,12 @@ END;
 CREATE TABLE IF NOT EXISTS fob_swipes (
     uid TEXT PRIMARY KEY,
     timestamp INTEGER NOT NULL,
-    fob_id INTEGER NOT NULL
+    fob_id INTEGER NOT NULL,
+    member INTEGER -- at time of insertion
 );
 
 CREATE INDEX IF NOT EXISTS fob_swipes_fob_id_idx ON fob_swipes (fob_id);
+CREATE INDEX IF NOT EXISTS fob_swipes_timestamp ON fob_swipes (timestamp);
 
 CREATE TRIGGER IF NOT EXISTS fob_swipe_to_member AFTER INSERT ON fob_swipes
 BEGIN

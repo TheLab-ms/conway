@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
+	"strconv"
 )
 
 type navbarTab struct {
@@ -41,15 +42,19 @@ type tableRow struct {
 }
 
 type tableCell struct {
-	Text      string
-	BadgeType string
+	Text           string
+	BadgeType      string
+	SelfLinkButton string
 }
 
-templ (t tableCell) Render() {
-	if t.BadgeType == "" {
-		<span>{ t.Text }</span>
-	} else {
-		<span class={ fmt.Sprintf("badge text-bg-%s", t.BadgeType) }>{ t.Text }</span>
+templ (t tableCell) Render(row *tableRow) {
+	switch  {
+		case t.BadgeType != "":
+			<span class={ fmt.Sprintf("badge text-bg-%s", t.BadgeType) }>{ t.Text }</span>
+		case t.SelfLinkButton != "":
+			<a href={ templ.URL(row.SelfLink) } class="btn btn-sm btn-primary">Edit</a>
+		default:
+			<span>{ t.Text }</span>
 	}
 }
 
@@ -68,10 +73,11 @@ templ renderAdminList(tabs []*navbarTab, typeName, searchURL string) {
 								placeholder="Search..."
 								style="width: 200px;"
 								name="search"
+								id="searchbox"
 								hx-post={ searchURL }
-								hx-trigger="input changed delay:500ms, keyup[key=='Enter'], load"
+								hx-trigger="input changed delay:500ms, keyup[key=='Enter'], load, change"
 								hx-target="#results"
-								hx-include="[name='search']"
+								hx-include="[name='search'], [name='currentpage']"
 							/>
 						</div>
 					</div>
@@ -82,7 +88,7 @@ templ renderAdminList(tabs []*navbarTab, typeName, searchURL string) {
 	}
 }
 
-templ renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow) {
+templ renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow, currentPage, totalPages int64) {
 	<div class="card-body p-0">
 		<div class="table-responsive">
 			<table class="table table-striped table-hover mb-0">
@@ -91,7 +97,6 @@ templ renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow) {
 						for _, meta := range rowMeta {
 							<th class={ fmt.Sprintf("col-%d", meta.Width) }>{ meta.Title }</th>
 						}
-						<th class="col-1">Actions</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -99,17 +104,42 @@ templ renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow) {
 						<tr onclick={ navigateToSelf(row.SelfLink) } style="cursor: pointer;">
 							for _, col := range row.Cells {
 								<td>
-									@col.Render()
+									@col.Render(row)
 								</td>
 							}
-							<td>
-								<a href={ templ.URL(row.SelfLink) } class="btn btn-sm btn-primary">Edit</a>
-							</td>
 						</tr>
 					}
 				</tbody>
 			</table>
 		</div>
+	</div>
+	<div class="card-footer text-body-secondary text-center">
+		@renderListPagination(currentPage, totalPages)
+	</div>
+}
+
+templ renderListPagination(currentPage, totalPages int64) {
+	<input type="hidden" id="currentpage" name="currentpage" value={ strconv.FormatInt(currentPage, 10) }/>
+	<script>
+		function updatePageCounter(offset) {
+			let el = document.getElementById('currentpage')
+			el.value = Number(el.value) + offset
+
+			document.getElementById('searchbox').dispatchEvent(new Event('change', { bubbles: true }))
+		}
+	</script>
+	<div class="btn-group">
+		if currentPage > 1 {
+			<a class="btn btn-primary" onclick="updatePageCounter(-1)">Previous</a>
+		} else {
+			<a class="btn btn-primary disabled">Previous</a>
+		}
+		<a class="btn btn-outline-primary disabled">{ fmt.Sprintf("Page %d of %d", currentPage, totalPages) }</a>
+		if currentPage < totalPages {
+			<a class="btn btn-primary" onclick="updatePageCounter(1)">Next</a>
+		} else {
+			<a class="btn btn-primary disabled">Next</a>
+		}
 	</div>
 }
 
