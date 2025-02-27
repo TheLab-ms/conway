@@ -120,7 +120,7 @@ var listViews = []listView{
 
 				row := &tableRow{
 					Cells: []*tableCell{
-						{Text: time.Unix(timestamp, 0).Format("2006-01-02 03:04:05 AM")},
+						{Text: time.Unix(timestamp, 0).Format("2006-01-02 03:04:05 PM")},
 						{Text: *member},
 						{Text: strconv.FormatInt(fobID, 10)},
 					},
