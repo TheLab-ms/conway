@@ -9,13 +9,10 @@ package keyfob
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -103,10 +100,15 @@ func (m *Module) atPhysicalSpace(next engine.Handler) engine.Handler {
 }
 
 func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Response {
-	id := r.FormValue("fobid")
+	idStr := r.FormValue("fobid")
 	var png []byte
-	if id != "" {
-		url := fmt.Sprintf("%s/keyfob/bind?val=%s", m.self, m.signQR(id, time.Now().Add(sigTTL)))
+	if idStr != "" {
+		id, err := strconv.ParseInt(idStr, 10, 0)
+		if err != nil {
+			return engine.ClientErrorf(400, "Invalid fob ID")
+		}
+
+		url := fmt.Sprintf("%s/keyfob/bind?val=%s", m.self, url.QueryEscape(engine.IntSigner.Sign(id, m.signingKey, sigTTL)))
 		p, err := qrcode.Encode(url, qrcode.Medium, 512)
 		if err != nil {
 			return engine.Error(err)
@@ -120,46 +122,16 @@ func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Respo
 func (m *Module) handleBindKeyfob(r *http.Request, ps httprouter.Params) engine.Response {
 	user := auth.GetUserMeta(r.Context())
 
-	fobID, ok := m.verifyQR(r.FormValue("val"))
+	fobID, ok := engine.IntSigner.Verify(r.FormValue("val"), m.signingKey)
 	if !ok {
 		return engine.ClientErrorf(400, "Invalid QR code")
 	}
 
-	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET fob_id = $1 WHERE id = $2 AND fob_id != $1", fobID, user.ID)
+	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET fob_id = $1 WHERE id = $2", fobID, user.ID)
 	if err != nil {
 		return engine.ClientErrorf(500, "inserting fob id into db: %s", err)
 	}
 	slog.Info("bound keyfob to member", "fobid", fobID, "memberID", user.ID)
 
 	return engine.Redirect("/", http.StatusSeeOther)
-}
-
-func (m *Module) signQR(id string, exp time.Time) string {
-	data := fmt.Sprintf("%s.%d", id, exp.Unix())
-	h := hmac.New(sha256.New, m.signingKey)
-	h.Write([]byte(data))
-	return fmt.Sprintf("%s.%s", data, base64.StdEncoding.EncodeToString(h.Sum(nil)))
-}
-
-func (m *Module) verifyQR(val string) (int64, bool) {
-	parts := strings.Split(val, ".")
-	if len(parts) != 3 {
-		return 0, false
-	}
-
-	id := parts[0]
-	expiration, _ := strconv.ParseInt(parts[1], 10, 64)
-	if time.Now().Unix() > expiration {
-		return 0, false
-	}
-
-	sig, _ := base64.StdEncoding.DecodeString(parts[2])
-	h := hmac.New(sha256.New, m.signingKey)
-	io.WriteString(h, strings.Join(parts[:2], "."))
-	if !hmac.Equal(sig, h.Sum(nil)) {
-		return 0, false
-	}
-
-	fobID, err := strconv.ParseInt(id, 10, 0)
-	return fobID, err == nil
 }
