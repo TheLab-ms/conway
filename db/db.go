@@ -5,8 +5,10 @@ import (
 	"embed"
 	_ "embed"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -48,9 +50,10 @@ func New(path string) (*sql.DB, error) {
 
 	for i, meta := range fileMeta {
 		_, err = tx.Exec("INSERT INTO migrations (name) VALUES (?)", meta.Name())
-		if err != nil && meta.Name() != "01-init.sql" {
+		if err != nil && !strings.Contains(err.Error(), "no such table: migrations") {
 			continue
 		}
+		slog.Info("migrating db", "migration", meta.Name())
 		_, err = tx.Exec(files[i])
 		if err != nil {
 			return nil, fmt.Errorf("migrating db: %w", err)
