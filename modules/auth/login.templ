@@ -2,7 +2,10 @@ package auth
 
 import "github.com/TheLab-ms/conway/modules/bootstrap"
 
-templ renderLoginPage(callbackURI string) {
+templ renderLoginPage(callbackURI string, tso *TurnstileOptions) {
+	if tso != nil {
+		<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+	}
 	@bootstrap.View() {
 		<body class="d-flex align-items-center justify-content-center vh-100 bg-light p-3">
 			<div class="card shadow p-4">
@@ -13,6 +16,9 @@ templ renderLoginPage(callbackURI string) {
 							<input type="email" class="form-control" id="email" name="email" placeholder="Email" required/>
 						</div>
 						<input type="hidden" id="callback_uri" name="callback_uri" value={ callbackURI }/>
+						if tso != nil {
+							<div class="cf-turnstile mb-3" data-sitekey={ tso.SiteKey }></div>
+						}
 						<button type="submit" class="btn btn-primary w-100">Submit</button>
 					</form>
 				</div>

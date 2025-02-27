@@ -12,7 +12,7 @@ import (
 
 func TestLoginCleanup(t *testing.T) {
 	db := db.NewTest(t)
-	w, err := New(db, &url.URL{}, nil)
+	w, err := New(db, &url.URL{}, nil, nil)
 	require.NoError(t, err)
 
 	// Create a member+login

@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"database/sql"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -36,18 +37,25 @@ type EmailConfig struct {
 	Auth smtp.Auth
 }
 
+// See: https://www.cloudflare.com/application-services/products/turnstile
+type TurnstileOptions struct {
+	SiteKey string
+	Secret  string
+}
+
 type Module struct {
 	Mailer func(ctx context.Context, to, subj string, msg []byte) bool
 
 	SigningKey   *rsa.PrivateKey
 	signingKeyID int64
 
-	db   *sql.DB
-	self *url.URL
+	db        *sql.DB
+	self      *url.URL
+	turnstile *TurnstileOptions
 }
 
-func New(db *sql.DB, self *url.URL, ec *EmailConfig) (*Module, error) {
-	m := &Module{db: db, self: self}
+func New(db *sql.DB, self *url.URL, ec *EmailConfig, tso *TurnstileOptions) (*Module, error) {
+	m := &Module{db: db, self: self, turnstile: tso}
 
 	// SMTP is optional - log to the console if not configured
 	if ec == nil {
@@ -93,7 +101,7 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("GET", "/login", func(r *http.Request, ps httprouter.Params) engine.Response {
 		callback := r.URL.Query().Get("callback_uri")
-		return engine.Component(renderLoginPage(callback))
+		return engine.Component(renderLoginPage(callback, m.turnstile))
 	})
 
 	router.Handle("GET", "/login/code", func(r *http.Request, ps httprouter.Params) engine.Response {
@@ -148,6 +156,10 @@ func (m *Module) WithAuth(next engine.Handler) engine.Handler {
 func (s *Module) handleLoginFormPost(r *http.Request, p httprouter.Params) engine.Response {
 	email := strings.ToLower(r.FormValue("email"))
 
+	if !s.verifyTurnstileResponse(r) {
+		return engine.ClientErrorf(401, "We weren't able to verify that you are a human")
+	}
+
 	// Find the corresponding member ID or insert a new row if one doesn't exist for this email address
 	var memberID int64
 	err := s.db.QueryRowContext(r.Context(), "INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id", email).Scan(&memberID)
@@ -164,6 +176,36 @@ func (s *Module) handleLoginFormPost(r *http.Request, p httprouter.Params) engin
 	q := url.Values{}
 	q.Add("callback_uri", r.FormValue("callback_uri"))
 	return engine.Redirect("/login/code?"+q.Encode(), http.StatusSeeOther)
+}
+
+func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
+	if s.turnstile == nil {
+		return true // fail open
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*3)
+	defer cancel()
+
+	form := url.Values{}
+	form.Set("response", r.FormValue("cf-turnstile-response"))
+	form.Set("secret", s.turnstile.Secret)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(form.Encode()))
+	if err != nil {
+		return true
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode >= 400 {
+		slog.Warn("unable to verify turnstile response - failing open", "error", err, "status", resp.StatusCode)
+		return true
+	}
+	defer resp.Body.Close()
+
+	result := &struct {
+		Success bool `json:"success"`
+	}{}
+	json.NewDecoder(resp.Body).Decode(result)
+	return result.Success
 }
 
 // handleLoginCodeFormPost allows the user to enter an auth code to get redirected back to where they're headed but with token(s).

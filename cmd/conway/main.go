@@ -39,6 +39,9 @@ type Config struct {
 	SmtpFrom string
 	SmtpUser string
 	SmtpPass string
+
+	TurnstileSiteKey string
+	TurnstileSecret  string
 }
 
 func main() {
@@ -47,6 +50,11 @@ func main() {
 		panic(err)
 	}
 	stripe.Key = conf.StripeKey
+
+	db, err := db.New("conway.sqlite3")
+	if err != nil {
+		panic(err)
+	}
 
 	var ec *auth.EmailConfig
 	if conf.SmtpAddr != "" {
@@ -58,17 +66,46 @@ func main() {
 		}
 	}
 
-	db, err := db.New("conway.sqlite3")
-	if err != nil {
-		panic(err)
-	}
-
 	app, _, err := newApp(db, conf, getSelfURL(conf), ec)
 	if err != nil {
 		panic(err)
 	}
 
 	app.Run(context.TODO())
+}
+
+func newApp(db *sql.DB, conf Config, self *url.URL, ec *auth.EmailConfig) (*engine.App, *auth.Module, error) {
+	a := engine.NewApp(conf.HttpAddr)
+
+	var tso *auth.TurnstileOptions
+	if conf.TurnstileSiteKey != "" {
+		tso = &auth.TurnstileOptions{
+			SiteKey: conf.TurnstileSiteKey,
+			Secret:  conf.TurnstileSecret,
+		}
+	}
+
+	authModule, err := auth.New(db, self, ec, tso)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating auth module: %w", err)
+	}
+	a.Add(authModule)
+	a.Router.Authenticator = authModule // IMPORTANT
+
+	peeringModule, err := peering.New(db)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating peering module: %w", err)
+	}
+	a.Add(peeringModule)
+
+	a.Add(oauth2.New(db, self, authModule))
+	a.Add(payment.New(db, conf.StripeWebhookKey, self))
+	a.Add(admin.New(db))
+	a.Add(members.New(db))
+	a.Add(waiver.New(db))
+	a.Add(keyfob.New(db, self, conf.SpaceHost))
+
+	return a, authModule, nil
 }
 
 func getSelfURL(conf Config) *url.URL {
@@ -90,30 +127,4 @@ func getSelfURL(conf Config) *url.URL {
 		panic(err)
 	}
 	return self
-}
-
-func newApp(db *sql.DB, conf Config, self *url.URL, ec *auth.EmailConfig) (*engine.App, *auth.Module, error) {
-	a := engine.NewApp(conf.HttpAddr)
-
-	authModule, err := auth.New(db, self, ec)
-	if err != nil {
-		return nil, nil, fmt.Errorf("creating auth module: %w", err)
-	}
-	a.Add(authModule)
-	a.Router.Authenticator = authModule // IMPORTANT
-
-	peeringModule, err := peering.New(db)
-	if err != nil {
-		return nil, nil, fmt.Errorf("creating peering module: %w", err)
-	}
-	a.Add(peeringModule)
-
-	a.Add(oauth2.New(db, self, authModule))
-	a.Add(payment.New(db, conf.StripeWebhookKey, self))
-	a.Add(admin.New(db))
-	a.Add(members.New(db))
-	a.Add(waiver.New(db))
-	a.Add(keyfob.New(db, self, conf.SpaceHost))
-
-	return a, authModule, nil
 }

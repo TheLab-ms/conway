@@ -22,7 +22,7 @@ func TestRootDomain(t *testing.T) {
 
 func TestUserInfo(t *testing.T) {
 	db := db.NewTest(t)
-	am, err := auth.New(db, &url.URL{}, nil)
+	am, err := auth.New(db, &url.URL{}, nil, nil)
 	require.NoError(t, err)
 	m := New(db, &url.URL{}, am)
 
