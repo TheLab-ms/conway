@@ -84,14 +84,9 @@ func main() {
 				withScrapeCursor(&conf, "gac", func(last int) int {
 					err = gacClient.ListSwipes(last, func(cs *gac.CardSwipe) error {
 						// Prefer our clock over the access controller's for non-historical events
-						ts := cs.Time
-						if time.Since(cs.Time).Abs() < time.Hour {
-							ts = time.Now()
-						}
-
 						client.BufferEvent(&peering.Event{
 							UID:       fmt.Sprintf("gac-%d", cs.ID),
-							Timestamp: ts.Unix(),
+							Timestamp: time.Now().Unix(),
 							FobSwipe: &peering.FobSwipeEvent{
 								FobID: int64(cs.CardID),
 							},
