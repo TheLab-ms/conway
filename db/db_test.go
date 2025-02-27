@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,8 +10,9 @@ import (
 )
 
 func TestDB(t *testing.T) {
-	NewTest(t)
-	NewTest(t)
+	file := filepath.Join(t.TempDir(), "test.db")
+	newTest(t, file)
+	newTest(t, file)
 }
 
 func TestMemberActive(t *testing.T) {
