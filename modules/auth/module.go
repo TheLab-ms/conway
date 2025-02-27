@@ -186,8 +186,12 @@ func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
 	ctx, cancel := context.WithTimeout(r.Context(), time.Second*3)
 	defer cancel()
 
+	tsr := r.FormValue("cf-turnstile-response")
+	if tsr == "" {
+		return false
+	}
 	form := url.Values{}
-	form.Set("response", r.FormValue("cf-turnstile-response"))
+	form.Set("response", tsr)
 	form.Set("secret", s.turnstile.Secret)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(form.Encode()))
