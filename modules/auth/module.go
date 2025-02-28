@@ -24,6 +24,7 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/julienschmidt/httprouter"
+	"golang.org/x/oauth2/google"
 	"golang.org/x/time/rate"
 )
 
@@ -44,24 +45,19 @@ type TurnstileOptions struct {
 }
 
 type Module struct {
-	Mailer func(ctx context.Context, to, subj string, msg []byte) bool
-
 	SigningKey   *rsa.PrivateKey
 	signingKeyID int64
 
 	db        *sql.DB
 	self      *url.URL
+	Sender    EmailSender
 	turnstile *TurnstileOptions
 }
 
-func New(db *sql.DB, self *url.URL, ec *EmailConfig, tso *TurnstileOptions) (*Module, error) {
-	m := &Module{db: db, self: self, turnstile: tso}
-
-	// SMTP is optional - log to the console if not configured
-	if ec == nil {
-		m.Mailer = devEmailSender
-	} else {
-		m.Mailer = m.newEmailSender(ec)
+func New(db *sql.DB, self *url.URL, es EmailSender, tso *TurnstileOptions) (*Module, error) {
+	m := &Module{db: db, self: self, Sender: es, turnstile: tso}
+	if m.Sender == nil {
+		m.Sender = newNoopSender()
 	}
 
 	// Generate or load the JWT signing key
@@ -293,7 +289,11 @@ func (m *Module) processLoginEmail(ctx context.Context) bool {
 	}
 
 	slog.Info("sending login email", "loginID", id, "email", email)
-	success := m.Mailer(ctx, email, "Makerspace Login Code", m.newLoginEmail(code))
+	err = m.Sender(ctx, email, "Your Login Code", m.newLoginEmail(code))
+	if err != nil {
+		slog.Error("unable to send login email", "error", err)
+	}
+	success := err == nil
 
 	// Update the item's status
 	if success {
@@ -310,33 +310,67 @@ func (m *Module) processLoginEmail(ctx context.Context) bool {
 
 func (m *Module) newLoginEmail(code int64) []byte {
 	return []byte(strings.Join([]string{
-		"Here is your login code:",
+		"Your login code is:",
 		fmt.Sprintf("%d", code),
+		"",
+		"The code will expire in 5 minutes.",
+		"Please ignore this message if you did not request a login code from TheLab Makerspace.",
 	}, "\n"))
 }
 
-func (m *Module) newEmailSender(conf *EmailConfig) func(c context.Context, to, subj string, msg []byte) bool {
+type EmailSender func(ctx context.Context, to, subj string, msg []byte) error
+
+func newNoopSender() EmailSender {
+	return func(ctx context.Context, to, subj string, msg []byte) error {
+		fmt.Fprintf(os.Stdout, "--- START EMAIL TO %s WITH SUBJECT %q ---\n%s\n--- END EMAIL ---\n", to, subj, msg)
+		return nil
+	}
+}
+
+func NewGoogleSmtpSender(from string) EmailSender {
+	creds, err := google.FindDefaultCredentialsWithParams(context.Background(), google.CredentialsParams{
+		Scopes:  []string{"https://mail.google.com/"},
+		Subject: from,
+	})
+	if err != nil {
+		panic(fmt.Errorf("building google oauth token source: %w", err))
+	}
+
 	limiter := rate.NewLimiter(rate.Every(time.Second*5), 1)
-	return func(ctx context.Context, to, subj string, msg []byte) bool {
+	return func(ctx context.Context, to, subj string, msg []byte) error {
+		err := limiter.Wait(ctx)
+		if err != nil {
+			return err
+		}
+
+		tok, err := creds.TokenSource.Token()
+		if err != nil {
+			return fmt.Errorf("getting oauth token: %w", err)
+		}
+		auth := &googleSmtpOauth{From: from, AccessToken: tok.AccessToken}
+
 		buf := &bytes.Buffer{}
+		fmt.Fprintf(buf, "From: TheLab Makerspace\r\n")
 		fmt.Fprintf(buf, "To: %s\r\n", to)
 		fmt.Fprintf(buf, "Subject: %s\r\n\r\n", subj)
 		buf.Write(msg)
 		buf.WriteString("\r\n")
 
-		err := smtp.SendMail(conf.Addr, conf.Auth, conf.From, []string{to}, buf.Bytes())
-		if err != nil {
-			slog.Error("error while sending email", "to", to, "error", err)
-			return false
-		}
-
-		limiter.Wait(ctx)
-		return true
+		return smtp.SendMail("smtp.gmail.com:587", auth, from, []string{to}, buf.Bytes())
 	}
 }
 
-// devEmailSender just "sends" emails by logging them to stdout.
-func devEmailSender(ctx context.Context, to, subj string, msg []byte) bool {
-	fmt.Fprintf(os.Stdout, "--- START EMAIL TO %s WITH SUBJECT %q ---\n%s\n--- END EMAIL ---\n", to, subj, msg)
-	return true
+type googleSmtpOauth struct {
+	From, AccessToken string
+}
+
+func (a *googleSmtpOauth) Start(_ *smtp.ServerInfo) (string, []byte, error) {
+	return "XOAUTH2", []byte("user=" + a.From + "\x01" + "auth=Bearer " + a.AccessToken + "\x01\x01"), nil
+}
+
+func (a *googleSmtpOauth) Next(_ []byte, more bool) ([]byte, error) {
+	if more {
+		return []byte(""), nil
+	}
+	return nil, nil
 }

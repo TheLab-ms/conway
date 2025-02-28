@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -29,13 +30,13 @@ func TestLoginIntegration(t *testing.T) {
 	// Fake email handler
 	emails := make(chan string)
 	emailCount := atomic.Int32{}
-	a.Auth.Mailer = func(ctx context.Context, to, subj string, msg []byte) bool {
+	a.Auth.Sender = func(ctx context.Context, to, subj string, msg []byte) error {
 		if emailCount.Add(1) == 1 {
-			return false // return an error to prove it's retried eventually
+			return errors.New("some error") // return an error to prove it's retried eventually
 		}
 
 		emails <- string(msg)
-		return true
+		return nil
 	}
 
 	start(t, a.App)

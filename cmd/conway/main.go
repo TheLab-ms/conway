@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/smtp"
 	"net/url"
 	"os"
 
@@ -35,10 +34,7 @@ type Config struct {
 	StripeKey        string
 	StripeWebhookKey string
 
-	SmtpAddr string
-	SmtpFrom string
-	SmtpUser string
-	SmtpPass string
+	EmailFrom string
 
 	TurnstileSiteKey string
 	TurnstileSecret  string
@@ -56,17 +52,12 @@ func main() {
 		panic(err)
 	}
 
-	var ec *auth.EmailConfig
-	if conf.SmtpAddr != "" {
-		host, _, _ := net.SplitHostPort(conf.SmtpAddr)
-		ec = &auth.EmailConfig{
-			Addr: conf.SmtpAddr,
-			From: conf.SmtpFrom,
-			Auth: smtp.PlainAuth("", conf.SmtpUser, conf.SmtpPass, host),
-		}
+	var sender auth.EmailSender
+	if conf.EmailFrom != "" {
+		sender = auth.NewGoogleSmtpSender(conf.EmailFrom)
 	}
 
-	app, _, err := newApp(db, conf, getSelfURL(conf), ec)
+	app, _, err := newApp(db, conf, getSelfURL(conf), sender)
 	if err != nil {
 		panic(err)
 	}
@@ -74,7 +65,7 @@ func main() {
 	app.Run(context.TODO())
 }
 
-func newApp(db *sql.DB, conf Config, self *url.URL, ec *auth.EmailConfig) (*engine.App, *auth.Module, error) {
+func newApp(db *sql.DB, conf Config, self *url.URL, aes auth.EmailSender) (*engine.App, *auth.Module, error) {
 	a := engine.NewApp(conf.HttpAddr)
 
 	var tso *auth.TurnstileOptions
@@ -85,7 +76,7 @@ func newApp(db *sql.DB, conf Config, self *url.URL, ec *auth.EmailConfig) (*engi
 		}
 	}
 
-	authModule, err := auth.New(db, self, ec, tso)
+	authModule, err := auth.New(db, self, aes, tso)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating auth module: %w", err)
 	}
