@@ -48,14 +48,15 @@ type Module struct {
 	SigningKey   *rsa.PrivateKey
 	signingKeyID int64
 
-	db        *sql.DB
-	self      *url.URL
-	Sender    EmailSender
-	turnstile *TurnstileOptions
+	db          *sql.DB
+	self        *url.URL
+	Sender      EmailSender
+	turnstile   *TurnstileOptions
+	authLimiter *rate.Limiter
 }
 
 func New(db *sql.DB, self *url.URL, es EmailSender, tso *TurnstileOptions) (*Module, error) {
-	m := &Module{db: db, self: self, Sender: es, turnstile: tso}
+	m := &Module{db: db, self: self, Sender: es, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5)}
 	if m.Sender == nil {
 		m.Sender = newNoopSender()
 	}
@@ -210,6 +211,7 @@ func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
 
 // handleLoginCodeFormPost allows the user to enter an auth code to get redirected back to where they're headed but with token(s).
 func (s *Module) handleLoginCodeFormPost(r *http.Request, p httprouter.Params) engine.Response {
+	s.authLimiter.Wait(r.Context())
 	code, _ := strconv.ParseInt(r.FormValue("code"), 10, 0)
 
 	var memberID int64
