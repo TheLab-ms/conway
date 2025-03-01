@@ -21,13 +21,13 @@ import (
 const tokenValidity = time.Hour * 8
 
 type Module struct {
-	db   *sql.DB
-	self *url.URL
-	auth *auth.Module
+	db     *sql.DB
+	self   *url.URL
+	issuer *engine.TokenIssuer
 }
 
-func New(db *sql.DB, self *url.URL, am *auth.Module) *Module {
-	return &Module{db: db, self: self, auth: am}
+func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer) *Module {
+	return &Module{db: db, self: self, issuer: iss}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -42,8 +42,8 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 				"use": "sig",
 				"kid": "1",
 				"alg": "RS512",
-				"n":   base64.RawURLEncoding.EncodeToString(m.auth.SigningKey.N.Bytes()),
-				"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(m.auth.SigningKey.E)).Bytes()),
+				"n":   base64.RawURLEncoding.EncodeToString(m.issuer.Key.N.Bytes()),
+				"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(m.issuer.Key.E)).Bytes()),
 			}},
 		})
 	})
@@ -65,13 +65,12 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 func (s *Module) handleOauthAuthorization(r *http.Request, p httprouter.Params) engine.Response {
 	email := auth.GetUserMeta(r.Context())
 
-	codeTok := jwt.NewWithClaims(jwt.SigningMethodRS512, &jwt.RegisteredClaims{
+	codeToken, err := s.issuer.Sign(&jwt.RegisteredClaims{
 		Issuer:    s.self.String(),
 		Subject:   email.Email,
 		Audience:  jwt.ClaimStrings{"conway-oauth"},
 		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute)},
 	})
-	codeToken, err := codeTok.SignedString(s.auth.SigningKey)
 	if err != nil {
 		return engine.Errorf("signing code jwt: %s", err)
 	}
@@ -103,9 +102,8 @@ func (m *Module) handleOauthToken(r *http.Request, p httprouter.Params) engine.R
 		return engine.ClientErrorf(400, "cannot create token for reserved audience")
 	}
 
-	claims := &jwt.RegisteredClaims{}
-	tok, err := jwt.ParseWithClaims(code, claims, func(token *jwt.Token) (interface{}, error) { return &m.auth.SigningKey.PublicKey, nil })
-	if err != nil || !tok.Valid || len(claims.Audience) == 0 || claims.Audience[0] != "conway-oauth" {
+	claims, err := m.issuer.Verify(code)
+	if err != nil || len(claims.Audience) == 0 || claims.Audience[0] != "conway-oauth" {
 		return engine.Errorf("invalid code: %s", err)
 	}
 
@@ -133,13 +131,12 @@ func (m *Module) handleOauthToken(r *http.Request, p httprouter.Params) engine.R
 }
 
 func (m *Module) signToken(memberID int64, clientID string) (string, error) {
-	accessTok := jwt.NewWithClaims(jwt.SigningMethodRS512, &jwt.RegisteredClaims{
+	return m.issuer.Sign(&jwt.RegisteredClaims{
 		Issuer:    m.self.String(),
 		Subject:   strconv.FormatInt(memberID, 10),
 		Audience:  jwt.ClaimStrings{clientID},
 		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(tokenValidity)},
 	})
-	return accessTok.SignedString(m.auth.SigningKey)
 }
 
 type oauthTokenResponse struct {
@@ -155,9 +152,8 @@ func (m *Module) handleOauthUserInfo(r *http.Request, p httprouter.Params) engin
 	tokStr := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 
 	// Parse the JWT
-	claims := &jwt.RegisteredClaims{}
-	tok, err := jwt.ParseWithClaims(tokStr, claims, func(token *jwt.Token) (interface{}, error) { return &m.auth.SigningKey.PublicKey, nil })
-	if err != nil || !tok.Valid {
+	claims, err := m.issuer.Verify(tokStr)
+	if err != nil {
 		return engine.Errorf("invalid jwt: %s", err)
 	}
 

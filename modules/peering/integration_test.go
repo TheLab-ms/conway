@@ -2,6 +2,7 @@ package peering
 
 import (
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,19 +16,14 @@ import (
 func TestApiIntegration(t *testing.T) {
 	// Set up a fake conway instance that just runs the API
 	db := db.NewTest(t)
-	a, err := New(db)
-	require.NoError(t, err)
+	iss := engine.NewTokenIssuer(filepath.Join(t.TempDir(), "test.pem"))
+	a := New(db, iss)
 	router := engine.NewRouter(nil)
 	a.AttachRoutes(router)
 	svr := httptest.NewServer(router)
 	defer svr.Close()
 
-	// Build the Glider client
-	var token string
-	err = db.QueryRow("SELECT token FROM api_tokens").Scan(&token)
-	require.NoError(t, err)
-
-	c := NewClient(svr.URL, token, t.TempDir())
+	c := NewClient(svr.URL, t.TempDir(), iss)
 
 	// Get initial state
 	state := c.GetState()
@@ -40,7 +36,7 @@ func TestApiIntegration(t *testing.T) {
 	assert.Equal(t, 0, len(state.EnabledFobs))
 
 	// Seed some data into the server
-	_, err = db.Exec("INSERT INTO members (name, email, confirmed, waiver, non_billable) VALUES ('test', 'foo@bar.com', TRUE, 1, TRUE)")
+	_, err := db.Exec("INSERT INTO members (name, email, confirmed, waiver, non_billable) VALUES ('test', 'foo@bar.com', TRUE, 1, TRUE)")
 	require.NoError(t, err)
 	_, err = db.Exec("UPDATE members SET fob_id = 123")
 	require.NoError(t, err)

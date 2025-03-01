@@ -4,11 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"database/sql"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -45,48 +42,19 @@ type TurnstileOptions struct {
 }
 
 type Module struct {
-	SigningKey   *rsa.PrivateKey
-	signingKeyID int64
-
 	db          *sql.DB
 	self        *url.URL
 	Sender      EmailSender
 	turnstile   *TurnstileOptions
 	authLimiter *rate.Limiter
+	issuer      *engine.TokenIssuer
 }
 
-func New(db *sql.DB, self *url.URL, es EmailSender, tso *TurnstileOptions) (*Module, error) {
-	m := &Module{db: db, self: self, Sender: es, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5)}
+func New(db *sql.DB, self *url.URL, es EmailSender, tso *TurnstileOptions, iss *engine.TokenIssuer) (*Module, error) {
+	m := &Module{db: db, self: self, Sender: es, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), issuer: iss}
 	if m.Sender == nil {
 		m.Sender = newNoopSender()
 	}
-
-	// Generate or load the JWT signing key
-read:
-	var keyPEM string
-	err := db.QueryRow("SELECT id, key_pem FROM keys WHERE label = 'jwt' ORDER BY id DESC LIMIT 1").Scan(&m.signingKeyID, &keyPEM)
-	if errors.Is(err, sql.ErrNoRows) {
-		slog.Info("generating jwt signing key...")
-		pkey, err := rsa.GenerateKey(rand.Reader, 4096)
-		if err != nil {
-			return nil, err
-		}
-		_, err = db.Exec("INSERT INTO keys (key_pem, label) VALUES (?, 'jwt')", string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(pkey)})))
-		if err != nil {
-			return nil, err
-		}
-		goto read
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	block, _ := pem.Decode([]byte(keyPEM))
-	m.SigningKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-
 	return m, nil
 }
 
@@ -131,9 +99,8 @@ func (m *Module) WithAuth(next engine.Handler) engine.Handler {
 		if err != nil {
 			return engine.Redirect("/login?"+q.Encode(), http.StatusFound)
 		}
-		claims := &jwt.RegisteredClaims{}
-		tok, err := jwt.ParseWithClaims(cook.Value, claims, func(token *jwt.Token) (interface{}, error) { return &m.SigningKey.PublicKey, nil })
-		if err != nil || !tok.Valid || len(claims.Audience) == 0 || claims.Audience[0] != "conway" {
+		claims, err := m.issuer.Verify(cook.Value)
+		if err != nil || len(claims.Audience) == 0 || claims.Audience[0] != "conway" {
 			return engine.Redirect("/login?"+q.Encode(), http.StatusFound)
 		}
 
@@ -229,7 +196,12 @@ func (s *Module) handleLoginCodeFormPost(r *http.Request, p httprouter.Params) e
 	}
 
 	exp := time.Now().Add(time.Hour * 24 * 30)
-	token, err := s.signToken(strconv.FormatInt(memberID, 10), exp)
+	token, err := s.issuer.Sign(&jwt.RegisteredClaims{
+		Issuer:    "conway",
+		Subject:   strconv.FormatInt(memberID, 10),
+		Audience:  jwt.ClaimStrings{"conway"},
+		ExpiresAt: &jwt.NumericDate{Time: exp},
+	})
 	if err != nil {
 		return engine.Errorf("signing jwt: %s", err)
 	}
@@ -243,17 +215,6 @@ func (s *Module) handleLoginCodeFormPost(r *http.Request, p httprouter.Params) e
 	}
 	return engine.WithCookie(cook,
 		engine.Redirect(r.FormValue("callback_uri"), http.StatusFound))
-}
-
-func (s *Module) signToken(subj string, exp time.Time) (string, error) {
-	tok := jwt.NewWithClaims(jwt.SigningMethodRS512, &jwt.RegisteredClaims{
-		Issuer:    "conway",
-		Subject:   subj,
-		Audience:  jwt.ClaimStrings{"conway"},
-		ExpiresAt: &jwt.NumericDate{Time: exp},
-	})
-	tok.Header["kid"] = strconv.FormatInt(s.signingKeyID, 10)
-	return tok.SignedString(s.SigningKey)
 }
 
 // generateLoginCode generates a sufficiently random int that happens to be "6 digits"

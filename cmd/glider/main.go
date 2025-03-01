@@ -8,11 +8,11 @@ import (
 	"log/slog"
 	"math/rand"
 	"os"
-	"path/filepath"
 	"strconv"
 	"sync/atomic"
 	"time"
 
+	"github.com/TheLab-ms/conway/engine"
 	gac "github.com/TheLab-ms/conway/modules/generic-access-controller"
 	"github.com/TheLab-ms/conway/modules/peering"
 	"github.com/caarlos0/env/v11"
@@ -20,8 +20,6 @@ import (
 
 type Config struct {
 	ConwayURL            string `env:",required"`
-	ConwayToken          string `env:",required"`
-	StateDir             string `env:",required" envDefault:"./state"`
 	AccessControllerHost string
 }
 
@@ -30,7 +28,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	client := peering.NewClient(conf.ConwayURL, conf.ConwayToken, conf.StateDir)
+	client := peering.NewClient(conf.ConwayURL, ".", engine.NewTokenIssuer("glider.pem"))
 	gacClient := gac.Client{Addr: conf.AccessControllerHost, Timeout: time.Second * 5}
 
 	// Loop to asynchronously flush events to Conway
@@ -81,7 +79,7 @@ func main() {
 				}
 
 				// Scrape events
-				withScrapeCursor(&conf, "gac", func(last int) int {
+				withScrapeCursor("gac.cursor", func(last int) int {
 					err = gacClient.ListSwipes(last, func(cs *gac.CardSwipe) error {
 						// Prefer our clock over the access controller's for non-historical events
 						client.BufferEvent(&peering.Event{
@@ -170,8 +168,7 @@ func syncAccessControllerConfig(state *peering.State, client *gac.Client) error 
 	return nil
 }
 
-func withScrapeCursor(conf *Config, name string, fn func(last int) int) {
-	fp := filepath.Join(conf.StateDir, name+".cursor")
+func withScrapeCursor(fp string, fn func(last int) int) {
 	raw, err := os.ReadFile(fp)
 	if err != nil && !os.IsNotExist(err) {
 		panic(err)

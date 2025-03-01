@@ -76,20 +76,17 @@ func newApp(db *sql.DB, conf Config, self *url.URL, aes auth.EmailSender) (*engi
 		}
 	}
 
-	authModule, err := auth.New(db, self, aes, tso)
+	authModule, err := auth.New(db, self, aes, tso, engine.NewTokenIssuer("auth.pem"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating auth module: %w", err)
 	}
 	a.Add(authModule)
 	a.Router.Authenticator = authModule // IMPORTANT
 
-	peeringModule, err := peering.New(db)
-	if err != nil {
-		return nil, nil, fmt.Errorf("creating peering module: %w", err)
-	}
+	peeringModule := peering.New(db, engine.NewTokenIssuer("glider.pem"))
 	a.Add(peeringModule)
 
-	a.Add(oauth2.New(db, self, authModule))
+	a.Add(oauth2.New(db, self, engine.NewTokenIssuer("oauth2.pem")))
 	a.Add(payment.New(db, conf.StripeWebhookKey, self))
 	a.Add(admin.New(db))
 	a.Add(members.New(db))

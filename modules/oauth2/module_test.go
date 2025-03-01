@@ -4,11 +4,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"testing"
 
 	"github.com/TheLab-ms/conway/db"
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/gavv/httpexpect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,9 +22,7 @@ func TestRootDomain(t *testing.T) {
 
 func TestUserInfo(t *testing.T) {
 	db := db.NewTest(t)
-	am, err := auth.New(db, &url.URL{}, nil, nil)
-	require.NoError(t, err)
-	m := New(db, &url.URL{}, am)
+	m := New(db, &url.URL{}, engine.NewTokenIssuer(filepath.Join(t.TempDir(), "test.pem")))
 
 	router := engine.NewRouter(nil)
 	m.AttachRoutes(router)
@@ -34,7 +32,7 @@ func TestUserInfo(t *testing.T) {
 	e := httpexpect.Default(t, server.URL)
 
 	// Basic active user
-	_, err = db.Exec("INSERT INTO members (email, name, confirmed, non_billable) VALUES ('foo', 'bar', 1, 1)")
+	_, err := db.Exec("INSERT INTO members (email, name, confirmed, non_billable) VALUES ('foo', 'bar', 1, 1)")
 	require.NoError(t, err)
 
 	token, err := m.signToken(1, "baz")

@@ -11,25 +11,16 @@ import (
 	"strings"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/google/uuid"
 	"github.com/julienschmidt/httprouter"
 )
 
 type Module struct {
-	db *sql.DB
+	db     *sql.DB
+	issuer *engine.TokenIssuer
 }
 
-func New(db *sql.DB) (*Module, error) {
-	var id int
-	if err := db.QueryRow("SELECT id FROM api_tokens").Scan(&id); err != nil {
-		slog.Info("generating initial API token...")
-		token := uuid.Must(uuid.NewRandom()).String() + "-" + uuid.Must(uuid.NewRandom()).String() // mega uuid lol
-		_, err = db.Exec("INSERT INTO api_tokens (label, token) VALUES ('Automatically generated', ?)", token)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &Module{db: db}, nil
+func New(db *sql.DB, iss *engine.TokenIssuer) *Module {
+	return &Module{db: db, issuer: iss}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -39,11 +30,10 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 func (m *Module) withAuth(next engine.Handler) engine.Handler {
 	return func(r *http.Request, ps httprouter.Params) engine.Response {
-		var id int
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		err := m.db.QueryRowContext(r.Context(), "SELECT id FROM api_tokens WHERE token = $1", token).Scan(&id)
+		_, err := m.issuer.Verify(token)
 		if err != nil {
-			return engine.ClientErrorf(401, "unauthenticated")
+			return engine.Errorf("invalid token")
 		}
 		return next(r, ps)
 	}

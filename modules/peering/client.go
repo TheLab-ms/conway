@@ -11,6 +11,10 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/TheLab-ms/conway/engine"
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/oauth2"
 )
 
 type State struct {
@@ -31,15 +35,26 @@ type FobSwipeEvent struct {
 }
 
 type Client struct {
-	baseURL, token, stateDir string
-	StateTransitions         chan struct{}
+	StateTransitions  chan struct{}
+	baseURL, stateDir string
+	tokens            oauth2.TokenSource
 }
 
-func NewClient(baseURL, token, stateDir string) *Client {
+func NewClient(baseURL, stateDir string, iss *engine.TokenIssuer) *Client {
 	if err := os.MkdirAll(filepath.Join(stateDir, "events"), 0755); err != nil {
 		panic(err)
 	}
-	return &Client{baseURL, token, stateDir, make(chan struct{}, 2)}
+
+	return &Client{
+		StateTransitions: make(chan struct{}, 2),
+		baseURL:          baseURL,
+		stateDir:         stateDir,
+		tokens: iss.OAuth2(func() *jwt.RegisteredClaims {
+			return &jwt.RegisteredClaims{
+				ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			}
+		}),
+	}
 }
 
 func (c *Client) GetState() *State {
@@ -193,7 +208,12 @@ func (c *Client) roundtrip(method, path string, body io.Reader) (*http.Response,
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	tok, err := c.tokens.Token()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
 
 	return client.Do(req)
 }
