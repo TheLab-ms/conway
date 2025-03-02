@@ -18,7 +18,7 @@ type member struct {
 	Name              string
 	Email             string
 	Confirmed         bool
-	Created           int64
+	Created           engine.LocalTime
 	AdminNotes        string
 	Leadership        bool
 	NonBillable       bool
@@ -27,11 +27,11 @@ type member struct {
 	StripeStatus      *string
 	PaypalSubID       *string
 	PaypalPrice       *float64
-	PaypalLastPayment *int64
+	PaypalLastPayment *engine.LocalTime
 	DiscountType      *string
 	RootFamilyEmail   *string
 	BillAnnually      bool
-	FobLastSeen       *int64
+	FobLastSeen       *engine.LocalTime
 }
 
 type memberEvent struct {
@@ -120,9 +120,9 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 			<div class="card">
 				<div class="card-body">
 					<h5 class="card-title mb-2">Basic Info</h5>
-					<h6 class="card-subtitle mb-2 text-muted">Account created on { time.Unix(member.Created, 0).Format(timeFormat) }</h6>
+					<h6 class="card-subtitle mb-2 text-muted">Account created on { member.Created.Time.Format(timeFormat) }</h6>
 					if member.FobLastSeen != nil {
-						<h6 class="card-subtitle mb-2 text-muted">Last fob'd in { formatLastFobSwipe(time.Unix(*member.FobLastSeen, 0)) }</h6>
+						<h6 class="card-subtitle mb-2 text-muted">Last fob'd in { formatLastFobSwipe(member.FobLastSeen.Time) }</h6>
 					}
 					if member.AccessStatus != "Ready" {
 						<span class="badge text-bg-danger mb-3">{ member.AccessStatus }</span>
@@ -238,7 +238,7 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 						if member.PaypalLastPayment != nil {
 							<h6 class="card-subtitle mb-2 text-muted">
 								Last payment processed:
-								<b>{ time.Unix(*member.PaypalLastPayment, 0).Format(timeFormat) }</b>
+								<b>{ member.PaypalLastPayment.Time.Format(timeFormat) }</b>
 							</h6>
 						}
 						if member.PaypalPrice != nil {

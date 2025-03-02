@@ -26,7 +26,7 @@ type member struct {
 	Name              string
 	Email             string
 	Confirmed         bool
-	Created           int64
+	Created           engine.LocalTime
 	AdminNotes        string
 	Leadership        bool
 	NonBillable       bool
@@ -35,11 +35,11 @@ type member struct {
 	StripeStatus      *string
 	PaypalSubID       *string
 	PaypalPrice       *float64
-	PaypalLastPayment *int64
+	PaypalLastPayment *engine.LocalTime
 	DiscountType      *string
 	RootFamilyEmail   *string
 	BillAnnually      bool
-	FobLastSeen       *int64
+	FobLastSeen       *engine.LocalTime
 }
 
 type memberEvent struct {
@@ -163,9 +163,9 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
-			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(member.Created, 0).Format(timeFormat))
+			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(member.Created.Time.Format(timeFormat))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 123, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 123, Col: 106}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -181,9 +181,9 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var4 string
-				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(formatLastFobSwipe(time.Unix(*member.FobLastSeen, 0)))
+				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(formatLastFobSwipe(member.FobLastSeen.Time))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 125, Col: 117}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 125, Col: 107}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -474,9 +474,9 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var16 string
-					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(*member.PaypalLastPayment, 0).Format(timeFormat))
+					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(member.PaypalLastPayment.Time.Format(timeFormat))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 241, Col: 71}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 241, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {

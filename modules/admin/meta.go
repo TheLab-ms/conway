@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 )
@@ -104,7 +103,7 @@ var listViews = []listView{
 		BuildRows: func(results *sql.Rows) ([]*tableRow, error) {
 			rows := []*tableRow{}
 			for results.Next() {
-				var timestamp int64
+				var timestamp engine.LocalTime
 				var memberID *int64
 				var member *string
 				var fobID int64
@@ -120,7 +119,7 @@ var listViews = []listView{
 
 				row := &tableRow{
 					Cells: []*tableCell{
-						{Text: time.Unix(timestamp, 0).Format("2006-01-02 03:04:05 PM")},
+						{Text: timestamp.Time.Format("2006-01-02 03:04:05 PM")},
 						{Text: *member},
 						{Text: strconv.FormatInt(fobID, 10)},
 					},
