@@ -8,22 +8,31 @@ import (
 )
 
 func TestValueSigner(t *testing.T) {
-	v := &ValueSigner[int64]{}
-	key := []byte("test")
+	v := NewValueSigner[int]()
 
-	val, ok := v.Verify(v.Sign(123, key, time.Hour), key)
-	assert.True(t, ok)
-	assert.Equal(t, int64(123), val)
+	t.Run("happy path", func(t *testing.T) {
+		val, ok := v.Verify(v.Sign(42, time.Hour))
+		assert.True(t, ok)
+		assert.Equal(t, 42, val)
+	})
 
-	_, ok = v.Verify(v.Sign(123, []byte("not it"), time.Hour), key)
-	assert.False(t, ok)
+	t.Run("expired", func(t *testing.T) {
+		val, ok := v.Verify(v.Sign(42, -time.Second))
+		assert.False(t, ok)
+		assert.Equal(t, 0, val)
+	})
 
-	_, ok = v.Verify(v.Sign(123, key, -time.Second), key)
-	assert.False(t, ok)
+	t.Run("invalid str", func(t *testing.T) {
+		val, ok := v.Verify("invalid")
+		assert.False(t, ok)
+		assert.Equal(t, 0, val)
+	})
 
-	_, ok = v.Verify("invalid", key)
-	assert.False(t, ok)
-
-	_, ok = v.Verify("inv@lid.sig", key)
-	assert.False(t, ok)
+	t.Run("wrong key", func(t *testing.T) {
+		str := v.Sign(42, time.Hour)
+		v.initSigningKey()
+		val, ok := v.Verify(str)
+		assert.False(t, ok)
+		assert.Equal(t, 0, val)
+	})
 }

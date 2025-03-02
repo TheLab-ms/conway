@@ -9,7 +9,6 @@ package keyfob
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
 	"fmt"
@@ -33,25 +32,16 @@ import (
 const sigTTL = time.Minute * 5 // length of time a signed QR code is valid
 
 type Module struct {
-	db         *sql.DB
-	self       *url.URL
-	signingKey []byte
+	db     *sql.DB
+	self   *url.URL
+	signer *engine.ValueSigner[int64]
 
 	trustedHostname string
 	trustedIP       atomic.Pointer[net.IP]
 }
 
 func New(db *sql.DB, self *url.URL, trustedHostname string) *Module {
-	m := &Module{db: db, self: self, trustedHostname: trustedHostname}
-	m.initSigningKey()
-	return m
-}
-
-func (m *Module) initSigningKey() {
-	m.signingKey = make([]byte, 32)
-	if _, err := rand.Read(m.signingKey); err != nil {
-		panic(err)
-	}
+	return &Module{db: db, self: self, signer: engine.NewValueSigner[int64](), trustedHostname: trustedHostname}
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
@@ -108,7 +98,7 @@ func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Respo
 			return engine.ClientErrorf(400, "Invalid fob ID")
 		}
 
-		url := fmt.Sprintf("%s/keyfob/bind?val=%s", m.self, url.QueryEscape(engine.IntSigner.Sign(id, m.signingKey, sigTTL)))
+		url := fmt.Sprintf("%s/keyfob/bind?val=%s", m.self, url.QueryEscape(m.signer.Sign(id, sigTTL)))
 		p, err := qrcode.Encode(url, qrcode.Medium, 512)
 		if err != nil {
 			return engine.Error(err)
@@ -122,7 +112,7 @@ func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Respo
 func (m *Module) handleBindKeyfob(r *http.Request, ps httprouter.Params) engine.Response {
 	user := auth.GetUserMeta(r.Context())
 
-	fobID, ok := engine.IntSigner.Verify(r.FormValue("val"), m.signingKey)
+	fobID, ok := m.signer.Verify(r.FormValue("val"))
 	if !ok {
 		return engine.ClientErrorf(400, "Invalid QR code")
 	}

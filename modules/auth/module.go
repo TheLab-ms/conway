@@ -25,8 +25,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// TODO: Key rotation
-
 //go:generate templ generate
 
 type EmailConfig struct {
