@@ -125,22 +125,6 @@ CREATE INDEX IF NOT EXISTS logins_send_at_idx ON logins (send_email_at);
 CREATE INDEX IF NOT EXISTS logins_created_idx ON logins (created);
 CREATE UNIQUE INDEX IF NOT EXISTS logins_code_idx ON logins (code);
 
-CREATE TABLE IF NOT EXISTS keys (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    label TEXT NOT NULL DEFAULT '',
-    key_pem TEXT NOT NULL
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS api_tokens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    label TEXT NOT NULL DEFAULT '',
-    token TEXT NOT NULL
-) STRICT;
-
-CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_idx ON api_tokens (token);
-
 CREATE TABLE IF NOT EXISTS glider_state (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     revision INTEGER NOT NULL
