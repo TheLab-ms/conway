@@ -27,12 +27,6 @@ import (
 
 //go:generate templ generate
 
-type EmailConfig struct {
-	Addr string
-	From string
-	Auth smtp.Auth
-}
-
 // See: https://www.cloudflare.com/application-services/products/turnstile
 type TurnstileOptions struct {
 	SiteKey string
