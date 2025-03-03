@@ -101,7 +101,9 @@ func NewGoogleSmtpSender(from string) Sender {
 		buf := &bytes.Buffer{}
 		fmt.Fprintf(buf, "From: TheLab Makerspace\r\n")
 		fmt.Fprintf(buf, "To: %s\r\n", to)
-		fmt.Fprintf(buf, "Subject: %s\r\n\r\n", subj)
+		fmt.Fprintf(buf, "Subject: %s\r\n", subj)
+		fmt.Fprintf(buf, "MIME-version: 1.0;\r\n")
+		fmt.Fprintf(buf, "Content-Type: text/html; charset=\"UTF-8\";\r\n\r\n")
 		buf.Write(msg)
 		buf.WriteString("\r\n")
 

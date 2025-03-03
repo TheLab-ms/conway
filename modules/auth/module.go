@@ -1,10 +1,10 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -130,13 +130,12 @@ func (m *Module) newLoginEmail(memberID int64, callback string) (string, error) 
 		return "", err
 	}
 
-	return strings.Join([]string{
-		"Here is your login link for TheLab Makerspace:",
-		fmt.Sprintf("%s/login?t=%s&n=%s", m.self.String(), url.QueryEscape(tok), url.QueryEscape(callback)),
-		"",
-		"This link will expire in 5 minutes.",
-		"Please ignore this message if you did not request a login code from TheLab Makerspace.",
-	}, "\n"), nil
+	var buf bytes.Buffer
+	err = renderLoginEmail(m.self, tok, callback).Render(context.Background(), &buf)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
