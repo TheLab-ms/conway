@@ -99,7 +99,7 @@ func renderLoginPage(callbackURI string, tso *TurnstileOptions) templ.Component 
 	})
 }
 
-func renderLoginCodePage(callbackURI string) templ.Component {
+func renderLoginSentPage() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -132,20 +132,7 @@ func renderLoginCodePage(callbackURI string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<body class=\"d-flex align-items-center justify-content-center vh-100 bg-light p-3\"><div id=\"login-code\" class=\"text-center\"><div class=\"card shadow p-4\"><h5 class=\"mb-3\">Enter Your Login Code</h5><p class=\"col-xs\">We sent a 6 digit code to the provided email address.<br>Enter it here to finish logging in.</p><form action=\"/login/code\" method=\"post\"><div class=\"mb-3\"><input type=\"text\" class=\"form-control\" id=\"code\" name=\"code\" placeholder=\"Code\" pattern=\"\\d{6}\" maxlength=\"6\" size=\"6\" required></div><input type=\"hidden\" id=\"callback_uri\" name=\"callback_uri\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var7 string
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(callbackURI)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 45, Col: 84}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("\"> <button type=\"submit\" class=\"btn btn-primary w-100\">Login</button></form></div></div></body>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<body class=\"d-flex align-items-center justify-content-center vh-100 bg-light p-3\"><div id=\"login-code\" class=\"text-center\"><div class=\"card shadow p-4\"><h5 class=\"mb-3\">Email Sent</h5><p class=\"col-xs\">We sent a login link to the provided email address.</p></div></div></body>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

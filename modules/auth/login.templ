@@ -27,24 +27,15 @@ templ renderLoginPage(callbackURI string, tso *TurnstileOptions) {
 	}
 }
 
-templ renderLoginCodePage(callbackURI string) {
+templ renderLoginSentPage() {
 	@bootstrap.View() {
 		<body class="d-flex align-items-center justify-content-center vh-100 bg-light p-3">
 			<div id="login-code" class="text-center">
 				<div class="card shadow p-4">
-					<h5 class="mb-3">Enter Your Login Code</h5>
+					<h5 class="mb-3">Email Sent</h5>
 					<p class="col-xs">
-						We sent a 6 digit code to the provided email address.
-						<br/>
-						Enter it here to finish logging in.
+						We sent a login link to the provided email address.
 					</p>
-					<form action="/login/code" method="post">
-						<div class="mb-3">
-							<input type="text" class="form-control" id="code" name="code" placeholder="Code" pattern="\d{6}" maxlength="6" size="6" required/>
-						</div>
-						<input type="hidden" id="callback_uri" name="callback_uri" value={ callbackURI }/>
-						<button type="submit" class="btn btn-primary w-100">Login</button>
-					</form>
 				</div>
 			</div>
 		</body>

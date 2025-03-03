@@ -4,18 +4,17 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/url"
 	"os"
-	"path/filepath"
 
 	"github.com/TheLab-ms/conway/db"
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/keyfob"
 	"github.com/TheLab-ms/conway/modules/members"
 	"github.com/TheLab-ms/conway/modules/oauth2"
@@ -28,7 +27,6 @@ import (
 
 type Config struct {
 	HttpAddr string `envDefault:":8080"`
-	Dir      string
 
 	// SpaceHost is a hostname that resolves to the public IP used to egress the makerspace LAN.
 	SpaceHost string `envDefault:"localhost"`
@@ -49,12 +47,7 @@ func main() {
 	}
 	stripe.Key = conf.StripeKey
 
-	var sender auth.EmailSender
-	if conf.EmailFrom != "" {
-		sender = auth.NewGoogleSmtpSender(conf.EmailFrom)
-	}
-
-	app, _, err := newApp(conf, getSelfURL(conf), sender)
+	app, err := newApp(conf, getSelfURL(conf))
 	if err != nil {
 		panic(err)
 	}
@@ -62,10 +55,10 @@ func main() {
 	app.Run(context.TODO())
 }
 
-func newApp(conf Config, self *url.URL, aes auth.EmailSender) (*engine.App, *sql.DB, error) {
+func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a := engine.NewApp(conf.HttpAddr)
 
-	db, err := db.New(filepath.Join(conf.Dir, "conway.sqlite3"))
+	db, err := db.New("conway.sqlite3")
 	if err != nil {
 		panic(err)
 	}
@@ -78,24 +71,33 @@ func newApp(conf Config, self *url.URL, aes auth.EmailSender) (*engine.App, *sql
 		}
 	}
 
-	authModule, err := auth.New(db, self, aes, tso, engine.NewTokenIssuer(filepath.Join(conf.Dir, "auth.pem")))
-	if err != nil {
-		return nil, nil, fmt.Errorf("creating auth module: %w", err)
+	var sender email.Sender
+	if conf.EmailFrom != "" {
+		sender = email.NewGoogleSmtpSender(conf.EmailFrom)
 	}
+
+	var (
+		tokenIss  = engine.NewTokenIssuer("auth.pem")
+		loginIss  = engine.NewTokenIssuer("auth.pem")
+		gliderIss = engine.NewTokenIssuer("glider.pem")
+		oauthIss  = engine.NewTokenIssuer("oauth2.pem")
+		fobIss    = engine.NewTokenIssuer("fobs.pem")
+	)
+
+	authModule := auth.New(db, self, tso, tokenIss, loginIss)
 	a.Add(authModule)
 	a.Router.Authenticator = authModule // IMPORTANT
 
-	peeringModule := peering.New(db, engine.NewTokenIssuer(filepath.Join(conf.Dir, "glider.pem")))
-	a.Add(peeringModule)
-
-	a.Add(oauth2.New(db, self, engine.NewTokenIssuer(filepath.Join(conf.Dir, "oauth2.pem"))))
+	a.Add(peering.New(db, gliderIss))
+	a.Add(email.New(db, sender))
+	a.Add(oauth2.New(db, self, oauthIss))
 	a.Add(payment.New(db, conf.StripeWebhookKey, self))
 	a.Add(admin.New(db))
 	a.Add(members.New(db))
 	a.Add(waiver.New(db))
-	a.Add(keyfob.New(db, self, engine.NewTokenIssuer(filepath.Join(conf.Dir, "fobs.pem")), conf.SpaceHost))
+	a.Add(keyfob.New(db, self, fobIss, conf.SpaceHost))
 
-	return a, db, nil
+	return a, nil
 }
 
 func getSelfURL(conf Config) *url.URL {

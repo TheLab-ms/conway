@@ -1,19 +1,13 @@
 package auth
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
-	"math/big"
 	"net/http"
-	"net/smtp"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +15,6 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/julienschmidt/httprouter"
-	"golang.org/x/oauth2/google"
 	"golang.org/x/time/rate"
 )
 
@@ -36,34 +29,27 @@ type TurnstileOptions struct {
 type Module struct {
 	db          *sql.DB
 	self        *url.URL
-	Sender      EmailSender
 	turnstile   *TurnstileOptions
 	authLimiter *rate.Limiter
-	issuer      *engine.TokenIssuer
+	links       *engine.TokenIssuer
+	tokens      *engine.TokenIssuer
 }
 
-func New(db *sql.DB, self *url.URL, es EmailSender, tso *TurnstileOptions, iss *engine.TokenIssuer) (*Module, error) {
-	m := &Module{db: db, self: self, Sender: es, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), issuer: iss}
-	if m.Sender == nil {
-		m.Sender = newNoopSender()
-	}
-	return m, nil
-}
-
-func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	mgr.Add(engine.Poll(time.Minute, m.cleanupLogins))
-	mgr.Add(engine.Poll(time.Second, m.processLoginEmail))
+func New(db *sql.DB, self *url.URL, tso *TurnstileOptions, links, tokens *engine.TokenIssuer) *Module {
+	return &Module{db: db, self: self, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), links: links, tokens: tokens}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("GET", "/login", func(r *http.Request, ps httprouter.Params) engine.Response {
+		if r.URL.Query().Get("t") != "" {
+			return m.handleLoginCallbackLink(r, ps)
+		}
 		callback := r.URL.Query().Get("callback_uri")
 		return engine.Component(renderLoginPage(callback, m.turnstile))
 	})
 
-	router.Handle("GET", "/login/code", func(r *http.Request, ps httprouter.Params) engine.Response {
-		callback := r.URL.Query().Get("callback_uri")
-		return engine.Component(renderLoginCodePage(callback))
+	router.Handle("GET", "/login/sent", func(r *http.Request, ps httprouter.Params) engine.Response {
+		return engine.Component(renderLoginSentPage())
 	})
 
 	router.Handle("GET", "/whoami", m.WithAuth(func(r *http.Request, ps httprouter.Params) engine.Response {
@@ -77,7 +63,6 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	})
 
 	router.Handle("POST", "/login", m.handleLoginFormPost)
-	router.Handle("POST", "/login/code", m.handleLoginCodeFormPost)
 }
 
 // WithAuth authenticates incoming requests, or redirects them to the login page.
@@ -91,7 +76,7 @@ func (m *Module) WithAuth(next engine.Handler) engine.Handler {
 		if err != nil {
 			return engine.Redirect("/login?"+q.Encode(), http.StatusFound)
 		}
-		claims, err := m.issuer.Verify(cook.Value)
+		claims, err := m.tokens.Verify(cook.Value)
 		if err != nil || len(claims.Audience) == 0 || claims.Audience[0] != "conway" {
 			return engine.Redirect("/login?"+q.Encode(), http.StatusFound)
 		}
@@ -123,15 +108,35 @@ func (s *Module) handleLoginFormPost(r *http.Request, p httprouter.Params) engin
 		return engine.Errorf("finding member id: %s", err)
 	}
 
-	// Create the login
-	_, err = s.db.ExecContext(r.Context(), "INSERT INTO logins (member, code) VALUES ($1, $2);", memberID, generateLoginCode())
+	// Send the login email
+	body, err := s.newLoginEmail(memberID, r.FormValue("callback_uri"))
+	if err != nil {
+		return engine.Errorf("generating login email message: %s", err)
+	}
+	_, err = s.db.ExecContext(r.Context(), "INSERT INTO outbound_mail (recipient, subject, body) VALUES ($1, 'Makerspace Login', $2);", email, body)
 	if err != nil {
 		return engine.Errorf("creating login: %s", err)
 	}
 
-	q := url.Values{}
-	q.Add("callback_uri", r.FormValue("callback_uri"))
-	return engine.Redirect("/login/code?"+q.Encode(), http.StatusSeeOther)
+	return engine.Redirect("/login/sent", http.StatusSeeOther)
+}
+
+func (m *Module) newLoginEmail(memberID int64, callback string) (string, error) {
+	tok, err := m.links.Sign(&jwt.RegisteredClaims{
+		Subject:   strconv.FormatInt(memberID, 10),
+		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return strings.Join([]string{
+		"Here is your login link for TheLab Makerspace:",
+		fmt.Sprintf("%s/login?t=%s&n=%s", m.self.String(), url.QueryEscape(tok), url.QueryEscape(callback)),
+		"",
+		"This link will expire in 5 minutes.",
+		"Please ignore this message if you did not request a login code from TheLab Makerspace.",
+	}, "\n"), nil
 }
 
 func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
@@ -168,29 +173,24 @@ func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
 	return result.Success
 }
 
-// handleLoginCodeFormPost allows the user to enter an auth code to get redirected back to where they're headed but with token(s).
-func (s *Module) handleLoginCodeFormPost(r *http.Request, p httprouter.Params) engine.Response {
+// handleLoginCallbackLink handles requests to the URL sent in login emails.
+func (s *Module) handleLoginCallbackLink(r *http.Request, _ httprouter.Params) engine.Response {
 	s.authLimiter.Wait(r.Context())
-	code, _ := strconv.ParseInt(r.FormValue("code"), 10, 0)
 
-	var memberID int64
-	err := s.db.QueryRowContext(r.Context(), "DELETE FROM logins WHERE code = ? RETURNING member;", code).Scan(&memberID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return engine.ClientErrorf(403, "Login code is incorrect or has expired")
-	}
+	claims, err := s.links.Verify(r.FormValue("t"))
 	if err != nil {
-		return engine.Errorf("invalidating login code: %s", err)
+		return engine.ClientErrorf(400, "invalid login link")
 	}
 
-	_, err = s.db.ExecContext(r.Context(), "UPDATE members SET confirmed = true WHERE id = ? AND confirmed = false;", memberID)
+	_, err = s.db.ExecContext(r.Context(), "UPDATE members SET confirmed = true WHERE id = CAST($1 AS INTEGER) AND confirmed = false;", claims.Subject)
 	if err != nil {
 		return engine.Errorf("confirming member email: %s", err)
 	}
 
 	exp := time.Now().Add(time.Hour * 24 * 30)
-	token, err := s.issuer.Sign(&jwt.RegisteredClaims{
+	token, err := s.tokens.Sign(&jwt.RegisteredClaims{
 		Issuer:    "conway",
-		Subject:   strconv.FormatInt(memberID, 10),
+		Subject:   claims.Subject,
 		Audience:  jwt.ClaimStrings{"conway"},
 		ExpiresAt: &jwt.NumericDate{Time: exp},
 	})
@@ -206,126 +206,5 @@ func (s *Module) handleLoginCodeFormPost(r *http.Request, p httprouter.Params) e
 		Secure:   strings.Contains(s.self.Scheme, "s"),
 	}
 	return engine.WithCookie(cook,
-		engine.Redirect(r.FormValue("callback_uri"), http.StatusFound))
-}
-
-// generateLoginCode generates a sufficiently random int that happens to be "6 digits"
-func generateLoginCode() int64 {
-	const max = 999998
-	const min = 100001
-	val, err := rand.Int(rand.Reader, big.NewInt(max-min))
-	if err != nil {
-		panic(fmt.Sprintf("generating random number for login code: %s", err))
-	}
-	return max - val.Int64()
-}
-
-func (m *Module) cleanupLogins(ctx context.Context) bool {
-	_, err := m.db.ExecContext(ctx, "DELETE FROM logins WHERE created <= strftime('%s', 'now') - 300 OR send_email_at <= strftime('%s', 'now') - 300;")
-	if err != nil {
-		slog.Error("unable to clean up logins", "error", err)
-		return false
-	}
-	return false
-}
-
-func (m *Module) processLoginEmail(ctx context.Context) bool {
-	// Pop item from "queue"
-	var id int64
-	var code int64
-	var email string
-	err := m.db.QueryRowContext(ctx, "SELECT logins.id, logins.code, members.email FROM logins JOIN members ON logins.member = members.id WHERE logins.send_email_at > strftime('%s', 'now') - 3600 ORDER BY logins.send_email_at ASC LIMIT 1;").Scan(&id, &code, &email)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false
-	}
-	if err != nil {
-		slog.Error("unable to dequeue login workitem", "error", err)
-		return false
-	}
-
-	slog.Info("sending login email", "loginID", id, "email", email)
-	err = m.Sender(ctx, email, "Your Login Code", m.newLoginEmail(code))
-	if err != nil {
-		slog.Error("unable to send login email", "error", err)
-	}
-	success := err == nil
-
-	// Update the item's status
-	if success {
-		_, err = m.db.Exec("UPDATE logins SET send_email_at = NULL WHERE id = $1;", id)
-	} else {
-		_, err = m.db.Exec("UPDATE logins SET send_email_at = strftime('%s', 'now') + 10 WHERE id = $1;", id)
-	}
-	if err != nil {
-		slog.Error("unable to update status of login workitem", "error", err)
-	}
-
-	return success
-}
-
-func (m *Module) newLoginEmail(code int64) []byte {
-	return []byte(strings.Join([]string{
-		"Your login code is:",
-		fmt.Sprintf("%d", code),
-		"",
-		"The code will expire in 5 minutes.",
-		"Please ignore this message if you did not request a login code from TheLab Makerspace.",
-	}, "\n"))
-}
-
-type EmailSender func(ctx context.Context, to, subj string, msg []byte) error
-
-func newNoopSender() EmailSender {
-	return func(ctx context.Context, to, subj string, msg []byte) error {
-		fmt.Fprintf(os.Stdout, "--- START EMAIL TO %s WITH SUBJECT %q ---\n%s\n--- END EMAIL ---\n", to, subj, msg)
-		return nil
-	}
-}
-
-func NewGoogleSmtpSender(from string) EmailSender {
-	creds, err := google.FindDefaultCredentialsWithParams(context.Background(), google.CredentialsParams{
-		Scopes:  []string{"https://mail.google.com/"},
-		Subject: from,
-	})
-	if err != nil {
-		panic(fmt.Errorf("building google oauth token source: %w", err))
-	}
-
-	limiter := rate.NewLimiter(rate.Every(time.Second*5), 1)
-	return func(ctx context.Context, to, subj string, msg []byte) error {
-		err := limiter.Wait(ctx)
-		if err != nil {
-			return err
-		}
-
-		tok, err := creds.TokenSource.Token()
-		if err != nil {
-			return fmt.Errorf("getting oauth token: %w", err)
-		}
-		auth := &googleSmtpOauth{From: from, AccessToken: tok.AccessToken}
-
-		buf := &bytes.Buffer{}
-		fmt.Fprintf(buf, "From: TheLab Makerspace\r\n")
-		fmt.Fprintf(buf, "To: %s\r\n", to)
-		fmt.Fprintf(buf, "Subject: %s\r\n\r\n", subj)
-		buf.Write(msg)
-		buf.WriteString("\r\n")
-
-		return smtp.SendMail("smtp.gmail.com:587", auth, from, []string{to}, buf.Bytes())
-	}
-}
-
-type googleSmtpOauth struct {
-	From, AccessToken string
-}
-
-func (a *googleSmtpOauth) Start(_ *smtp.ServerInfo) (string, []byte, error) {
-	return "XOAUTH2", []byte("user=" + a.From + "\x01" + "auth=Bearer " + a.AccessToken + "\x01\x01"), nil
-}
-
-func (a *googleSmtpOauth) Next(_ []byte, more bool) ([]byte, error) {
-	if more {
-		return []byte(""), nil
-	}
-	return nil, nil
+		engine.Redirect(r.FormValue("n"), http.StatusFound))
 }
