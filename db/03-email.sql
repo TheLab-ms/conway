@@ -1,5 +1,3 @@
-DROP TABLE logins;
-
 CREATE TABLE IF NOT EXISTS outbound_mail (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),

@@ -111,20 +111,6 @@ CREATE TABLE IF NOT EXISTS member_events (
 
 CREATE VIEW IF NOT EXISTS active_keyfobs AS SELECT fob_id FROM members WHERE access_status = "Ready";
 
-/* TODO: Remove */
-CREATE TABLE IF NOT EXISTS logins (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    send_email_at INTEGER DEFAULT (strftime('%s', 'now')),
-    member INTEGER,
-    code INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(code),
-    FOREIGN KEY(member) REFERENCES members(id) ON DELETE SET NULL
-) STRICT;
-CREATE INDEX IF NOT EXISTS logins_send_at_idx ON logins (send_email_at);
-CREATE INDEX IF NOT EXISTS logins_created_idx ON logins (created);
-CREATE UNIQUE INDEX IF NOT EXISTS logins_code_idx ON logins (code);
-
 CREATE TABLE IF NOT EXISTS glider_state (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     revision INTEGER NOT NULL
