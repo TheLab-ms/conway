@@ -93,7 +93,7 @@ func newApp(conf Config, self *url.URL, aes auth.EmailSender) (*engine.App, *sql
 	a.Add(admin.New(db))
 	a.Add(members.New(db))
 	a.Add(waiver.New(db))
-	a.Add(keyfob.New(db, self, conf.SpaceHost))
+	a.Add(keyfob.New(db, self, engine.NewTokenIssuer(filepath.Join(conf.Dir, "fobs.pem")), conf.SpaceHost))
 
 	return a, db, nil
 }

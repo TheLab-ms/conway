@@ -23,25 +23,26 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/julienschmidt/httprouter"
 	"github.com/skip2/go-qrcode"
 )
 
 //go:generate templ generate
 
-const sigTTL = time.Minute * 5 // length of time a signed QR code is valid
+const qrTTL = time.Minute * 5 // length of time a signed QR code is valid
 
 type Module struct {
 	db     *sql.DB
 	self   *url.URL
-	signer *engine.ValueSigner[int64]
+	signer *engine.TokenIssuer
 
 	trustedHostname string
 	trustedIP       atomic.Pointer[net.IP]
 }
 
-func New(db *sql.DB, self *url.URL, trustedHostname string) *Module {
-	return &Module{db: db, self: self, signer: engine.NewValueSigner[int64](), trustedHostname: trustedHostname}
+func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, trustedHostname string) *Module {
+	return &Module{db: db, self: self, signer: iss, trustedHostname: trustedHostname}
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
@@ -93,12 +94,12 @@ func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Respo
 	idStr := r.FormValue("fobid")
 	var png []byte
 	if idStr != "" {
-		id, err := strconv.ParseInt(idStr, 10, 0)
-		if err != nil {
-			return engine.ClientErrorf(400, "Invalid fob ID")
-		}
+		tok, err := m.signer.Sign(&jwt.RegisteredClaims{
+			Subject:   idStr,
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(qrTTL)),
+		})
 
-		url := fmt.Sprintf("%s/keyfob/bind?val=%s", m.self, url.QueryEscape(m.signer.Sign(id, sigTTL)))
+		url := fmt.Sprintf("%s/keyfob/bind?val=%s", m.self, url.QueryEscape(tok))
 		p, err := qrcode.Encode(url, qrcode.Medium, 512)
 		if err != nil {
 			return engine.Error(err)
@@ -112,12 +113,16 @@ func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Respo
 func (m *Module) handleBindKeyfob(r *http.Request, ps httprouter.Params) engine.Response {
 	user := auth.GetUserMeta(r.Context())
 
-	fobID, ok := m.signer.Verify(r.FormValue("val"))
-	if !ok {
+	claims, err := m.signer.Verify(r.FormValue("val"))
+	if err != nil {
 		return engine.ClientErrorf(400, "Invalid QR code")
 	}
+	fobID, err := strconv.ParseInt(claims.Subject, 10, 0)
+	if err != nil {
+		return engine.ClientErrorf(400, "QR code references a non-integer fob ID")
+	}
 
-	_, err := m.db.ExecContext(r.Context(), "UPDATE members SET fob_id = $1 WHERE id = $2", fobID, user.ID)
+	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET fob_id = $1 WHERE id = $2", fobID, user.ID)
 	if err != nil {
 		return engine.ClientErrorf(500, "inserting fob id into db: %s", err)
 	}
