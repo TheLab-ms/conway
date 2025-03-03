@@ -25,7 +25,7 @@ type Module struct {
 }
 
 func New(db *sql.DB, es Sender) *Module {
-	m := &Module{db: db, Sender: es, authLimiter: rate.NewLimiter(rate.Every(time.Second*3), 3)}
+	m := &Module{db: db, Sender: es, authLimiter: rate.NewLimiter(rate.Every(time.Second*5), 10)}
 	if m.Sender == nil {
 		m.Sender = newNoopSender()
 	}
@@ -33,13 +33,14 @@ func New(db *sql.DB, es Sender) *Module {
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	mgr.Add(engine.Poll(time.Second, m.processLoginEmail))
+	mgr.Add(engine.Poll(time.Second, m.processNextMessage))
 }
 
-func (m *Module) processLoginEmail(ctx context.Context) bool {
+func (m *Module) processNextMessage(ctx context.Context) bool {
 	var id int64
 	var to, subj, body string
-	err := m.db.QueryRowContext(ctx, "SELECT id, recipient, subject, body FROM outbound_mail WHERE send_at > strftime('%s', 'now') - 3600 ORDER BY send_at ASC LIMIT 1;").Scan(&id, &to, &subj, &body)
+	var created int64
+	err := m.db.QueryRowContext(ctx, "SELECT id, recipient, subject, body, created FROM outbound_mail WHERE unixepoch() >= send_at AND unixepoch() - created < 3600 ORDER BY send_at ASC LIMIT 1;").Scan(&id, &to, &subj, &body, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false
 	}
@@ -55,11 +56,10 @@ func (m *Module) processLoginEmail(ctx context.Context) bool {
 	}
 	success := err == nil
 
-	// Update the item's status
 	if success {
-		_, err = m.db.Exec("UPDATE outbound_mail SET send_at = NULL WHERE id = $1;", id)
+		_, err = m.db.Exec("DELETE FROM outbound_mail WHERE id = $1;", id)
 	} else {
-		_, err = m.db.Exec("UPDATE outbound_mail SET send_at = strftime('%s', 'now') + 10 WHERE id = $1;", id)
+		_, err = m.db.Exec("UPDATE outbound_mail SET send_at = unixepoch() + ((send_at - created) * 2) WHERE id = $1;", id)
 	}
 	if err != nil {
 		slog.Error("unable to update status of outbound email", "error", err)
