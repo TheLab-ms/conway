@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -158,9 +159,11 @@ func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
 	if err != nil {
 		return true
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil || resp.StatusCode >= 400 {
-		slog.Warn("unable to verify turnstile response - failing open", "error", err, "status", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		slog.Warn("unable to verify turnstile response - failing open", "error", err, "status", resp.StatusCode, "body", string(body))
 		return true
 	}
 	defer resp.Body.Close()
