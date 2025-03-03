@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/TheLab-ms/conway/db"
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
 	_ "github.com/mattn/go-sqlite3"
@@ -25,12 +24,10 @@ import (
 )
 
 func TestLoginIntegration(t *testing.T) {
-	a := newTestApp(t)
-
 	// Fake email handler
 	emails := make(chan string)
 	emailCount := atomic.Int32{}
-	a.Auth.Sender = func(ctx context.Context, to, subj string, msg []byte) error {
+	sender := func(ctx context.Context, to, subj string, msg []byte) error {
 		if emailCount.Add(1) == 1 {
 			return errors.New("some error") // return an error to prove it's retried eventually
 		}
@@ -38,11 +35,12 @@ func TestLoginIntegration(t *testing.T) {
 		emails <- string(msg)
 		return nil
 	}
+	a := newTestApp(t, sender)
 
 	start(t, a.App)
 
 	var client *http.Client
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		// Run the test twice to cover both registration and (re)login
 		t.Run(fmt.Sprintf("iteration-%d", i), func(t *testing.T) {
 			jar, err := cookiejar.New(&cookiejar.Options{})
@@ -151,24 +149,22 @@ type testApp struct {
 	*engine.App
 	*sql.DB
 
-	URL  string
-	Auth *auth.Module
+	URL string
 }
 
-func newTestApp(t *testing.T) *testApp {
+func newTestApp(t *testing.T, sender auth.EmailSender) *testApp {
 	addr, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr.Close()
 
-	db := db.NewTest(t)
-	a, auth, err := newApp(db, Config{HttpAddr: addr.Addr().String()}, &url.URL{Host: "localhost"}, nil)
+	cfg := Config{HttpAddr: addr.Addr().String(), Dir: t.TempDir()}
+	a, db, err := newApp(cfg, &url.URL{Host: "localhost"}, sender)
 	require.NoError(t, err)
 
 	return &testApp{
-		App:  a,
-		DB:   db,
-		URL:  fmt.Sprintf("http://%s", addr.Addr().String()),
-		Auth: auth,
+		App: a,
+		DB:  db,
+		URL: fmt.Sprintf("http://%s", addr.Addr().String()),
 	}
 }
 
