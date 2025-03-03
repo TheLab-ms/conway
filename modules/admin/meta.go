@@ -133,6 +133,61 @@ var listViews = []listView{
 			return rows, nil
 		},
 	},
+	{
+		Title:   "Events",
+		RelPath: "/events",
+		Rows: []*tableRowMeta{
+			{Title: "Timestamp", Width: 1},
+			{Title: "Member", Width: 1},
+			{Title: "Event", Width: 1},
+			{Title: "Details", Width: 2},
+		},
+		BuildQuery: func(r *http.Request) (q, rowCountQuery string, args []any) {
+			q = `SELECT f.created, f.member, m.identifier AS member, f.event, f.details
+				 FROM member_events f
+				 LEFT JOIN members m ON f.member = m.id
+				 ORDER BY f.created DESC
+				 LIMIT :limit OFFSET :offset`
+			rowCountQuery = "SELECT COUNT(*) FROM member_events"
+			return
+		},
+		BuildRows: func(results *sql.Rows) ([]*tableRow, error) {
+			rows := []*tableRow{}
+			for results.Next() {
+				var timestamp engine.LocalTime
+				var memberID *int64
+				var member *string
+				var event string
+				var details string
+				err := results.Scan(&timestamp, &memberID, &member, &event, &details)
+				if err != nil {
+					return nil, err
+				}
+
+				memberCell := &tableCell{}
+				if member != nil {
+					memberCell.Text = *member
+				} else {
+					memberCell.Text = "Unknown"
+				}
+
+				row := &tableRow{
+					Cells: []*tableCell{
+						{Text: timestamp.Time.Format("2006-01-02 03:04:05 PM")},
+						memberCell,
+						{Text: event, BadgeType: "secondary"},
+						{Text: details},
+					},
+				}
+				if memberID != nil {
+					row.SelfLink = fmt.Sprintf("/admin/members/%d", *memberID)
+				}
+				rows = append(rows, row)
+			}
+
+			return rows, nil
+		},
+	},
 }
 
 type formHandler struct {
