@@ -41,7 +41,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 				"kty": "RSA",
 				"use": "sig",
 				"kid": "1",
-				"alg": "RS512",
+				"alg": "RS256",
 				"n":   base64.RawURLEncoding.EncodeToString(m.issuer.Key.N.Bytes()),
 				"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(m.issuer.Key.E)).Bytes()),
 			}},
@@ -55,7 +55,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			"token_endpoint":                        m.self.String() + "/oauth2/token",
 			"userinfo_endpoint":                     m.self.String() + "/oauth2/userinfo",
 			"jwks_uri":                              m.self.String() + "/oauth2/jwks",
-			"id_token_signing_alg_values_supported": []string{"RS512"},
+			"id_token_signing_alg_values_supported": []string{"RS256"},
 		})
 	})
 }
