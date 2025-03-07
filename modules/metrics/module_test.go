@@ -13,11 +13,15 @@ import (
 func TestAggregate(t *testing.T) {
 	ctx := context.Background()
 	db := db.NewTest(t)
-	m := &Module{db: db, aggregateInterval: time.Millisecond * 10}
+	m := &Module{db: db}
 
 	for range 50 {
 		time.Sleep(time.Millisecond)
-		m.aggregate(ctx, "test", "SELECT COUNT(*) FROM metrics")
+		m.aggregate(ctx, &aggregate{
+			Name:     "test",
+			Query:    "SELECT COUNT(*) FROM metrics",
+			Interval: time.Millisecond * 10,
+		})
 	}
 
 	var count int
