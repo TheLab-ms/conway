@@ -17,6 +17,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/keyfob"
 	"github.com/TheLab-ms/conway/modules/members"
+	"github.com/TheLab-ms/conway/modules/metrics"
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
 	"github.com/TheLab-ms/conway/modules/peering"
@@ -96,6 +97,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a.Add(members.New(db))
 	a.Add(waiver.New(db))
 	a.Add(keyfob.New(db, self, fobIss, conf.SpaceHost))
+	a.Add(metrics.New(db))
 
 	return a, nil
 }
