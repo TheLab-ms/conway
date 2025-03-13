@@ -13,25 +13,24 @@ import (
 const timeFormat = "Mon, Jan 2 2006"
 
 type member struct {
-	ID                int64
-	AccessStatus      string
-	Name              string
-	Email             string
-	Confirmed         bool
-	Created           engine.LocalTime
-	AdminNotes        string
-	Leadership        bool
-	NonBillable       bool
-	FobID             *int64
-	StripeSubID       *string
-	StripeStatus      *string
-	PaypalSubID       *string
-	PaypalPrice       *float64
-	PaypalLastPayment *engine.LocalTime
-	DiscountType      *string
-	RootFamilyEmail   *string
-	BillAnnually      bool
-	FobLastSeen       *engine.LocalTime
+	ID              int64
+	AccessStatus    string
+	Name            string
+	Email           string
+	Confirmed       bool
+	Created         engine.LocalTime
+	AdminNotes      string
+	Leadership      bool
+	NonBillable     bool
+	FobID           *int64
+	StripeSubID     *string
+	StripeStatus    *string
+	PaypalSubID     *string
+	PaypalPrice     *float64
+	DiscountType    *string
+	RootFamilyEmail *string
+	BillAnnually    bool
+	FobLastSeen     *engine.LocalTime
 }
 
 type memberEvent struct {
@@ -43,11 +42,11 @@ type memberEvent struct {
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
 	mem := member{}
 	err := db.QueryRowContext(ctx, `
-		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_last_payment, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen
+		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, id).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalLastPayment, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -235,12 +234,6 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 				<div class="card mt-3">
 					<div class="card-body">
 						<h5 class="card-title">Paypal</h5>
-						if member.PaypalLastPayment != nil {
-							<h6 class="card-subtitle mb-2 text-muted">
-								Last payment processed:
-								<b>{ member.PaypalLastPayment.Time.Format(timeFormat) }</b>
-							</h6>
-						}
 						if member.PaypalPrice != nil {
 							<h6 class="card-subtitle mb-2 text-muted">
 								Subscription price:
