@@ -1,7 +1,6 @@
 package payment
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -73,7 +72,7 @@ func (m *Module) handleStripeWebhook(r *http.Request, ps httprouter.Params) engi
 	}
 
 	// Update our representation of the member to reflect Stripe
-	err = m.updateMemberStripeMetadata(r.Context(), cust, sub)
+	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET stripe_customer_id = $2, stripe_subscription_id = $3, stripe_subscription_state = $4, name = $5 WHERE email = $1", strings.ToLower(cust.Email), cust.ID, sub.ID, sub.Status, cust.Name)
 	if err != nil {
 		return engine.Errorf("updating member metadata: %s", err)
 	}
@@ -82,31 +81,21 @@ func (m *Module) handleStripeWebhook(r *http.Request, ps httprouter.Params) engi
 	return nil
 }
 
-func (m *Module) updateMemberStripeMetadata(ctx context.Context, cust *stripe.Customer, sub *stripe.Subscription) error {
-	if sub.CanceledAt > 0 {
-		_, err := m.db.ExecContext(ctx, "UPDATE members SET stripe_subscription_id = NULL, stripe_subscription_state = NULL, stripe_paid_through = $2 WHERE email = $1", strings.ToLower(cust.Email), sub.CurrentPeriodEnd)
-		return err
-	}
-
-	_, err := m.db.ExecContext(ctx, "UPDATE members SET stripe_customer_id = $2, stripe_subscription_id = $3, stripe_subscription_state = $4, name = $5, stripe_paid_through = NULL WHERE email = $1", strings.ToLower(cust.Email), cust.ID, sub.ID, sub.Status, cust.Name)
-	return err
-}
-
 // handleCheckoutForm redirects users to the appropriate Stripe Checkout workflow.
 func (m *Module) handleCheckoutForm(r *http.Request, ps httprouter.Params) engine.Response {
 	var email string
 	var discountType *string
 	var existingCustomerID *string
 	var existingSubID *string
-	var paidThrough *int64
+	var active bool
 	var annual bool
-	err := m.db.QueryRowContext(r.Context(), "SELECT email, discount_type, stripe_customer_id, stripe_subscription_id, stripe_paid_through, bill_annually FROM members WHERE id = ?", auth.GetUserMeta(r.Context()).ID).Scan(&email, &discountType, &existingCustomerID, &existingSubID, &paidThrough, &annual)
+	err := m.db.QueryRowContext(r.Context(), "SELECT email, discount_type, stripe_customer_id, stripe_subscription_id, bill_annually, (stripe_subscription_state IS NOT NULL AND stripe_subscription_state != 'canceled') FROM members WHERE id = ?", auth.GetUserMeta(r.Context()).ID).Scan(&email, &discountType, &existingCustomerID, &existingSubID, &annual, &active)
 	if err != nil {
 		return engine.Errorf("querying db for member: %s", err)
 	}
 
 	// Allow existing subscriptions to be modified
-	if existingSubID != nil {
+	if active {
 		sessionParams := &stripe.BillingPortalSessionParams{
 			Customer:  existingCustomerID,
 			ReturnURL: stripe.String(m.self.String()),
@@ -161,13 +150,6 @@ func (m *Module) handleCheckoutForm(r *http.Request, ps httprouter.Params) engin
 				Coupon: &coupIter.Coupon().ID,
 			}}
 			break
-		}
-	}
-
-	// Handle a case where the member is recreating their subscription to change their discounts, billing interval, etc.
-	if paidThrough != nil {
-		checkoutParams.SubscriptionData = &stripe.CheckoutSessionSubscriptionDataParams{
-			TrialEnd: paidThrough,
 		}
 	}
 
