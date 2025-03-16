@@ -123,6 +123,7 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 					if member.FobLastSeen != nil {
 						<h6 class="card-subtitle mb-2 text-muted">Last fob'd in { formatLastFobSwipe(member.FobLastSeen.Time) }</h6>
 					}
+					<h6 class="card-subtitle mb-4 text-muted"><a href={ templ.URL(fmt.Sprintf("/admin/members/%d/logincode", member.ID)) }>Login code</a></h6>
 					if member.AccessStatus != "Ready" {
 						<span class="badge text-bg-danger mb-3">{ member.AccessStatus }</span>
 					}

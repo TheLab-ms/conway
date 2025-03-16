@@ -93,7 +93,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a.Add(email.New(db, sender))
 	a.Add(oauth2.New(db, self, oauthIss))
 	a.Add(payment.New(db, conf.StripeWebhookKey, self))
-	a.Add(admin.New(db))
+	a.Add(admin.New(db, self, tokenIss))
 	a.Add(members.New(db))
 	a.Add(waiver.New(db))
 	a.Add(keyfob.New(db, self, fobIss, conf.SpaceHost))

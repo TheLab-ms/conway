@@ -2,22 +2,29 @@ package admin
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/julienschmidt/httprouter"
+	"github.com/skip2/go-qrcode"
 )
 
 //go:generate templ generate
 
 type Module struct {
-	db *sql.DB
+	db    *sql.DB
+	self  *url.URL
+	links *engine.TokenIssuer
 }
 
-func New(db *sql.DB) *Module {
-	return &Module{db: db}
+func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer) *Module {
+	return &Module{db: db, self: self, links: linksIss}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -76,6 +83,24 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			return engine.Errorf("querying the database: %s", err)
 		}
 		return engine.Component(renderSingleMember(nav, mem, events))
+	})))
+
+	router.Handle("GET", "/admin/members/:id/logincode", router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
+		tok, err := m.links.Sign(&jwt.RegisteredClaims{
+			Subject:   ps.ByName("id"),
+			ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
+		})
+		if err != nil {
+			return engine.Error(err)
+		}
+
+		url := fmt.Sprintf("%s/login?t=%s", m.self, url.QueryEscape(tok))
+		p, err := qrcode.Encode(url, qrcode.Medium, 512)
+		if err != nil {
+			return engine.Error(err)
+		}
+
+		return engine.PNG(p)
 	})))
 
 	for _, handle := range formHandlers {

@@ -173,3 +173,15 @@ func (*emptyResponse) write(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(204)
 	return nil
 }
+
+type pngResponse struct {
+	buf []byte
+}
+
+func PNG(buf []byte) Response { return &pngResponse{buf: buf} }
+
+func (p *pngResponse) write(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "image/png")
+	_, err := w.Write(p.buf)
+	return err
+}
