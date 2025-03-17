@@ -14,6 +14,7 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/keyfob"
 	"github.com/TheLab-ms/conway/modules/members"
@@ -34,6 +35,9 @@ type Config struct {
 
 	StripeKey        string
 	StripeWebhookKey string
+
+	DiscordClientID     string
+	DiscordClientSecret string
 
 	EmailFrom string
 
@@ -78,11 +82,12 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	}
 
 	var (
-		tokenIss  = engine.NewTokenIssuer("auth.pem")
-		loginIss  = engine.NewTokenIssuer("auth.pem")
-		gliderIss = engine.NewTokenIssuer("glider.pem")
-		oauthIss  = engine.NewTokenIssuer("oauth2.pem")
-		fobIss    = engine.NewTokenIssuer("fobs.pem")
+		tokenIss   = engine.NewTokenIssuer("auth.pem")
+		loginIss   = engine.NewTokenIssuer("auth.pem")
+		gliderIss  = engine.NewTokenIssuer("glider.pem")
+		oauthIss   = engine.NewTokenIssuer("oauth2.pem")
+		fobIss     = engine.NewTokenIssuer("fobs.pem")
+		discordIss = engine.NewTokenIssuer("discord-oauth.pem")
 	)
 
 	authModule := auth.New(db, self, tso, tokenIss, loginIss)
@@ -98,6 +103,12 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a.Add(waiver.New(db))
 	a.Add(keyfob.New(db, self, fobIss, conf.SpaceHost))
 	a.Add(metrics.New(db))
+
+	if conf.DiscordClientID != "" {
+		a.Add(discord.New(db, self, discordIss, conf.DiscordClientID, conf.DiscordClientSecret))
+	} else {
+		slog.Info("discord module disabled because a client ID was not configured")
+	}
 
 	return a, nil
 }
