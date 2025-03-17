@@ -27,7 +27,7 @@ func (m *Module) renderMemberView(r *http.Request, ps httprouter.Params) engine.
 	authdUser := auth.GetUserMeta(r.Context()).ID
 
 	mem := member{}
-	err := m.db.QueryRowContext(r.Context(), `SELECT id, email, m.access_status FROM members m WHERE m.id = $1`, authdUser).Scan(&mem.ID, &mem.Email, &mem.AccessStatus)
+	err := m.db.QueryRowContext(r.Context(), `SELECT id, email, m.access_status, m.discord_user_id IS NOT NULL FROM members m WHERE m.id = $1`, authdUser).Scan(&mem.ID, &mem.Email, &mem.AccessStatus, &mem.DiscordLinked)
 	if err != nil {
 		return engine.Errorf("querying the database: %s", err)
 	}
