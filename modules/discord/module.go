@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
@@ -48,8 +49,9 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 func (m *Module) handleLogin(r *http.Request, ps httprouter.Params) engine.Response {
 	// Include a JWT as state so we can verify it later to prevent CSRF
 	state, err := m.stateTokIssuer.Sign(&jwt.RegisteredClaims{
-		Subject:  strconv.FormatInt(auth.GetUserMeta(r.Context()).ID, 10),
-		Audience: jwt.ClaimStrings{"discord-oauth"},
+		Subject:   strconv.FormatInt(auth.GetUserMeta(r.Context()).ID, 10),
+		Audience:  jwt.ClaimStrings{"discord-oauth"},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
 	})
 	if err != nil {
 		return engine.Error(err)
@@ -88,7 +90,10 @@ func (m *Module) handleCallback(r *http.Request, ps httprouter.Params) engine.Re
 		return engine.Error(err)
 	}
 
-	// TODO: store in DB
+	_, err = m.db.Exec("UPDATE members SET discord_user_id = $1 WHERE id = $2", user.ID, claims.Subject)
+	if err != nil {
+		return engine.Errorf("writing Discord user ID to the db: %s", err)
+	}
 	slog.Info("discovered discord user", "discordID", user.ID, "memberID", claims.Subject)
-	return nil
+	return engine.Redirect("/", http.StatusTemporaryRedirect)
 }
