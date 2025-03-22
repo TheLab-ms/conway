@@ -8,7 +8,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-//go:generate templ generate
+//go:generate go run github.com/a-h/templ/cmd/templ generate
 
 type Module struct {
 	db *sql.DB

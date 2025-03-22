@@ -28,7 +28,7 @@ import (
 	"github.com/skip2/go-qrcode"
 )
 
-//go:generate templ generate
+//go:generate go run github.com/a-h/templ/cmd/templ generate
 
 const qrTTL = time.Minute * 5 // length of time a signed QR code is valid
 

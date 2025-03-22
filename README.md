@@ -15,7 +15,10 @@ That should in theory be possible. Open a GH issue if you're serious and we'll w
 
 ## Development
 
-Just clone it down and `go run ./cmd/conway`! It will be listening on localhost port 8080.
+Install Go 1.24(ish), then just `make dev` and browse to http://localhost:8080.
+The login flow will print the magic link to the console instead of actually sending an email.
+
+You'll probably want to designate your account as leadership like this: `sqlite3 .dev/conway.sqlite3 "UPDATE members SET leadership = true WHERE email = 'foo@bar.com'"`
 
 ### Deployment
 
