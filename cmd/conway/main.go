@@ -16,7 +16,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/email"
-	"github.com/TheLab-ms/conway/modules/keyfob"
+	"github.com/TheLab-ms/conway/modules/kiosk"
 	"github.com/TheLab-ms/conway/modules/members"
 	"github.com/TheLab-ms/conway/modules/metrics"
 	"github.com/TheLab-ms/conway/modules/oauth2"
@@ -101,7 +101,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a.Add(admin.New(db, self, tokenIss))
 	a.Add(members.New(db))
 	a.Add(waiver.New(db))
-	a.Add(keyfob.New(db, self, fobIss, conf.SpaceHost))
+	a.Add(kiosk.New(db, self, fobIss, conf.SpaceHost))
 	a.Add(metrics.New(db))
 
 	if conf.DiscordClientID != "" {

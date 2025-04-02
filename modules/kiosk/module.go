@@ -1,11 +1,4 @@
-// Keyfob is responsible for scanning and binding physical RFID fobs to member accounts.
-//
-// It does this securely by only accepting fob IDs sent from the makerspace's public IP
-// and signing a string containing the trusted keyfob id, which can then be transferred
-// over a less trusted channel (the internet) to the member's device.
-//
-// This obviously isn't perfect, but it's plenty good considering the tensile strength of drywall.
-package keyfob
+package kiosk
 
 import (
 	"context"
