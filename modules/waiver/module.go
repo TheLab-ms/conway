@@ -24,7 +24,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 }
 
 func (m *Module) renderWaiverView(r *http.Request, ps httprouter.Params) engine.Response {
-	return engine.Component(renderWaiver(false, "", r.URL.Query().Get("email"), false))
+	return engine.Component(renderWaiver(false, "", r.URL.Query().Get("email"), r.URL.Query().Get("r")))
 }
 
 func (m *Module) handleSubmitWaiver(r *http.Request, ps httprouter.Params) engine.Response {
@@ -41,7 +41,5 @@ func (m *Module) handleSubmitWaiver(r *http.Request, ps httprouter.Params) engin
 		return engine.Errorf("inserting signed waiver: %s", err)
 	}
 
-	var isMember bool
-	m.db.QueryRowContext(r.Context(), "SELECT 1 FROM members WHERE email = $1", email).Scan(&isMember)
-	return engine.Component(renderWaiver(true, name, email, isMember))
+	return engine.Component(renderWaiver(true, name, email, r.FormValue("r")))
 }

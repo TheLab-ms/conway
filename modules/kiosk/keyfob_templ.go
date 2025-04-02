@@ -100,7 +100,7 @@ func renderKiosk(qrImg []byte) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if qrImg == nil {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<h1>Welcome to TheLab</h1><div class=\"mt-4\"><a href=\"https://wiki.thelab.ms/join\" class=\"btn btn-secondary btn-lg\">How To Join</a> <a href=\"/waiver\" class=\"btn btn-secondary btn-lg\">Sign Waiver</a></div><div class=\"mt-4\">Scan a key fob any time to link it to your account.\t</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<h1>Welcome to TheLab</h1><div class=\"mt-4\"><a href=\"https://wiki.thelab.ms/join\" class=\"btn btn-secondary btn-lg\">How To Join</a> <a href=\"/waiver?r=/kiosk\" class=\"btn btn-secondary btn-lg\">Sign Waiver</a></div><div class=\"mt-4\">Scan a key fob any time to link it to your account.\t</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

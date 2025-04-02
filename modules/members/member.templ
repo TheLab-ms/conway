@@ -35,7 +35,7 @@ templ renderMembershipStatus(member *member) {
 			<div class="alert alert-warning">
 				<h4 class="alert-heading">Missing Liability Waiver</h4>
 				<p>You will need to sign our liability waiver before entering the space.</p>
-				<a href={ templ.SafeURL("/waiver?email=" + member.Email) } class="btn btn-success">Sign Waiver</a>
+				<a href={ templ.SafeURL("/waiver?r=/&email=" + member.Email) } class="btn btn-success">Sign Waiver</a>
 			</div>
 		case "MissingKeyFob":
 			<div class="alert alert-warning">

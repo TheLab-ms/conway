@@ -2,7 +2,7 @@ package waiver
 
 import "github.com/TheLab-ms/conway/modules/bootstrap"
 
-templ renderWaiver(signed bool, name string, email string, isMember bool) {
+templ renderWaiver(signed bool, name, email, redirect string) {
 	@bootstrap.View() {
 		<style>
 		.large-checkbox {
@@ -17,8 +17,9 @@ templ renderWaiver(signed bool, name string, email string, isMember bool) {
 						Waiver has been submitted successfully.
 						You can print or screenshot this page for your records.
 					</p>
-					if isMember {
-						<a href="/" class="btn btn-outline-success">Return to Your Profile</a>
+					if redirect != "" {
+						<a href={templ.SafeURL(redirect)} class="btn btn-outline-success">Done</a>
+						<script>setTimeout(() => { window.location.href = {redirect}; }, 5000)</script>
 					}
 				</div>
 			}
