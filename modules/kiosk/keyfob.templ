@@ -19,7 +19,7 @@ templ renderOffsiteError() {
 }
 
 templ renderKiosk(qrImg []byte) {
-	@bootstrap.View() {
+	@bootstrap.DarkmodeView() {
 		<div class="container my-5">
 			<form id="fobform" method="GET">
 				<input type="hidden" id="fobid" name="fobid" value=""/>

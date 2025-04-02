@@ -1,8 +1,16 @@
 package bootstrap
 
 templ View() {
+	@view("") { { children... }}
+}
+
+templ DarkmodeView() {
+	@view("dark") { { children... }}
+}
+
+templ view(theme string) {
 	<!DOCTYPE html>
-	<html lang="en">
+	<html lang="en" data-bs-theme={theme}>
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
