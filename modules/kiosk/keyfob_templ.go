@@ -118,12 +118,12 @@ func renderKiosk(qrImg []byte) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"img-fluid\"><div class=\"mt-3\"><a href=\"/kiosk\" class=\"btn btn-secondary btn-lg\">Hide QR</a></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"img-fluid\"><div class=\"mt-3\"><a href=\"/kiosk\" class=\"btn btn-secondary btn-lg\">Done</a></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div><script>\n\t\t\tlet buffer = ''\n\t\t\tlet timeout\n\n\t\t\tconst flush = () => {\n\t\t\t\tdocument.getElementById('fobid').value = buffer\n\t\t\t\tdocument.getElementById('fobform').submit()\n\t\t\t\tbuffer = ''\n\t\t\t}\n\n\t\t\tdocument.addEventListener('keypress', event => {\n\t\t\t\tif (event.key === 'Enter') {\n\t\t\t\t\tflush()\n\t\t\t\t\treturn\n\t\t\t\t}\n\n\t\t\t\tbuffer += event.key\n\t\t\t\tclearTimeout(timeout)\n\t\t\t\ttimeout = setTimeout(flush, 1000)\n\t\t\t})\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div><script>\n\t\t\tlet buffer = ''\n\t\t\tlet timeout\n\n\t\t\tconst flush = () => {\n\t\t\t\tdocument.getElementById('fobid').value = buffer\n\t\t\t\tdocument.getElementById('fobform').submit()\n\t\t\t\tbuffer = ''\n\t\t\t}\n\n\t\t\tdocument.addEventListener('keypress', event => {\n\t\t\t\tif (event.key === 'Enter') {\n\t\t\t\t\tflush()\n\t\t\t\t\treturn\n\t\t\t\t}\n\n\t\t\t\tbuffer += event.key\n\t\t\t\tclearTimeout(timeout)\n\t\t\t\ttimeout = setTimeout(flush, 1000)\n\t\t\t})\n\n\t\t\t// Redirect away from the QR after 5min\n            if (window.location.href.includes(\"fobid\")) {\n                setTimeout(() => {\n                    window.location.href = \"/kiosk\"\n                }, 1000 * 60 * 5) // 5 minutes\n            }\n\n\t\t\t// Reload the page periodically in case it's changed\n            setTimeout(() => {\n\t\t\t\tlocation.reload();\n            }, 1000 * 60 * 60) // 1 hour\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
