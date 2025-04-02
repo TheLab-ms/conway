@@ -45,6 +45,7 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("GET", "/kiosk", m.atPhysicalSpace(m.renderKiosk))
 	router.Handle("GET", "/keyfob/bind", router.WithAuth(m.handleBindKeyfob))
+	router.Handle("GET", "/keyfob/status/:id", m.atPhysicalSpace(m.handleGetKeyFobInUse))
 }
 
 // findTrustedIP sets trustedIP by resolving trustedHostname.
@@ -91,6 +92,9 @@ func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Respo
 			Subject:   idStr,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(qrTTL)),
 		})
+		if err != nil {
+			return engine.Error(err)
+		}
 
 		url := fmt.Sprintf("%s/keyfob/bind?val=%s", m.self, url.QueryEscape(tok))
 		p, err := qrcode.Encode(url, qrcode.Medium, 512)
@@ -122,4 +126,19 @@ func (m *Module) handleBindKeyfob(r *http.Request, ps httprouter.Params) engine.
 	slog.Info("bound keyfob to member", "fobid", fobID, "memberID", user.ID)
 
 	return engine.Redirect("/", http.StatusSeeOther)
+}
+
+func (m *Module) handleGetKeyFobInUse(r *http.Request, ps httprouter.Params) engine.Response {
+	fobID, err := strconv.ParseInt(ps.ByName("id"), 10, 0)
+	if err != nil {
+		return engine.ClientErrorf(400, "Invalid fob ID")
+	}
+
+	var count int
+	err = m.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM members WHERE fob_id = $1", fobID).Scan(&count)
+	if err != nil {
+		return engine.ClientErrorf(500, "querying db for fob id: %s", err)
+	}
+
+	return engine.JSON(count > 0)
 }
