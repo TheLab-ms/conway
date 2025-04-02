@@ -9,6 +9,8 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 )
 
+// TODO: Support search for pages other than members
+
 type listView struct {
 	Title      string
 	RelPath    string
@@ -181,6 +183,43 @@ var listViews = []listView{
 				}
 				if memberID != nil {
 					row.SelfLink = fmt.Sprintf("/admin/members/%d", *memberID)
+				}
+				rows = append(rows, row)
+			}
+
+			return rows, nil
+		},
+	},
+	{
+		Title:   "Waivers",
+		RelPath: "/waivers",
+		Rows: []*tableRowMeta{
+			{Title: "Timestamp", Width: 1},
+			{Title: "Member", Width: 2},
+			{Title: "Fob ID", Width: 1},
+		},
+		BuildQuery: func(r *http.Request) (q, rowCountQuery string, args []any) {
+			q = `SELECT created, name, email FROM waivers WHERE name != '' ORDER BY created DESC LIMIT :limit OFFSET :offset`
+			rowCountQuery = "SELECT COUNT(*) FROM waivers"
+			return
+		},
+		BuildRows: func(results *sql.Rows) ([]*tableRow, error) {
+			rows := []*tableRow{}
+			for results.Next() {
+				var timestamp engine.LocalTime
+				var name string
+				var email string
+				err := results.Scan(&timestamp, &name, &email)
+				if err != nil {
+					return nil, err
+				}
+
+				row := &tableRow{
+					Cells: []*tableCell{
+						{Text: timestamp.Time.Format("2006-01-02 03:04:05 PM")},
+						{Text: name},
+						{Text: email},
+					},
 				}
 				rows = append(rows, row)
 			}
