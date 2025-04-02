@@ -25,16 +25,23 @@ templ renderKiosk(qrImg []byte) {
 				<input type="hidden" id="fobid" name="fobid" value=""/>
 			</form>
 			if qrImg == nil {
-				<div class="alert alert-primary">
-					<h4 class="alert-heading">Scan Key Fob</h4>
-					Take an unused fob from the drawer and hold it near the reader.
+				<h1>Welcome to TheLab</h1>
+				<div class="mt-4">
+					<a href="https://wiki.thelab.ms/join" class="btn btn-secondary btn-lg">How To Join</a>
+					<a href="/waiver" class="btn btn-secondary btn-lg">Sign Waiver</a>
+				</div>
+				<div class="mt-4">
+					Scan a key fob any time to link it to your account.	
 				</div>
 			} else {
-				<div class="alert alert-primary">
-					<h4 class="alert-heading">Link to Your Account</h4>
+				<div>
+					<h4>Link to Your Account</h4>
 					Scan the QR from your device to link the key fob to your account.
 				</div>
-				<img src={ "data:image/png;base64," + string(qrImg) } class="img-fluid"/>
+				<img class="mt-3" src={ "data:image/png;base64," + string(qrImg) } class="img-fluid"/>
+				<div class="mt-3">
+					<a href="/kiosk" class="btn btn-secondary btn-lg">Hide QR</a>
+				</div>
 			}
 		</div>
 		<script>

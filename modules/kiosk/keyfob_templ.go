@@ -100,25 +100,25 @@ func renderKiosk(qrImg []byte) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if qrImg == nil {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"alert alert-primary\"><h4 class=\"alert-heading\">Scan Key Fob</h4>Take an unused fob from the drawer and hold it near the reader.</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<h1>Welcome to TheLab</h1><div class=\"mt-4\"><a href=\"https://wiki.thelab.ms/join\" class=\"btn btn-secondary btn-lg\">How To Join</a> <a href=\"/waiver\" class=\"btn btn-secondary btn-lg\">Sign Waiver</a></div><div class=\"mt-4\">Scan a key fob any time to link it to your account.\t</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"alert alert-primary\"><h4 class=\"alert-heading\">Link to Your Account</h4>Scan the QR from your device to link the key fob to your account.</div><img src=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div><h4>Link to Your Account</h4>Scan the QR from your device to link the key fob to your account.</div><img class=\"mt-3\" src=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs("data:image/png;base64," + string(qrImg))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `keyfob.templ`, Line: 37, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `keyfob.templ`, Line: 41, Col: 68}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"img-fluid\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"img-fluid\"><div class=\"mt-3\"><a href=\"/kiosk\" class=\"btn btn-secondary btn-lg\">Hide QR</a></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
