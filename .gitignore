@@ -1,4 +1,5 @@
 build/
+conway
 .env
 TODO
 .dev
