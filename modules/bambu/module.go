@@ -115,10 +115,10 @@ func (p *PrinterState) Equal(other *PrinterState) bool {
 		return false
 	}
 
-	// Finish times are set, return false if they aren't within 1 min of each other
+	// Finish times are set, return false if they aren't within 5 min of each other
 	if p.JobFinisedAt != nil &&
 		other.JobFinisedAt != nil &&
-		!p.JobFinisedAt.Round(time.Minute).Equal(other.JobFinisedAt.Round(time.Minute)) {
+		!p.JobFinisedAt.Round(time.Minute*5).Equal(other.JobFinisedAt.Round(time.Minute*5)) {
 		return false
 	}
 
