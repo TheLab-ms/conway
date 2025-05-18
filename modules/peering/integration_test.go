@@ -75,6 +75,11 @@ func TestApiIntegration(t *testing.T) {
 		Timestamp: time.Now().Unix(),
 		FobSwipe:  &FobSwipeEvent{FobID: 101},
 	})
+	c.BufferEvent(&Event{
+		UID:          uuid.NewString(),
+		Timestamp:    time.Now().Unix(),
+		PrinterEvent: &PrinterEvent{PrinterName: "test"},
+	})
 	valid102 := &Event{
 		UID:       uuid.NewString(),
 		Timestamp: time.Now().Unix(),
@@ -91,4 +96,8 @@ func TestApiIntegration(t *testing.T) {
 	err = db.QueryRow("SELECT COUNT(*) FROM fob_swipes").Scan(&rows)
 	require.NoError(t, err)
 	assert.Equal(t, 4, rows)
+
+	err = db.QueryRow("SELECT COUNT(*) FROM printer_events").Scan(&rows)
+	require.NoError(t, err)
+	assert.Equal(t, 1, rows)
 }

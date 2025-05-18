@@ -27,11 +27,18 @@ type Event struct {
 	Timestamp int64  `json:"timestamp"` // UTC unix epoch seconds
 
 	// Only one field can be set per event
-	FobSwipe *FobSwipeEvent `json:"fob_swipe"`
+	FobSwipe     *FobSwipeEvent `json:"fob_swipe"`
+	PrinterEvent *PrinterEvent  `json:"printer_event"`
 }
 
 type FobSwipeEvent struct {
 	FobID int64 `json:"fob_id"`
+}
+
+type PrinterEvent struct {
+	PrinterName  string     `json:"printer_name"`
+	JobFinisedAt *time.Time `json:"job_finished_at"`
+	ErrorCode    string     `json:"error_code"`
 }
 
 type Client struct {

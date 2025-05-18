@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/modules/bambu"
 	gac "github.com/TheLab-ms/conway/modules/generic-access-controller"
 	"github.com/TheLab-ms/conway/modules/peering"
 	"github.com/caarlos0/env/v11"
@@ -18,6 +19,7 @@ import (
 type Config struct {
 	ConwayURL            string `env:",required"`
 	AccessControllerHost string
+	BambuPrinters        string
 }
 
 func main() {
@@ -48,6 +50,9 @@ func main() {
 		return false
 	}))
 
+	// Loop to poll the Bambu printers
+	bambu.New(client, conf.BambuPrinters).AttachWorkers(&procs)
+
 	// Loop to sync the access controller
 	lastSync := atomic.Pointer[time.Time]{}
 	if conf.AccessControllerHost != "" {
@@ -61,4 +66,6 @@ func main() {
 		}
 		return false
 	}))
+
+	procs.Run(context.Background())
 }
