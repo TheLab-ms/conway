@@ -18,9 +18,6 @@ jobs:
       with:
         go-version-file: 'go.mod'
     
-    - name: Download dependencies
-      run: go mod download
-    
     - name: Generate templ files
       run: go generate ./modules/...
     
