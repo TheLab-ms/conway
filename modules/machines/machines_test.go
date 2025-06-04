@@ -100,6 +100,18 @@ func TestRenderMachines(t *testing.T) {
 			description: "Printer with overdue job completion time",
 		},
 		{
+			name: "stale_job",
+			printers: []*printerStatus{
+				{
+					Name:          "StalePrinter",
+					JobFinishedAt: &engine.LocalTime{Time: now.Add(-3 * time.Hour)},
+					ErrorCode:     "",
+				},
+			},
+			fixtureName: "_stale",
+			description: "Printer with stale job completion time (should be available)",
+		},
+		{
 			name: "single_printer",
 			printers: []*printerStatus{
 				{

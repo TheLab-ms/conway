@@ -31,11 +31,15 @@ templ renderMachines(printers []*printerStatus) {
 							<tr>
 								<td>{printer.Name}</td>
 								if printer.JobFinishedAt != nil {
-									<td>In Use</td>
 									if timeUntil := time.Until(printer.JobFinishedAt.Time); timeUntil > 0 {
+										<td>In Use</td>
 										<td>{timeUntil.Round(time.Minute).String()}</td>
-									} else {
+									} else if timeUntil > -2*time.Hour {
+										<td>In Use</td>
 										<td>Overdue</td>
+									} else {
+										<td>Available</td>
+										<td></td>
 									}
 								} else {
 									<td>Available</td>
