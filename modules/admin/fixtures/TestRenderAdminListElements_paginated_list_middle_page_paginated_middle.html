@@ -1,0 +1,9 @@
+<div class="card-body p-0"><div class="table-responsive"><table class="table table-striped table-hover mb-0"><thead class="table-light"><tr><th class="col-2">ID</th><th class="col-8">Email</th><th class="col-2">Status</th></tr></thead> <tbody><script>function __templ_navigateToSelf_5226(link){window.location = link
+}</script><tr onclick="__templ_navigateToSelf_5226(&#34;/admin/members/11&#34;)" style="cursor: pointer;"><td><span>11</span></td><td><span>user11@example.com</span></td><td><span class="badge text-bg-primary">Active</span></td></tr></tbody></table></div></div><div class="card-footer text-body-secondary text-center"><input type="hidden" id="currentpage" name="currentpage" value="3"><script>
+		function updatePageCounter(offset) {
+			let el = document.getElementById('currentpage')
+			el.value = Number(el.value) + offset
+
+			document.getElementById('searchbox').dispatchEvent(new Event('change', { bubbles: true }))
+		}
+	</script><div class="btn-group"><a class="btn btn-primary" onclick="updatePageCounter(-1)">Previous</a> <a class="btn btn-outline-primary disabled">Page 3 of 5</a> <a class="btn btn-primary" onclick="updatePageCounter(1)">Next</a></div></div>
