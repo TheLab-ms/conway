@@ -81,6 +81,9 @@ func (m *Module) poll(ctx context.Context) bool {
 		if minutes := data.RemainingPrintTime; minutes > 0 {
 			t := time.Now().Add(time.Duration(minutes) * time.Minute)
 			s.JobFinisedAt = &t
+		} else {
+			// Job is completed or not running, ensure JobFinisedAt is nil
+			s.JobFinisedAt = nil
 		}
 		current := m.state[name]
 		m.state[name] = s

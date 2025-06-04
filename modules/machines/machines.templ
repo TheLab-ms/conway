@@ -30,7 +30,7 @@ templ renderMachines(printers []*printerStatus) {
 						for _, printer := range printers {
 							<tr>
 								<td>{printer.Name}</td>
-								if printer.JobFinishedAt != nil {
+								if printer.JobFinishedAt != nil && printer.JobFinishedAt.Time.After(time.Now()) {
 									<td>In Use</td>
 									<td>{time.Until(printer.JobFinishedAt.Time).Round(time.Minute).String()}</td>
 								} else {

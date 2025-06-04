@@ -75,7 +75,7 @@ func renderMachines(printers []*printerStatus) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				if printer.JobFinishedAt != nil {
+				if printer.JobFinishedAt != nil && printer.JobFinishedAt.Time.After(time.Now()) {
 					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<td>In Use</td><td>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
