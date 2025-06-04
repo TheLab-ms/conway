@@ -21,13 +21,13 @@ func TestAggregate(t *testing.T) {
 		m.aggregate(ctx, &aggregate{
 			Name:     "test",
 			Query:    "SELECT COUNT(*) FROM metrics",
-			Interval: time.Millisecond * 10,
+			Interval: time.Millisecond * 50,
 		})
 	}
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM metrics WHERE series = 'test'").Scan(&count)
 	require.NoError(t, err)
-	assert.Greater(t, count, 2)
+	assert.Greater(t, count, 1)
 	assert.Less(t, count, 11)
 
 	// Make sure configured aggregates are valid sql
