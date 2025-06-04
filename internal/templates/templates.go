@@ -1,10 +1,15 @@
 package templates
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
+	"embed"
+	"fmt"
 	"html/template"
 	"io"
 	"path/filepath"
+	"reflect"
 )
 
 // Renderer provides template rendering functionality using Go's html/template
@@ -114,5 +119,146 @@ func LoadTemplatesFromDir(dir string) error {
 		}
 	}
 	
+	return nil
+}
+
+// LoadTemplatesFromEmbeddedFS loads templates from an embedded filesystem
+func LoadTemplatesFromEmbeddedFS(fs embed.FS, dir string) (*template.Template, error) {
+	return template.ParseFS(fs, filepath.Join(dir, "*.html"))
+}
+
+// RenderToHTML renders a component to HTML and returns it as template.HTML
+func RenderToHTML(component Component) (template.HTML, error) {
+	var buf bytes.Buffer
+	if err := component.Render(nil, &buf); err != nil {
+		return "", err
+	}
+	return template.HTML(buf.String()), nil
+}
+
+// DBQueryHelper provides generic database query functionality
+type DBQueryHelper struct {
+	db *sql.DB
+}
+
+// NewDBQueryHelper creates a new database query helper
+func NewDBQueryHelper(db *sql.DB) *DBQueryHelper {
+	return &DBQueryHelper{db: db}
+}
+
+// QueryRow executes a query that returns a single row and scans it into the provided destination
+func (h *DBQueryHelper) QueryRow(ctx context.Context, query string, dest interface{}, args ...interface{}) error {
+	rows, err := h.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return sql.ErrNoRows
+	}
+
+	return h.scanRow(rows, dest)
+}
+
+// QueryRows executes a query that returns multiple rows and scans them into a slice
+func (h *DBQueryHelper) QueryRows(ctx context.Context, query string, dest interface{}, args ...interface{}) error {
+	rows, err := h.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	return h.scanRows(rows, dest)
+}
+
+// scanRow scans a single row into a struct using reflection
+func (h *DBQueryHelper) scanRow(rows *sql.Rows, dest interface{}) error {
+	columns, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+
+	// Get the value and type of the destination
+	v := reflect.ValueOf(dest)
+	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("dest must be a pointer to a struct")
+	}
+
+	structValue := v.Elem()
+	structType := structValue.Type()
+
+	// Create scan destinations
+	scanDest := make([]interface{}, len(columns))
+	for i, col := range columns {
+		field := h.findFieldByDBTag(structType, col)
+		if field != nil {
+			scanDest[i] = structValue.FieldByName(field.Name).Addr().Interface()
+		} else {
+			// If no matching field, scan into a dummy variable
+			var dummy interface{}
+			scanDest[i] = &dummy
+		}
+	}
+
+	return rows.Scan(scanDest...)
+}
+
+// scanRows scans multiple rows into a slice of structs
+func (h *DBQueryHelper) scanRows(rows *sql.Rows, dest interface{}) error {
+	// dest should be a pointer to a slice
+	v := reflect.ValueOf(dest)
+	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
+		return fmt.Errorf("dest must be a pointer to a slice")
+	}
+
+	sliceValue := v.Elem()
+	elementType := sliceValue.Type().Elem()
+
+	// If element type is pointer, get the underlying type
+	if elementType.Kind() == reflect.Ptr {
+		elementType = elementType.Elem()
+	}
+
+	if elementType.Kind() != reflect.Struct {
+		return fmt.Errorf("slice elements must be structs or pointers to structs")
+	}
+
+	for rows.Next() {
+		// Create a new instance of the element type
+		newElement := reflect.New(elementType)
+		
+		if err := h.scanRow(rows, newElement.Interface()); err != nil {
+			return err
+		}
+
+		// Add to slice
+		if sliceValue.Type().Elem().Kind() == reflect.Ptr {
+			sliceValue.Set(reflect.Append(sliceValue, newElement))
+		} else {
+			sliceValue.Set(reflect.Append(sliceValue, newElement.Elem()))
+		}
+	}
+
+	return rows.Err()
+}
+
+// findFieldByDBTag finds a struct field by its db tag or field name
+func (h *DBQueryHelper) findFieldByDBTag(structType reflect.Type, columnName string) *reflect.StructField {
+	for i := 0; i < structType.NumField(); i++ {
+		field := structType.Field(i)
+		
+		// Check db tag first
+		if dbTag := field.Tag.Get("db"); dbTag != "" {
+			if dbTag == columnName {
+				return &field
+			}
+		}
+		
+		// Fallback to field name (case insensitive)
+		if field.Name == columnName {
+			return &field
+		}
+	}
 	return nil
 }

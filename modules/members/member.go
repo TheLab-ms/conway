@@ -2,11 +2,15 @@ package members
 
 import (
 	"bytes"
+	"embed"
 	"html/template"
 
 	"github.com/TheLab-ms/conway/internal/templates"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
+
+//go:embed templates/*
+var templateFS embed.FS
 
 var (
 	memberTemplate           *template.Template
@@ -15,11 +19,11 @@ var (
 
 func init() {
 	var err error
-	memberTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/members/templates/member.html")
+	memberTemplate, err = template.ParseFS(templateFS, "templates/member.html")
 	if err != nil {
 		panic(err)
 	}
-	membershipStatusTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/members/templates/membership_status.html")
+	membershipStatusTemplate, err = template.ParseFS(templateFS, "templates/membership_status.html")
 	if err != nil {
 		panic(err)
 	}

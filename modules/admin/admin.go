@@ -1,9 +1,9 @@
 package admin
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
+	"embed"
 	"fmt"
 	"html/template"
 	"time"
@@ -12,6 +12,9 @@ import (
 	"github.com/TheLab-ms/conway/internal/templates"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
+
+//go:embed templates/*
+var templateFS embed.FS
 
 var (
 	adminNavTemplate        *template.Template
@@ -23,23 +26,23 @@ var (
 
 func init() {
 	var err error
-	adminNavTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/admin/templates/admin_nav.html")
+	adminNavTemplate, err = template.ParseFS(templateFS, "templates/admin_nav.html")
 	if err != nil {
 		panic(err)
 	}
-	tableCellTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/admin/templates/table_cell.html")
+	tableCellTemplate, err = template.ParseFS(templateFS, "templates/table_cell.html")
 	if err != nil {
 		panic(err)
 	}
-	adminListTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/admin/templates/admin_list.html")
+	adminListTemplate, err = template.ParseFS(templateFS, "templates/admin_list.html")
 	if err != nil {
 		panic(err)
 	}
-	adminListElementsTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/admin/templates/admin_list_elements.html")
+	adminListElementsTemplate, err = template.ParseFS(templateFS, "templates/admin_list_elements.html")
 	if err != nil {
 		panic(err)
 	}
-	listPaginationTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/admin/templates/list_pagination.html")
+	listPaginationTemplate, err = template.ParseFS(templateFS, "templates/list_pagination.html")
 	if err != nil {
 		panic(err)
 	}
@@ -70,31 +73,31 @@ type tableCell struct {
 const timeFormat = "Mon, Jan 2 2006"
 
 type member struct {
-	ID              int64
-	AccessStatus    string
-	Name            string
-	Email           string
-	Confirmed       bool
-	Created         engine.LocalTime
-	AdminNotes      string
-	Leadership      bool
-	NonBillable     bool
-	FobID           *int64
-	StripeSubID     *string
-	StripeStatus    *string
-	PaypalSubID     *string
-	PaypalPrice     *float64
-	DiscountType    *string
-	RootFamilyEmail *string
-	BillAnnually    bool
-	FobLastSeen     *engine.LocalTime
-	DiscordUserID   string
+	ID              int64               `db:"id"`
+	AccessStatus    string              `db:"access_status"`
+	Name            string              `db:"name"`
+	Email           string              `db:"email"`
+	Confirmed       bool                `db:"confirmed"`
+	Created         engine.LocalTime    `db:"created"`
+	AdminNotes      string              `db:"admin_notes"`
+	Leadership      bool                `db:"leadership"`
+	NonBillable     bool                `db:"non_billable"`
+	FobID           *int64              `db:"fob_id"`
+	StripeSubID     *string             `db:"stripe_subscription_id"`
+	StripeStatus    *string             `db:"stripe_subscription_state"`
+	PaypalSubID     *string             `db:"paypal_subscription_id"`
+	PaypalPrice     *float64            `db:"paypal_price"`
+	DiscountType    *string             `db:"discount_type"`
+	RootFamilyEmail *string             `db:"email"` // This maps to the joined email from root family member
+	BillAnnually    bool                `db:"bill_annually"`
+	FobLastSeen     *engine.LocalTime   `db:"fob_last_seen"`
+	DiscordUserID   string              `db:"discord_user_id"`
 }
 
 type memberEvent struct {
-	Created time.Time
-	Event   string
-	Details string
+	Created time.Time `db:"created"`
+	Event   string    `db:"event"`
+	Details string    `db:"details"`
 }
 
 type TableCellData struct {
@@ -151,15 +154,14 @@ func (t tableCell) Render(row *tableRow) templates.Component {
 }
 
 func renderAdminList(tabs []*navbarTab, typeName, searchURL string) templates.Component {
-	// Render the admin nav
-	var navBuf bytes.Buffer
-	navComponent := adminNav(tabs)
-	if err := navComponent.Render(nil, &navBuf); err != nil {
+	// Use the new helper to render admin nav
+	navHTML, err := templates.RenderToHTML(adminNav(tabs))
+	if err != nil {
 		panic(err)
 	}
 
 	data := AdminListData{
-		AdminNav:  template.HTML(navBuf.String()),
+		AdminNav:  navHTML,
 		TypeName:  typeName,
 		SearchURL: searchURL,
 	}
@@ -173,18 +175,17 @@ func renderAdminList(tabs []*navbarTab, typeName, searchURL string) templates.Co
 }
 
 func renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow, currentPage, totalPages int64) templates.Component {
-	// Render each cell
+	// Render each cell using the helper
 	enhancedRows := make([]*EnhancedTableRow, len(rows))
 	for i, row := range rows {
 		enhancedCells := make([]*EnhancedTableCell, len(row.Cells))
 		for j, cell := range row.Cells {
-			var cellBuf bytes.Buffer
-			cellComponent := cell.Render(row)
-			if err := cellComponent.Render(nil, &cellBuf); err != nil {
+			cellHTML, err := templates.RenderToHTML(cell.Render(row))
+			if err != nil {
 				panic(err)
 			}
 			enhancedCells[j] = &EnhancedTableCell{
-				CellContent: template.HTML(cellBuf.String()),
+				CellContent: cellHTML,
 			}
 		}
 		enhancedRows[i] = &EnhancedTableRow{
@@ -193,17 +194,16 @@ func renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow, currentP
 		}
 	}
 
-	// Render pagination
-	var paginationBuf bytes.Buffer
-	paginationComponent := renderListPagination(currentPage, totalPages)
-	if err := paginationComponent.Render(nil, &paginationBuf); err != nil {
+	// Render pagination using the helper
+	paginationHTML, err := templates.RenderToHTML(renderListPagination(currentPage, totalPages))
+	if err != nil {
 		panic(err)
 	}
 
 	data := AdminListElementsData{
 		RowMeta:    rowMeta,
 		Rows:       enhancedRows,
-		Pagination: template.HTML(paginationBuf.String()),
+		Pagination: paginationHTML,
 	}
 
 	return &templates.TemplateComponent{
@@ -233,31 +233,28 @@ func renderSingleMember(tabs []*navbarTab, member interface{}, events interface{
 }
 
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
+	dbHelper := templates.NewDBQueryHelper(db)
+	
+	// Query single member with complex JOIN - we'll still need manual handling for this
+	// because of the complex column mapping and COALESCE operations
 	mem := member{}
-	err := db.QueryRowContext(ctx, `
+	query := `
 		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, '')
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
-		WHERE m.id = $1`, id).
+		WHERE m.id = $1`
+	
+	err := db.QueryRowContext(ctx, query, id).
 		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	// Query member events using the generic helper
 	var events []*memberEvent
-	results, err := db.QueryContext(ctx, "SELECT created, event, details FROM member_events WHERE member = $1 ORDER BY created DESC LIMIT 10", mem.ID)
-	if err != nil {
+	eventsQuery := "SELECT created, event, details FROM member_events WHERE member = $1 ORDER BY created DESC LIMIT 10"
+	if err := dbHelper.QueryRows(ctx, eventsQuery, &events, mem.ID); err != nil {
 		return nil, nil, err
-	}
-	defer results.Close()
-
-	for results.Next() {
-		var created int64
-		event := &memberEvent{}
-		if results.Scan(&created, &event.Event, &event.Details) == nil {
-			event.Created = time.Unix(created, 0)
-			events = append(events, event)
-		}
 	}
 
 	return &mem, events, nil

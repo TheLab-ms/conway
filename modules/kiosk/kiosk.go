@@ -1,12 +1,16 @@
 package kiosk
 
 import (
+	"embed"
 	"encoding/base64"
 	"html/template"
 
 	"github.com/TheLab-ms/conway/internal/templates"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
+
+//go:embed templates/*
+var templateFS embed.FS
 
 var (
 	offsiteErrorTemplate *template.Template
@@ -15,11 +19,11 @@ var (
 
 func init() {
 	var err error
-	offsiteErrorTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/kiosk/templates/offsite_error.html")
+	offsiteErrorTemplate, err = template.ParseFS(templateFS, "templates/offsite_error.html")
 	if err != nil {
 		panic(err)
 	}
-	kioskTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/kiosk/templates/kiosk.html")
+	kioskTemplate, err = template.ParseFS(templateFS, "templates/kiosk.html")
 	if err != nil {
 		panic(err)
 	}

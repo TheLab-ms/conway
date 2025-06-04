@@ -3,11 +3,15 @@ package bootstrap
 import (
 	"bytes"
 	"context"
+	"embed"
 	"html/template"
 	"io"
 
 	"github.com/TheLab-ms/conway/internal/templates"
 )
+
+//go:embed templates/*
+var templateFS embed.FS
 
 var (
 	viewTemplate *template.Template
@@ -15,7 +19,7 @@ var (
 
 func init() {
 	var err error
-	viewTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/bootstrap/templates/view.html")
+	viewTemplate, err = template.ParseFS(templateFS, "templates/view.html")
 	if err != nil {
 		panic(err)
 	}

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"embed"
 	"fmt"
 	"html/template"
 	"net/url"
@@ -8,6 +9,9 @@ import (
 	"github.com/TheLab-ms/conway/internal/templates"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
+
+//go:embed templates/*
+var templateFS embed.FS
 
 var (
 	loginTemplate      *template.Template
@@ -17,15 +21,15 @@ var (
 
 func init() {
 	var err error
-	loginTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/auth/templates/login.html")
+	loginTemplate, err = template.ParseFS(templateFS, "templates/login.html")
 	if err != nil {
 		panic(err)
 	}
-	loginSentTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/auth/templates/login_sent.html")
+	loginSentTemplate, err = template.ParseFS(templateFS, "templates/login_sent.html")
 	if err != nil {
 		panic(err)
 	}
-	loginEmailTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/auth/templates/login_email.html")
+	loginEmailTemplate, err = template.ParseFS(templateFS, "templates/login_email.html")
 	if err != nil {
 		panic(err)
 	}

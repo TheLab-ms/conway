@@ -1,6 +1,7 @@
 package machines
 
 import (
+	"embed"
 	"html/template"
 	"time"
 
@@ -9,13 +10,16 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
+//go:embed templates/*
+var templateFS embed.FS
+
 var (
 	machinesTemplate *template.Template
 )
 
 func init() {
 	var err error
-	machinesTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/machines/templates/machines.html")
+	machinesTemplate, err = template.ParseFS(templateFS, "templates/machines.html")
 	if err != nil {
 		panic(err)
 	}
