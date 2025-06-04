@@ -1,0 +1,27 @@
+<div class="card-body p-0">
+	<div class="table-responsive">
+		<table class="table table-striped table-hover mb-0">
+			<thead class="table-light">
+				<tr>
+					{{range .RowMeta}}
+						<th class="col-{{.Width}}">{{.Title}}</th>
+					{{end}}
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Rows}}
+					<tr onclick="navigateToSelf('{{.SelfLink}}')" style="cursor: pointer;">
+						{{range .Cells}}
+							<td>
+								{{.CellContent}}
+							</td>
+						{{end}}
+					</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</div>
+<div class="card-footer text-body-secondary text-center">
+	{{.Pagination}}
+</div>

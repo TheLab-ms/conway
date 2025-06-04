@@ -1,9 +1,67 @@
-<div class="card-body p-0"><div class="table-responsive"><table class="table table-striped table-hover mb-0"><thead class="table-light"><tr><th class="col-2">ID</th><th class="col-8">Email</th><th class="col-2">Status</th></tr></thead> <tbody><script>function __templ_navigateToSelf_5226(link){window.location = link
-}</script><tr onclick="__templ_navigateToSelf_5226(&#34;/admin/members/25&#34;)" style="cursor: pointer;"><td><span>25</span></td><td><span>user25@example.com</span></td><td><span class="badge text-bg-danger">Inactive</span></td></tr></tbody></table></div></div><div class="card-footer text-body-secondary text-center"><input type="hidden" id="currentpage" name="currentpage" value="5"><script>
-		function updatePageCounter(offset) {
-			let el = document.getElementById('currentpage')
-			el.value = Number(el.value) + offset
+<div class="card-body p-0">
+	<div class="table-responsive">
+		<table class="table table-striped table-hover mb-0">
+			<thead class="table-light">
+				<tr>
+					
+						<th class="col-2">ID</th>
+					
+						<th class="col-8">Email</th>
+					
+						<th class="col-2">Status</th>
+					
+				</tr>
+			</thead>
+			<tbody>
+				
+					<tr onclick="navigateToSelf('\/admin\/members\/25')" style="cursor: pointer;">
+						
+							<td>
+								
+	<span>25</span>
 
-			document.getElementById('searchbox').dispatchEvent(new Event('change', { bubbles: true }))
-		}
-	</script><div class="btn-group"><a class="btn btn-primary" onclick="updatePageCounter(-1)">Previous</a> <a class="btn btn-outline-primary disabled">Page 5 of 5</a> <a class="btn btn-primary disabled">Next</a></div></div>
+							</td>
+						
+							<td>
+								
+	<span>user25@example.com</span>
+
+							</td>
+						
+							<td>
+								
+	<span class="badge text-bg-danger">Inactive</span>
+
+							</td>
+						
+					</tr>
+				
+			</tbody>
+		</table>
+	</div>
+</div>
+<div class="card-footer text-body-secondary text-center">
+	<input type="hidden" id="currentpage" name="currentpage" value="5"/>
+<script>
+	function updatePageCounter(offset) {
+		let el = document.getElementById('currentpage')
+		el.value = Number(el.value) + offset
+
+		document.getElementById('searchbox').dispatchEvent(new Event('change', { bubbles: true }))
+	}
+</script>
+<div class="btn-group">
+	
+		<a class="btn btn-primary" onclick="updatePageCounter(-1)">Previous</a>
+	
+	<a class="btn btn-outline-primary disabled">Page 5 of 5</a>
+	
+		<a class="btn btn-primary disabled">Next</a>
+	
+</div>
+<script>
+	function navigateToSelf(link) {
+		window.location = link;
+	}
+</script>
+</div>

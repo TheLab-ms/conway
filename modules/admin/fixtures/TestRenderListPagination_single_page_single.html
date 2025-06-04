@@ -1,8 +1,23 @@
-<input type="hidden" id="currentpage" name="currentpage" value="1"><script>
-		function updatePageCounter(offset) {
-			let el = document.getElementById('currentpage')
-			el.value = Number(el.value) + offset
+<input type="hidden" id="currentpage" name="currentpage" value="1"/>
+<script>
+	function updatePageCounter(offset) {
+		let el = document.getElementById('currentpage')
+		el.value = Number(el.value) + offset
 
-			document.getElementById('searchbox').dispatchEvent(new Event('change', { bubbles: true }))
-		}
-	</script><div class="btn-group"><a class="btn btn-primary disabled">Previous</a> <a class="btn btn-outline-primary disabled">Page 1 of 1</a> <a class="btn btn-primary disabled">Next</a></div>
+		document.getElementById('searchbox').dispatchEvent(new Event('change', { bubbles: true }))
+	}
+</script>
+<div class="btn-group">
+	
+		<a class="btn btn-primary disabled">Previous</a>
+	
+	<a class="btn btn-outline-primary disabled">Page 1 of 1</a>
+	
+		<a class="btn btn-primary disabled">Next</a>
+	
+</div>
+<script>
+	function navigateToSelf(link) {
+		window.location = link;
+	}
+</script>

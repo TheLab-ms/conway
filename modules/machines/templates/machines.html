@@ -1,0 +1,30 @@
+<div class="container my-5">
+	<div class="mt-3">
+		<h2>Printers</h2>
+		<table class="table table-bordered table-striped">
+			<thead>
+				<tr>
+					<th>Printer</th>
+					<th>Status</th>
+					<th>Print Completion Estimate</th>
+					<th>Error Code</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .}}
+					<tr>
+						<td>{{.Name}}</td>
+						{{if .JobFinishedAt}}
+							<td>In Use</td>
+							<td>{{.CompletionEstimate}}</td>
+						{{else}}
+							<td>Available</td>
+							<td></td>
+						{{end}}
+						<td>{{.ErrorCode}}</td>
+					</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</div>

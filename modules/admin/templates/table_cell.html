@@ -1,0 +1,7 @@
+{{if .BadgeType}}
+	<span class="badge text-bg-{{.BadgeType}}">{{.Text}}</span>
+{{else if .SelfLinkButton}}
+	<a href="{{.SelfLink}}" class="btn btn-sm btn-primary">Edit</a>
+{{else}}
+	<span>{{.Text}}</span>
+{{end}}

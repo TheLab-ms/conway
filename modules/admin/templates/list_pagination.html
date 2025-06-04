@@ -1,0 +1,27 @@
+<input type="hidden" id="currentpage" name="currentpage" value="{{.CurrentPage}}"/>
+<script>
+	function updatePageCounter(offset) {
+		let el = document.getElementById('currentpage')
+		el.value = Number(el.value) + offset
+
+		document.getElementById('searchbox').dispatchEvent(new Event('change', { bubbles: true }))
+	}
+</script>
+<div class="btn-group">
+	{{if gt .CurrentPage 1}}
+		<a class="btn btn-primary" onclick="updatePageCounter(-1)">Previous</a>
+	{{else}}
+		<a class="btn btn-primary disabled">Previous</a>
+	{{end}}
+	<a class="btn btn-outline-primary disabled">Page {{.CurrentPage}} of {{.TotalPages}}</a>
+	{{if lt .CurrentPage .TotalPages}}
+		<a class="btn btn-primary" onclick="updatePageCounter(1)">Next</a>
+	{{else}}
+		<a class="btn btn-primary disabled">Next</a>
+	{{end}}
+</div>
+<script>
+	function navigateToSelf(link) {
+		window.location = link;
+	}
+</script>

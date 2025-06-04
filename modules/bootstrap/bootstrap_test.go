@@ -1,35 +1,26 @@
 package bootstrap
 
 import (
-	"context"
-	"io"
 	"testing"
 
+	"github.com/TheLab-ms/conway/internal/templates"
 	snaptest "github.com/TheLab-ms/conway/internal/testing"
-	"github.com/a-h/templ"
 )
 
 // mockComponent creates a simple test component for testing bootstrap layouts
-func mockComponent() templ.Component {
-	return templ.ComponentFunc(func(ctx context.Context, w io.Writer) (err error) {
-		_, err = w.Write([]byte(`<body><h1>Test Content</h1><p>This is test content.</p></body>`))
-		return err
-	})
+func mockComponent() templates.Component {
+	return templates.ComponentFromString(`<body><h1>Test Content</h1><p>This is test content.</p></body>`, nil)
 }
 
 func TestView(t *testing.T) {
 	// Test View() by creating a component that uses it with mock content
-	component := templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
-		return View().Render(templ.WithChildren(ctx, mockComponent()), w)
-	})
+	component := View(mockComponent())
 	snaptest.RenderSnapshotWithName(t, component, "")
 }
 
 func TestDarkmodeView(t *testing.T) {
 	// Test DarkmodeView() by creating a component that uses it with mock content
-	component := templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
-		return DarkmodeView().Render(templ.WithChildren(ctx, mockComponent()), w)
-	})
+	component := DarkmodeView(mockComponent())
 	snaptest.RenderSnapshotWithName(t, component, "")
 }
 
@@ -58,9 +49,7 @@ func TestViewWithTheme(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			component := templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
-				return view(tt.theme).Render(templ.WithChildren(ctx, mockComponent()), w)
-			})
+			component := view(tt.theme, mockComponent())
 			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
