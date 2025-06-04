@@ -1,6 +1,64 @@
-<!doctype html><html lang="en" data-bs-theme=""><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Conway Makerspace System</title><link href="/assets/bootstrap/css/bootstrap.min.css" rel="stylesheet"><script src="/assets/bootstrap/js/bootstrap.bundle.min.js"></script><script src="/assets/htmx.min.js"></script></head><style>
-		.large-checkbox {
-    		transform: scale(1.5);
-    		-webkit-transform: scale(1.5);
-		}
-		</style> <div class="container my-5" style="max-width: 800px;"><h1>TheLab Liability Waiver</h1><div class="card mt-3"><div class="card-body"><p>I agree and acknowledge as follows: </p><p>1. I WAIVE ANY AND ALL RIGHTS OF RECOVERY, CLAIM, ACTION OR CAUSE OF ACTION AGAINST THELAB.MS FOR ANY INJURY OR DAMAGE THAT MAY OCCUR, REGARDLESS OF CAUSE OR ORIGIN, INCLUDING NEGLIGENCE AND GROSS NEGLIGENCE.</p><p>2. I also understand that I am personally responsible for my safety and actions and that I will follow all safety instructions and signage while at TheLab.ms.</p><p>3. I affirm that I am at least 18 years of age and mentally competent to sign this liability waiver.</p></div></div><div class="card mt-3"><div class="card-body"><form method="post"><div class="form-check mb-4"><input class="form-check-input large-checkbox" type="checkbox" id="agree1" name="agree1" required checked> <label class="form-check-label" for="agree1" class="form-label">By checking here, you are consenting to the use of your electronic signature in lieu of an original signature on paper.</label></div><div class="form-check mb-4"><input class="form-check-input large-checkbox" type="checkbox" id="agree2" name="agree2" required checked> <label class="form-check-label" for="agree2" class="form-label">By checking this box, I agree and acknowledge to be bound by this waiver and release and further agree and acknowledge that this waiver and release shall also apply to all of my future participation in TheLab.</label></div><div class="form-group mb-3"><label for="name" class="form-label">Legal Name:</label> <input type="text" class="form-control" id="name" name="name" required value="José García-López"></div><div class="form-group mb-4"><label for="email" class="form-label">Email:</label> <input type="email" class="form-control" id="email" name="email" required value="jose.garcia+test@example.com"></div><button type="submit" class="btn btn-primary">Submit</button></form></div></div></div></html>
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>Conway Makerspace System</title>
+		<link href="/assets/bootstrap/css/bootstrap.min.css" rel="stylesheet"/>
+		<script src="/assets/bootstrap/js/bootstrap.bundle.min.js"></script>
+		<script src="/assets/htmx.min.js"></script>
+	</head>
+	<style>
+.large-checkbox {
+	transform: scale(1.5);
+	-webkit-transform: scale(1.5);
+}
+</style>
+<div class="container my-5" style="max-width: 800px;">
+	
+	<h1>TheLab Liability Waiver</h1>
+	<div class="card mt-3">
+		<div class="card-body">
+			<p>
+				I agree and acknowledge as follows: 
+			</p>
+			<p>
+				1. I WAIVE ANY AND ALL RIGHTS OF RECOVERY, CLAIM, ACTION OR CAUSE OF ACTION AGAINST THELAB.MS FOR ANY INJURY OR DAMAGE THAT MAY OCCUR, REGARDLESS OF CAUSE OR ORIGIN, INCLUDING NEGLIGENCE AND GROSS NEGLIGENCE.
+			</p>
+			<p>
+				2. I also understand that I am personally responsible for my safety and actions and that I will follow all safety instructions and signage while at TheLab.ms.
+			</p>
+			<p>
+				3. I affirm that I am at least 18 years of age and mentally competent to sign this liability waiver.
+			</p>
+		</div>
+	</div>
+	<div class="card mt-3">
+		<div class="card-body">
+			<form method="post">
+				<div class="form-check mb-4">
+					<input class="form-check-input large-checkbox" type="checkbox" id="agree1" name="agree1" required checked/>
+					<label class="form-check-label" for="agree1" class="form-label">
+						By checking here, you are consenting to the use of your electronic signature in lieu of an original signature on paper.
+					</label>
+				</div>
+				<div class="form-check mb-4">
+					<input class="form-check-input large-checkbox" type="checkbox" id="agree2" name="agree2" required checked/>
+					<label class="form-check-label" for="agree2" class="form-label">
+						By checking this box, I agree and acknowledge to be bound by this waiver and release and further agree and acknowledge that this waiver and release shall also apply to all of my future participation in TheLab.
+					</label>
+				</div>
+				<div class="form-group mb-3">
+					<label for="name" class="form-label">Legal Name:</label>
+					<input type="text" class="form-control" id="name" name="name" required value="José García-López"/>
+				</div>
+				<div class="form-group mb-4">
+					<label for="email" class="form-label">Email:</label>
+					<input type="email" class="form-control" id="email" name="email" required value="jose.garcia&#43;test@example.com"/>
+				</div>
+				<button type="submit" class="btn btn-primary">Submit</button>
+			</form>
+		</div>
+	</div>
+</div>
+</html>

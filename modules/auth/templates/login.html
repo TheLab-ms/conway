@@ -1,0 +1,20 @@
+{{if .TurnstileOptions}}
+	<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+{{end}}
+<body class="d-flex align-items-center justify-content-center vh-100 bg-light p-3">
+	<div class="card shadow p-4">
+		<div id="login-email" class="text-center">
+			<h5 class="mb-3">Login or Signup</h5>
+			<form action="/login" method="post">
+				<div class="mb-3">
+					<input type="email" class="form-control" id="email" name="email" placeholder="Email" required/>
+				</div>
+				<input type="hidden" id="callback_uri" name="callback_uri" value="{{.CallbackURI}}"/>
+				{{if .TurnstileOptions}}
+					<div class="cf-turnstile mb-3" data-sitekey="{{.TurnstileOptions.SiteKey}}"></div>
+				{{end}}
+				<button type="submit" class="btn btn-primary w-100">Submit</button>
+			</form>
+		</div>
+	</div>
+</body>

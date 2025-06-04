@@ -1,0 +1,28 @@
+{{if eq .AccessStatus "MissingWaiver"}}
+	<div class="alert alert-warning">
+		<h4 class="alert-heading">Missing Liability Waiver</h4>
+		<p>You will need to sign our liability waiver before entering the space.</p>
+		<a href="/waiver?r=/&amp;email={{.Email}}" class="btn btn-success">Sign Waiver</a>
+	</div>
+{{else if eq .AccessStatus "MissingKeyFob"}}
+	<div class="alert alert-warning">
+		<h4 class="alert-heading">Pick Up Your Key</h4>
+		You need an RFID key fob to access the space, but your account isn't currently linked to one.
+		If you're at the space, you can add one using the kiosk near the front door.
+	</div>
+{{else if eq .AccessStatus "FamilyInactive"}}
+	<div class="alert alert-warning">
+		<h4 class="alert-heading">Family Member Inactive</h4>
+		Your membership is part of a family discount that is no longer valid due to the "root" member's account becoming inactive.
+	</div>
+{{else if eq .AccessStatus "PaymentInactive"}}
+	<div class="alert alert-warning">
+		<h4 class="alert-heading">Missing Billing Information</h4>
+		Use the button below to set up payment with our secure payment processor.
+	</div>
+{{else}}
+	<div class="alert alert-success">
+		<h4 class="alert-heading">Active Member</h4>
+		Your key fob is active!
+	</div>
+{{end}}

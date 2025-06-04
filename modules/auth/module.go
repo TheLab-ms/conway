@@ -19,8 +19,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-//go:generate go run github.com/a-h/templ/cmd/templ generate
-
 // See: https://www.cloudflare.com/application-services/products/turnstile
 type TurnstileOptions struct {
 	SiteKey string

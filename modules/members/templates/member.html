@@ -1,0 +1,10 @@
+<div class="container my-5">
+	{{.MembershipStatus}}
+	<div class="mt-3">
+		<a href="/payment/checkout" class="btn btn-outline-success">Manage Payment</a>
+		{{if not .DiscordLinked}}
+			<a href="/discord/login" class="btn btn-outline-success">Link Discord Account</a>
+		{{end}}
+		<a href="/logout" class="btn btn-outline-secondary">Logout</a>
+	</div>
+</div>
