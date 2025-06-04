@@ -1,11 +1,15 @@
 package waiver
 
 import (
+	"embed"
 	"html/template"
 
 	"github.com/TheLab-ms/conway/internal/templates"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
+
+//go:embed templates/*
+var templateFS embed.FS
 
 var (
 	waiverTemplate *template.Template
@@ -13,7 +17,7 @@ var (
 
 func init() {
 	var err error
-	waiverTemplate, err = template.ParseFiles("/home/runner/work/conway/conway/modules/waiver/templates/waiver.html")
+	waiverTemplate, err = template.ParseFS(templateFS, "templates/waiver.html")
 	if err != nil {
 		panic(err)
 	}
