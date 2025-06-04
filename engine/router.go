@@ -8,11 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a-h/templ"
+	"github.com/TheLab-ms/conway/internal/templates"
 	"github.com/julienschmidt/httprouter"
 )
-
-//go:generate go run github.com/a-h/templ/cmd/templ generate
 
 type Handler func(r *http.Request, ps httprouter.Params) Response
 
@@ -138,10 +136,10 @@ func (j *jsonResponse) write(w http.ResponseWriter, r *http.Request) error {
 }
 
 type componentResponse struct {
-	Component templ.Component
+	Component templates.Component
 }
 
-func Component(comp templ.Component) Response {
+func Component(comp templates.Component) Response {
 	return &componentResponse{Component: comp}
 }
 

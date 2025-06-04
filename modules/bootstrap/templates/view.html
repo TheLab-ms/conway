@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="">
+<html lang="en" data-bs-theme="{{.Theme}}">
 	<head>
 		<meta charset="UTF-8"/>
 		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -8,12 +8,5 @@
 		<script src="/assets/bootstrap/js/bootstrap.bundle.min.js"></script>
 		<script src="/assets/htmx.min.js"></script>
 	</head>
-	<div class="container my-5">
-	
-		<div class="alert alert-warning">
-			<h4 class="alert-heading">Bad Request</h4>
-			Invalid request parameter
-		</div>
-	
-</div>
+	{{.Content}}
 </html>

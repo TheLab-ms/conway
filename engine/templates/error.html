@@ -1,0 +1,13 @@
+<div class="container my-5">
+	{{if lt .StatusCode 500}}
+		<div class="alert alert-warning">
+			<h4 class="alert-heading">Bad Request</h4>
+			{{.Message}}
+		</div>
+	{{else}}
+		<div class="alert alert-danger">
+			<h4 class="alert-heading">Uh oh</h4>
+			{{.Message}}
+		</div>
+	{{end}}
+</div>

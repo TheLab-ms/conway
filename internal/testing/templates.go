@@ -7,15 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a-h/templ"
+	"github.com/TheLab-ms/conway/internal/templates"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// RenderSnapshot tests a templ component against a snapshot fixture.
+// RenderSnapshot tests a template component against a snapshot fixture.
 // If RENDER_SNAPSHOTS environment variable is set, it will write/update the fixture file.
 // Otherwise, it will compare the rendered output against the existing fixture.
-func RenderSnapshot(t *testing.T, component templ.Component, fixturePath string) {
+func RenderSnapshot(t *testing.T, component templates.Component, fixturePath string) {
 	t.Helper()
 
 	// Render the component to string
@@ -46,7 +46,7 @@ func RenderSnapshot(t *testing.T, component templ.Component, fixturePath string)
 
 // RenderSnapshotWithName is a convenience function that generates a fixture path
 // based on the test name and an optional suffix.
-func RenderSnapshotWithName(t *testing.T, component templ.Component, suffix string) {
+func RenderSnapshotWithName(t *testing.T, component templates.Component, suffix string) {
 	t.Helper()
 
 	testName := strings.ReplaceAll(t.Name(), "/", "_")
