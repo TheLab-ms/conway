@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
@@ -24,25 +25,29 @@ type Module struct {
 	printers     []*bambulabs_api.Printer
 	client       *peering.Client
 	serialToName map[string]string
-	state        map[string]*PrinterState
+
+	lock      sync.Mutex
+	state     map[string]*peering.PrinterEvent
+	lastFlush time.Time
 }
 
 func New(client *peering.Client, config string) *Module {
 	m := &Module{
 		client:       client,
 		serialToName: make(map[string]string),
-		state:        make(map[string]*PrinterState),
+		state:        make(map[string]*peering.PrinterEvent),
 	}
 	if len(config) == 0 {
 		return m
 	}
+	client.RegisterEventHook(m.buildEvents)
 
+	// Decode the printer configuration from JSON
 	configs := []*printerConfig{}
 	err := json.Unmarshal([]byte(config), &configs)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse Bambu printer config: %v", err))
 	}
-
 	for _, cfg := range configs {
 		m.serialToName[cfg.SerialNumber] = cfg.Name
 		m.printers = append(m.printers, bambulabs_api.NewPrinter(&bambulabs_api.PrinterConfig{
@@ -74,55 +79,40 @@ func (m *Module) poll(ctx context.Context) bool {
 			continue
 		}
 
-		s := &PrinterState{
-			Name:      name,
-			ErrorCode: data.PrintErrorCode,
+		s := &peering.PrinterEvent{
+			PrinterName: name,
+			ErrorCode:   data.PrintErrorCode,
 		}
 		if minutes := data.RemainingPrintTime; minutes > 0 {
 			t := time.Now().Add(time.Duration(minutes) * time.Minute)
 			s.JobFinisedAt = &t
 		}
-		current := m.state[name]
-		m.state[name] = s
 
-		if s.Equal(current) {
-			continue // no change
-		}
-
-		slog.Info("printer state changed", "printer", s.Name, "error_code", s.ErrorCode, "job_finished_at", s.JobFinisedAt)
-		m.client.BufferEvent(&peering.Event{
-			UID:       uuid.NewString(),
-			Timestamp: time.Now().Unix(),
-			PrinterEvent: &peering.PrinterEvent{
-				PrinterName:  s.Name,
-				JobFinisedAt: s.JobFinisedAt,
-				ErrorCode:    s.ErrorCode,
-			},
-		})
+		m.lock.Lock()
+		m.state[s.PrinterName] = s
+		m.lock.Unlock()
 	}
 
 	return false
 }
 
-type PrinterState struct {
-	Name         string
-	JobFinisedAt *time.Time
-	ErrorCode    string
-}
+func (m *Module) buildEvents() []*peering.Event {
+	m.lock.Lock()
+	defer m.lock.Unlock()
 
-func (p *PrinterState) Equal(other *PrinterState) bool {
-	if (p == nil) != (other == nil) {
-		return false
+	if time.Since(m.lastFlush) < time.Second*10 {
+		return nil // only send the events every 10 seconds
 	}
 
-	// Finish times are set, return false if they aren't within 5 min of each other
-	if p.JobFinisedAt != nil &&
-		other.JobFinisedAt != nil &&
-		!p.JobFinisedAt.Round(time.Minute*5).Equal(other.JobFinisedAt.Round(time.Minute*5)) {
-		return false
+	events := []*peering.Event{}
+	for _, s := range m.state {
+		events = append(events, &peering.Event{
+			UID:          uuid.NewString(),
+			Timestamp:    time.Now().Unix(),
+			PrinterEvent: s,
+		})
 	}
 
-	return p.Name == other.Name &&
-		other.ErrorCode == p.ErrorCode &&
-		(p.JobFinisedAt == nil) == (other.JobFinisedAt == nil)
+	m.lastFlush = time.Now()
+	return events
 }
