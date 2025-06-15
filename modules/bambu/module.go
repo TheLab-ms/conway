@@ -27,7 +27,7 @@ type Module struct {
 	serialToName map[string]string
 
 	lock      sync.Mutex
-	state     map[string]*peering.PrinterEvent
+	state     map[string]*peering.Event
 	lastFlush time.Time
 }
 
@@ -35,7 +35,7 @@ func New(client *peering.Client, config string) *Module {
 	m := &Module{
 		client:       client,
 		serialToName: make(map[string]string),
-		state:        make(map[string]*peering.PrinterEvent),
+		state:        make(map[string]*peering.Event),
 	}
 	if len(config) == 0 {
 		return m
@@ -72,7 +72,6 @@ func (m *Module) poll(ctx context.Context) bool {
 			slog.Error("error while connecting to Bambu printer", "error", err, "printer", name)
 			continue
 		}
-
 		data, err := printer.Data()
 		if err != nil {
 			slog.Error("error while getting data from Bambu printer", "error", err, "printer", name)
@@ -89,7 +88,17 @@ func (m *Module) poll(ctx context.Context) bool {
 		}
 
 		m.lock.Lock()
-		m.state[s.PrinterName] = s
+		current, ok := m.state[s.PrinterName]
+		if ok && eventsEqual(current.PrinterEvent, s) {
+			m.lock.Unlock()
+			continue
+		}
+
+		m.state[s.PrinterName] = &peering.Event{
+			UID:          uuid.NewString(),
+			Timestamp:    time.Now().Unix(),
+			PrinterEvent: s,
+		}
 		m.lock.Unlock()
 	}
 
@@ -105,14 +114,32 @@ func (m *Module) buildEvents() []*peering.Event {
 	}
 
 	events := []*peering.Event{}
-	for _, s := range m.state {
-		events = append(events, &peering.Event{
-			UID:          uuid.NewString(),
-			Timestamp:    time.Now().Unix(),
-			PrinterEvent: s,
-		})
+	for _, e := range m.state {
+		events = append(events, e)
 	}
 
 	m.lastFlush = time.Now()
 	return events
+}
+
+// eventsEqual returns false if the events represent different error codes or if the job remaining minutes differ by more than 10%.
+func eventsEqual(a, b *peering.PrinterEvent) bool {
+	if a.PrinterName != b.PrinterName || a.ErrorCode != b.ErrorCode {
+		return false
+	}
+	if a.JobRemainingMinutes == nil || b.JobRemainingMinutes == nil {
+		return a.JobRemainingMinutes == nil && b.JobRemainingMinutes == nil
+	}
+
+	av, bv := *a.JobRemainingMinutes, *b.JobRemainingMinutes
+	if av == bv {
+		return true
+	}
+
+	diff := av - bv
+	if diff < 0 {
+		diff = -diff
+	}
+	threshold := max(av, bv)
+	return float64(diff) <= 0.1*float64(threshold)
 }
