@@ -114,14 +114,14 @@ func TestEventHookIntegration(t *testing.T) {
 
 	c := NewClient(svr.URL, t.TempDir(), iss)
 
-	c.EventHook = func() []*Event {
+	c.RegisterEventHook(func() []*Event {
 		return []*Event{{
 			PrinterEvent: &PrinterEvent{
 				PrinterName: "test-printer",
 				ErrorCode:   "test-error",
 			},
 		}}
-	}
+	})
 	require.NoError(t, c.FlushEvents())
 
 	var rows int

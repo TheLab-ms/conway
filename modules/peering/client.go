@@ -45,10 +45,7 @@ type Client struct {
 	// StateTransitions receives a signal whenever WarmCache has caused the state returned by GetState to change.
 	StateTransitions chan struct{}
 
-	// EventHook is called before flushing events to the server.
-	// It's useful for sampling values at the polling interval without risk of buffering unnecessary events.
-	EventHook func() []*Event
-
+	eventHooks        []func() []*Event
 	baseURL, stateDir string
 	tokens            oauth2.TokenSource
 }
@@ -69,6 +66,11 @@ func NewClient(baseURL, stateDir string, iss *engine.TokenIssuer) *Client {
 		}),
 	}
 }
+
+// RegisterEventHook is called from the same goroutine that calls FlushEvents.
+// It's useful for creating events that sample continuous values.
+// Essentially this is a way to avoid buffering events to disk in cases where that doesn't make sense.
+func (c *Client) RegisterEventHook(hook func() []*Event) { c.eventHooks = append(c.eventHooks, hook) }
 
 func (c *Client) GetState() *State {
 	state := &State{}
@@ -187,9 +189,9 @@ func (c *Client) FlushEvents() error {
 		}
 	}
 
-	// Get any additional events from the hook
-	if c.EventHook != nil {
-		for _, e := range c.EventHook() {
+	// Get any additional events hooks
+	for _, hook := range c.eventHooks {
+		for _, e := range hook() {
 			js, err := json.Marshal(e)
 			if err != nil {
 				return fmt.Errorf("marshalling event from hook: %w", err)
