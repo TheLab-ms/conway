@@ -103,12 +103,7 @@ func (m *Module) handlePostGliderEvents(r *http.Request, ps httprouter.Params) e
 			}
 		}
 		if event.PrinterEvent != nil {
-			var finishedAt *int64
-			if jfa := event.PrinterEvent.JobFinisedAt; jfa != nil {
-				ts := jfa.Unix()
-				finishedAt = &ts
-			}
-			_, err = tx.ExecContext(r.Context(), "INSERT INTO printer_events (uid, timestamp, printer_name, job_finished_at, error_code) VALUES ($1, $2, $3, $4, $5)", event.UID, event.Timestamp, event.PrinterEvent.PrinterName, finishedAt, event.PrinterEvent.ErrorCode)
+			_, err = tx.ExecContext(r.Context(), "INSERT INTO printer_events (uid, timestamp, printer_name, job_finished_at, error_code) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING", event.UID, event.Timestamp, event.PrinterEvent.PrinterName, event.PrinterEvent.JobRemainingMinutes, event.PrinterEvent.ErrorCode)
 			if err != nil {
 				return engine.Error(err)
 			}

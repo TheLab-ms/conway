@@ -36,9 +36,9 @@ type FobSwipeEvent struct {
 }
 
 type PrinterEvent struct {
-	PrinterName  string     `json:"printer_name"`
-	JobFinisedAt *time.Time `json:"job_finished_at"`
-	ErrorCode    string     `json:"error_code"`
+	PrinterName         string `json:"printer_name"`
+	JobRemainingMinutes *int64 `json:"job_finished_at"`
+	ErrorCode           string `json:"error_code"`
 }
 
 type Client struct {

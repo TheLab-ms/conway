@@ -83,9 +83,9 @@ func (m *Module) poll(ctx context.Context) bool {
 			PrinterName: name,
 			ErrorCode:   data.PrintErrorCode,
 		}
-		if minutes := data.RemainingPrintTime; minutes > 0 {
-			t := time.Now().Add(time.Duration(minutes) * time.Minute)
-			s.JobFinisedAt = &t
+		if data.RemainingPrintTime > 0 {
+			t := int64(data.RemainingPrintTime)
+			s.JobRemainingMinutes = &t
 		}
 
 		m.lock.Lock()
