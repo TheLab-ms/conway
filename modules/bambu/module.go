@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/peering"
-	"github.com/google/uuid"
 	"github.com/torbenconto/bambulabs_api"
 )
 
@@ -25,22 +23,21 @@ type Module struct {
 	printers     []*bambulabs_api.Printer
 	client       *peering.Client
 	serialToName map[string]string
-
-	lock      sync.Mutex
-	state     map[string]*peering.Event
-	lastFlush time.Time
+	cache        *cache
 }
 
 func New(client *peering.Client, config string) *Module {
 	m := &Module{
 		client:       client,
 		serialToName: make(map[string]string),
-		state:        make(map[string]*peering.Event),
+		cache: &cache{
+			state: make(map[string]*peering.Event),
+		},
 	}
 	if len(config) == 0 {
 		return m
 	}
-	client.RegisterEventHook(m.buildEvents)
+	client.RegisterEventHook(m.cache.Flush)
 
 	// Decode the printer configuration from JSON
 	configs := []*printerConfig{}
@@ -86,60 +83,8 @@ func (m *Module) poll(ctx context.Context) bool {
 			t := int64(data.RemainingPrintTime)
 			s.JobRemainingMinutes = &t
 		}
-
-		m.lock.Lock()
-		current, ok := m.state[s.PrinterName]
-		if ok && eventsEqual(current.PrinterEvent, s) {
-			m.lock.Unlock()
-			continue
-		}
-
-		m.state[s.PrinterName] = &peering.Event{
-			UID:          uuid.NewString(),
-			Timestamp:    time.Now().Unix(),
-			PrinterEvent: s,
-		}
-		m.lock.Unlock()
+		m.cache.Add(s)
 	}
 
 	return false
-}
-
-func (m *Module) buildEvents() []*peering.Event {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
-	if time.Since(m.lastFlush) < time.Second*10 {
-		return nil // only send the events every 10 seconds
-	}
-
-	events := []*peering.Event{}
-	for _, e := range m.state {
-		events = append(events, e)
-	}
-
-	m.lastFlush = time.Now()
-	return events
-}
-
-// eventsEqual returns false if the events represent different error codes or if the job remaining minutes differ by more than 10%.
-func eventsEqual(a, b *peering.PrinterEvent) bool {
-	if a.PrinterName != b.PrinterName || a.ErrorCode != b.ErrorCode {
-		return false
-	}
-	if a.JobRemainingMinutes == nil || b.JobRemainingMinutes == nil {
-		return a.JobRemainingMinutes == nil && b.JobRemainingMinutes == nil
-	}
-
-	av, bv := *a.JobRemainingMinutes, *b.JobRemainingMinutes
-	if av == bv {
-		return true
-	}
-
-	diff := av - bv
-	if diff < 0 {
-		diff = -diff
-	}
-	threshold := max(av, bv)
-	return float64(diff) <= 0.1*float64(threshold)
 }
