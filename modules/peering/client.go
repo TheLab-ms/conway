@@ -42,7 +42,13 @@ type PrinterEvent struct {
 }
 
 type Client struct {
-	StateTransitions  chan struct{}
+	// StateTransitions receives a signal whenever WarmCache has caused the state returned by GetState to change.
+	StateTransitions chan struct{}
+
+	// EventHook is called before flushing events to the server.
+	// It's useful for sampling values at the polling interval without risk of buffering unnecessary events.
+	EventHook func() []*Event
+
 	baseURL, stateDir string
 	tokens            oauth2.TokenSource
 }
@@ -181,7 +187,18 @@ func (c *Client) FlushEvents() error {
 		}
 	}
 
-	if len(files) == 0 {
+	// Get any additional events from the hook
+	if c.EventHook != nil {
+		for _, e := range c.EventHook() {
+			js, err := json.Marshal(e)
+			if err != nil {
+				return fmt.Errorf("marshalling event from hook: %w", err)
+			}
+			events = append(events, js)
+		}
+	}
+
+	if len(events) == 0 {
 		return nil // nothing to do
 	}
 

@@ -101,3 +101,31 @@ func TestApiIntegration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, rows)
 }
+
+func TestEventHookIntegration(t *testing.T) {
+	// Set up a fake conway instance that just runs the API
+	db := db.NewTest(t)
+	iss := engine.NewTokenIssuer(filepath.Join(t.TempDir(), "test.pem"))
+	a := New(db, iss)
+	router := engine.NewRouter(nil)
+	a.AttachRoutes(router)
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	c := NewClient(svr.URL, t.TempDir(), iss)
+
+	c.EventHook = func() []*Event {
+		return []*Event{{
+			PrinterEvent: &PrinterEvent{
+				PrinterName: "test-printer",
+				ErrorCode:   "test-error",
+			},
+		}}
+	}
+	require.NoError(t, c.FlushEvents())
+
+	var rows int
+	err := db.QueryRow("SELECT COUNT(*) FROM printer_events").Scan(&rows)
+	require.NoError(t, err)
+	assert.Equal(t, 1, rows)
+}
