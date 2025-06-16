@@ -29,7 +29,10 @@ templ renderMachines(printers []*printerStatus) {
 						for _, printer := range printers {
 							<tr>
 								<td>{printer.Name}</td>
-								if jrm := printer.JobRemainingMinutes; jrm != nil {
+								if printer.ErrorCode != "" {
+									<td>Failed</td>
+									<td></td>
+								} else if jrm := printer.JobRemainingMinutes; jrm != nil {
 									<td>In Use</td>
 									<td>{(time.Duration(*jrm) * time.Minute).String()}</td>
 								} else {
