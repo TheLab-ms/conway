@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	snaptest "github.com/TheLab-ms/conway/internal/testing"
+	"github.com/TheLab-ms/conway/engine/testutil"
 )
 
 func TestRenderMachines(t *testing.T) {
@@ -120,7 +120,7 @@ func TestRenderMachines(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := renderMachines(tt.printers)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }

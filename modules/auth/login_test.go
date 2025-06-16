@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	snaptest "github.com/TheLab-ms/conway/internal/testing"
+	"github.com/TheLab-ms/conway/engine/testutil"
 )
 
 func TestRenderLoginPage(t *testing.T) {
@@ -59,14 +59,14 @@ func TestRenderLoginPage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := renderLoginPage(tt.callbackURI, tt.tso)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }
 
 func TestRenderLoginSentPage(t *testing.T) {
 	component := renderLoginSentPage()
-	snaptest.RenderSnapshotWithName(t, component, "")
+	testutil.RenderSnapshotWithName(t, component, "")
 }
 
 func TestRenderLoginEmail(t *testing.T) {
@@ -123,7 +123,7 @@ func TestRenderLoginEmail(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := renderLoginEmail(tt.self, tt.token, tt.callback)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }

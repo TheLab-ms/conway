@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	snaptest "github.com/TheLab-ms/conway/internal/testing"
+	"github.com/TheLab-ms/conway/engine/testutil"
 	"github.com/a-h/templ"
 )
 
@@ -22,7 +22,7 @@ func TestView(t *testing.T) {
 	component := templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
 		return View().Render(templ.WithChildren(ctx, mockComponent()), w)
 	})
-	snaptest.RenderSnapshotWithName(t, component, "")
+	testutil.RenderSnapshotWithName(t, component, "")
 }
 
 func TestDarkmodeView(t *testing.T) {
@@ -30,7 +30,7 @@ func TestDarkmodeView(t *testing.T) {
 	component := templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
 		return DarkmodeView().Render(templ.WithChildren(ctx, mockComponent()), w)
 	})
-	snaptest.RenderSnapshotWithName(t, component, "")
+	testutil.RenderSnapshotWithName(t, component, "")
 }
 
 func TestViewWithTheme(t *testing.T) {
@@ -61,7 +61,7 @@ func TestViewWithTheme(t *testing.T) {
 			component := templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
 				return view(tt.theme).Render(templ.WithChildren(ctx, mockComponent()), w)
 			})
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }

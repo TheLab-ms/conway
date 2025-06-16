@@ -4,12 +4,12 @@ import (
 	"encoding/base64"
 	"testing"
 
-	snaptest "github.com/TheLab-ms/conway/internal/testing"
+	"github.com/TheLab-ms/conway/engine/testutil"
 )
 
 func TestRenderOffsiteError(t *testing.T) {
 	component := renderOffsiteError()
-	snaptest.RenderSnapshotWithName(t, component, "")
+	testutil.RenderSnapshotWithName(t, component, "")
 }
 
 func TestRenderKiosk(t *testing.T) {
@@ -42,7 +42,7 @@ func TestRenderKiosk(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := renderKiosk(tt.qrImg)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }
@@ -57,5 +57,5 @@ func TestRenderKioskLargeQR(t *testing.T) {
 	base64.StdEncoding.Encode(encodedPNG, largePNG)
 
 	component := renderKiosk(encodedPNG)
-	snaptest.RenderSnapshotWithName(t, component, "_large_qr")
+	testutil.RenderSnapshotWithName(t, component, "_large_qr")
 }

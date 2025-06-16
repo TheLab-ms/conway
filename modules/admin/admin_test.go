@@ -3,7 +3,7 @@ package admin
 import (
 	"testing"
 
-	snaptest "github.com/TheLab-ms/conway/internal/testing"
+	"github.com/TheLab-ms/conway/engine/testutil"
 )
 
 func TestAdminNav(t *testing.T) {
@@ -52,7 +52,7 @@ func TestAdminNav(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := adminNav(tt.tabs)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }
@@ -168,7 +168,7 @@ func TestTableCellRender(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := tt.cell.Render(tt.row)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }
@@ -227,7 +227,7 @@ func TestRenderAdminList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := renderAdminList(tt.tabs, tt.typeName, tt.searchURL)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }
@@ -352,7 +352,7 @@ func TestRenderAdminListElements(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := renderAdminListElements(tt.rowMeta, tt.rows, tt.currentPage, tt.totalPages)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }
@@ -405,7 +405,7 @@ func TestRenderListPagination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := renderListPagination(tt.currentPage, tt.totalPages)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }

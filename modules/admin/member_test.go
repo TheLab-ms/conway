@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	snaptest "github.com/TheLab-ms/conway/internal/testing"
+	"github.com/TheLab-ms/conway/engine/testutil"
 )
 
 func TestRenderSingleMember(t *testing.T) {
@@ -298,7 +298,7 @@ func TestRenderSingleMember(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := renderSingleMember(tabs, tt.member, tt.events)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }

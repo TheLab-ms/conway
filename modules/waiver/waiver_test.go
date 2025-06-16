@@ -3,7 +3,7 @@ package waiver
 import (
 	"testing"
 
-	snaptest "github.com/TheLab-ms/conway/internal/testing"
+	"github.com/TheLab-ms/conway/engine/testutil"
 )
 
 func TestRenderWaiver(t *testing.T) {
@@ -84,7 +84,7 @@ func TestRenderWaiver(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			component := renderWaiver(tt.signed, tt.name_param, tt.email, tt.redirect)
-			snaptest.RenderSnapshotWithName(t, component, tt.fixtureName)
+			testutil.RenderSnapshotWithName(t, component, tt.fixtureName)
 		})
 	}
 }
