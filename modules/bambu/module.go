@@ -79,6 +79,9 @@ func (m *Module) poll(ctx context.Context) bool {
 			PrinterName: name,
 			ErrorCode:   data.PrintErrorCode,
 		}
+		if s.ErrorCode == "0" {
+			s.ErrorCode = ""
+		}
 		if data.RemainingPrintTime > 0 {
 			t := int64(data.RemainingPrintTime)
 			s.JobRemainingMinutes = &t
