@@ -1,14 +1,13 @@
 package machines
 
 import (
-	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 	"time"
 )
 
 type printerStatus struct {
 	Name string
-	JobFinishedAt *engine.LocalTime
+	JobRemainingMinutes *int
 	ErrorCode     string
 }
 
@@ -30,9 +29,12 @@ templ renderMachines(printers []*printerStatus) {
 						for _, printer := range printers {
 							<tr>
 								<td>{printer.Name}</td>
-								if printer.JobFinishedAt != nil {
+								if jrm := printer.JobRemainingMinutes; jrm != nil {
 									<td>In Use</td>
-									<td>{time.Until(printer.JobFinishedAt.Time).Round(time.Minute).String()}</td>
+									<td>{(time.Duration(*jrm) * time.Minute).String()}</td>
+								} else if printer.ErrorCode != "" {
+									<td>Failed</td>
+									<td></td>
 								} else {
 									<td>Available</td>
 									<td></td>
