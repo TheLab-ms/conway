@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -46,11 +47,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, rr *http.Request) { r.router.S
 
 func (r *Router) Handle(method, path string, fn Handler) {
 	r.router.Handle(method, path, func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		invokeHandler(w, r, p, fn)
+		Handle(w, r, p, fn)
 	})
 }
 
-func invokeHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params, fn Handler) {
+func Handle(w http.ResponseWriter, r *http.Request, p httprouter.Params, fn Handler) {
 	start := time.Now()
 	resp := fn(r, p)
 	logger := slog.Default().With("url", r.URL.Path, "method", r.Method, "userAgent", r.UserAgent(), "latencyMS", time.Since(start).Milliseconds())
@@ -184,4 +185,30 @@ func (p *pngResponse) write(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Type", "image/png")
 	_, err := w.Write(p.buf)
 	return err
+}
+
+type CSVResponse struct {
+	Rows [][]any
+}
+
+func (c *CSVResponse) write(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "text/csv")
+
+	cw := csv.NewWriter(w)
+	for _, row := range c.Rows {
+		rec := make([]string, len(row))
+		for i, v := range row {
+			if v == nil {
+				rec[i] = ""
+			} else {
+				rec[i] = fmt.Sprint(v)
+			}
+		}
+		if err := cw.Write(rec); err != nil {
+			return err
+		}
+	}
+
+	cw.Flush()
+	return nil
 }

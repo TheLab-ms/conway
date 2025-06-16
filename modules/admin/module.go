@@ -103,6 +103,8 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 		return engine.PNG(p)
 	})))
 
+	router.Handle("GET", "/admin/export/:table", router.WithAuth(m.onlyLeadership(m.exportCSV)))
+
 	for _, handle := range formHandlers {
 		router.Handle("POST", handle.Path, router.WithAuth(m.onlyLeadership(handle.BuildHandler(m.db))))
 	}
@@ -115,4 +117,35 @@ func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
 		}
 		return next(r, ps)
 	}
+}
+
+func (m *Module) exportCSV(r *http.Request, ps httprouter.Params) engine.Response {
+	rows, err := m.db.QueryContext(r.Context(), fmt.Sprintf("SELECT * FROM %s", ps.ByName("table")))
+	if err != nil {
+		return engine.Errorf("querying table: %s", err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return engine.Errorf("getting columns: %s", err)
+	}
+
+	w := &engine.CSVResponse{Rows: make([][]any, 1)}
+	for _, col := range cols {
+		w.Rows[0] = append(w.Rows[0], col)
+	}
+
+	for rows.Next() {
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return engine.Errorf("scanning row: %s", err)
+		}
+		w.Rows = append(w.Rows, vals)
+	}
+	return w
 }
