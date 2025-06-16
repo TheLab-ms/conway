@@ -13,9 +13,9 @@ func TestRenderMachines(t *testing.T) {
 	future := now.Add(2 * time.Hour)
 	past := now.Add(-1 * time.Hour)
 
-	minutesUntil := func(t time.Time) *int {
-		m := int(t.Sub(now).Minutes())
-		return &m
+	timestampAt := func(t time.Time) *int64 {
+		ts := t.Unix()
+		return &ts
 	}
 
 	tests := []struct {
@@ -34,14 +34,14 @@ func TestRenderMachines(t *testing.T) {
 			name: "available_printers",
 			printers: []*printerStatus{
 				{
-					Name:                "Printer1",
-					JobRemainingMinutes: nil,
-					ErrorCode:           "",
+					Name:                 "Printer1",
+					JobFinishedTimestamp: nil,
+					ErrorCode:            "",
 				},
 				{
-					Name:                "Printer2",
-					JobRemainingMinutes: nil,
-					ErrorCode:           "E001",
+					Name:                 "Printer2",
+					JobFinishedTimestamp: nil,
+					ErrorCode:            "E001",
 				},
 			},
 			fixtureName: "_available",
@@ -51,14 +51,14 @@ func TestRenderMachines(t *testing.T) {
 			name: "busy_printers",
 			printers: []*printerStatus{
 				{
-					Name:                "BusyPrinter1",
-					JobRemainingMinutes: minutesUntil(future),
-					ErrorCode:           "",
+					Name:                 "BusyPrinter1",
+					JobFinishedTimestamp: timestampAt(future),
+					ErrorCode:            "",
 				},
 				{
-					Name:                "BusyPrinter2",
-					JobRemainingMinutes: minutesUntil(future.Add(30 * time.Minute)),
-					ErrorCode:           "W001",
+					Name:                 "BusyPrinter2",
+					JobFinishedTimestamp: timestampAt(future.Add(30 * time.Minute)),
+					ErrorCode:            "W001",
 				},
 			},
 			fixtureName: "_busy",
@@ -68,24 +68,24 @@ func TestRenderMachines(t *testing.T) {
 			name: "mixed_status",
 			printers: []*printerStatus{
 				{
-					Name:                "AvailablePrinter",
-					JobRemainingMinutes: nil,
-					ErrorCode:           "",
+					Name:                 "AvailablePrinter",
+					JobFinishedTimestamp: nil,
+					ErrorCode:            "",
 				},
 				{
-					Name:                "BusyPrinter",
-					JobRemainingMinutes: minutesUntil(future),
-					ErrorCode:           "",
+					Name:                 "BusyPrinter",
+					JobFinishedTimestamp: timestampAt(future),
+					ErrorCode:            "",
 				},
 				{
-					Name:                "ErrorPrinter",
-					JobRemainingMinutes: nil,
-					ErrorCode:           "E502",
+					Name:                 "ErrorPrinter",
+					JobFinishedTimestamp: nil,
+					ErrorCode:            "E502",
 				},
 				{
-					Name:                "BusyErrorPrinter",
-					JobRemainingMinutes: minutesUntil(future.Add(1 * time.Hour)),
-					ErrorCode:           "W100",
+					Name:                 "BusyErrorPrinter",
+					JobFinishedTimestamp: timestampAt(future.Add(1 * time.Hour)),
+					ErrorCode:            "W100",
 				},
 			},
 			fixtureName: "_mixed",
@@ -95,9 +95,9 @@ func TestRenderMachines(t *testing.T) {
 			name: "overdue_job",
 			printers: []*printerStatus{
 				{
-					Name:                "OverduePrinter",
-					JobRemainingMinutes: minutesUntil(past),
-					ErrorCode:           "",
+					Name:                 "OverduePrinter",
+					JobFinishedTimestamp: timestampAt(past),
+					ErrorCode:            "",
 				},
 			},
 			fixtureName: "_overdue",
@@ -107,9 +107,9 @@ func TestRenderMachines(t *testing.T) {
 			name: "single_printer",
 			printers: []*printerStatus{
 				{
-					Name:                "SinglePrinter",
-					JobRemainingMinutes: minutesUntil(future.Add(15 * time.Minute)),
-					ErrorCode:           "I001",
+					Name:                 "SinglePrinter",
+					JobFinishedTimestamp: timestampAt(future.Add(15 * time.Minute)),
+					ErrorCode:            "I001",
 				},
 			},
 			fixtureName: "_single",

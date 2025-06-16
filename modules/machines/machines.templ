@@ -7,7 +7,7 @@ import (
 
 type printerStatus struct {
 	Name string
-	JobRemainingMinutes *int
+	JobFinishedTimestamp *int64
 	ErrorCode     string
 }
 
@@ -32,9 +32,13 @@ templ renderMachines(printers []*printerStatus) {
 								if printer.ErrorCode != "" {
 									<td>Failed</td>
 									<td></td>
-								} else if jrm := printer.JobRemainingMinutes; jrm != nil {
+								} else if jft := printer.JobFinishedTimestamp; jft != nil {
 									<td>In Use</td>
-									<td>{(time.Duration(*jrm) * time.Minute).String()}</td>
+									if *jft > time.Now().Unix() {
+										<td>{time.Until(time.Unix(*jft, 0)).Round(time.Minute).String()}</td>
+									} else {
+										<td>Finishing up</td>
+									}
 								} else {
 									<td>Available</td>
 									<td></td>

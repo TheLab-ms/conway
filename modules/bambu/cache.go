@@ -47,24 +47,35 @@ func (c *cache) Flush() []*peering.Event {
 	return events
 }
 
-// eventsEqual returns false if the events represent different error codes or if the job remaining minutes differ by more than 10%.
+// eventsEqual returns false if the events represent different error codes or if the job finished timestamps differ by more than 10% of the remaining time.
 func eventsEqual(a, b *peering.PrinterEvent) bool {
 	if a.PrinterName != b.PrinterName || a.ErrorCode != b.ErrorCode {
 		return false
 	}
-	if a.JobRemainingMinutes == nil || b.JobRemainingMinutes == nil {
-		return a.JobRemainingMinutes == nil && b.JobRemainingMinutes == nil
+	if a.JobFinishedTimestamp == nil || b.JobFinishedTimestamp == nil {
+		return a.JobFinishedTimestamp == nil && b.JobFinishedTimestamp == nil
 	}
 
-	av, bv := *a.JobRemainingMinutes, *b.JobRemainingMinutes
+	av, bv := *a.JobFinishedTimestamp, *b.JobFinishedTimestamp
 	if av == bv {
 		return true
 	}
 
+	// Calculate the difference in seconds
 	diff := av - bv
 	if diff < 0 {
 		diff = -diff
 	}
-	threshold := max(av, bv)
-	return float64(diff) <= 0.1*float64(threshold)
+
+	// Calculate the remaining time from now for the earlier timestamp
+	nowUnix := time.Now().Unix()
+	earlierTimestamp := min(av, bv)
+	remainingTime := earlierTimestamp - nowUnix
+	if remainingTime <= 0 {
+		// If either timestamp is in the past, consider them different
+		return false
+	}
+
+	// Allow 10% difference based on the remaining time
+	return float64(diff) <= 0.1*float64(remainingTime)
 }

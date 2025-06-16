@@ -58,8 +58,8 @@ func TestEventsEqual(t *testing.T) {
 		{
 			name: "identical names, error codes, nil times",
 			args: args{
-				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: nil},
-				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: nil},
+				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: nil},
+				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: nil},
 			},
 			want: true,
 		},
@@ -80,50 +80,42 @@ func TestEventsEqual(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "one nil JobRemainingMinutes, one not nil",
+			name: "one nil JobFinishedTimestamp, one not nil",
 			args: args{
-				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: nil},
-				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(10)},
+				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: nil},
+				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: ptrInt64(10)},
 			},
 			want: false,
 		},
 		{
-			name: "both JobRemainingMinutes set, equal",
+			name: "both JobFinishedTimestamp set, equal",
 			args: args{
-				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(15)},
-				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(15)},
+				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: ptrInt64(15)},
+				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: ptrInt64(15)},
 			},
 			want: true,
 		},
 		{
-			name: "JobRemainingMinutes within 10% threshold",
+			name: "JobFinishedTimestamp timestamps close together",
 			args: args{
-				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(100)},
-				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(109)},
+				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: ptrInt64(time.Now().Add(100 * time.Minute).Unix())},
+				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: ptrInt64(time.Now().Add(109 * time.Minute).Unix())},
 			},
 			want: true,
 		},
 		{
-			name: "JobRemainingMinutes outside 10% threshold",
+			name: "JobFinishedTimestamp timestamps too far apart",
 			args: args{
-				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(100)},
-				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(120)},
+				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: ptrInt64(time.Now().Add(100 * time.Minute).Unix())},
+				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: ptrInt64(time.Now().Add(120 * time.Minute).Unix())},
 			},
 			want: false,
 		},
 		{
-			name: "JobRemainingMinutes both zero",
+			name: "JobFinishedTimestamp both in the past",
 			args: args{
-				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(0)},
-				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(0)},
-			},
-			want: true,
-		},
-		{
-			name: "JobRemainingMinutes one zero, one nonzero",
-			args: args{
-				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(0)},
-				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobRemainingMinutes: ptrInt64(1)},
+				a: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: ptrInt64(time.Now().Add(-10 * time.Minute).Unix())},
+				b: &peering.PrinterEvent{PrinterName: "A", ErrorCode: "1", JobFinishedTimestamp: ptrInt64(time.Now().Add(-5 * time.Minute).Unix())},
 			},
 			want: false,
 		},

@@ -83,8 +83,9 @@ func (m *Module) poll(ctx context.Context) bool {
 			s.ErrorCode = ""
 		}
 		if data.RemainingPrintTime > 0 {
-			t := int64(data.RemainingPrintTime)
-			s.JobRemainingMinutes = &t
+			// Calculate the finished timestamp based on the remaining time
+			finishedTimestamp := time.Now().Add(time.Duration(data.RemainingPrintTime) * time.Minute).Unix()
+			s.JobFinishedTimestamp = &finishedTimestamp
 		}
 		m.cache.Add(s)
 	}
