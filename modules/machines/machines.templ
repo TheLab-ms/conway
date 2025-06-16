@@ -32,9 +32,6 @@ templ renderMachines(printers []*printerStatus) {
 								if jrm := printer.JobRemainingMinutes; jrm != nil {
 									<td>In Use</td>
 									<td>{(time.Duration(*jrm) * time.Minute).String()}</td>
-								} else if printer.ErrorCode != "" {
-									<td>Failed</td>
-									<td></td>
 								} else {
 									<td>Available</td>
 									<td></td>
