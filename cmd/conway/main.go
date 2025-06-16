@@ -23,6 +23,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
 	"github.com/TheLab-ms/conway/modules/peering"
+	"github.com/TheLab-ms/conway/modules/pruning"
 	"github.com/TheLab-ms/conway/modules/waiver"
 	"github.com/caarlos0/env/v11"
 	"github.com/stripe/stripe-go/v78"
@@ -105,6 +106,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a.Add(kiosk.New(db, self, fobIss, conf.SpaceHost))
 	a.Add(metrics.New(db))
 	a.Add(machines.New(db))
+	a.Add(pruning.New(db))
 
 	if conf.DiscordClientID != "" {
 		a.Add(discord.New(db, self, discordIss, conf.DiscordClientID, conf.DiscordClientSecret))
