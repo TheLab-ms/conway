@@ -18,10 +18,6 @@ func New(db *sql.DB) *Module {
 	return &Module{db: db}
 }
 
-func (m *Module) AttachRoutes(router *engine.Router) {
-	// TODO
-}
-
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	mgr.Add(engine.Poll(time.Second, m.visitAggregates))
 }

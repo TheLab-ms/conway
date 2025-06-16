@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/julienschmidt/httprouter"
 	"github.com/skip2/go-qrcode"
+	"github.com/wcharczuk/go-chart/v2"
 )
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
@@ -104,6 +106,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	})))
 
 	router.Handle("GET", "/admin/export/:table", router.WithAuth(m.onlyLeadership(m.exportCSV)))
+	router.Handle("GET", "/admin/chart", router.WithAuth(m.onlyLeadership(m.renderMetricsChart)))
 
 	for _, handle := range formHandlers {
 		router.Handle("POST", handle.Path, router.WithAuth(m.onlyLeadership(handle.BuildHandler(m.db))))
@@ -148,4 +151,46 @@ func (m *Module) exportCSV(r *http.Request, ps httprouter.Params) engine.Respons
 		w.Rows = append(w.Rows, vals)
 	}
 	return w
+}
+
+func (m *Module) renderMetricsChart(r *http.Request, ps httprouter.Params) engine.Response {
+	windowDuration := time.Hour * 24 * 7
+	if window := r.URL.Query().Get("window"); window != "" {
+		var err error
+		windowDuration, err = time.ParseDuration(window)
+		if err != nil {
+			return engine.ClientErrorf(400, "invalid window duration: %s", err)
+		}
+	}
+
+	const q = "SELECT timestamp, value FROM metrics WHERE series = $1 AND timestamp > strftime('%s', 'now') - $2"
+	rows, err := m.db.QueryContext(r.Context(), q, r.URL.Query().Get("series"), windowDuration.Seconds())
+	if err != nil {
+		return engine.Errorf("querying table: %s", err)
+	}
+	defer rows.Close()
+
+	x := []time.Time{}
+	y := []float64{}
+	for rows.Next() {
+		var ts, val float64
+		if err := rows.Scan(&ts, &val); err != nil {
+			return engine.Errorf("scanning row: %s", err)
+		}
+		x = append(x, time.Unix(int64(ts), 0))
+		y = append(y, val)
+	}
+
+	graph := chart.Chart{
+		Series: []chart.Series{
+			chart.TimeSeries{XValues: x, YValues: y},
+		},
+	}
+
+	buf := bytes.NewBuffer(nil)
+	err = graph.Render(chart.PNG, buf)
+	if err != nil {
+		return engine.Errorf("converting chart to bytes: %s", err)
+	}
+	return engine.PNG(buf.Bytes())
 }
