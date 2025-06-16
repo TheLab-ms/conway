@@ -52,7 +52,7 @@ func renderMachines(printers []*printerStatus) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"container my-5\"><div class=\"mt-3\"><h2>Printers</h2><table class=\"table table-bordered table-striped\"><thead><tr><th>Printer</th><th>Status</th><th>Print Completion Estimate</th><th>Error Code</th></tr></thead> <tbody>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"container my-5\"><div class=\"mt-3\"><h2>Printers</h2><table class=\"table table-bordered table-striped\"><thead><tr><th>Printer</th><th>Status</th><th>Remaining Print Time</th><th>Error Code</th></tr></thead> <tbody>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
