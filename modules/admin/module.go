@@ -23,21 +23,23 @@ type Module struct {
 	db    *sql.DB
 	self  *url.URL
 	links *engine.TokenIssuer
+	nav   []*navbarTab
 }
 
 func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer) *Module {
-	return &Module{db: db, self: self, links: linksIss}
+	nav := []*navbarTab{}
+	for _, view := range listViews {
+		nav = append(nav, &navbarTab{Title: view.Title, Path: "/admin" + view.RelPath})
+	}
+	nav = append(nav, &navbarTab{Title: "Metrics", Path: "/admin/metrics"})
+
+	return &Module{db: db, self: self, links: linksIss, nav: nav}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	var nav []*navbarTab
 	for _, view := range listViews {
-		view := view
-		route := "/admin" + view.RelPath
-		nav = append(nav, &navbarTab{Title: view.Title, Path: route})
-
-		router.Handle("GET", route, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
-			return engine.Component(renderAdminList(nav, view.Title, "/admin/search"+view.RelPath))
+		router.Handle("GET", "/admin"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
+			return engine.Component(renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath))
 		})))
 
 		router.Handle("POST", "/admin/search"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
@@ -76,7 +78,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	}
 
 	router.Handle("GET", "/admin", router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
-		return engine.Redirect(nav[0].Path, http.StatusSeeOther)
+		return engine.Redirect(m.nav[0].Path, http.StatusSeeOther)
 	})))
 
 	router.Handle("GET", "/admin/members/:id", router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
@@ -84,7 +86,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 		if err != nil {
 			return engine.Errorf("querying the database: %s", err)
 		}
-		return engine.Component(renderSingleMember(nav, mem, events))
+		return engine.Component(renderSingleMember(m.nav, mem, events))
 	})))
 
 	router.Handle("GET", "/admin/members/:id/logincode", router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
@@ -107,6 +109,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 	router.Handle("GET", "/admin/export/:table", router.WithAuth(m.onlyLeadership(m.exportCSV)))
 	router.Handle("GET", "/admin/chart", router.WithAuth(m.onlyLeadership(m.renderMetricsChart)))
+	router.Handle("GET", "/admin/metrics", router.WithAuth(m.onlyLeadership(m.renderMetricsPageHandler)))
 
 	for _, handle := range formHandlers {
 		router.Handle("POST", handle.Path, router.WithAuth(m.onlyLeadership(handle.BuildHandler(m.db))))
@@ -193,4 +196,32 @@ func (m *Module) renderMetricsChart(r *http.Request, ps httprouter.Params) engin
 		return engine.Errorf("converting chart to bytes: %s", err)
 	}
 	return engine.PNG(buf.Bytes())
+}
+
+func (m *Module) renderMetricsPageHandler(r *http.Request, ps httprouter.Params) engine.Response {
+	selected := r.URL.Query().Get("interval")
+	if selected == "" {
+		selected = "720h" // default to 30 days
+	}
+	dur, err := time.ParseDuration(selected)
+	if err != nil {
+		return engine.ClientErrorf(400, "invalid interval: %s", err)
+	}
+
+	rows, err := m.db.QueryContext(r.Context(), `SELECT DISTINCT series FROM metrics WHERE timestamp > strftime('%s', 'now') - ? ORDER BY series`, int64(dur.Seconds()))
+	if err != nil {
+		return engine.Errorf("fetching metrics: %s", err)
+	}
+	defer rows.Close()
+
+	var metrics []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			continue
+		}
+		metrics = append(metrics, name)
+	}
+
+	return engine.Component(renderMetricsAdminPage(m.nav, metrics, selected))
 }

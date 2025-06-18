@@ -143,6 +143,32 @@ templ renderListPagination(currentPage, totalPages int64) {
 	</div>
 }
 
+var intervalLabels = []string{"7 days", "30 days", "90 days"}
+var intervalValues = []string{"168h", "720h", "2160h"}
+
+templ renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string) {
+	@bootstrap.View() {
+		@adminNav(tabs)
+		<div class="container my-5">
+			<h2 class="mb-4">Metrics</h2>
+			<form method="get" class="mb-5">
+				<label for="interval">Interval:</label>
+				<select name="interval" id="interval" class="form-select w-auto d-inline-block ms-2" onchange="this.form.submit()">
+					for i, val := range intervalValues {
+						<option value={ val } selected?={ val == selected }>{ intervalLabels[i] }</option>
+					}
+				</select>
+			</form>
+			for _, name := range metrics {
+				<div class="mb-5">
+					<h3>{ name }</h3>
+					<img src={ fmt.Sprintf("/admin/chart?series=%s&window=%s", name, selected) } style="width: 100%; padding: 8px;" />
+				</div>
+			}
+		</div>
+	}
+}
+
 script navigateToSelf(link string) {
 	window.location = link
 }
