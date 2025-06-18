@@ -409,3 +409,53 @@ func TestRenderListPagination(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderMetricsAdminPage(t *testing.T) {
+	tabs := []*navbarTab{
+		{Title: "Members", Path: "/admin/members"},
+		{Title: "Metrics", Path: "/admin/metrics"},
+	}
+	tests := []struct {
+		name     string
+		metrics  []string
+		selected string
+		fixture  string
+		desc     string
+	}{
+		{
+			name:     "no_metrics",
+			metrics:  []string{},
+			selected: "720h",
+			fixture:  "_none",
+			desc:     "No metrics available",
+		},
+		{
+			name:     "one_metric",
+			metrics:  []string{"active-members"},
+			selected: "720h",
+			fixture:  "_one",
+			desc:     "Single metric available",
+		},
+		{
+			name:     "multiple_metrics",
+			metrics:  []string{"active-members", "daily-unique-visitors", "monthly-unique-visitors"},
+			selected: "168h",
+			fixture:  "_multiple",
+			desc:     "Multiple metrics, 7 days interval",
+		},
+		{
+			name:     "custom_interval",
+			metrics:  []string{"active-members"},
+			selected: "2160h",
+			fixture:  "_custom_interval",
+			desc:     "Single metric, 90 days interval",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			component := renderMetricsAdminPage(tabs, tt.metrics, tt.selected)
+			testutil.RenderSnapshotWithName(t, component, tt.fixture)
+		})
+	}
+}
