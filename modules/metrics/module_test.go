@@ -8,15 +8,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAggregate(t *testing.T) {
+func TestSampling(t *testing.T) {
 	testDB := db.NewTest(t)
 	m := &Module{db: testDB}
 
-	_, err := testDB.Exec("INSERT INTO metrics_aggregates (name, query, interval_seconds) VALUES ('test-metric', 'SELECT 42', 60)")
+	_, err := testDB.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds) VALUES ('test-metric', 'SELECT 42', 60)")
 	require.NoError(t, err)
 
-	assert.False(t, m.visitAggregates(t.Context()))
-	assert.False(t, m.visitAggregates(t.Context()))
+	assert.False(t, m.visitSamplings(t.Context()))
+	assert.False(t, m.visitSamplings(t.Context()))
 
 	var count int
 	err = testDB.QueryRow("SELECT COUNT(*) FROM metrics WHERE series = 'test-metric'").Scan(&count)

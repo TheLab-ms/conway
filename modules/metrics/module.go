@@ -19,70 +19,70 @@ func New(db *sql.DB) *Module {
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	mgr.Add(engine.Poll(time.Minute, m.visitAggregates))
+	mgr.Add(engine.Poll(time.Minute, m.visitSamplings))
 }
 
-func (m *Module) visitAggregates(ctx context.Context) bool {
-	aggregates, err := m.getAggregates(ctx)
+func (m *Module) visitSamplings(ctx context.Context) bool {
+	samplings, err := m.getSamplings(ctx)
 	if err != nil {
-		slog.Error("failed to get metric aggregates", "error", err)
+		slog.Error("failed to get metric samplings", "error", err)
 		return false
 	}
 
-	for _, agg := range aggregates {
-		m.evalAggregate(ctx, agg)
+	for _, sample := range samplings {
+		m.evalSampling(ctx, sample)
 	}
 	return false
 }
 
-func (m *Module) getAggregates(ctx context.Context) ([]*aggregate, error) {
-	rows, err := m.db.QueryContext(ctx, `SELECT name, query, interval_seconds FROM metrics_aggregates`)
+func (m *Module) getSamplings(ctx context.Context) ([]*sampling, error) {
+	rows, err := m.db.QueryContext(ctx, `SELECT name, query, interval_seconds FROM metrics_samplings`)
 	if err != nil {
-		return nil, fmt.Errorf("querying aggregations: %w", err)
+		return nil, fmt.Errorf("querying samplings: %w", err)
 	}
 	defer rows.Close()
 
-	var aggregates []*aggregate
+	var samplings []*sampling
 	for rows.Next() {
-		var agg aggregate
+		var sample sampling
 		var intervalSeconds int64
-		if err := rows.Scan(&agg.Name, &agg.Query, &intervalSeconds); err != nil {
-			return nil, fmt.Errorf("scanning aggregate: %w", err)
+		if err := rows.Scan(&sample.Name, &sample.Query, &intervalSeconds); err != nil {
+			return nil, fmt.Errorf("scanning sampling: %w", err)
 		}
-		agg.Interval = time.Duration(intervalSeconds) * time.Second
-		aggregates = append(aggregates, &agg)
+		sample.Interval = time.Duration(intervalSeconds) * time.Second
+		samplings = append(samplings, &sample)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating aggregates: %w", err)
+		return nil, fmt.Errorf("iterating samplings: %w", err)
 	}
 
-	return aggregates, nil
+	return samplings, nil
 }
 
-func (m *Module) evalAggregate(ctx context.Context, agg *aggregate) bool {
+func (m *Module) evalSampling(ctx context.Context, sample *sampling) bool {
 	var since *float64
 	var start float64
-	err := m.db.QueryRowContext(ctx, "SELECT unixepoch('subsec') - MAX(timestamp), COALESCE(MAX(timestamp), 0.0) FROM metrics WHERE series = $1", agg.Name).Scan(&since, &start)
+	err := m.db.QueryRowContext(ctx, "SELECT unixepoch('subsec') - MAX(timestamp), COALESCE(MAX(timestamp), 0.0) FROM metrics WHERE series = $1", sample.Name).Scan(&since, &start)
 	if err != nil && err != sql.ErrNoRows {
-		slog.Error("failed to check for metric", "metric", agg.Name, "error", err)
+		slog.Error("failed to check for metric", "metric", sample.Name, "error", err)
 		return false
 	}
-	if err == nil && since != nil && *since < agg.Interval.Seconds() {
+	if err == nil && since != nil && *since < sample.Interval.Seconds() {
 		return true // not ready to be sampled yet
 	}
 
-	query := fmt.Sprintf("INSERT INTO metrics (series, value) VALUES ($1, (%s))", agg.Query)
-	_, err = m.db.ExecContext(ctx, query, agg.Name, sql.Named("last", int64(start)))
+	query := fmt.Sprintf("INSERT INTO metrics (series, value) VALUES ($1, (%s))", sample.Query)
+	_, err = m.db.ExecContext(ctx, query, sample.Name, sql.Named("last", int64(start)))
 	if err != nil {
-		slog.Error("failed to insert aggregated metric", "metric", agg.Name, "error", err)
+		slog.Error("failed to insert sampled metric", "metric", sample.Name, "error", err)
 		return false
 	}
 
-	slog.Info("aggregated metric", "metric", agg.Name)
+	slog.Info("sampled metric", "metric", sample.Name)
 	return true
 }
 
-type aggregate struct {
+type sampling struct {
 	Name     string
 	Query    string
 	Interval time.Duration
