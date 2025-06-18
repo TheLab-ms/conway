@@ -206,7 +206,7 @@ func (m *Module) renderMetricsChart(r *http.Request, ps httprouter.Params) engin
 func (m *Module) renderMetricsPageHandler(r *http.Request, ps httprouter.Params) engine.Response {
 	selected := r.URL.Query().Get("interval")
 	if selected == "" {
-		selected = "720h" // default to 30 days
+		selected = "1440h" // default to 60 days
 	}
 	dur, err := time.ParseDuration(selected)
 	if err != nil {
