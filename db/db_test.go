@@ -398,3 +398,98 @@ func activeFobs(t *testing.T, db *sql.DB) []int64 {
 	require.NoError(t, results.Err())
 	return all
 }
+
+func TestSamplingInvalidTarget(t *testing.T) {
+	db := NewTest(t)
+
+	// Test with non-existent table
+	_, err := db.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES ('invalid-table', 'SELECT 42', 60, 'nonexistent_table')")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Target table does not exist")
+
+	// Create a table without required columns
+	_, err = db.Exec(`
+		CREATE TABLE invalid_metrics (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL
+		) STRICT;
+	`)
+	require.NoError(t, err)
+
+	// Test with table missing the series column
+	_, err = db.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES ('invalid-cols', 'SELECT 42', 60, 'invalid_metrics')")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Target table must have a series column")
+
+	// Create a table with wrong column type
+	_, err = db.Exec(`
+		CREATE TABLE wrong_type_metrics (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			series TEXT NOT NULL,
+			value INTEGER NOT NULL
+		) STRICT;
+	`)
+	require.NoError(t, err)
+
+	// Test with table having wrong column type
+	_, err = db.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES ('wrong-type', 'SELECT 42', 60, 'wrong_type_metrics')")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Target table must have a value column of type REAL")
+
+	// Create a table missing the timestamp column
+	_, err = db.Exec(`
+		CREATE TABLE missing_timestamp_metrics (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			series TEXT NOT NULL,
+			value REAL NOT NULL
+		) STRICT;
+	`)
+	require.NoError(t, err)
+
+	// Test with table missing the timestamp column
+	_, err = db.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES ('missing-timestamp', 'SELECT 42', 60, 'missing_timestamp_metrics')")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Target table must have a timestamp column of type REAL")
+}
+
+func TestSamplingUpdateTarget(t *testing.T) {
+	db := NewTest(t)
+
+	// Insert a valid sampling with metrics target
+	_, err := db.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES ('update-test', 'SELECT 42', 60, 'metrics')")
+	require.NoError(t, err)
+
+	// Create a custom valid metrics table
+	_, err = db.Exec(`
+		CREATE TABLE valid_custom_metrics (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp REAL NOT NULL DEFAULT (strftime('%s', 'now', 'subsec')),
+			series TEXT NOT NULL,
+			value REAL NOT NULL
+		) STRICT;
+	`)
+	require.NoError(t, err)
+
+	// Test valid update to target table
+	_, err = db.Exec("UPDATE metrics_samplings SET target_table = 'valid_custom_metrics' WHERE name = 'update-test'")
+	require.NoError(t, err)
+
+	// Create an invalid table missing required columns
+	_, err = db.Exec(`
+		CREATE TABLE invalid_update_metrics (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL
+		) STRICT;
+	`)
+	require.NoError(t, err)
+
+	// Test invalid update - missing required columns
+	_, err = db.Exec("UPDATE metrics_samplings SET target_table = 'invalid_update_metrics' WHERE name = 'update-test'")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Target table must have a series column")
+
+	// Test invalid update - non-existent table
+	_, err = db.Exec("UPDATE metrics_samplings SET target_table = 'nonexistent_update_table' WHERE name = 'update-test'")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Target table does not exist")
+}
