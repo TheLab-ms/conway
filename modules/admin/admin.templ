@@ -162,9 +162,24 @@ templ renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected strin
 			for _, name := range metrics {
 				<div class="mb-5">
 					<h3>{ name }</h3>
-					<img src={ fmt.Sprintf("/admin/chart?series=%s&window=%s", name, selected) } style="width: 100%; padding: 8px;" />
+					<img id={ fmt.Sprintf("chart-img-%s", name) } data-series={ name } data-window={ selected } style="width: 100%; padding: 8px;" />
 				</div>
 			}
+			<script>
+				document.addEventListener('DOMContentLoaded', function() {
+					const charts = document.querySelectorAll('img[id^="chart-img-"]');
+					charts.forEach(function(img) {
+						function setChartSrc() {
+							const width = img.clientWidth;
+							const series = img.getAttribute('data-series');
+							const windowVal = img.getAttribute('data-window');
+							img.src = `/admin/chart?series=${encodeURIComponent(series)}&window=${encodeURIComponent(windowVal)}&width=${width}`;
+						}
+						setChartSrc();
+						window.addEventListener('resize', setChartSrc);
+					});
+				});
+			</script>
 		</div>
 	}
 }

@@ -185,9 +185,14 @@ func (m *Module) renderMetricsChart(r *http.Request, ps httprouter.Params) engin
 	}
 
 	graph := chart.Chart{
+		Width: 800,
 		Series: []chart.Series{
 			chart.TimeSeries{XValues: x, YValues: y},
 		},
+	}
+	width, err := strconv.Atoi(r.URL.Query().Get("width"))
+	if err == nil {
+		graph.Width = width
 	}
 
 	buf := bytes.NewBuffer(nil)
