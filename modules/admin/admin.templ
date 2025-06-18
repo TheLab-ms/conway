@@ -143,8 +143,8 @@ templ renderListPagination(currentPage, totalPages int64) {
 	</div>
 }
 
-var intervalLabels = []string{"7 days", "30 days", "90 days"}
-var intervalValues = []string{"168h", "720h", "2160h"}
+var intervalLabels = []string{"7 days", "30 days", "60 days", "90 days", "180 days", "365 days"}
+var intervalValues = []string{"168h", "720h", "1440h", "2160h", "4320h", "8760h"}
 
 templ renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string) {
 	@bootstrap.View() {

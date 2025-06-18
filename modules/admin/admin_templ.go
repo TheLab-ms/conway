@@ -480,8 +480,8 @@ func renderListPagination(currentPage, totalPages int64) templ.Component {
 	})
 }
 
-var intervalLabels = []string{"7 days", "30 days", "90 days"}
-var intervalValues = []string{"168h", "720h", "2160h"}
+var intervalLabels = []string{"7 days", "30 days", "60 days", "90 days", "180 days", "365 days"}
+var intervalValues = []string{"168h", "720h", "1440h", "2160h", "4320h", "8760h"}
 
 func renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
