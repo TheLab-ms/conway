@@ -36,7 +36,7 @@ func (m *Module) handleSubmitWaiver(r *http.Request, ps httprouter.Params) engin
 
 	name := r.FormValue("name")
 	email := r.FormValue("email")
-	_, err := m.db.ExecContext(r.Context(), "INSERT INTO waivers (name, email, version) VALUES ($1, $2, 1)", name, email)
+	_, err := m.db.ExecContext(r.Context(), "INSERT INTO waivers (name, email, version) VALUES ($1, $2, 1) ON CONFLICT DO NOTHING", name, email)
 	if err != nil {
 		return engine.Errorf("inserting signed waiver: %s", err)
 	}

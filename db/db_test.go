@@ -493,3 +493,16 @@ func TestSamplingUpdateTarget(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Target table does not exist")
 }
+
+func TestWaiverUniqueness(t *testing.T) {
+	db := NewTest(t)
+
+	// Insert a waiver record
+	_, err := db.Exec("INSERT INTO waivers (name, email, version) VALUES ('Test Waiver', 'test@example.com', 1)")
+	require.NoError(t, err)
+
+	// Attempt to insert a duplicate (same email + version)
+	_, err = db.Exec("INSERT INTO waivers (name, email, version) VALUES ('Test Waiver 2', 'test@example.com', 1)")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "UNIQUE constraint failed")
+}
