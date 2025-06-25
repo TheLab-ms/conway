@@ -1,6 +1,7 @@
 package bambu
 
 import (
+	"encoding/json"
 	"log/slog"
 	"sync"
 	"time"
@@ -16,19 +17,24 @@ type cache struct {
 }
 
 func (c *cache) Add(pe *peering.PrinterEvent) {
+	logJson, _ := json.Marshal(pe)
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	current, ok := c.state[pe.PrinterName]
 	if ok && eventsEqual(current.PrinterEvent, pe) {
+		slog.Info("skipping bambu event because the printer's state hasn't changed", "event", string(logJson))
 		return
 	}
 
-	c.state[pe.PrinterName] = &peering.Event{
+	next := &peering.Event{
 		UID:          uuid.NewString(),
 		Timestamp:    time.Now().Unix(),
 		PrinterEvent: pe,
 	}
+	slog.Info("buffering bambu event", "event", string(logJson))
+	c.state[pe.PrinterName] = next
 }
 
 func (c *cache) Flush() []*peering.Event {
