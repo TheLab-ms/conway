@@ -35,14 +35,15 @@ func (c *cache) Add(pe *peering.PrinterEvent) {
 	}
 	slog.Info("buffering bambu event", "event", string(logJson))
 	c.state[pe.PrinterName] = next
+	c.lastFlush = time.Time{} // skip the line
 }
 
 func (c *cache) Flush() []*peering.Event {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	if time.Since(c.lastFlush) < time.Second*10 {
-		return nil // only send the events every 10 seconds
+	if time.Since(c.lastFlush) < time.Minute*5 {
+		return nil // just in case the server lost the previous state somehow
 	}
 
 	events := []*peering.Event{}

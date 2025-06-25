@@ -28,14 +28,14 @@ func TestCache(t *testing.T) {
 		assert.Equal(t, before, after)
 	})
 
-	t.Run("Flush returns events after 10s", func(t *testing.T) {
-		c.lastFlush = time.Now().Add(-11 * time.Second)
+	t.Run("Flush returns events after 10 minutes", func(t *testing.T) {
+		c.lastFlush = time.Now().Add(-10 * time.Minute)
 		c.Add(event)
 		out := c.Flush()
 		assert.Len(t, out, 1)
 	})
 
-	t.Run("Flush returns nil if called again within 10s", func(t *testing.T) {
+	t.Run("Flush returns nil if called again immediately", func(t *testing.T) {
 		out := c.Flush()
 		assert.Nil(t, out)
 	})
