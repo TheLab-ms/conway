@@ -115,18 +115,35 @@ func TestEventHookIntegration(t *testing.T) {
 	c := NewClient(svr.URL, t.TempDir(), iss)
 
 	c.RegisterEventHook(func() []*Event {
-		event := &Event{
-			PrinterEvent: &PrinterEvent{
-				PrinterName: "test-printer",
-				ErrorCode:   "test-error",
+		return []*Event{
+			{
+				UID: "foo",
+				PrinterEvent: &PrinterEvent{
+					PrinterName: "test-printer",
+					ErrorCode:   "test-error",
+				},
+			},
+			{
+				UID: "bar",
+				PrinterEvent: &PrinterEvent{
+					PrinterName: "test-printer",
+					ErrorCode:   "test-error",
+				},
+			},
+			{
+				UID: "baz",
+				PrinterEvent: &PrinterEvent{
+					PrinterName: "test-printer",
+					ErrorCode:   "test-error-2",
+				},
 			},
 		}
-		return []*Event{event, event}
 	})
+	require.NoError(t, c.FlushEvents())
 	require.NoError(t, c.FlushEvents())
 
 	var rows int
 	err := db.QueryRow("SELECT COUNT(*) FROM printer_events").Scan(&rows)
 	require.NoError(t, err)
-	assert.Equal(t, 1, rows)
+	assert.Equal(t, 2, rows)
 }
