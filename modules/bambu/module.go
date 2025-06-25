@@ -87,6 +87,7 @@ func (m *Module) poll(ctx context.Context) bool {
 			finishedTimestamp := time.Now().Add(time.Duration(data.RemainingPrintTime) * time.Minute).Unix()
 			s.JobFinishedTimestamp = &finishedTimestamp
 		}
+		slog.Info("bambu printer state", "printer", name, "data", data)
 		m.cache.Add(s)
 	}
 

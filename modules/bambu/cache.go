@@ -1,6 +1,7 @@
 package bambu
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 
@@ -43,6 +44,7 @@ func (c *cache) Flush() []*peering.Event {
 		events = append(events, e)
 	}
 
+	slog.Info("flushed bambu status to Conway server")
 	c.lastFlush = time.Now()
 	return events
 }
