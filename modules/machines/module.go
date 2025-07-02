@@ -25,7 +25,10 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 func (m *Module) renderMachinesView(r *http.Request, ps httprouter.Params) engine.Response {
 	ctx := r.Context()
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT pe.printer_name, pe.job_finished_timestamp, pe.error_code FROM printer_events pe
+		SELECT pe.printer_name,
+		CASE WHEN pe.job_finished_timestamp < strftime('%s','now') THEN NULL ELSE pe.job_finished_timestamp END AS job_finished_timestamp,
+		pe.error_code
+		FROM printer_events pe
 		INNER JOIN (
 			SELECT printer_name, MAX(timestamp) AS max_ts
 			FROM printer_events
