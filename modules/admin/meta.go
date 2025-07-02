@@ -35,7 +35,7 @@ var listViews = []listView{
 
 			search := r.PostFormValue("search")
 			if search != "" {
-				logic := " WHERE name LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%' OR CAST(fob_id AS TEXT) LIKE '%' || $1 || '%'"
+				logic := " WHERE name LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%' OR CAST(fob_id AS TEXT) LIKE '%' || $1 || '%' OR discount_type LIKE '%' || $1 || '%'"
 				q += logic
 				rowCountQuery += logic
 				args = append(args, search)
