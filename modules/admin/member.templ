@@ -195,6 +195,7 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 							<option value="retired" selected?={ member.DiscountType != nil && *member.DiscountType == "retired" }>Retired</option>
 							<option value="unemployed" selected?={ member.DiscountType != nil && *member.DiscountType == "unemployed" }>Unemployed</option>
 							<option value="firstResponder" selected?={ member.DiscountType != nil && *member.DiscountType == "firstResponder" }>First Responder</option>
+							<option value="student" selected?={ member.DiscountType != nil && *member.DiscountType == "student" }>Student</option>
 							<option value="educator" selected?={ member.DiscountType != nil && *member.DiscountType == "educator" }>Educator</option>
 							<option value="emeritus" selected?={ member.DiscountType != nil && *member.DiscountType == "emeritus" }>Emeritus</option>
 							<option value="family" selected?={ member.DiscountType != nil && *member.DiscountType == "family" }>Family</option>
