@@ -82,7 +82,7 @@ func (m *Module) poll(ctx context.Context) bool {
 		if s.ErrorCode == "0" {
 			s.ErrorCode = ""
 		}
-		if data.RemainingPrintTime <= 0 {
+		if data.RemainingPrintTime <= 1 {
 			s.JobFinishedTimestamp = nil
 		} else {
 			// Calculate the finished timestamp based on the remaining time

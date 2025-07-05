@@ -62,7 +62,7 @@ func eventsEqual(a, b *peering.PrinterEvent) bool {
 		return false
 	}
 	if a.JobFinishedTimestamp == nil || b.JobFinishedTimestamp == nil {
-		return a.JobFinishedTimestamp == nil && b.JobFinishedTimestamp == nil
+		return (a.JobFinishedTimestamp == nil) == (b.JobFinishedTimestamp == nil)
 	}
 
 	av, bv := *a.JobFinishedTimestamp, *b.JobFinishedTimestamp
