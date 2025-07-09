@@ -119,7 +119,7 @@ func (m *Module) handleBindKeyfob(r *http.Request, ps httprouter.Params) engine.
 		return engine.ClientErrorf(400, "QR code references a non-integer fob ID")
 	}
 
-	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET fob_id = $1 WHERE id = $2", fobID, user.ID)
+	_, err = m.db.ExecContext(r.Context(), `UPDATE members SET fob_id = $1 WHERE id = $2 AND (fob_id IS NULL OR fob_id != $1)`, fobID, user.ID)
 	if err != nil {
 		return engine.ClientErrorf(500, "inserting fob id into db: %s", err)
 	}
