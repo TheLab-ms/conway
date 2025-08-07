@@ -35,10 +35,12 @@ func (p *ProcMgr) Run(ctx context.Context) {
 	wg.Wait()
 }
 
+type PollingFunc func(context.Context) bool
+
 // Poll is a Proc that polls a given function regularly.
 // If the function returns true, it will be called again immediately.
 // This is useful for polling a queue for new items.
-func Poll(interval time.Duration, fn func(context.Context) bool) Proc {
+func Poll(interval time.Duration, fn PollingFunc) Proc {
 	return func(ctx context.Context) error {
 		jitter := time.Duration(interval)
 		ticker := time.NewTicker(jitter)
