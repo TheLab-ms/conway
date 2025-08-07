@@ -18,13 +18,12 @@ import (
 type Sender func(ctx context.Context, to, subj string, msg []byte) error
 
 type Module struct {
-	db          *sql.DB
-	Sender      Sender
-	authLimiter *rate.Limiter
+	db     *sql.DB
+	Sender Sender
 }
 
 func New(db *sql.DB, es Sender) *Module {
-	m := &Module{db: db, Sender: es, authLimiter: rate.NewLimiter(rate.Every(time.Second*5), 10)}
+	m := &Module{db: db, Sender: es}
 	if m.Sender == nil {
 		m.Sender = newNoopSender()
 	}
@@ -32,7 +31,7 @@ func New(db *sql.DB, es Sender) *Module {
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(m)))
+	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, 1))))
 }
 
 func (m *Module) GetItem(ctx context.Context) (message, error) {
@@ -42,7 +41,6 @@ func (m *Module) GetItem(ctx context.Context) (message, error) {
 }
 
 func (m *Module) ProcessItem(ctx context.Context, item message) error {
-	m.authLimiter.Wait(ctx)
 	slog.Info("sending email", "id", item.ID, "to", item.To, "subject", item.Subject)
 	return m.Sender(ctx, item.To, item.Subject, []byte(item.Body))
 }

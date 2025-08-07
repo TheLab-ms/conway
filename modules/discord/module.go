@@ -15,8 +15,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/oauth2"
-	"golang.org/x/time/rate"
 )
+
+const maxRPS = 3
 
 var endpoint = oauth2.Endpoint{
 	AuthURL:   "https://discord.com/api/oauth2/authorize",
@@ -31,7 +32,6 @@ type Module struct {
 	authConf       *oauth2.Config
 	roleID         string
 	client         *discordAPIClient
-	rateLimiter    *rate.Limiter
 }
 
 func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, clientID, clientSecret, botToken, guildID, roleID string) *Module {
@@ -50,7 +50,6 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, clientID, clientSec
 		authConf:       conf,
 		roleID:         roleID,
 		client:         newDiscordAPIClient(botToken, guildID, client, conf),
-		rateLimiter:    rate.NewLimiter(rate.Every(time.Second), 2),
 	}
 }
 
@@ -119,7 +118,7 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	}
 
 	mgr.Add(engine.Poll(time.Minute, m.scheduleFullReconciliation))
-	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(m)))
+	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, maxRPS))))
 }
 
 // scheduleFullReconciliation updates members to force Discord resync once per day - just in case things are out of sync somehow.
@@ -143,7 +142,6 @@ func (m *Module) GetItem(ctx context.Context) (item syncItem, err error) {
 }
 
 func (m *Module) ProcessItem(ctx context.Context, item syncItem) error {
-	m.rateLimiter.Wait(ctx)
 	shouldHaveRole := item.PaymentStatus.Valid && item.PaymentStatus.String != ""
 	changed, err := m.client.ensureRole(ctx, item.DiscordUserID, m.roleID, shouldHaveRole)
 	if err != nil {

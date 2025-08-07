@@ -6,13 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-)
+	"time"
 
-type Workqueue[T any] interface {
-	GetItem(context.Context) (T, error)
-	ProcessItem(context.Context, T) error
-	UpdateItem(ctx context.Context, item T, success bool) error
-}
+	"golang.org/x/time/rate"
+)
 
 // PollWorkqueue implements a very basic workqueue. For every call to the returned polling func:
 // - The next item is found (if any)
@@ -52,4 +49,30 @@ func PollWorkqueue[T any](wq Workqueue[T]) PollingFunc {
 
 		return true
 	}
+}
+
+type Workqueue[T any] interface {
+	GetItem(context.Context) (T, error)
+	ProcessItem(context.Context, T) error
+	UpdateItem(ctx context.Context, item T, success bool) error
+}
+
+// WithRateLimiting rate limits calls to ProcessItem of the given workqueue.
+func WithRateLimiting[T any](wq Workqueue[T], rps int) Workqueue[T] {
+	return &rateLimitedWorkqueue[T]{
+		Workqueue: wq,
+		limiter:   rate.NewLimiter(rate.Every(time.Second), rps),
+	}
+}
+
+type rateLimitedWorkqueue[T any] struct {
+	Workqueue[T]
+	limiter *rate.Limiter
+}
+
+func (r *rateLimitedWorkqueue[T]) ProcessItem(ctx context.Context, item T) error {
+	if err := r.limiter.Wait(ctx); err != nil {
+		return err
+	}
+	return r.Workqueue.ProcessItem(ctx, item)
 }
