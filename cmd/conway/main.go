@@ -40,6 +40,9 @@ type Config struct {
 
 	DiscordClientID     string
 	DiscordClientSecret string
+	DiscordBotToken     string
+	DiscordGuildID      string
+	DiscordRoleID       string
 
 	EmailFrom string
 
@@ -109,7 +112,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a.Add(pruning.New(db))
 
 	if conf.DiscordClientID != "" {
-		a.Add(discord.New(db, self, discordIss, conf.DiscordClientID, conf.DiscordClientSecret))
+		a.Add(discord.New(db, self, discordIss, conf.DiscordClientID, conf.DiscordClientSecret, conf.DiscordBotToken, conf.DiscordGuildID, conf.DiscordRoleID))
 	} else {
 		slog.Info("discord module disabled because a client ID was not configured")
 	}
