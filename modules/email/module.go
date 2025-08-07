@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/smtp"
@@ -33,40 +32,28 @@ func New(db *sql.DB, es Sender) *Module {
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	mgr.Add(engine.Poll(time.Second, m.processNextMessage))
+	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(m)))
 }
 
-func (m *Module) processNextMessage(ctx context.Context) bool {
-	var id int64
-	var to, subj, body string
-	var created int64
-	err := m.db.QueryRowContext(ctx, "SELECT id, recipient, subject, body, created FROM outbound_mail WHERE unixepoch() >= send_at AND unixepoch() - created < 3600 ORDER BY send_at ASC LIMIT 1;").Scan(&id, &to, &subj, &body, &created)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false
-	}
-	if err != nil {
-		slog.Error("unable to dequeue outbound mail workitem", "error", err)
-		return false
-	}
+func (m *Module) GetItem(ctx context.Context) (message, error) {
+	var item message
+	err := m.db.QueryRowContext(ctx, "SELECT id, recipient, subject, body, created FROM outbound_mail WHERE unixepoch() >= send_at AND unixepoch() - created < 3600 ORDER BY send_at ASC LIMIT 1;").Scan(&item.ID, &item.To, &item.Subject, &item.Body, &item.Created)
+	return item, err
+}
 
-	slog.Info("sending email", "id", id, "to", to, "subject", subj)
-	err = m.Sender(ctx, to, subj, []byte(body))
-	if err != nil {
-		slog.Error("unable to send email", "error", err)
-	}
-	success := err == nil
+func (m *Module) ProcessItem(ctx context.Context, item message) error {
+	m.authLimiter.Wait(ctx)
+	slog.Info("sending email", "id", item.ID, "to", item.To, "subject", item.Subject)
+	return m.Sender(ctx, item.To, item.Subject, []byte(item.Body))
+}
 
+func (m *Module) UpdateItem(ctx context.Context, item message, success bool) (err error) {
 	if success {
-		_, err = m.db.Exec("DELETE FROM outbound_mail WHERE id = $1;", id)
+		_, err = m.db.Exec("DELETE FROM outbound_mail WHERE id = $1;", item.ID)
 	} else {
-		_, err = m.db.Exec("UPDATE outbound_mail SET send_at = unixepoch() + ((send_at - created) * 2) WHERE id = $1;", id)
+		_, err = m.db.Exec("UPDATE outbound_mail SET send_at = unixepoch() + ((send_at - created) * 2) WHERE id = $1;", item.ID)
 	}
-	if err != nil {
-		slog.Error("unable to update status of outbound email", "error", err)
-		return false
-	}
-
-	return success
+	return err
 }
 
 func newNoopSender() Sender {
@@ -125,3 +112,13 @@ func (a *googleSmtpOauth) Next(_ []byte, more bool) ([]byte, error) {
 	}
 	return nil, nil
 }
+
+type message struct {
+	ID      int64
+	To      string
+	Subject string
+	Body    string
+	Created int64
+}
+
+func (m *message) String() string { return fmt.Sprintf("id=%d", m.ID) }
