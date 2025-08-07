@@ -133,7 +133,7 @@ func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
 	if rowsAffected > 0 {
 		slog.Info("scheduled full Discord role reconciliation", "membersMarked", rowsAffected)
 	}
-	return true
+	return false
 }
 
 func (m *Module) GetItem(ctx context.Context) (item syncItem, err error) {

@@ -82,7 +82,7 @@ type roleState struct {
 
 func mockDiscordAPI() http.HandlerFunc {
 	state := &roleState{userRoles: make(map[string]bool)}
-	
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -234,7 +234,8 @@ func TestDiscordIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		success := h.module.scheduleFullReconciliation(context.Background())
-		assert.True(t, success)
+		assert.False(t, success)
+		// TODO: Refactor all polling tests to prove that they converge on false eventually
 
 		assert.Nil(t, h.memberSyncTime(1))
 		assert.Nil(t, h.memberSyncTime(2))
