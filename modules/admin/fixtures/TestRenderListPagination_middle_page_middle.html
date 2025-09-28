@@ -1,8 +1,0 @@
-<input type="hidden" id="currentpage" name="currentpage" value="3"><script>
-		function updatePageCounter(offset) {
-			let el = document.getElementById('currentpage')
-			el.value = Number(el.value) + offset
-
-			document.getElementById('searchbox').dispatchEvent(new Event('change', { bubbles: true }))
-		}
-	</script><div class="btn-group"><a class="btn btn-primary" onclick="updatePageCounter(-1)">Previous</a> <a class="btn btn-outline-primary disabled">Page 3 of 5</a> <a class="btn btn-primary" onclick="updatePageCounter(1)">Next</a></div>
