@@ -18,27 +18,31 @@ func New(db *sql.DB) *Module {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("GET", "/waiver", m.renderWaiverView)
-	router.Handle("POST", "/waiver", m.handleSubmitWaiver)
+	router.HandleFunc("GET /waiver", m.renderWaiverView)
+	router.HandleFunc("POST /waiver", m.handleSubmitWaiver)
 }
 
-func (m *Module) renderWaiverView(r *http.Request) engine.Response {
-	return engine.Component(renderWaiver(false, "", r.URL.Query().Get("email"), r.URL.Query().Get("r")))
+func (m *Module) renderWaiverView(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	renderWaiver(false, "", r.URL.Query().Get("email"), r.URL.Query().Get("r")).Render(r.Context(), w)
 }
 
-func (m *Module) handleSubmitWaiver(r *http.Request) engine.Response {
+func (m *Module) handleSubmitWaiver(w http.ResponseWriter, r *http.Request) {
 	a1 := r.FormValue("agree1")
 	a2 := r.FormValue("agree2")
 	if a1 != "on" || a2 != "on" {
-		return engine.ClientErrorf(400, "you must agree to all terms")
+		http.Error(w, "you must agree to all terms", 400)
+		return
 	}
 
 	name := r.FormValue("name")
 	email := r.FormValue("email")
 	_, err := m.db.ExecContext(r.Context(), "INSERT INTO waivers (name, email, version) VALUES ($1, $2, 1) ON CONFLICT DO NOTHING", name, email)
 	if err != nil {
-		return engine.Errorf("inserting signed waiver: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
-	return engine.Component(renderWaiver(true, name, email, r.FormValue("r")))
+	w.Header().Set("Content-Type", "text/html")
+	renderWaiver(true, name, email, r.FormValue("r")).Render(r.Context(), w)
 }

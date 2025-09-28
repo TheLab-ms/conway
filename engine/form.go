@@ -10,8 +10,8 @@ type PostFormHandler struct {
 	Fields []string
 }
 
-func (p *PostFormHandler) Handler(db *sql.DB) Handler {
-	return func(r *http.Request) Response {
+func (p *PostFormHandler) Handler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		args := []any{
 			sql.Named("route_id", r.PathValue("id")),
 		}
@@ -21,10 +21,11 @@ func (p *PostFormHandler) Handler(db *sql.DB) Handler {
 
 		_, err := db.ExecContext(r.Context(), p.Query, args...)
 		if err != nil {
-			return Errorf("updating member: %s", err)
+			SystemError(w, err.Error())
+			return
 		}
 
-		return Redirect(r.Referer(), http.StatusSeeOther)
+		http.Redirect(w, r, r.Referer(), http.StatusSeeOther)
 	}
 }
 
@@ -33,12 +34,13 @@ type DeleteFormHandler struct {
 	Redirect string
 }
 
-func (d *DeleteFormHandler) Handler(db *sql.DB) Handler {
-	return func(r *http.Request) Response {
+func (d *DeleteFormHandler) Handler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := db.ExecContext(r.Context(), "DELETE FROM "+d.Table+" WHERE id = $1", r.PathValue("id"))
 		if err != nil {
-			return Errorf("deleting from database: %s", err)
+			SystemError(w, err.Error())
+			return
 		}
-		return Redirect(d.Redirect, http.StatusSeeOther)
+		http.Redirect(w, r, d.Redirect, http.StatusSeeOther)
 	}
 }

@@ -235,7 +235,7 @@ type formHandler struct {
 	Delete *engine.DeleteFormHandler
 }
 
-func (f *formHandler) BuildHandler(db *sql.DB) engine.Handler {
+func (f *formHandler) BuildHandler(db *sql.DB) http.HandlerFunc {
 	if f.Post != nil {
 		return f.Post.Handler(db)
 	}

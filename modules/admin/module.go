@@ -1,8 +1,8 @@
 package admin
 
 import (
-	"bytes"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -37,15 +37,17 @@ func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer) *Module {
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	for _, view := range listViews {
-		router.Handle("GET", "/admin"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request) engine.Response {
-			return engine.Component(renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath))
+		router.HandleFunc("GET /admin"+view.RelPath, router.WithAuthn(m.onlyLeadership(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath).Render(r.Context(), w)
 		})))
 
-		router.Handle("POST", "/admin/search"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request) engine.Response {
+		router.HandleFunc("POST /admin/search"+view.RelPath, router.WithAuthn(m.onlyLeadership(func(w http.ResponseWriter, r *http.Request) {
 			const limit = 20
 			txn, err := m.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 			if err != nil {
-				return engine.Errorf("starting db transaction: %s", err)
+				engine.SystemError(w, err.Error())
+				return
 			}
 			defer txn.Rollback()
 
@@ -55,7 +57,8 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			var rowCount int64
 			err = txn.QueryRowContext(r.Context(), rowCountQuery, args...).Scan(&rowCount)
 			if err != nil {
-				return engine.Errorf("getting row count: %s", err)
+				engine.SystemError(w, err.Error())
+				return
 			}
 			currentPage, _ := strconv.ParseInt(r.FormValue("currentpage"), 10, 0)
 
@@ -63,83 +66,96 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			args = append(args, sql.Named("limit", limit), sql.Named("offset", max(currentPage-1, 0)*limit))
 			results, err := txn.QueryContext(r.Context(), q, args...)
 			if err != nil {
-				return engine.Errorf("querying the database: %s", err)
+				engine.SystemError(w, err.Error())
+				return
 			}
 			defer results.Close()
 
 			rows, err := view.BuildRows(results)
 			if err != nil {
-				return engine.Errorf("scanning the query results: %s", err)
+				engine.SystemError(w, err.Error())
+				return
 			}
 
-			return engine.Component(renderAdminListElements(view.Rows, rows, max(currentPage, 1), max(rowCount/limit, 1)))
+			w.Header().Set("Content-Type", "text/html")
+			renderAdminListElements(view.Rows, rows, max(currentPage, 1), max(rowCount/limit, 1)).Render(r.Context(), w)
 		})))
 	}
 
-	router.Handle("GET", "/admin", router.WithAuth(m.onlyLeadership(func(r *http.Request) engine.Response {
-		return engine.Redirect(m.nav[0].Path, http.StatusSeeOther)
+	router.HandleFunc("GET /admin", router.WithAuthn(m.onlyLeadership(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, m.nav[0].Path, http.StatusSeeOther)
 	})))
 
-	router.Handle("GET", "/admin/members/:id", router.WithAuth(m.onlyLeadership(func(r *http.Request) engine.Response {
+	router.HandleFunc("GET /admin/members/{id}", router.WithAuthn(m.onlyLeadership(func(w http.ResponseWriter, r *http.Request) {
 		mem, events, err := querySingleMember(r.Context(), m.db, r.PathValue("id"))
 		if err != nil {
-			return engine.Errorf("querying the database: %s", err)
+			engine.SystemError(w, err.Error())
+			return
 		}
-		return engine.Component(renderSingleMember(m.nav, mem, events))
+		w.Header().Set("Content-Type", "text/html")
+		renderSingleMember(m.nav, mem, events).Render(r.Context(), w)
 	})))
 
-	router.Handle("GET", "/admin/members/:id/logincode", router.WithAuth(m.onlyLeadership(func(r *http.Request) engine.Response {
+	router.HandleFunc("GET /admin/members/{id}/logincode", router.WithAuthn(m.onlyLeadership(func(w http.ResponseWriter, r *http.Request) {
 		tok, err := m.links.Sign(&jwt.RegisteredClaims{
 			Subject:   r.PathValue("id"),
 			ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
 		})
 		if err != nil {
-			return engine.Error(err)
+			engine.SystemError(w, err.Error())
+			return
 		}
 
 		url := fmt.Sprintf("%s/login?t=%s", m.self, url.QueryEscape(tok))
 		p, err := qrcode.Encode(url, qrcode.Medium, 512)
 		if err != nil {
-			return engine.Error(err)
+			engine.SystemError(w, err.Error())
+			return
 		}
 
-		return engine.PNG(p)
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(p)
 	})))
 
-	router.Handle("GET", "/admin/export/:table", router.WithAuth(m.onlyLeadership(m.exportCSV)))
-	router.Handle("GET", "/admin/chart", router.WithAuth(m.onlyLeadership(m.renderMetricsChart)))
-	router.Handle("GET", "/admin/metrics", router.WithAuth(m.onlyLeadership(m.renderMetricsPageHandler)))
+	router.HandleFunc("GET /admin/export/{table}", router.WithAuthn(m.onlyLeadership(m.exportCSV)))
+	router.HandleFunc("GET /admin/chart", router.WithAuthn(m.onlyLeadership(m.renderMetricsChart)))
+	router.HandleFunc("GET /admin/metrics", router.WithAuthn(m.onlyLeadership(m.renderMetricsPageHandler)))
 
 	for _, handle := range formHandlers {
-		router.Handle("POST", handle.Path, router.WithAuth(m.onlyLeadership(handle.BuildHandler(m.db))))
+		router.HandleFunc("POST "+handle.Path, router.WithAuthn(m.onlyLeadership(handle.BuildHandler(m.db))))
 	}
 }
 
-func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
-	return func(r *http.Request) engine.Response {
+func (m *Module) onlyLeadership(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if meta := auth.GetUserMeta(r.Context()); meta == nil || !meta.Leadership {
-			return engine.ClientErrorf(403, "You must be a member of leadership to access this page")
+			http.Error(w, "You must be a member of leadership to access this page", 403)
+			return
 		}
-		return next(r)
+		next(w, r)
 	}
 }
 
-func (m *Module) exportCSV(r *http.Request) engine.Response {
+func (m *Module) exportCSV(w http.ResponseWriter, r *http.Request) {
 	rows, err := m.db.QueryContext(r.Context(), fmt.Sprintf("SELECT * FROM %s", r.PathValue("table")))
 	if err != nil {
-		return engine.Errorf("querying table: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 	defer rows.Close()
 
 	cols, err := rows.Columns()
 	if err != nil {
-		return engine.Errorf("getting columns: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
-	w := &engine.CSVResponse{Rows: make([][]any, 1)}
-	for _, col := range cols {
-		w.Rows[0] = append(w.Rows[0], col)
-	}
+	w.Header().Set("Content-Type", "text/csv")
+	cw := csv.NewWriter(w)
+	defer cw.Flush()
+
+	// Write header
+	cw.Write(cols)
 
 	for rows.Next() {
 		vals := make([]any, len(cols))
@@ -148,27 +164,38 @@ func (m *Module) exportCSV(r *http.Request) engine.Response {
 			ptrs[i] = &vals[i]
 		}
 		if err := rows.Scan(ptrs...); err != nil {
-			return engine.Errorf("scanning row: %s", err)
+			engine.SystemError(w, err.Error())
+			return
 		}
-		w.Rows = append(w.Rows, vals)
+		// Convert vals to strings
+		strVals := make([]string, len(vals))
+		for i, v := range vals {
+			if v == nil {
+				strVals[i] = ""
+			} else {
+				strVals[i] = fmt.Sprint(v)
+			}
+		}
+		cw.Write(strVals)
 	}
-	return w
 }
 
-func (m *Module) renderMetricsChart(r *http.Request) engine.Response {
+func (m *Module) renderMetricsChart(w http.ResponseWriter, r *http.Request) {
 	windowDuration := time.Hour * 24 * 7
 	if window := r.URL.Query().Get("window"); window != "" {
 		var err error
 		windowDuration, err = time.ParseDuration(window)
 		if err != nil {
-			return engine.ClientErrorf(400, "invalid window duration: %s", err)
+			http.Error(w, "invalid window duration", 400)
+			return
 		}
 	}
 
 	const q = "SELECT timestamp, value FROM metrics WHERE series = $1 AND timestamp > strftime('%s', 'now') - $2"
 	rows, err := m.db.QueryContext(r.Context(), q, r.URL.Query().Get("series"), windowDuration.Seconds())
 	if err != nil {
-		return engine.Errorf("querying table: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 	defer rows.Close()
 
@@ -177,7 +204,8 @@ func (m *Module) renderMetricsChart(r *http.Request) engine.Response {
 	for rows.Next() {
 		var ts, val float64
 		if err := rows.Scan(&ts, &val); err != nil {
-			return engine.Errorf("scanning row: %s", err)
+			engine.SystemError(w, err.Error())
+			return
 		}
 		x = append(x, time.Unix(int64(ts), 0))
 		y = append(y, val)
@@ -194,27 +222,29 @@ func (m *Module) renderMetricsChart(r *http.Request) engine.Response {
 		graph.Width = width
 	}
 
-	buf := bytes.NewBuffer(nil)
-	err = graph.Render(chart.PNG, buf)
+	w.Header().Set("Content-Type", "image/png")
+	err = graph.Render(chart.PNG, w)
 	if err != nil {
-		return engine.Errorf("converting chart to bytes: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
-	return engine.PNG(buf.Bytes())
 }
 
-func (m *Module) renderMetricsPageHandler(r *http.Request) engine.Response {
+func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request) {
 	selected := r.URL.Query().Get("interval")
 	if selected == "" {
 		selected = "1440h" // default to 60 days
 	}
 	dur, err := time.ParseDuration(selected)
 	if err != nil {
-		return engine.ClientErrorf(400, "invalid interval: %s", err)
+		http.Error(w, "invalid interval", 400)
+		return
 	}
 
 	rows, err := m.db.QueryContext(r.Context(), `SELECT DISTINCT series FROM metrics WHERE timestamp > strftime('%s', 'now') - ? ORDER BY series`, int64(dur.Seconds()))
 	if err != nil {
-		return engine.Errorf("fetching metrics: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 	defer rows.Close()
 
@@ -227,5 +257,6 @@ func (m *Module) renderMetricsPageHandler(r *http.Request) engine.Response {
 		metrics = append(metrics, name)
 	}
 
-	return engine.Component(renderMetricsAdminPage(m.nav, metrics, selected))
+	w.Header().Set("Content-Type", "text/html")
+	renderMetricsAdminPage(m.nav, metrics, selected).Render(r.Context(), w)
 }

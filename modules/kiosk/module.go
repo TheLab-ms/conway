@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -44,9 +45,9 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("GET", "/kiosk", m.atPhysicalSpace(m.renderKiosk))
-	router.Handle("GET", "/keyfob/bind", router.WithAuth(m.handleBindKeyfob))
-	router.Handle("GET", "/keyfob/status/:id", m.atPhysicalSpace(m.handleGetKeyFobInUse))
+	router.HandleFunc("GET /kiosk", m.atPhysicalSpace(m.renderKiosk))
+	router.HandleFunc("GET /keyfob/bind", router.WithAuthn(m.handleBindKeyfob))
+	router.HandleFunc("GET /keyfob/status/{id}", m.atPhysicalSpace(m.handleGetKeyFobInUse))
 }
 
 // findTrustedIP sets trustedIP by resolving trustedHostname.
@@ -69,8 +70,8 @@ func (m *Module) findTrustedIP(ctx context.Context) bool {
 	return false
 }
 
-func (m *Module) atPhysicalSpace(next engine.Handler) engine.Handler {
-	return func(r *http.Request) engine.Response {
+func (m *Module) atPhysicalSpace(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		// Only allow fobs to be assigned at the makerspace
 		addr := r.Header.Get("CF-Connecting-IP")
 		if addr == "" {
@@ -79,13 +80,15 @@ func (m *Module) atPhysicalSpace(next engine.Handler) engine.Handler {
 		ip := net.ParseIP(strings.Split(addr, ":")[0])
 		if trusted := m.trustedIP.Load(); trusted == nil || !ip.Equal(*trusted) {
 			slog.Info("not allowing member to bind keyfob from this IP", "addr", addr, "ip", ip, "trusted", trusted)
-			return engine.Component(renderOffsiteError())
+			w.Header().Set("Content-Type", "text/html")
+			renderOffsiteError().Render(r.Context(), w)
+			return
 		}
-		return next(r)
+		next(w, r)
 	}
 }
 
-func (m *Module) renderKiosk(r *http.Request) engine.Response {
+func (m *Module) renderKiosk(w http.ResponseWriter, r *http.Request) {
 	idStr := r.FormValue("fobid")
 	var png []byte
 	if idStr != "" {
@@ -94,52 +97,61 @@ func (m *Module) renderKiosk(r *http.Request) engine.Response {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(qrTTL)),
 		})
 		if err != nil {
-			return engine.Error(err)
+			engine.SystemError(w, err.Error())
+			return
 		}
 
 		url := fmt.Sprintf("%s/keyfob/bind?val=%s", m.self, url.QueryEscape(tok))
 		p, err := qrcode.Encode(url, qrcode.Medium, 512)
 		if err != nil {
-			return engine.Error(err)
+			engine.SystemError(w, err.Error())
+			return
 		}
 		png = make([]byte, base64.StdEncoding.EncodedLen(len(p)))
 		base64.StdEncoding.Encode(png, p)
 	}
-	return engine.Component(renderKiosk(png))
+	w.Header().Set("Content-Type", "text/html")
+	renderKiosk(png).Render(r.Context(), w)
 }
 
-func (m *Module) handleBindKeyfob(r *http.Request) engine.Response {
+func (m *Module) handleBindKeyfob(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUserMeta(r.Context())
 
 	claims, err := m.signer.Verify(r.FormValue("val"))
 	if err != nil {
-		return engine.ClientErrorf(400, "Invalid QR code")
+		http.Error(w, "Invalid QR code", 400)
+		return
 	}
 	fobID, err := strconv.ParseInt(claims.Subject, 10, 0)
 	if err != nil {
-		return engine.ClientErrorf(400, "QR code references a non-integer fob ID")
+		http.Error(w, "QR code references a non-integer fob ID", 400)
+		return
 	}
 
 	_, err = m.db.ExecContext(r.Context(), `UPDATE members SET fob_id = $1 WHERE id = $2 AND (fob_id IS NULL OR fob_id != $1)`, fobID, user.ID)
 	if err != nil {
-		return engine.ClientErrorf(500, "inserting fob id into db: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 	slog.Info("bound keyfob to member", "fobid", fobID, "memberID", user.ID)
 
-	return engine.Redirect("/", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (m *Module) handleGetKeyFobInUse(r *http.Request) engine.Response {
+func (m *Module) handleGetKeyFobInUse(w http.ResponseWriter, r *http.Request) {
 	fobID, err := strconv.ParseInt(r.PathValue("id"), 10, 0)
 	if err != nil {
-		return engine.ClientErrorf(400, "Invalid fob ID")
+		http.Error(w, "Invalid fob ID", 400)
+		return
 	}
 
 	var count int
 	err = m.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM members WHERE fob_id = $1", fobID).Scan(&count)
 	if err != nil {
-		return engine.ClientErrorf(500, "querying db for fob id: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
-	return engine.JSON(count > 0)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(count > 0)
 }

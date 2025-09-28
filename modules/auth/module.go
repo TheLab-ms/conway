@@ -40,57 +40,39 @@ func New(db *sql.DB, self *url.URL, tso *TurnstileOptions, links, tokens *engine
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("GET", "/login", func(r *http.Request) engine.Response {
+	router.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("t") != "" {
-			return m.handleLoginCallbackLink(r)
+			m.handleLoginCallbackLink(w, r)
+			return
 		}
 		callback := r.URL.Query().Get("callback_uri")
-		return engine.Component(renderLoginPage(callback, m.turnstile))
+		w.Header().Set("Content-Type", "text/html")
+		renderLoginPage(callback, m.turnstile).Render(r.Context(), w)
 	})
 
-	router.Handle("GET", "/login/sent", func(r *http.Request) engine.Response {
-		return engine.Component(renderLoginSentPage())
+	router.HandleFunc("GET /login/sent", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		renderLoginSentPage().Render(r.Context(), w)
 	})
 
-	router.Handle("GET", "/whoami", m.WithAuth(func(r *http.Request) engine.Response {
-		return engine.JSON(GetUserMeta(r.Context()))
+	router.HandleFunc("GET /whoami", m.WithAuthn(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(GetUserMeta(r.Context()))
 	}))
 
-	router.Handle("GET", "/logout", func(r *http.Request) engine.Response {
+	router.HandleFunc("GET /logout", func(w http.ResponseWriter, r *http.Request) {
 		callback := r.URL.Query().Get("callback_uri")
 		cook := &http.Cookie{Name: "token"}
-		return engine.WithCookie(cook, engine.Redirect(callback, http.StatusTemporaryRedirect))
+		http.SetCookie(w, cook)
+		http.Redirect(w, r, callback, http.StatusTemporaryRedirect)
 	})
 
-	router.Handle("POST", "/login", m.handleLoginFormPost)
+	router.HandleFunc("POST /login", m.handleLoginFormPost)
 }
 
-// WithAuth authenticates incoming requests, or redirects them to the login page.
+// WithAuth is deprecated and should not be used
 func (m *Module) WithAuth(next engine.Handler) engine.Handler {
-	return func(r *http.Request) engine.Response {
-		q := url.Values{}
-		q.Add("callback_uri", r.URL.String())
-
-		// Parse the JWT (if provided)
-		cook, err := r.Cookie("token")
-		if err != nil {
-			return engine.Redirect("/login?"+q.Encode(), http.StatusFound)
-		}
-		claims, err := m.tokens.Verify(cook.Value)
-		if err != nil || len(claims.Audience) == 0 || claims.Audience[0] != "conway" {
-			return engine.Redirect("/login?"+q.Encode(), http.StatusFound)
-		}
-
-		// Get the member from the DB
-		var meta UserMetadata
-		err = m.db.QueryRowContext(r.Context(), "SELECT id, email, payment_status IS NOT NULL, leadership FROM members WHERE id = ? LIMIT 1", claims.Subject).Scan(&meta.ID, &meta.Email, &meta.ActiveMember, &meta.Leadership)
-		if err != nil {
-			return engine.Redirect("/login?"+q.Encode(), http.StatusFound)
-		}
-
-		r = r.WithContext(withUserMeta(r.Context(), &meta))
-		return next(r)
-	}
+	panic("WithAuth is deprecated, use WithAuthn instead")
 }
 
 // WithAuthn authenticates incoming requests, or redirects them to the login page.
@@ -125,31 +107,35 @@ func (m *Module) WithAuthn(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // handleLoginFormPost starts a login flow for the given member (by email).
-func (s *Module) handleLoginFormPost(r *http.Request) engine.Response {
+func (s *Module) handleLoginFormPost(w http.ResponseWriter, r *http.Request) {
 	email := strings.ToLower(r.FormValue("email"))
 
 	if !s.verifyTurnstileResponse(r) {
-		return engine.ClientErrorf(401, "We weren't able to verify that you are a human")
+		http.Error(w, "We weren't able to verify that you are a human", 401)
+		return
 	}
 
 	// Find the corresponding member ID or insert a new row if one doesn't exist for this email address
 	var memberID int64
 	err := s.db.QueryRowContext(r.Context(), "INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id", email).Scan(&memberID)
 	if err != nil {
-		return engine.Errorf("finding member id: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
 	// Send the login email
 	body, err := s.newLoginEmail(memberID, r.FormValue("callback_uri"))
 	if err != nil {
-		return engine.Errorf("generating login email message: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 	_, err = s.db.ExecContext(r.Context(), "INSERT INTO outbound_mail (recipient, subject, body) VALUES ($1, 'Makerspace Login', $2);", email, body)
 	if err != nil {
-		return engine.Errorf("creating login: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
-	return engine.Redirect("/login/sent", http.StatusSeeOther)
+	http.Redirect(w, r, "/login/sent", http.StatusSeeOther)
 }
 
 func (m *Module) newLoginEmail(memberID int64, callback string) (string, error) {
@@ -206,17 +192,19 @@ func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
 }
 
 // handleLoginCallbackLink handles requests to the URL sent in login emails.
-func (s *Module) handleLoginCallbackLink(r *http.Request) engine.Response {
+func (s *Module) handleLoginCallbackLink(w http.ResponseWriter, r *http.Request) {
 	s.authLimiter.Wait(r.Context())
 
 	claims, err := s.links.Verify(r.FormValue("t"))
 	if err != nil {
-		return engine.ClientErrorf(400, "invalid login link")
+		http.Error(w, "invalid login link", 400)
+		return
 	}
 
 	_, err = s.db.ExecContext(r.Context(), "UPDATE members SET confirmed = true WHERE id = CAST($1 AS INTEGER) AND confirmed = false;", claims.Subject)
 	if err != nil {
-		return engine.Errorf("confirming member email: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
 	exp := time.Now().Add(time.Hour * 24 * 30)
@@ -227,7 +215,8 @@ func (s *Module) handleLoginCallbackLink(r *http.Request) engine.Response {
 		ExpiresAt: &jwt.NumericDate{Time: exp},
 	})
 	if err != nil {
-		return engine.Errorf("signing jwt: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 	cook := &http.Cookie{
 		Name:     "token",
@@ -237,6 +226,6 @@ func (s *Module) handleLoginCallbackLink(r *http.Request) engine.Response {
 		Expires:  exp,
 		Secure:   strings.Contains(s.self.Scheme, "s"),
 	}
-	return engine.WithCookie(cook,
-		engine.Redirect(r.FormValue("n"), http.StatusFound))
+	http.SetCookie(w, cook)
+	http.Redirect(w, r, r.FormValue("n"), http.StatusFound)
 }

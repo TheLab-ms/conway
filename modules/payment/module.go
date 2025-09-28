@@ -33,20 +33,22 @@ func New(db *sql.DB, webhookKey string, self *url.URL) *Module {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("POST", "/webhooks/stripe", m.handleStripeWebhook)
-	router.Handle("GET", "/payment/checkout", router.WithAuth(m.handleCheckoutForm))
+	router.HandleFunc("POST /webhooks/stripe", m.handleStripeWebhook)
+	router.HandleFunc("GET /payment/checkout", router.WithAuthn(m.handleCheckoutForm))
 }
 
-func (m *Module) handleStripeWebhook(r *http.Request) engine.Response {
+func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
-		return engine.Errorf("reading body: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
 	// Verify the signature of the request and parse it
 	event, err := webhook.ConstructEvent(payload, r.Header.Get("Stripe-Signature"), m.webhookKey)
 	if err != nil {
-		return engine.Errorf("parsing event: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
 	// Filter out events we don't care about
@@ -56,32 +58,36 @@ func (m *Module) handleStripeWebhook(r *http.Request) engine.Response {
 	case "customer.subscription.created":
 	default:
 		slog.Debug("unhandled stripe webhook event", "type", event.Type)
-		return nil
+		w.WriteHeader(204)
+		return
 	}
 
 	// Get the latest state of the customer and subscription Stripe API objects
 	subID := event.Data.Object["id"].(string)
 	sub, err := subscription.Get(subID, &stripe.SubscriptionParams{})
 	if err != nil {
-		return engine.Errorf("getting current subscription: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 	cust, err := customer.Get(sub.Customer.ID, &stripe.CustomerParams{})
 	if err != nil {
-		return engine.Errorf("getting current customer: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
 	// Update our representation of the member to reflect Stripe
 	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET stripe_customer_id = $2, stripe_subscription_id = $3, stripe_subscription_state = $4, name = $5 WHERE email = $1", strings.ToLower(cust.Email), cust.ID, sub.ID, sub.Status, cust.Name)
 	if err != nil {
-		return engine.Errorf("updating member metadata: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
 	slog.Info("updated member's stripe subscription metadata", "member", cust.Email, "status", sub.Status)
-	return nil
+	w.WriteHeader(204)
 }
 
 // handleCheckoutForm redirects users to the appropriate Stripe Checkout workflow.
-func (m *Module) handleCheckoutForm(r *http.Request) engine.Response {
+func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 	var email string
 	var discountType *string
 	var existingCustomerID *string
@@ -90,7 +96,8 @@ func (m *Module) handleCheckoutForm(r *http.Request) engine.Response {
 	var annual bool
 	err := m.db.QueryRowContext(r.Context(), "SELECT email, discount_type, stripe_customer_id, stripe_subscription_id, bill_annually, (stripe_subscription_state IS NOT NULL AND stripe_subscription_state != 'canceled') FROM members WHERE id = ?", auth.GetUserMeta(r.Context()).ID).Scan(&email, &discountType, &existingCustomerID, &existingSubID, &annual, &active)
 	if err != nil {
-		return engine.Errorf("querying db for member: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
 	// Allow existing subscriptions to be modified
@@ -103,10 +110,12 @@ func (m *Module) handleCheckoutForm(r *http.Request) engine.Response {
 
 		s, err := billingsession.New(sessionParams)
 		if err != nil {
-			return engine.Errorf("creating stripe billing session: %s", err)
+			engine.SystemError(w, err.Error())
+			return
 		}
 
-		return engine.Redirect(s.URL, http.StatusSeeOther)
+		http.Redirect(w, r, s.URL, http.StatusSeeOther)
+		return
 	}
 
 	// Create a new checkout session
@@ -131,7 +140,8 @@ func (m *Module) handleCheckoutForm(r *http.Request) engine.Response {
 		},
 	})
 	if !pricesIter.Next() {
-		return engine.Errorf("price was not found in Stripe")
+		engine.SystemError(w, "price was not found in Stripe")
+		return
 	}
 	price := pricesIter.Price()
 	checkoutParams.LineItems[0].Price = &price.ID
@@ -162,8 +172,9 @@ func (m *Module) handleCheckoutForm(r *http.Request) engine.Response {
 
 	s, err := session.New(checkoutParams)
 	if err != nil {
-		return engine.Errorf("creating stripe checkout session: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
-	return engine.Redirect(s.URL, http.StatusSeeOther)
+	http.Redirect(w, r, s.URL, http.StatusSeeOther)
 }
