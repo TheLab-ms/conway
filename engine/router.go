@@ -22,12 +22,14 @@ type Response interface {
 }
 
 type Authenticator interface {
-	WithAuth(Handler) Handler
+	WithAuth(Handler) Handler // deprecated
+	WithAuthn(http.HandlerFunc) http.HandlerFunc
 }
 
 type noopAuthenticator struct{}
 
-func (noopAuthenticator) WithAuth(fn Handler) Handler { return fn }
+func (noopAuthenticator) WithAuth(fn Handler) Handler                    { return fn }
+func (noopAuthenticator) WithAuthn(fn http.HandlerFunc) http.HandlerFunc { return fn }
 
 type Router struct {
 	router *http.ServeMux

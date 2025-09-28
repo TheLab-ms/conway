@@ -25,8 +25,8 @@ func newDiscordAPIClient(botToken, guildID string, client *http.Client, authConf
 	}
 }
 
-func (c *discordAPIClient) ensureRole(ctx context.Context, userID string, roleID string, inRole bool) (bool, error) {
-	hasRole, err := c.hasRole(ctx, userID, roleID)
+func (c *discordAPIClient) EnsureRole(ctx context.Context, userID string, roleID string, inRole bool) (bool, error) {
+	hasRole, err := c.HasRole(ctx, userID, roleID)
 	if err != nil {
 		return false, fmt.Errorf("checking current role status: %w", err)
 	}
@@ -35,9 +35,9 @@ func (c *discordAPIClient) ensureRole(ctx context.Context, userID string, roleID
 	}
 
 	if inRole {
-		err = c.addRole(ctx, userID, roleID)
+		err = c.AddRole(ctx, userID, roleID)
 	} else {
-		err = c.removeRole(ctx, userID, roleID)
+		err = c.RemoveRole(ctx, userID, roleID)
 	}
 	return true, err
 }
@@ -59,7 +59,7 @@ func (c *discordAPIClient) makeDiscordAPIRequest(ctx context.Context, method, en
 	return resp, nil
 }
 
-func (c *discordAPIClient) hasRole(ctx context.Context, userID string, roleID string) (bool, error) {
+func (c *discordAPIClient) HasRole(ctx context.Context, userID string, roleID string) (bool, error) {
 	endpoint := fmt.Sprintf("/guilds/%s/members/%s", c.guildID, userID)
 	resp, err := c.makeDiscordAPIRequest(ctx, "GET", endpoint)
 	if err != nil {
@@ -84,7 +84,7 @@ func (c *discordAPIClient) hasRole(ctx context.Context, userID string, roleID st
 	return slices.Contains(member.Roles, roleID), nil
 }
 
-func (c *discordAPIClient) addRole(ctx context.Context, userID string, roleID string) error {
+func (c *discordAPIClient) AddRole(ctx context.Context, userID string, roleID string) error {
 	endpoint := fmt.Sprintf("/guilds/%s/members/%s/roles/%s", c.guildID, userID, roleID)
 	resp, err := c.makeDiscordAPIRequest(ctx, "PUT", endpoint)
 	if err != nil {
@@ -98,7 +98,7 @@ func (c *discordAPIClient) addRole(ctx context.Context, userID string, roleID st
 	return nil
 }
 
-func (c *discordAPIClient) removeRole(ctx context.Context, userID string, roleID string) error {
+func (c *discordAPIClient) RemoveRole(ctx context.Context, userID string, roleID string) error {
 	endpoint := fmt.Sprintf("/guilds/%s/members/%s/roles/%s", c.guildID, userID, roleID)
 	resp, err := c.makeDiscordAPIRequest(ctx, "DELETE", endpoint)
 	if err != nil {
@@ -112,7 +112,7 @@ func (c *discordAPIClient) removeRole(ctx context.Context, userID string, roleID
 	return nil
 }
 
-func (c *discordAPIClient) getUserInfo(ctx context.Context, token *oauth2.Token) (string, error) {
+func (c *discordAPIClient) GetUserInfo(ctx context.Context, token *oauth2.Token) (string, error) {
 	client := c.authConf.Client(ctx, token)
 	resp, err := client.Get("https://discord.com/api/users/@me")
 	if err != nil {

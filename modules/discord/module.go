@@ -16,6 +16,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// TODO:
+// - Use generic cronjob for resync
+// - Decouple from members table?
+
 const maxRPS = 3
 
 var endpoint = oauth2.Endpoint{
@@ -53,61 +57,62 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, clientID, clientSec
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("GET", "/discord/login", router.WithAuth(m.handleLogin))
-	router.Handle("GET", "/discord/callback", router.WithAuth(m.handleCallback))
+	router.HandleFunc("GET /discord/login", router.WithAuthn(m.handleLogin))
+	router.HandleFunc("GET /discord/callback", router.WithAuthn(m.handleCallback))
 }
 
-func (m *Module) handleLogin(r *http.Request) engine.Response {
+func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {
 	state, err := m.stateTokIssuer.Sign(&jwt.RegisteredClaims{
 		Subject:   strconv.FormatInt(auth.GetUserMeta(r.Context()).ID, 10),
 		Audience:  jwt.ClaimStrings{"discord-oauth"},
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
 	})
 	if err != nil {
-		return engine.Errorf("creating state token: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
-	url := m.authConf.AuthCodeURL(state)
-	return engine.Redirect(url, http.StatusTemporaryRedirect)
+	http.Redirect(w, r, m.authConf.AuthCodeURL(state), http.StatusTemporaryRedirect)
 }
 
-func (m *Module) handleCallback(r *http.Request) engine.Response {
+func (m *Module) handleCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
 	claims, err := m.stateTokIssuer.Verify(state)
 	if err != nil {
-		return engine.Errorf("verifying state token: %s", err)
-	}
-
-	if id, err := strconv.ParseInt(claims.Subject, 10, 64); err != nil {
-		return engine.ClientErrorf(400, "invalid user ID in token")
-	} else if id != auth.GetUserMeta(r.Context()).ID {
-		return engine.ClientErrorf(403, "you aren't allowed to update another member's Discord ID")
+		http.Error(w, "Invalid oauth state - try again", 400)
+		return
 	}
 
 	userID := auth.GetUserMeta(r.Context()).ID
-	code := r.URL.Query().Get("code")
-
-	return m.processDiscordCallback(r.Context(), userID, code)
-}
-
-func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authCode string) engine.Response {
-	token, err := m.authConf.Exchange(ctx, authCode)
-	if err != nil {
-		return engine.Errorf("exchanging auth code for token: %s", err)
+	if id, err := strconv.ParseInt(claims.Subject, 10, 64); err != nil {
+		http.Error(w, "Invalid user ID", 400)
+		return
+	} else if id != userID {
+		http.Error(w, "Unauthorized", 403)
+		return
 	}
 
-	discordUserID, err := m.client.getUserInfo(ctx, token)
+	err = m.processDiscordCallback(r.Context(), userID, r.URL.Query().Get("code"))
 	if err != nil {
-		return engine.Errorf("fetching Discord user info: %s", err)
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+}
+
+func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authCode string) error {
+	token, err := m.authConf.Exchange(ctx, authCode)
+	if err != nil {
+		return err
+	}
+	discordUserID, err := m.client.GetUserInfo(ctx, token)
+	if err != nil {
+		return err
 	}
 
 	_, err = m.db.ExecContext(ctx, "UPDATE members SET discord_user_id = ? WHERE id = ?", discordUserID, userID)
-	if err != nil {
-		return engine.Errorf("updating member Discord user ID: %s", err)
-	}
-
-	slog.Info("discovered discord user", "discordID", discordUserID, "memberID", userID)
-	return engine.Redirect("/", http.StatusTemporaryRedirect)
+	return err
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
@@ -120,7 +125,6 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, maxRPS))))
 }
 
-// scheduleFullReconciliation updates members to force Discord resync once per day - just in case things are out of sync somehow.
 func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
 	result, err := m.db.ExecContext(ctx, `UPDATE members SET discord_last_synced = NULL WHERE discord_user_id IS NOT NULL AND (discord_last_synced IS NULL OR discord_last_synced < unixepoch() - 86400) AND id IN (SELECT id FROM members WHERE discord_user_id IS NOT NULL AND (discord_last_synced IS NULL OR discord_last_synced < unixepoch() - 86400) ORDER BY id ASC LIMIT 10)`)
 	if err != nil {
@@ -142,11 +146,10 @@ func (m *Module) GetItem(ctx context.Context) (item syncItem, err error) {
 
 func (m *Module) ProcessItem(ctx context.Context, item syncItem) error {
 	shouldHaveRole := item.PaymentStatus.Valid && item.PaymentStatus.String != ""
-	changed, err := m.client.ensureRole(ctx, item.DiscordUserID, m.roleID, shouldHaveRole)
+	changed, err := m.client.EnsureRole(ctx, item.DiscordUserID, m.roleID, shouldHaveRole)
 	if err != nil {
 		return err
 	}
-
 	slog.Info("sync'd discord role", "memberID", item.MemberID, "discordUserID", item.DiscordUserID, "shouldHaveRole", shouldHaveRole, "changed", changed)
 	return nil
 }
