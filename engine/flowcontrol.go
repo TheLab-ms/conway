@@ -6,10 +6,35 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"time"
 
 	"golang.org/x/time/rate"
 )
+
+type PollingFunc func(context.Context) bool
+
+// Poll is a Proc that polls a given function regularly.
+// If the function returns true, it will be called again immediately.
+// This is useful for polling a queue for new items.
+func Poll(interval time.Duration, fn PollingFunc) Proc {
+	return func(ctx context.Context) error {
+		jitter := time.Duration(interval)
+		ticker := time.NewTicker(jitter)
+		defer ticker.Stop()
+		for {
+			if fn(ctx) {
+				continue // take possible next item immediately
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
+			ticker.Reset(time.Duration(float64(interval) * (0.9 + 0.2*rand.Float64())))
+		}
+	}
+}
 
 // PollWorkqueue implements a very basic workqueue. For every call to the returned polling func:
 // - The next item is found (if any)
