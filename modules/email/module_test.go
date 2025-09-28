@@ -14,7 +14,7 @@ import (
 
 func TestMailDispatch(t *testing.T) {
 	ctx := context.Background()
-	db := db.NewTest(t)
+	db := db.OpenTest(t)
 
 	messages := []string{}
 	m := New(db, func(ctx context.Context, to, subj string, msg []byte) error {
@@ -45,7 +45,7 @@ func TestMailDispatch(t *testing.T) {
 
 func TestExponentialBackoffOnFailure(t *testing.T) {
 	ctx := context.Background()
-	db := db.NewTest(t)
+	db := db.OpenTest(t)
 
 	failCount := 0
 	m := New(db, func(ctx context.Context, to, subj string, msg []byte) error {

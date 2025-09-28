@@ -36,6 +36,13 @@ func OpenTest(t *testing.T) *sql.DB {
 	return db
 }
 
+func MustMigrate(db *sql.DB, migration string) {
+	_, err := db.Exec(migration)
+	if err != nil {
+		panic(fmt.Errorf("error while migrating database: %s", err))
+	}
+}
+
 // deprecated
 func New(path string) (*sql.DB, error) {
 	db, err := Open(path)

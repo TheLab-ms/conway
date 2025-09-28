@@ -1,19 +1,31 @@
 package email
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"net/smtp"
 	"os"
 	"time"
 
+	"github.com/TheLab-ms/conway/db"
 	"github.com/TheLab-ms/conway/engine"
-	"golang.org/x/oauth2/google"
-	"golang.org/x/time/rate"
 )
+
+const migration = `
+CREATE TABLE IF NOT EXISTS outbound_mail (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    send_at INTEGER DEFAULT (strftime('%s', 'now')),
+    recipient TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT ''
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS outbound_mail_send_at_idx ON outbound_mail (send_at);
+`
+
+const maxRPS = 1
 
 type Sender func(ctx context.Context, to, subj string, msg []byte) error
 
@@ -22,8 +34,9 @@ type Module struct {
 	Sender Sender
 }
 
-func New(db *sql.DB, es Sender) *Module {
-	m := &Module{db: db, Sender: es}
+func New(d *sql.DB, es Sender) *Module {
+	db.MustMigrate(d, migration)
+	m := &Module{db: d, Sender: es}
 	if m.Sender == nil {
 		m.Sender = newNoopSender()
 	}
@@ -31,7 +44,7 @@ func New(db *sql.DB, es Sender) *Module {
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, 1))))
+	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, maxRPS))))
 }
 
 func (m *Module) GetItem(ctx context.Context) (message, error) {
@@ -59,56 +72,6 @@ func newNoopSender() Sender {
 		fmt.Fprintf(os.Stdout, "--- START EMAIL TO %s WITH SUBJECT %q ---\n%s\n--- END EMAIL ---\n", to, subj, msg)
 		return nil
 	}
-}
-
-func NewGoogleSmtpSender(from string) Sender {
-	creds, err := google.FindDefaultCredentialsWithParams(context.Background(), google.CredentialsParams{
-		Scopes:  []string{"https://mail.google.com/"},
-		Subject: from,
-	})
-	if err != nil {
-		panic(fmt.Errorf("building google oauth token source: %w", err))
-	}
-
-	limiter := rate.NewLimiter(rate.Every(time.Second*5), 1)
-	return func(ctx context.Context, to, subj string, msg []byte) error {
-		err := limiter.Wait(ctx)
-		if err != nil {
-			return err
-		}
-
-		tok, err := creds.TokenSource.Token()
-		if err != nil {
-			return fmt.Errorf("getting oauth token: %w", err)
-		}
-		auth := &googleSmtpOauth{From: from, AccessToken: tok.AccessToken}
-
-		buf := &bytes.Buffer{}
-		fmt.Fprintf(buf, "From: TheLab Makerspace\r\n")
-		fmt.Fprintf(buf, "To: %s\r\n", to)
-		fmt.Fprintf(buf, "Subject: %s\r\n", subj)
-		fmt.Fprintf(buf, "MIME-version: 1.0;\r\n")
-		fmt.Fprintf(buf, "Content-Type: text/html; charset=\"UTF-8\";\r\n\r\n")
-		buf.Write(msg)
-		buf.WriteString("\r\n")
-
-		return smtp.SendMail("smtp.gmail.com:587", auth, from, []string{to}, buf.Bytes())
-	}
-}
-
-type googleSmtpOauth struct {
-	From, AccessToken string
-}
-
-func (a *googleSmtpOauth) Start(_ *smtp.ServerInfo) (string, []byte, error) {
-	return "XOAUTH2", []byte("user=" + a.From + "\x01" + "auth=Bearer " + a.AccessToken + "\x01\x01"), nil
-}
-
-func (a *googleSmtpOauth) Next(_ []byte, more bool) ([]byte, error) {
-	if more {
-		return []byte(""), nil
-	}
-	return nil, nil
 }
 
 type message struct {
