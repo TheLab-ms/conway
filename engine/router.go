@@ -255,3 +255,14 @@ func (w *responseWrapper) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
+
+// OnlyLAN returns a 403 error if the request is coming from the internet.
+func OnlyLAN(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("CF-Connecting-IP") != "" {
+			w.WriteHeader(403)
+			return
+		}
+		next(w, r)
+	}
+}

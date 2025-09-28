@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/google/uuid"
 )
 
 type Module struct {
@@ -20,16 +22,11 @@ func New(db *sql.DB) *Module {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.HandleFunc("GET /api/fobs", m.handleListFobs)
+	router.HandleFunc("GET /api/fobs", engine.OnlyLAN(m.handleList))
+	router.HandleFunc("POST /api/fobs/events", engine.OnlyLAN(m.handleEvent))
 }
 
-func (m *Module) handleListFobs(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("CF-Connecting-IP") != "" {
-		// Only requests from the LAN are allowed
-		w.WriteHeader(403)
-		return
-	}
-
+func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 	const q = "SELECT fob_id FROM active_keyfobs ORDER BY fob_id"
 	rows, err := m.db.QueryContext(r.Context(), q)
 	if err != nil {
@@ -60,4 +57,28 @@ func (m *Module) handleListFobs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("ETag", etag)
 	json.NewEncoder(w).Encode(&ids)
+}
+
+func (m *Module) handleEvent(w http.ResponseWriter, r *http.Request) {
+	events := []*fobEvent{}
+	err := json.NewDecoder(r.Body).Decode(&events)
+	if err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	for _, event := range events {
+		_, err = m.db.ExecContext(r.Context(), "INSERT INTO fob_swipes (uid, timestamp, fob_id, member) VALUES ($1, $2, $3, (SELECT id FROM members WHERE fob_id = $3)) ON CONFLICT DO NOTHING", uuid.NewString(), event.Timestamp, event.FobID)
+		if err != nil {
+			engine.SystemError(w, err.Error())
+			return
+		}
+	}
+	slog.Info("stored fob swipe events", "count", len(events))
+	w.WriteHeader(204)
+}
+
+type fobEvent struct {
+	Timestamp int64 `json:"ts"`
+	FobID     int64 `json:"fob"`
 }

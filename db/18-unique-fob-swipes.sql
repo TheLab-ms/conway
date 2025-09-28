@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS fob_swipes_uniq ON fob_swipes (fob_id, timestamp);
