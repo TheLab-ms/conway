@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -9,18 +8,20 @@ import (
 )
 
 func TestNewRouter(t *testing.T) {
-	router := NewRouter(nil)
-	assert.NotNil(t, router)
-	assert.NotNil(t, router.router)
-	assert.NotNil(t, router.Authenticator)
+	router := NewRouter()
 
-	// Test with custom handler
-	customHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("not found"))
+	t.Run("404", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/missing", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, "404 page not found\n", w.Body.String())
 	})
-	router = NewRouter(customHandler)
-	req := httptest.NewRequest("GET", "/missing", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	assert.Equal(t, "not found", w.Body.String())
+
+	t.Run("htmx assets", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/assets/htmx.min.js", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, 200, w.Result().StatusCode)
+		assert.Equal(t, "text/javascript; charset=utf-8", w.Header().Get("Content-Type"))
+	})
 }

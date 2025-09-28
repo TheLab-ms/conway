@@ -3,10 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"sync"
-
-	"github.com/TheLab-ms/conway/static"
 )
 
 // App is a wrapper around the process manager and http router/server concepts defined by this pkg.
@@ -18,7 +15,7 @@ type App struct {
 }
 
 func NewApp(httpAddr string) *App {
-	a := &App{Router: NewRouter(http.FileServer(http.FS(static.Assets)))}
+	a := &App{Router: NewRouter()}
 	a.Router.Authenticator = a.Router
 	a.ProcMgr.Add(a.Router.Serve(httpAddr))
 	return a

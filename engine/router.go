@@ -2,10 +2,14 @@ package engine
 
 import (
 	"context"
+	"embed"
 	"log/slog"
 	"net/http"
 	"time"
 )
+
+//go:embed assets/*
+var assetFS embed.FS
 
 type Authenticator interface {
 	WithAuthn(http.HandlerFunc) http.HandlerFunc
@@ -22,13 +26,10 @@ type Router struct {
 	Authenticator
 }
 
-func NewRouter(notFoundHandler http.Handler) *Router {
-	r := &Router{router: http.NewServeMux()}
-	if notFoundHandler != nil {
-		r.router.Handle("/", notFoundHandler)
-	}
-	r.Authenticator = noopAuthenticator{}
-	return r
+func NewRouter() *Router {
+	mux := http.NewServeMux()
+	mux.Handle("/", http.FileServer(http.FS(assetFS)))
+	return &Router{router: mux, Authenticator: noopAuthenticator{}}
 }
 
 // Serve wires up the stdlib http server to the engine.

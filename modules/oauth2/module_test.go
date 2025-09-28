@@ -24,7 +24,7 @@ func TestUserInfo(t *testing.T) {
 	db := db.NewTest(t)
 	m := New(db, &url.URL{}, engine.NewTokenIssuer(filepath.Join(t.TempDir(), "test.pem")))
 
-	router := engine.NewRouter(nil)
+	router := engine.NewRouter()
 	m.AttachRoutes(router)
 	server := httptest.NewServer(router)
 	defer server.Close()

@@ -19,7 +19,7 @@ func New(db *sql.DB) *Module {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.HandleFunc("GET /", router.WithAuthn(m.renderMemberView))
+	router.HandleFunc("GET /{$}", router.WithAuthn(m.renderMemberView))
 }
 
 func (m *Module) renderMemberView(w http.ResponseWriter, r *http.Request) {
