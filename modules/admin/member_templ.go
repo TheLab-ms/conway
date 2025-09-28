@@ -80,7 +80,7 @@ func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*
 }
 
 var _ = handlePostForm(formHandler{
-	Path: "/admin/members/:id/updates/basics",
+	Path: "/admin/members/{id}/updates/basics",
 	Post: &engine.PostFormHandler{
 		Fields: []string{"name", "email", "confirmed", "fob_id", "admin_notes", "bill_annually", "discord_user_id"},
 		Query: `UPDATE members SET name = :name, email = :email, admin_notes = :admin_notes,
@@ -93,7 +93,7 @@ var _ = handlePostForm(formHandler{
 })
 
 var _ = handlePostForm(formHandler{
-	Path: "/admin/members/:id/updates/designations",
+	Path: "/admin/members/{id}/updates/designations",
 	Post: &engine.PostFormHandler{
 		Fields: []string{"leadership", "non_billable"},
 		Query: `UPDATE members SET
@@ -104,7 +104,7 @@ var _ = handlePostForm(formHandler{
 })
 
 var _ = handlePostForm(formHandler{
-	Path: "/admin/members/:id/updates/discounts",
+	Path: "/admin/members/{id}/updates/discounts",
 	Post: &engine.PostFormHandler{
 		Fields: []string{"family_email", "discount"},
 		Query: `UPDATE members SET
@@ -115,7 +115,7 @@ var _ = handlePostForm(formHandler{
 })
 
 var _ = handlePostForm(formHandler{
-	Path: "/admin/members/:id/delete",
+	Path: "/admin/members/{id}/delete",
 	Delete: &engine.DeleteFormHandler{
 		Table:    "members",
 		Redirect: "/admin/members",
