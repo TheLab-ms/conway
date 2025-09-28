@@ -17,7 +17,6 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/julienschmidt/httprouter"
 	"github.com/skip2/go-qrcode"
 )
 
@@ -69,7 +68,7 @@ func (m *Module) findTrustedIP(ctx context.Context) bool {
 }
 
 func (m *Module) atPhysicalSpace(next engine.Handler) engine.Handler {
-	return func(r *http.Request, ps httprouter.Params) engine.Response {
+	return func(r *http.Request) engine.Response {
 		// Only allow fobs to be assigned at the makerspace
 		addr := r.Header.Get("CF-Connecting-IP")
 		if addr == "" {
@@ -80,11 +79,11 @@ func (m *Module) atPhysicalSpace(next engine.Handler) engine.Handler {
 			slog.Info("not allowing member to bind keyfob from this IP", "addr", addr, "ip", ip, "trusted", trusted)
 			return engine.Component(renderOffsiteError())
 		}
-		return next(r, ps)
+		return next(r)
 	}
 }
 
-func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) renderKiosk(r *http.Request) engine.Response {
 	idStr := r.FormValue("fobid")
 	var png []byte
 	if idStr != "" {
@@ -107,7 +106,7 @@ func (m *Module) renderKiosk(r *http.Request, ps httprouter.Params) engine.Respo
 	return engine.Component(renderKiosk(png))
 }
 
-func (m *Module) handleBindKeyfob(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) handleBindKeyfob(r *http.Request) engine.Response {
 	user := auth.GetUserMeta(r.Context())
 
 	claims, err := m.signer.Verify(r.FormValue("val"))
@@ -128,8 +127,8 @@ func (m *Module) handleBindKeyfob(r *http.Request, ps httprouter.Params) engine.
 	return engine.Redirect("/", http.StatusSeeOther)
 }
 
-func (m *Module) handleGetKeyFobInUse(r *http.Request, ps httprouter.Params) engine.Response {
-	fobID, err := strconv.ParseInt(ps.ByName("id"), 10, 0)
+func (m *Module) handleGetKeyFobInUse(r *http.Request) engine.Response {
+	fobID, err := strconv.ParseInt(r.PathValue("id"), 10, 0)
 	if err != nil {
 		return engine.ClientErrorf(400, "Invalid fob ID")
 	}

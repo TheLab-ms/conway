@@ -15,7 +15,6 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/julienschmidt/httprouter"
 	"golang.org/x/time/rate"
 )
 
@@ -41,23 +40,23 @@ func New(db *sql.DB, self *url.URL, tso *TurnstileOptions, links, tokens *engine
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("GET", "/login", func(r *http.Request, ps httprouter.Params) engine.Response {
+	router.Handle("GET", "/login", func(r *http.Request) engine.Response {
 		if r.URL.Query().Get("t") != "" {
-			return m.handleLoginCallbackLink(r, ps)
+			return m.handleLoginCallbackLink(r)
 		}
 		callback := r.URL.Query().Get("callback_uri")
 		return engine.Component(renderLoginPage(callback, m.turnstile))
 	})
 
-	router.Handle("GET", "/login/sent", func(r *http.Request, ps httprouter.Params) engine.Response {
+	router.Handle("GET", "/login/sent", func(r *http.Request) engine.Response {
 		return engine.Component(renderLoginSentPage())
 	})
 
-	router.Handle("GET", "/whoami", m.WithAuth(func(r *http.Request, ps httprouter.Params) engine.Response {
+	router.Handle("GET", "/whoami", m.WithAuth(func(r *http.Request) engine.Response {
 		return engine.JSON(GetUserMeta(r.Context()))
 	}))
 
-	router.Handle("GET", "/logout", func(r *http.Request, ps httprouter.Params) engine.Response {
+	router.Handle("GET", "/logout", func(r *http.Request) engine.Response {
 		callback := r.URL.Query().Get("callback_uri")
 		cook := &http.Cookie{Name: "token"}
 		return engine.WithCookie(cook, engine.Redirect(callback, http.StatusTemporaryRedirect))
@@ -68,7 +67,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 // WithAuth authenticates incoming requests, or redirects them to the login page.
 func (m *Module) WithAuth(next engine.Handler) engine.Handler {
-	return func(r *http.Request, p httprouter.Params) engine.Response {
+	return func(r *http.Request) engine.Response {
 		q := url.Values{}
 		q.Add("callback_uri", r.URL.String())
 
@@ -90,12 +89,12 @@ func (m *Module) WithAuth(next engine.Handler) engine.Handler {
 		}
 
 		r = r.WithContext(withUserMeta(r.Context(), &meta))
-		return next(r, p)
+		return next(r)
 	}
 }
 
 // handleLoginFormPost starts a login flow for the given member (by email).
-func (s *Module) handleLoginFormPost(r *http.Request, p httprouter.Params) engine.Response {
+func (s *Module) handleLoginFormPost(r *http.Request) engine.Response {
 	email := strings.ToLower(r.FormValue("email"))
 
 	if !s.verifyTurnstileResponse(r) {
@@ -176,7 +175,7 @@ func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
 }
 
 // handleLoginCallbackLink handles requests to the URL sent in login emails.
-func (s *Module) handleLoginCallbackLink(r *http.Request, _ httprouter.Params) engine.Response {
+func (s *Module) handleLoginCallbackLink(r *http.Request) engine.Response {
 	s.authLimiter.Wait(r.Context())
 
 	claims, err := s.links.Verify(r.FormValue("t"))

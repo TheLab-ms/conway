@@ -13,7 +13,6 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/julienschmidt/httprouter"
 	"golang.org/x/oauth2"
 )
 
@@ -58,7 +57,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("GET", "/discord/callback", router.WithAuth(m.handleCallback))
 }
 
-func (m *Module) handleLogin(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) handleLogin(r *http.Request) engine.Response {
 	state, err := m.stateTokIssuer.Sign(&jwt.RegisteredClaims{
 		Subject:   strconv.FormatInt(auth.GetUserMeta(r.Context()).ID, 10),
 		Audience:  jwt.ClaimStrings{"discord-oauth"},
@@ -72,7 +71,7 @@ func (m *Module) handleLogin(r *http.Request, ps httprouter.Params) engine.Respo
 	return engine.Redirect(url, http.StatusTemporaryRedirect)
 }
 
-func (m *Module) handleCallback(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) handleCallback(r *http.Request) engine.Response {
 	state := r.URL.Query().Get("state")
 	claims, err := m.stateTokIssuer.Verify(state)
 	if err != nil {

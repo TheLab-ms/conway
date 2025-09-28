@@ -12,7 +12,6 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
-	"github.com/julienschmidt/httprouter"
 	"github.com/stripe/stripe-go/v78"
 	billingsession "github.com/stripe/stripe-go/v78/billingportal/session"
 	"github.com/stripe/stripe-go/v78/checkout/session"
@@ -38,7 +37,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("GET", "/payment/checkout", router.WithAuth(m.handleCheckoutForm))
 }
 
-func (m *Module) handleStripeWebhook(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) handleStripeWebhook(r *http.Request) engine.Response {
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		return engine.Errorf("reading body: %s", err)
@@ -82,7 +81,7 @@ func (m *Module) handleStripeWebhook(r *http.Request, ps httprouter.Params) engi
 }
 
 // handleCheckoutForm redirects users to the appropriate Stripe Checkout workflow.
-func (m *Module) handleCheckoutForm(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) handleCheckoutForm(r *http.Request) engine.Response {
 	var email string
 	var discountType *string
 	var existingCustomerID *string

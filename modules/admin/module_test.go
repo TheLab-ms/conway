@@ -6,7 +6,6 @@ import (
 
 	"github.com/TheLab-ms/conway/db"
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/julienschmidt/httprouter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,9 +21,9 @@ func TestExport(t *testing.T) {
 	require.NoError(t, err)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
-	p := httprouter.Params{{Key: "table", Value: "members"}}
-	engine.Handle(w, r, p, m.exportCSV)
+	r := httptest.NewRequest("GET", "/admin/export/members", nil)
+	r.SetPathValue("table", "members")
+	engine.Handle(w, r, m.exportCSV)
 
 	t.Log(w.Body)
 	assert.Contains(t, w.Body.String(), "Test User 2")

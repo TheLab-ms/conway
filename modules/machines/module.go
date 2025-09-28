@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/julienschmidt/httprouter"
 )
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
@@ -22,7 +21,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("GET", "/machines", router.WithAuth(m.renderMachinesView))
 }
 
-func (m *Module) renderMachinesView(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) renderMachinesView(r *http.Request) engine.Response {
 	ctx := r.Context()
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT pe.printer_name,

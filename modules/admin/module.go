@@ -12,7 +12,6 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/julienschmidt/httprouter"
 	"github.com/skip2/go-qrcode"
 	"github.com/wcharczuk/go-chart/v2"
 )
@@ -38,11 +37,11 @@ func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer) *Module {
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	for _, view := range listViews {
-		router.Handle("GET", "/admin"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
+		router.Handle("GET", "/admin"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request) engine.Response {
 			return engine.Component(renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath))
 		})))
 
-		router.Handle("POST", "/admin/search"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
+		router.Handle("POST", "/admin/search"+view.RelPath, router.WithAuth(m.onlyLeadership(func(r *http.Request) engine.Response {
 			const limit = 20
 			txn, err := m.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 			if err != nil {
@@ -77,21 +76,21 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 		})))
 	}
 
-	router.Handle("GET", "/admin", router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
+	router.Handle("GET", "/admin", router.WithAuth(m.onlyLeadership(func(r *http.Request) engine.Response {
 		return engine.Redirect(m.nav[0].Path, http.StatusSeeOther)
 	})))
 
-	router.Handle("GET", "/admin/members/:id", router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
-		mem, events, err := querySingleMember(r.Context(), m.db, ps.ByName("id"))
+	router.Handle("GET", "/admin/members/:id", router.WithAuth(m.onlyLeadership(func(r *http.Request) engine.Response {
+		mem, events, err := querySingleMember(r.Context(), m.db, r.PathValue("id"))
 		if err != nil {
 			return engine.Errorf("querying the database: %s", err)
 		}
 		return engine.Component(renderSingleMember(m.nav, mem, events))
 	})))
 
-	router.Handle("GET", "/admin/members/:id/logincode", router.WithAuth(m.onlyLeadership(func(r *http.Request, ps httprouter.Params) engine.Response {
+	router.Handle("GET", "/admin/members/:id/logincode", router.WithAuth(m.onlyLeadership(func(r *http.Request) engine.Response {
 		tok, err := m.links.Sign(&jwt.RegisteredClaims{
-			Subject:   ps.ByName("id"),
+			Subject:   r.PathValue("id"),
 			ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
 		})
 		if err != nil {
@@ -117,16 +116,16 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 }
 
 func (m *Module) onlyLeadership(next engine.Handler) engine.Handler {
-	return func(r *http.Request, ps httprouter.Params) engine.Response {
+	return func(r *http.Request) engine.Response {
 		if meta := auth.GetUserMeta(r.Context()); meta == nil || !meta.Leadership {
 			return engine.ClientErrorf(403, "You must be a member of leadership to access this page")
 		}
-		return next(r, ps)
+		return next(r)
 	}
 }
 
-func (m *Module) exportCSV(r *http.Request, ps httprouter.Params) engine.Response {
-	rows, err := m.db.QueryContext(r.Context(), fmt.Sprintf("SELECT * FROM %s", ps.ByName("table")))
+func (m *Module) exportCSV(r *http.Request) engine.Response {
+	rows, err := m.db.QueryContext(r.Context(), fmt.Sprintf("SELECT * FROM %s", r.PathValue("table")))
 	if err != nil {
 		return engine.Errorf("querying table: %s", err)
 	}
@@ -156,7 +155,7 @@ func (m *Module) exportCSV(r *http.Request, ps httprouter.Params) engine.Respons
 	return w
 }
 
-func (m *Module) renderMetricsChart(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) renderMetricsChart(r *http.Request) engine.Response {
 	windowDuration := time.Hour * 24 * 7
 	if window := r.URL.Query().Get("window"); window != "" {
 		var err error
@@ -203,7 +202,7 @@ func (m *Module) renderMetricsChart(r *http.Request, ps httprouter.Params) engin
 	return engine.PNG(buf.Bytes())
 }
 
-func (m *Module) renderMetricsPageHandler(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) renderMetricsPageHandler(r *http.Request) engine.Response {
 	selected := r.URL.Query().Get("interval")
 	if selected == "" {
 		selected = "1440h" // default to 60 days

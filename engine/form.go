@@ -3,8 +3,6 @@ package engine
 import (
 	"database/sql"
 	"net/http"
-
-	"github.com/julienschmidt/httprouter"
 )
 
 type PostFormHandler struct {
@@ -13,9 +11,9 @@ type PostFormHandler struct {
 }
 
 func (p *PostFormHandler) Handler(db *sql.DB) Handler {
-	return func(r *http.Request, ps httprouter.Params) Response {
+	return func(r *http.Request) Response {
 		args := []any{
-			sql.Named("route_id", ps.ByName("id")),
+			sql.Named("route_id", r.PathValue("id")),
 		}
 		for _, field := range p.Fields {
 			args = append(args, sql.Named(field, r.FormValue(field)))
@@ -36,8 +34,8 @@ type DeleteFormHandler struct {
 }
 
 func (d *DeleteFormHandler) Handler(db *sql.DB) Handler {
-	return func(r *http.Request, ps httprouter.Params) Response {
-		_, err := db.ExecContext(r.Context(), "DELETE FROM "+d.Table+" WHERE id = $1", ps.ByName("id"))
+	return func(r *http.Request) Response {
+		_, err := db.ExecContext(r.Context(), "DELETE FROM "+d.Table+" WHERE id = $1", r.PathValue("id"))
 		if err != nil {
 			return Errorf("deleting from database: %s", err)
 		}

@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/julienschmidt/httprouter"
 )
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
@@ -23,11 +22,11 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("POST", "/waiver", m.handleSubmitWaiver)
 }
 
-func (m *Module) renderWaiverView(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) renderWaiverView(r *http.Request) engine.Response {
 	return engine.Component(renderWaiver(false, "", r.URL.Query().Get("email"), r.URL.Query().Get("r")))
 }
 
-func (m *Module) handleSubmitWaiver(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) handleSubmitWaiver(r *http.Request) engine.Response {
 	a1 := r.FormValue("agree1")
 	a2 := r.FormValue("agree2")
 	if a1 != "on" || a2 != "on" {

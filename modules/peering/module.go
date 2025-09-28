@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/julienschmidt/httprouter"
 )
 
 type Module struct {
@@ -29,17 +28,17 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 }
 
 func (m *Module) withAuth(next engine.Handler) engine.Handler {
-	return func(r *http.Request, ps httprouter.Params) engine.Response {
+	return func(r *http.Request) engine.Response {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		_, err := m.issuer.Verify(token)
 		if err != nil {
 			return engine.Errorf("invalid token")
 		}
-		return next(r, ps)
+		return next(r)
 	}
 }
 
-func (m *Module) handleGetGliderState(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) handleGetGliderState(r *http.Request) engine.Response {
 	tx, err := m.db.BeginTx(r.Context(), &sql.TxOptions{Isolation: sql.LevelLinearizable, ReadOnly: true})
 	if err != nil {
 		return engine.Error(err)
@@ -74,7 +73,7 @@ func (m *Module) handleGetGliderState(r *http.Request, ps httprouter.Params) eng
 	return engine.JSON(&resp)
 }
 
-func (m *Module) handlePostGliderEvents(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) handlePostGliderEvents(r *http.Request) engine.Response {
 	events := []*Event{}
 	dec := json.NewDecoder(r.Body)
 	for {

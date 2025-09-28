@@ -6,7 +6,6 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
-	"github.com/julienschmidt/httprouter"
 )
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
@@ -23,7 +22,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.Handle("GET", "/", router.WithAuth(m.renderMemberView))
 }
 
-func (m *Module) renderMemberView(r *http.Request, ps httprouter.Params) engine.Response {
+func (m *Module) renderMemberView(r *http.Request) engine.Response {
 	authdUser := auth.GetUserMeta(r.Context()).ID
 
 	mem := member{}

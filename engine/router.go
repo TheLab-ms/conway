@@ -10,12 +10,11 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
-	"github.com/julienschmidt/httprouter"
 )
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
-type Handler func(r *http.Request, ps httprouter.Params) Response
+type Handler func(r *http.Request) Response
 
 type Response interface {
 	write(http.ResponseWriter, *http.Request) error
@@ -30,15 +29,17 @@ type noopAuthenticator struct{}
 func (noopAuthenticator) WithAuth(fn Handler) Handler { return fn }
 
 type Router struct {
-	router *httprouter.Router
+	router *http.ServeMux
 
 	// Authenticator can be used to pass an authenticator implementation to other handlers.
 	Authenticator
 }
 
 func NewRouter(notFoundHandler http.Handler) *Router {
-	r := &Router{router: httprouter.New()}
-	r.router.NotFound = notFoundHandler
+	r := &Router{router: http.NewServeMux()}
+	if notFoundHandler != nil {
+		r.router.Handle("/", notFoundHandler)
+	}
 	r.Authenticator = noopAuthenticator{}
 	return r
 }
@@ -46,14 +47,12 @@ func NewRouter(notFoundHandler http.Handler) *Router {
 func (r *Router) ServeHTTP(w http.ResponseWriter, rr *http.Request) { r.router.ServeHTTP(w, rr) }
 
 func (r *Router) Handle(method, path string, fn Handler) {
-	r.router.Handle(method, path, func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-		Handle(w, r, p, fn)
-	})
+	r.router.HandleFunc(method+" "+path, func(w http.ResponseWriter, r *http.Request) { Handle(w, r, fn) })
 }
 
-func Handle(w http.ResponseWriter, r *http.Request, p httprouter.Params, fn Handler) {
+func Handle(w http.ResponseWriter, r *http.Request, fn Handler) {
 	start := time.Now()
-	resp := fn(r, p)
+	resp := fn(r)
 	logger := slog.Default().With("url", r.URL.Path, "method", r.Method, "userAgent", r.UserAgent(), "latencyMS", time.Since(start).Milliseconds())
 
 	e, _ := resp.(*httpError)
