@@ -16,6 +16,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/email"
+	"github.com/TheLab-ms/conway/modules/fobapi"
 	"github.com/TheLab-ms/conway/modules/kiosk"
 	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/TheLab-ms/conway/modules/members"
@@ -110,6 +111,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a.Add(metrics.New(db))
 	a.Add(machines.New(db))
 	a.Add(pruning.New(db))
+	a.Add(fobapi.New(db))
 
 	if conf.DiscordClientID != "" {
 		a.Add(discord.New(db, self, discordIss, conf.DiscordClientID, conf.DiscordClientSecret, conf.DiscordBotToken, conf.DiscordGuildID, conf.DiscordRoleID))

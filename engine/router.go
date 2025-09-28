@@ -64,6 +64,17 @@ func (r *Router) Serve(addr string) Proc {
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, rr *http.Request) { r.router.ServeHTTP(w, rr) }
 
+func (r *Router) HandleFunc(route string, fn http.HandlerFunc) {
+	r.router.HandleFunc(route, func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		ww := &responseWrapper{ResponseWriter: w, status: 200}
+		fn(ww, r)
+		slog.Info("http request", "url", r.URL.Path, "method", r.Method, "userAgent", r.UserAgent(), "latencyMS", time.Since(start).Milliseconds(), "status", ww.status)
+	})
+}
+
+// deprecated
 func (r *Router) Handle(method, path string, fn Handler) {
 	r.router.HandleFunc(method+" "+path, func(w http.ResponseWriter, r *http.Request) { handle(w, r, fn) })
 }
@@ -228,4 +239,19 @@ func (c *CSVResponse) write(w http.ResponseWriter, r *http.Request) error {
 
 	cw.Flush()
 	return nil
+}
+
+func SystemError(w http.ResponseWriter, msg string, args ...any) {
+	http.Error(w, "Internal error - please try again later", 500)
+	slog.Error(msg, args...)
+}
+
+type responseWrapper struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *responseWrapper) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
 }

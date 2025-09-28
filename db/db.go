@@ -17,12 +17,31 @@ import (
 //go:embed *.sql
 var migrations embed.FS
 
-func New(path string) (*sql.DB, error) {
+func Open(path string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", path))
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	return db, err
+}
+
+func OpenTest(t *testing.T) *sql.DB {
+	path := filepath.Join(t.TempDir(), "db")
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	return db
+}
+
+// deprecated
+func New(path string) (*sql.DB, error) {
+	db, err := Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening db: %w", err)
 	}
-	db.SetMaxOpenConns(1)
 
 	// File all of the migration fileMeta
 	fileMeta, err := migrations.ReadDir(".")
