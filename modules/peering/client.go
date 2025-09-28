@@ -229,7 +229,7 @@ func (c *Client) FlushEvents() error {
 var client = &http.Client{Timeout: 5 * time.Second}
 
 func (c *Client) roundtrip(method, path string, body io.Reader) (*http.Response, error) {
-	uri := fmt.Sprintf("%s/%s", c.baseURL, path)
+	uri := fmt.Sprintf("%s%s", c.baseURL, path)
 	req, err := http.NewRequest(method, uri, body)
 	if err != nil {
 		return nil, err
