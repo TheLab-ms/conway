@@ -19,17 +19,19 @@ func New(db *sql.DB) *Module {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("GET", "/", router.WithAuth(m.renderMemberView))
+	router.HandleFunc("GET /", router.WithAuthn(m.renderMemberView))
 }
 
-func (m *Module) renderMemberView(r *http.Request) engine.Response {
+func (m *Module) renderMemberView(w http.ResponseWriter, r *http.Request) {
 	authdUser := auth.GetUserMeta(r.Context()).ID
 
 	mem := member{}
 	err := m.db.QueryRowContext(r.Context(), `SELECT id, email, m.access_status, m.discord_user_id IS NOT NULL FROM members m WHERE m.id = $1`, authdUser).Scan(&mem.ID, &mem.Email, &mem.AccessStatus, &mem.DiscordLinked)
 	if err != nil {
-		return engine.Errorf("querying the database: %s", err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
-	return engine.Component(renderMember(&mem))
+	w.Header().Set("Content-Type", "text/html")
+	renderMember(&mem).Render(r.Context(), w)
 }
