@@ -93,6 +93,37 @@ func (m *Module) WithAuth(next engine.Handler) engine.Handler {
 	}
 }
 
+// WithAuthn authenticates incoming requests, or redirects them to the login page.
+func (m *Module) WithAuthn(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := url.Values{}
+		q.Add("callback_uri", r.URL.String())
+
+		// Parse the JWT (if provided)
+		cook, err := r.Cookie("token")
+		if err != nil {
+			http.Redirect(w, r, "/login?"+q.Encode(), http.StatusFound)
+			return
+		}
+		claims, err := m.tokens.Verify(cook.Value)
+		if err != nil || len(claims.Audience) == 0 || claims.Audience[0] != "conway" {
+			http.Redirect(w, r, "/login?"+q.Encode(), http.StatusFound)
+			return
+		}
+
+		// Get the member from the DB
+		var meta UserMetadata
+		err = m.db.QueryRowContext(r.Context(), "SELECT id, email, payment_status IS NOT NULL, leadership FROM members WHERE id = ? LIMIT 1", claims.Subject).Scan(&meta.ID, &meta.Email, &meta.ActiveMember, &meta.Leadership)
+		if err != nil {
+			http.Redirect(w, r, "/login?"+q.Encode(), http.StatusFound)
+			return
+		}
+
+		r = r.WithContext(withUserMeta(r.Context(), &meta))
+		next(w, r)
+	}
+}
+
 // handleLoginFormPost starts a login flow for the given member (by email).
 func (s *Module) handleLoginFormPost(r *http.Request) engine.Response {
 	email := strings.ToLower(r.FormValue("email"))
