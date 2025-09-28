@@ -18,10 +18,10 @@ func New(db *sql.DB) *Module {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.Handle("GET", "/machines", router.WithAuth(m.renderMachinesView))
+	router.HandleFunc("GET /machines", router.WithAuthn(m.renderView))
 }
 
-func (m *Module) renderMachinesView(r *http.Request) engine.Response {
+func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT pe.printer_name,
@@ -36,7 +36,8 @@ func (m *Module) renderMachinesView(r *http.Request) engine.Response {
 		ORDER BY pe.printer_name ASC
 	`)
 	if err != nil {
-		return engine.Error(err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 	defer rows.Close()
 
@@ -45,13 +46,16 @@ func (m *Module) renderMachinesView(r *http.Request) engine.Response {
 		var ev printerStatus
 		err := rows.Scan(&ev.Name, &ev.JobFinishedTimestamp, &ev.ErrorCode)
 		if err != nil {
-			return engine.Error(err)
+			engine.SystemError(w, err.Error())
+			return
 		}
 		events = append(events, &ev)
 	}
 	if err := rows.Err(); err != nil {
-		return engine.Error(err)
+		engine.SystemError(w, err.Error())
+		return
 	}
 
-	return engine.Component(renderMachines(events))
+	w.Header().Set("Content-Type", "text/html")
+	renderMachines(events).Render(r.Context(), w)
 }
