@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -44,13 +45,30 @@ func NewRouter(notFoundHandler http.Handler) *Router {
 	return r
 }
 
+// Serve wires up the stdlib http server to the engine.
+func (r *Router) Serve(addr string) Proc {
+	return func(ctx context.Context) error {
+		svr := &http.Server{Handler: r, Addr: addr}
+		go func() {
+			<-ctx.Done()
+			slog.Warn("gracefully shutting down http server...")
+			svr.Shutdown(context.Background())
+		}()
+		if err := svr.ListenAndServe(); err != nil {
+			return err
+		}
+		slog.Info("the http server has shut down")
+		return nil
+	}
+}
+
 func (r *Router) ServeHTTP(w http.ResponseWriter, rr *http.Request) { r.router.ServeHTTP(w, rr) }
 
 func (r *Router) Handle(method, path string, fn Handler) {
-	r.router.HandleFunc(method+" "+path, func(w http.ResponseWriter, r *http.Request) { Handle(w, r, fn) })
+	r.router.HandleFunc(method+" "+path, func(w http.ResponseWriter, r *http.Request) { handle(w, r, fn) })
 }
 
-func Handle(w http.ResponseWriter, r *http.Request, fn Handler) {
+func handle(w http.ResponseWriter, r *http.Request, fn Handler) {
 	start := time.Now()
 	resp := fn(r)
 	logger := slog.Default().With("url", r.URL.Path, "method", r.Method, "userAgent", r.UserAgent(), "latencyMS", time.Since(start).Milliseconds())

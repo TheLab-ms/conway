@@ -17,7 +17,7 @@ type App struct {
 func NewApp(httpAddr string) *App {
 	a := &App{Router: NewRouter(http.FileServer(http.FS(static.Assets)))}
 	a.Router.Authenticator = a.Router
-	a.ProcMgr.Add(Serve(httpAddr, a.Router))
+	a.ProcMgr.Add(a.Router.Serve(httpAddr))
 	return a
 }
 
