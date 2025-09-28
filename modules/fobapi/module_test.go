@@ -32,7 +32,7 @@ CREATE TABLE fob_swipes (
 CREATE UNIQUE INDEX fob_swipes_uniq ON fob_swipes (fob_id, timestamp);
 `
 
-func TestList(t *testing.T) {
+func TestListing(t *testing.T) {
 	db := db.OpenTest(t)
 	_, err := db.Exec(migration)
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestList(t *testing.T) {
 	// Happy path
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
-	m.handleList(w, r)
+	m.handle(w, r)
 	assert.Equal(t, 200, w.Code)
 	assert.Equal(t, "[123,234]\n", w.Body.String())
 	assert.Equal(t, etag, w.Header().Get("ETag"))
@@ -52,13 +52,13 @@ func TestList(t *testing.T) {
 	r = httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("If-None-Match", etag)
 	w = httptest.NewRecorder()
-	m.handleList(w, r)
+	m.handle(w, r)
 	assert.Equal(t, 304, w.Code)
 	assert.Empty(t, w.Body.String())
 	assert.Empty(t, w.Header().Get("ETag"))
 }
 
-func TestEvent(t *testing.T) {
+func TestEvents(t *testing.T) {
 	db := db.OpenTest(t)
 	_, err := db.Exec(migration)
 	require.NoError(t, err)
@@ -67,8 +67,8 @@ func TestEvent(t *testing.T) {
 
 	r := httptest.NewRequest("GET", "/", bytes.NewBufferString(`[{ "fob": 123, "ts": 1000 }, { "fob": 123, "ts": 1000 }, { "fob": 123, "ts": 1001 }, { "fob": 345, "ts": 10001 }]`))
 	w := httptest.NewRecorder()
-	m.handleEvent(w, r)
-	assert.Equal(t, 204, w.Code)
+	m.handle(w, r)
+	assert.Equal(t, 200, w.Code)
 
 	results, err := db.Query("SELECT timestamp, fob_id, member FROM fob_swipes")
 	require.NoError(t, err)
