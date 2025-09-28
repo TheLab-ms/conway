@@ -70,11 +70,6 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("POST /login", m.handleLoginFormPost)
 }
 
-// WithAuth is deprecated and should not be used
-func (m *Module) WithAuth(next engine.Handler) engine.Handler {
-	panic("WithAuth is deprecated, use WithAuthn instead")
-}
-
 // WithAuthn authenticates incoming requests, or redirects them to the login page.
 func (m *Module) WithAuthn(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
