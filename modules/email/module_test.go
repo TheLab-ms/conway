@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheLab-ms/conway/db"
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

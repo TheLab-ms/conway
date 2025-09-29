@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/TheLab-ms/conway/db"
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/db"
 )
 
 const migration = `

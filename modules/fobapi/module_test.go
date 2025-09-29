@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/TheLab-ms/conway/db"
+	"github.com/TheLab-ms/conway/engine/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
