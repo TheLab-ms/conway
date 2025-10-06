@@ -14,10 +14,9 @@ type App struct {
 	Router *Router
 }
 
-func NewApp(httpAddr string) *App {
-	a := &App{Router: NewRouter()}
-	a.Router.Authenticator = a.Router
-	a.ProcMgr.Add(a.Router.Serve(httpAddr))
+func NewApp(httpAddr string, router *Router) *App {
+	a := &App{Router: router}
+	a.ProcMgr.Add(router.Serve(httpAddr))
 	return a
 }
 

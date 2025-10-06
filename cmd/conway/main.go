@@ -67,12 +67,12 @@ func main() {
 }
 
 func newApp(conf Config, self *url.URL) (*engine.App, error) {
-	a := engine.NewApp(conf.HttpAddr)
-
 	db, err := db.New("conway.sqlite3")
 	if err != nil {
 		panic(err)
 	}
+	router := engine.NewRouter()
+	a := engine.NewApp(conf.HttpAddr, router)
 
 	var tso *auth.TurnstileOptions
 	if conf.TurnstileSiteKey != "" {
