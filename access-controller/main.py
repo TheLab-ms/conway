@@ -9,6 +9,7 @@ WIEGAND_D1_PIN = 27
 DOOR_PIN = 25
 HTTP_TIMEOUT_SECONDS = 2
 POLLING_INTERVAL_SECONDS = 5
+CACHE_FILE = "conwaystate.json"
 
 
 class ConwayClient:
@@ -18,7 +19,16 @@ class ConwayClient:
         self._events = []
         self._net = None
         self._host = None
+        self._warm_cache()
         asyncio.create_task(self._run())
+
+    def check_fob(self, fob: int) -> bool:
+        return fob in self._fobs
+
+    def push_event(self, fob: int, allowed: bool):
+        self._events.append({"fob": fob, "allowed": allowed})
+        if len(self._events) > 20:
+            self._events.pop(0)
 
     async def _run(self):
         while True:
@@ -79,24 +89,36 @@ class ConwayClient:
         if status != 200:
             raise Exception(f"Unexpected server response status: {status}")
 
-        # Read from the response to update local state
+        # Find the etag in the response headers
         for line in header_lines[1:]:
             if ":" in line:
                 k, v = line.split(":", 1)
                 if k.casefold() == "Etag".casefold():
                     self._etag = v
 
+        # Cache the response
         self._fobs = json.loads(body_blob.decode())
         self._events.clear()
+        await self._flush_cache()
         print("sync'd with conway server")
 
-    def check_fob(self, fob: int) -> bool:
-        return fob in self._fobs
+    def _warm_cache(self):
+        try:
+            with open(CACHE_FILE, "r") as f:
+                data = json.load(f)
+            self._fobs = data.get("fobs", [])
+            self._etag = data.get("etag", "")
+            print(f"loaded {len(self._fobs)} fobs from flash with etag {self._etag!r}")
+        except Exception as e:
+            print(f"unable to load filesystem cache: {e}")
 
-    def push_event(self, fob: int, allowed: bool):
-        self._events.append({"fob": fob, "allowed": allowed})
-        if len(self._events) > 20:
-            self._events.pop(0)
+    async def _flush_cache(self):
+        try:
+            data = {"etag": self._etag, "fobs": self._fobs}
+            with open(CACHE_FILE, "w") as f:
+                json.dump(data, f)
+        except Exception as e:
+            print(f"unable to write filesystem cache: {e}")
 
 
 class Wiegand:
