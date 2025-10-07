@@ -20,7 +20,6 @@ class ConwayClient:
         self._net = None
         self._host = None
         self._warm_cache()
-        asyncio.create_task(self._run())
 
     def check_fob(self, fob: int) -> bool:
         return fob in self._fobs
@@ -30,33 +29,31 @@ class ConwayClient:
         if len(self._events) > 20:
             self._events.pop(0)
 
-    async def _run(self):
+    async def run_polling_loop(self):
         while True:
-            self._maybe_connect()
-            await self._maybe_sync()
-            await asyncio.sleep(POLLING_INTERVAL_SECONDS)
-
-    def _maybe_connect(self):
-        try:
-            if self._net and self._net.isconnected():
-                return
-            with open("network.conf", "r") as f:
-                config = json.load(f)
-                self._net = network.WLAN(network.WLAN.IF_STA)
-                self._net.active(True)
-                self._net.connect(config["ssid"], config["password"])
-                self._host = config["conwayHost"]
-                self._port = config["conwayPort"]
-        except Exception as e:
-            print(f"error while connecting to wifi: {e}")
-
-    async def _maybe_sync(self):
-        try:
+            await asyncio.sleep_ms(POLLING_INTERVAL_SECONDS)
             await self.sync()
+
+    async def sync(self):
+        try:
+            self._connect()
+            await self._roundtrip()
         except Exception as e:
             print(f"error while attempting to sync with Conway: {e}")
 
-    async def sync(self):
+    def _connect(self):
+        if self._net and self._net.isconnected():
+            return
+        with open("network.conf", "r") as f:
+            config = json.load(f)
+            self._net = network.WLAN(network.WLAN.IF_STA)
+            self._net.active(True)
+            self._net.connect(config["ssid"], config["password"])
+            self._host = config["conwayHost"]
+            self._port = config["conwayPort"]
+            print(f"connected to network with ip {self._net.ipconfig("addr4")}")
+
+    async def _roundtrip(self):
         # Build the request
         body = json.dumps(self._events)
         req_headers = {
@@ -139,8 +136,6 @@ class Wiegand:
         self.pin0.irq(trigger=Pin.IRQ_FALLING, handler=lambda *_: self._on_pin(0))
         self.pin1.irq(trigger=Pin.IRQ_FALLING, handler=lambda *_: self._on_pin(1))
 
-        asyncio.create_task(self._run())
-
     def _on_pin(self, bit_value):
         now = utime.ticks_us()
         if self.last_bit_time and utime.ticks_diff(now, self.last_bit_time) < Wiegand.DEBOUNCE_US:
@@ -148,7 +143,7 @@ class Wiegand:
         self.last_bit_time = now
         self.bit_buffer.append(bit_value)
 
-    async def _run(self):
+    async def run(self):
         while True:
             await asyncio.sleep_ms(5)
             now = utime.ticks_us()
@@ -177,52 +172,14 @@ class Wiegand:
         self.last_bit_time = None
 
 
-class MainLoop:
-    def __init__(self):
-        self.conway = ConwayClient()
-        self.door = Pin(DOOR_PIN, Pin.OUT)
-        self._failed_attempts = 0
-        self._backoff_until = 0
-        Wiegand(WIEGAND_D0_PIN, WIEGAND_D1_PIN, self._on_card)
-
-    def _on_card(self, card_number, facility_code, _):
-        now = utime.ticks_ms()
-        if now < self._backoff_until:
-            print("ignoring card read due to backoff")
-            return
-
-        combined = int(f"{facility_code}{card_number}")
-        print(f"saw card {combined}")
-
-        allowed = self.conway.check_fob(combined)
-        if not allowed:
-            asyncio.create_task(self.conway._maybe_sync())
-            allowed = self.conway.check_fob(combined)
-
-        self.conway.push_event(combined, allowed)
-
-        if allowed:
-            print("access granted")
-            self._failed_attempts = 0
-            asyncio.create_task(self.open_door())
-        else:
-            print("access denied")
-            self._failed_attempts += 1
-            delay = min(8000, (1 << self._failed_attempts) * 1000)
-            self._backoff_until = now + delay
-
-    async def open_door(self):
-        print("opening door")
-        self.door.on()
-        await asyncio.sleep(0.2)
-        self.door.off()
-
-
 class Server:
-    def __init__(self, loop: MainLoop):
-        asyncio.create_task(asyncio.start_server(lambda r, w: self._accept(r, w, loop), "0.0.0.0", 80))
+    def __init__(self, mainloop):
+        self._main = mainloop
 
-    async def _accept(self, reader, writer, mainloop: MainLoop):
+    async def run(self):
+        asyncio.start_server(lambda r, w: self._accept(r, w), "0.0.0.0", 80)
+
+    async def _accept(self, reader, writer):
         try:
             request_line = await reader.readline()
             if not request_line:
@@ -256,7 +213,7 @@ class Server:
                 await writer.awrite(response)
 
             elif method == "POST" and path == "/unlock":
-                asyncio.create_task(mainloop.open_door())
+                await self._main.open_door()
                 response_body = "Door unlocked"
                 response = (
                     "HTTP/1.1 200 OK\r\n"
@@ -278,13 +235,59 @@ class Server:
             await writer.aclose()
 
 
-async def main():
-    watchdog = WDT(timeout=8000)
-    loop = MainLoop()
-    Server(loop)
-    while True:
-        await asyncio.sleep(5)
-        watchdog.feed()
+class MainLoop:
+    def __init__(self, conway):
+        self.conway = conway
+        self.door = Pin(DOOR_PIN, Pin.OUT)
+        self._failed_attempts = 0
+        self._backoff_until = 0
+
+    async def on_card(self, card_number, facility_code, _):
+        now = utime.ticks_ms()
+        if now < self._backoff_until:
+            print("ignoring card read due to backoff")
+            return
+
+        combined = int(f"{facility_code}{card_number}")
+        print(f"saw card {combined}")
+
+        allowed = self.conway.check_fob(combined)
+        if not allowed:
+            await self.conway.sync()
+            allowed = self.conway.check_fob(combined)
+
+        self.conway.push_event(combined, allowed)
+
+        if allowed:
+            print("access granted")
+            self._failed_attempts = 0
+            asyncio.create_task(self.open_door())
+        else:
+            print("access denied")
+            self._failed_attempts += 1
+            delay = min(8000, (1 << self._failed_attempts) * 1000)
+            self._backoff_until = now + delay
+
+    async def open_door(self):
+        print("opening door")
+        self.door.on()
+        await asyncio.sleep(0.2)
+        self.door.off()
+
+    async def run_watchdog(self):
+        wdt = WDT(timeout=8000)
+        while True:
+            # Just make sure the asyncio loop isn't blocked
+            await asyncio.sleep(5)
+            wdt.feed()
 
 
-asyncio.run(main())
+conway = ConwayClient()
+main = MainLoop(conway)
+wiegand = Wiegand(WIEGAND_D0_PIN, WIEGAND_D1_PIN, main.on_card)
+svr = Server(main)
+
+asyncio.create_task(conway.run_polling_loop())
+asyncio.create_task(main.run_watchdog())
+asyncio.create_task(svr.run())
+asyncio.create_task(wiegand.run())
