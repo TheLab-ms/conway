@@ -1,27 +1,54 @@
 import requests
-from machine import UART, Pin, Timer
+from machine import WDT, UART, Pin, Timer
 import network
 import time
 import utime
 import json
 
+
 WIEGAND_D0_PIN = 14
 WIEGAND_D1_PIN = 27
 DOOR_PIN = 25
+HTTP_TIMEOUT_SECONDS = 2
+POLLING_INTERVAL_SECONDS = 5
 
 
 # TODO: On demand unlock
 # TODO: Status LED
 
 
+watchdog = WDT(timeout=35 * 1000)  # 35 seconds
+
+
 class ConwayClient:
-    def __init__(self, url: str):
-        self.url = url
+    def __init__(self):
         self._etag = ""
         self._fobs = []
         self._events = []
+        self._net = None
+        self._timer = Timer(2)
+        self._timer.init(period=POLLING_INTERVAL_SECONDS, mode=Timer.PERIODIC, callback=self._tick)
 
-    def maybe_sync(self):
+    def _tick(self):
+        self._maybe_connect()
+        self._maybe_sync()
+        if watchdog is not None:
+            watchdog.feed()
+
+    def _maybe_connect(self):
+        try:
+            if self._net is None or self._net.isconnected():
+                return
+            with open("network.conf", "r") as f:
+                config = json.load(f)
+                self._net = network.WLAN(network.WLAN.IF_STA)
+                self._net.active(True)
+                self._net.connect(config["ssid"], config["password"])
+                self._url = config["url"]
+        except Exception as e:
+            print(f"error while connecting to wifi: {e}")
+
+    def _maybe_sync(self):
         try:
             self.sync()
         except Exception as e:
@@ -29,7 +56,7 @@ class ConwayClient:
 
     def sync(self):
         headers = {"If-None-Match": self._etag}
-        resp = requests.post(f"{self.url}/api/fobs", json=self._events, headers=headers, timeout=2)
+        resp = requests.post(f"{self._url}/api/fobs", json=self._events, headers=headers, timeout=HTTP_TIMEOUT_SECONDS)
 
         if resp.status_code == 304:
             self._events.clear()
@@ -60,7 +87,7 @@ class Wiegand:
     DEBOUNCE_US = 200
     END_OF_TX_US = 25000
 
-    def __init__(self, pin0, pin1, callback, timer_id=-1):
+    def __init__(self, pin0, pin1, callback):
         self.callback = callback
         self.last_card = None
         self.bit_buffer = []
@@ -74,7 +101,7 @@ class Wiegand:
         self.pin1.irq(trigger=Pin.IRQ_FALLING, handler=lambda *_: self._on_pin(1))
 
         # configure timer
-        self.timer = Timer(timer_id)
+        self.timer = Timer(1)
         self.timer.init(period=5, mode=Timer.PERIODIC, callback=self._cardcheck)
 
     def _on_pin(self, bit_value):
@@ -114,17 +141,9 @@ class Wiegand:
 
 class MainLoop:
     def __init__(self):
-        with open("network.conf", "r") as f:
-            config = json.load(f)
-            sta_if = network.WLAN(network.WLAN.IF_STA)
-            sta_if.active(True)
-            sta_if.connect(config["ssid"], config["password"])
-            sta_if.isconnected()
-            sta_if.ipconfig("addr4")
-            self.conway = ConwayClient(config["url"])
-
+        self.conway = ConwayClient()
         self.door = Pin(DOOR_PIN, Pin.OUT)
-        Wiegand(WIEGAND_D0_PIN, WIEGAND_D1_PIN, self._on_card, 1)
+        Wiegand(WIEGAND_D0_PIN, WIEGAND_D1_PIN, self._on_card)
 
     def _on_card(self, card_number, facility_code, _):
         combined = int(f"{facility_code}{card_number}")
@@ -132,7 +151,7 @@ class MainLoop:
 
         allowed = self.conway.check_fob(combined)
         if not allowed:  # refresh the cache
-            self.conway.maybe_sync()
+            self.conway._maybe_sync()
             allowed = self.conway.check_fob(combined)
 
         self.conway.push_event(combined, allowed)
