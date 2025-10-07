@@ -143,20 +143,35 @@ class MainLoop:
     def __init__(self):
         self.conway = ConwayClient()
         self.door = Pin(DOOR_PIN, Pin.OUT)
+        self._failed_attempts = 0
+        self._backoff_until = 0
         Wiegand(WIEGAND_D0_PIN, WIEGAND_D1_PIN, self._on_card)
 
     def _on_card(self, card_number, facility_code, _):
+        now = utime.ticks_ms()
+        if now < self._backoff_until:
+            print("ignoring card read due to backoff")
+            return
+
         combined = int(f"{facility_code}{card_number}")
         print(f"saw card {combined}")
 
         allowed = self.conway.check_fob(combined)
-        if not allowed:  # refresh the cache
+        if not allowed:
             self.conway._maybe_sync()
             allowed = self.conway.check_fob(combined)
 
         self.conway.push_event(combined, allowed)
+
         if allowed:
+            print("access granted")
+            self._failed_attempts = 0
             self.open_door()
+        else:
+            print("access denied")
+            self._failed_attempts += 1
+            delay = min(8000, (1 << self._failed_attempts) * 1000)
+            self._backoff_until = now + delay
 
     def open_door(self):
         print("opening door")
