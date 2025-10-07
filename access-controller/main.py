@@ -8,7 +8,7 @@ WIEGAND_D0_PIN = 14
 WIEGAND_D1_PIN = 27
 DOOR_PIN = 25
 HTTP_TIMEOUT_SECONDS = 2
-POLLING_INTERVAL_SECONDS = 5
+POLLING_INTERVAL_SECONDS = 10
 CACHE_FILE = "conwaystate.json"
 
 
@@ -218,9 +218,70 @@ class MainLoop:
         self.door.off()
 
 
+class Server:
+    def __init__(self, loop: MainLoop):
+        asyncio.create_task(asyncio.start_server(lambda r, w: self._accept(r, w, loop), "0.0.0.0", 80))
+
+    async def _accept(self, reader, writer, mainloop: MainLoop):
+        try:
+            request_line = await reader.readline()
+            if not request_line:
+                await writer.aclose()
+                return
+
+            method, path, _ = request_line.decode().split()
+
+            while True:
+                line = await reader.readline()
+                if line == b"\r\n" or not line:
+                    break
+
+            if method == "GET" and path == "/":
+                response_body = """<!DOCTYPE html>
+                    <html>
+                      <body>
+                        <form action="/unlock" method="post">
+                          <button type="submit">Unlock</button>
+                        </form>
+                      </body>
+                    </html>"""
+                response = (
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: text/html\r\n"
+                    f"Content-Length: {len(response_body)}\r\n"
+                    "Connection: close\r\n"
+                    "\r\n"
+                    f"{response_body}"
+                )
+                await writer.awrite(response)
+
+            elif method == "POST" and path == "/unlock":
+                asyncio.create_task(mainloop.open_door())
+                response_body = "Door unlocked"
+                response = (
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: text/plain\r\n"
+                    f"Content-Length: {len(response_body)}\r\n"
+                    "Connection: close\r\n"
+                    "\r\n"
+                    f"{response_body}"
+                )
+                await writer.awrite(response)
+
+            else:
+                response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"
+                await writer.awrite(response)
+
+        except Exception as e:
+            print("HTTP server error:", e)
+        finally:
+            await writer.aclose()
+
+
 async def main():
     watchdog = WDT(timeout=8000)
-    MainLoop()
+    loop = MainLoop()
+    Server(loop)
     while True:
         await asyncio.sleep(5)
         watchdog.feed()
