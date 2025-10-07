@@ -1,10 +1,8 @@
-import requests
-from machine import WDT, UART, Pin, Timer
+import uasyncio as asyncio
+from machine import WDT, Pin
 import network
-import time
 import utime
 import json
-
 
 WIEGAND_D0_PIN = 14
 WIEGAND_D1_PIN = 27
@@ -13,64 +11,84 @@ HTTP_TIMEOUT_SECONDS = 2
 POLLING_INTERVAL_SECONDS = 5
 
 
-# TODO: On demand unlock
-# TODO: Status LED
-
-
-watchdog = WDT(timeout=35 * 1000)  # 35 seconds
-
-
 class ConwayClient:
     def __init__(self):
         self._etag = ""
         self._fobs = []
         self._events = []
         self._net = None
-        self._timer = Timer(2)
-        self._timer.init(period=POLLING_INTERVAL_SECONDS, mode=Timer.PERIODIC, callback=self._tick)
+        self._host = None
+        asyncio.create_task(self._run())
 
-    def _tick(self):
-        self._maybe_connect()
-        self._maybe_sync()
-        if watchdog is not None:
-            watchdog.feed()
+    async def _run(self):
+        while True:
+            self._maybe_connect()
+            await self._maybe_sync()
+            await asyncio.sleep(POLLING_INTERVAL_SECONDS)
 
     def _maybe_connect(self):
         try:
-            if self._net is None or self._net.isconnected():
+            if self._net and self._net.isconnected():
                 return
             with open("network.conf", "r") as f:
                 config = json.load(f)
                 self._net = network.WLAN(network.WLAN.IF_STA)
                 self._net.active(True)
                 self._net.connect(config["ssid"], config["password"])
-                self._url = config["url"]
+                self._host = config["conwayHost"]
+                self._port = config["conwayPort"]
         except Exception as e:
             print(f"error while connecting to wifi: {e}")
 
-    def _maybe_sync(self):
+    async def _maybe_sync(self):
         try:
-            self.sync()
+            await self.sync()
         except Exception as e:
             print(f"error while attempting to sync with Conway: {e}")
 
-    def sync(self):
-        headers = {"If-None-Match": self._etag}
-        resp = requests.post(f"{self._url}/api/fobs", json=self._events, headers=headers, timeout=HTTP_TIMEOUT_SECONDS)
+    async def sync(self):
+        # Build the request
+        body = json.dumps(self._events)
+        req_headers = {
+            "Host": self._host,
+            "Content-Type": "application/json",
+            "Content-Length": str(len(body)),
+            "If-None-Match": self._etag,
+        }
+        header_str = "".join(f"{k}: {v}\r\n" for k, v in req_headers.items())
+        request = f"POST /api/fobs HTTP/1.1\r\n{header_str}\r\n{body}"
 
-        if resp.status_code == 304:
+        # Roundtrip to the server
+        reader, writer = await asyncio.open_connection(self._host, self._port)
+        writer.write(request.encode())
+        await writer.drain()
+        response_data = await asyncio.wait_for(reader.read(-1), HTTP_TIMEOUT_SECONDS)
+        writer.close()
+        await writer.wait_closed()
+
+        # Parse the response
+        header_blob, _, body_blob = response_data.partition(b"\r\n\r\n")
+        header_lines = header_blob.decode().split("\r\n")
+        _, status, _ = header_lines[0].split(" ", 2)
+        status = int(status)
+
+        if status == 304:
             self._events.clear()
-            resp.close()
-            return  # cache is warm
+            return
 
-        if resp.status_code != 200:
-            resp.close()
-            raise Exception(f"Unexpected server response status: {resp.status_code}")
+        if status != 200:
+            raise Exception(f"Unexpected server response status: {status}")
 
-        self._fobs = resp.json()
-        self._etag = resp.headers.get("Etag")
+        # Read from the response to update local state
+        for line in header_lines[1:]:
+            if ":" in line:
+                k, v = line.split(":", 1)
+                if k.casefold() == "Etag".casefold():
+                    self._etag = v
+
+        self._fobs = json.loads(body_blob.decode())
         self._events.clear()
-        resp.close()
+        print("sync'd with conway server")
 
     def check_fob(self, fob: int) -> bool:
         return fob in self._fobs
@@ -82,8 +100,8 @@ class ConwayClient:
 
 
 class Wiegand:
-    CARD_MASK = (1 << 17) - 2  # bits 1–16 (card number)
-    FACILITY_MASK = 0xFF << 17  # bits 17–24 (facility code)
+    CARD_MASK = (1 << 17) - 2
+    FACILITY_MASK = 0xFF << 17
     DEBOUNCE_US = 200
     END_OF_TX_US = 25000
 
@@ -94,40 +112,38 @@ class Wiegand:
         self.last_bit_time = None
         self.cards_read = 0
 
-        # configure pins
         self.pin0 = Pin(pin0, Pin.IN, Pin.PULL_UP)
         self.pin1 = Pin(pin1, Pin.IN, Pin.PULL_UP)
         self.pin0.irq(trigger=Pin.IRQ_FALLING, handler=lambda *_: self._on_pin(0))
         self.pin1.irq(trigger=Pin.IRQ_FALLING, handler=lambda *_: self._on_pin(1))
 
-        # configure timer
-        self.timer = Timer(1)
-        self.timer.init(period=5, mode=Timer.PERIODIC, callback=self._cardcheck)
+        asyncio.create_task(self._run())
 
     def _on_pin(self, bit_value):
         now = utime.ticks_us()
         if self.last_bit_time and utime.ticks_diff(now, self.last_bit_time) < Wiegand.DEBOUNCE_US:
-            return  # ignore bounce
+            return
         self.last_bit_time = now
         self.bit_buffer.append(bit_value)
 
-    def _cardcheck(self, *_):
-        now = utime.ticks_us()
-        if not self.last_bit_time or not self.bit_buffer or utime.ticks_diff(now, self.last_bit_time) < Wiegand.END_OF_TX_US:
-            return
+    async def _run(self):
+        while True:
+            await asyncio.sleep_ms(5)
+            now = utime.ticks_us()
+            if self.last_bit_time and self.bit_buffer and utime.ticks_diff(now, self.last_bit_time) >= Wiegand.END_OF_TX_US:
+                value = int("".join(map(str, self.bit_buffer)), 2)
 
-        value = int("".join(map(str, self.bit_buffer)), 2)
-        if not self._check_parity(value):
-            print("parity check failed!")
-            self._reset()
-            return
+                if not self._check_parity(value):
+                    print("parity check failed!")
+                    self._reset()
+                    continue
 
-        self.last_card = value
-        self.cards_read += 1
-        card_id = (value & Wiegand.CARD_MASK) >> 1
-        facility = (value & Wiegand.FACILITY_MASK) >> 17
-        self.callback(card_id, facility, self.cards_read)
-        self._reset()
+                self.last_card = value
+                self.cards_read += 1
+                card_id = (value & Wiegand.CARD_MASK) >> 1
+                facility = (value & Wiegand.FACILITY_MASK) >> 17
+                self.callback(card_id, facility, self.cards_read)
+                self._reset()
 
     def _check_parity(self, value):
         leading, trailing = (value >> 25) & 1, value & 1
@@ -158,7 +174,7 @@ class MainLoop:
 
         allowed = self.conway.check_fob(combined)
         if not allowed:
-            self.conway._maybe_sync()
+            asyncio.create_task(self.conway._maybe_sync())
             allowed = self.conway.check_fob(combined)
 
         self.conway.push_event(combined, allowed)
@@ -166,18 +182,26 @@ class MainLoop:
         if allowed:
             print("access granted")
             self._failed_attempts = 0
-            self.open_door()
+            asyncio.create_task(self.open_door())
         else:
             print("access denied")
             self._failed_attempts += 1
             delay = min(8000, (1 << self._failed_attempts) * 1000)
             self._backoff_until = now + delay
 
-    def open_door(self):
+    async def open_door(self):
         print("opening door")
         self.door.on()
-        time.sleep(0.2)
+        await asyncio.sleep(0.2)
         self.door.off()
 
 
-main = MainLoop()
+async def main():
+    watchdog = WDT(timeout=8000)
+    MainLoop()
+    while True:
+        await asyncio.sleep(5)
+        watchdog.feed()
+
+
+asyncio.run(main())
