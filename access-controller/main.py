@@ -3,6 +3,8 @@ from machine import WDT, Pin
 import network
 import utime
 import json
+import binascii
+import aiorepl
 
 WIEGAND_D0_PIN = 14
 WIEGAND_D1_PIN = 27
@@ -11,14 +13,55 @@ HTTP_TIMEOUT_SECONDS = 2
 POLLING_INTERVAL_SECONDS = 10
 CACHE_FILE = "conwaystate.json"
 
+with open("network.conf", "r") as f:
+    NETWORK_CFG = json.load(f)
+
+
+def write_json(fname, data):
+    s = json.dumps(data)
+    crc = binascii.crc32(s.encode()) & 0xFFFFFFFF
+    obj = {"_crc32": crc, "data": data}
+    with open(fname, "w") as f:
+        f.write(json.dumps(obj))
+
+
+def read_json(fname):
+    with open(fname) as f:
+        obj = json.load(f)
+    s = json.dumps(obj["data"])
+    crc = binascii.crc32(s.encode()) & 0xFFFFFFFF
+    if crc != obj.get("_crc32"):
+        raise ValueError("CRC mismatch")
+    return obj["data"]
+
+
+async def wifi_loop():
+    net = network.WLAN(network.WLAN.IF_STA)
+    net.active(True)
+
+    while True:
+        if not net.isconnected():
+            print("connecting to wifi...")
+            net.connect(NETWORK_CFG["ssid"], NETWORK_CFG["password"])
+
+            for _ in range(20):
+                if net.isconnected():
+                    print("wifi connected:", net.ifconfig())
+                    break
+                await asyncio.sleep(0.5)
+
+            if not net.isconnected():
+                print("wifi connection failed, retrying in 5s...")
+                await asyncio.sleep(5)
+
+        await asyncio.sleep(3)
+
 
 class ConwayClient:
     def __init__(self):
         self._etag = ""
         self._fobs = []
         self._events = []
-        self._net = None
-        self._host = None
         self._warm_cache()
 
     def check_fob(self, fob: int) -> bool:
@@ -31,42 +74,30 @@ class ConwayClient:
 
     async def run_polling_loop(self):
         while True:
-            await asyncio.sleep_ms(POLLING_INTERVAL_SECONDS)
+            await asyncio.sleep(POLLING_INTERVAL_SECONDS)
             await self.sync()
 
     async def sync(self):
         try:
-            self._connect()
             await self._roundtrip()
         except Exception as e:
             print(f"error while attempting to sync with Conway: {e}")
-
-    def _connect(self):
-        if self._net and self._net.isconnected():
-            return
-        with open("network.conf", "r") as f:
-            config = json.load(f)
-            self._net = network.WLAN(network.WLAN.IF_STA)
-            self._net.active(True)
-            self._net.connect(config["ssid"], config["password"])
-            self._host = config["conwayHost"]
-            self._port = config["conwayPort"]
-            print(f"connected to network with ip {self._net.ipconfig("addr4")}")
 
     async def _roundtrip(self):
         # Build the request
         body = json.dumps(self._events)
         req_headers = {
-            "Host": self._host,
+            "Host": NETWORK_CFG["conwayHost"],
             "Content-Type": "application/json",
             "Content-Length": str(len(body)),
             "If-None-Match": self._etag,
+            "Connection": "close",
         }
         header_str = "".join(f"{k}: {v}\r\n" for k, v in req_headers.items())
         request = f"POST /api/fobs HTTP/1.1\r\n{header_str}\r\n{body}"
 
         # Roundtrip to the server
-        reader, writer = await asyncio.open_connection(self._host, self._port)
+        reader, writer = await asyncio.open_connection(NETWORK_CFG["conwayHost"], NETWORK_CFG["conwayPort"])
         writer.write(request.encode())
         await writer.drain()
         response_data = await asyncio.wait_for(reader.read(-1), HTTP_TIMEOUT_SECONDS)
@@ -90,7 +121,7 @@ class ConwayClient:
         for line in header_lines[1:]:
             if ":" in line:
                 k, v = line.split(":", 1)
-                if k.casefold() == "Etag".casefold():
+                if k == "Etag":
                     self._etag = v
 
         # Cache the response
@@ -101,19 +132,17 @@ class ConwayClient:
 
     def _warm_cache(self):
         try:
-            with open(CACHE_FILE, "r") as f:
-                data = json.load(f)
+            data = read_json(CACHE_FILE)
             self._fobs = data.get("fobs", [])
             self._etag = data.get("etag", "")
-            print(f"loaded {len(self._fobs)} fobs from flash with etag {self._etag!r}")
+            print(f"loaded {len(self._fobs)} fobs from flash")
         except Exception as e:
             print(f"unable to load filesystem cache: {e}")
 
     async def _flush_cache(self):
         try:
             data = {"etag": self._etag, "fobs": self._fobs}
-            with open(CACHE_FILE, "w") as f:
-                json.dump(data, f)
+            write_json(CACHE_FILE, data)
         except Exception as e:
             print(f"unable to write filesystem cache: {e}")
 
@@ -159,7 +188,7 @@ class Wiegand:
                 self.cards_read += 1
                 card_id = (value & Wiegand.CARD_MASK) >> 1
                 facility = (value & Wiegand.FACILITY_MASK) >> 17
-                self.callback(card_id, facility, self.cards_read)
+                await self.callback(card_id, facility, self.cards_read)
                 self._reset()
 
     def _check_parity(self, value):
@@ -177,7 +206,7 @@ class Server:
         self._main = mainloop
 
     async def run(self):
-        asyncio.start_server(lambda r, w: self._accept(r, w), "0.0.0.0", 80)
+        await asyncio.start_server(lambda r, w: self._accept(r, w), "0.0.0.0", 80)
 
     async def _accept(self, reader, writer):
         try:
@@ -186,48 +215,31 @@ class Server:
                 await writer.aclose()
                 return
 
+            # Read the request
             method, path, _ = request_line.decode().split()
-
             while True:
                 line = await reader.readline()
                 if line == b"\r\n" or not line:
                     break
 
-            if method == "GET" and path == "/":
-                response_body = """<!DOCTYPE html>
-                    <html>
-                      <body>
-                        <form action="/unlock" method="post">
-                          <button type="submit">Unlock</button>
-                        </form>
-                      </body>
-                    </html>"""
-                response = (
-                    "HTTP/1.1 200 OK\r\n"
-                    "Content-Type: text/html\r\n"
-                    f"Content-Length: {len(response_body)}\r\n"
-                    "Connection: close\r\n"
-                    "\r\n"
-                    f"{response_body}"
-                )
-                await writer.awrite(response)
-
-            elif method == "POST" and path == "/unlock":
+            response_body = """
+                <form action="/unlock" method="post">
+                    <button type="submit">Unlock</button>
+                </form>
+            """
+            if method == "POST" and path == "/unlock":
                 await self._main.open_door()
-                response_body = "Door unlocked"
-                response = (
-                    "HTTP/1.1 200 OK\r\n"
-                    "Content-Type: text/plain\r\n"
-                    f"Content-Length: {len(response_body)}\r\n"
-                    "Connection: close\r\n"
-                    "\r\n"
-                    f"{response_body}"
-                )
-                await writer.awrite(response)
+                response_body = "<p>Door unlocked!</p>"
 
-            else:
-                response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"
-                await writer.awrite(response)
+            response = (
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html\r\n"
+                f"Content-Length: {len(response_body)}\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                f"{response_body}"
+            )
+            await writer.awrite(response)
 
         except Exception as e:
             print("HTTP server error:", e)
@@ -275,10 +287,10 @@ class MainLoop:
         self.door.off()
 
     async def run_watchdog(self):
-        wdt = WDT(timeout=8000)
+        wdt = WDT(timeout=30000)
         while True:
             # Just make sure the asyncio loop isn't blocked
-            await asyncio.sleep(5)
+            await asyncio.sleep(20)
             wdt.feed()
 
 
@@ -287,7 +299,16 @@ main = MainLoop(conway)
 wiegand = Wiegand(WIEGAND_D0_PIN, WIEGAND_D1_PIN, main.on_card)
 svr = Server(main)
 
-asyncio.create_task(conway.run_polling_loop())
-asyncio.create_task(main.run_watchdog())
-asyncio.create_task(svr.run())
-asyncio.create_task(wiegand.run())
+
+async def aio_main():
+    await asyncio.gather(
+        wifi_loop(),
+        conway.run_polling_loop(),
+        svr.run(),
+        wiegand.run(),
+        main.run_watchdog(),
+        aiorepl.task(),
+    )
+
+
+asyncio.run(aio_main())
