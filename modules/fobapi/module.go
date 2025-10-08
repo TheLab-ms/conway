@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -28,15 +29,14 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 func (m *Module) handle(w http.ResponseWriter, r *http.Request) {
 	// Store fob swipe events, if any were provided
 	events := []*fobEvent{}
-	if r.ContentLength > 0 {
-		err := json.NewDecoder(r.Body).Decode(&events)
-		if err != nil {
-			http.Error(w, "invalid json", 400)
-			return
-		}
+	buf, _ := io.ReadAll(r.Body)
+	err := json.Unmarshal(buf, &events)
+	if err != nil {
+		http.Error(w, "invalid json", 400)
+		return
 	}
 	for _, event := range events {
-		_, err := m.db.ExecContext(r.Context(), "INSERT INTO fob_swipes (uid, timestamp, fob_id, member) VALUES ($1, $2, $3, (SELECT id FROM members WHERE fob_id = $3)) ON CONFLICT DO NOTHING", uuid.NewString(), event.Timestamp, event.FobID)
+		_, err := m.db.ExecContext(r.Context(), "INSERT INTO fob_swipes (uid, timestamp, fob_id, member) VALUES ($1, strftime('%s', 'now'), $2, (SELECT id FROM members WHERE fob_id = $2)) ON CONFLICT DO NOTHING", uuid.NewString(), event.FobID)
 		if err != nil {
 			engine.SystemError(w, err.Error())
 			return
@@ -80,6 +80,6 @@ func (m *Module) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 type fobEvent struct {
-	Timestamp int64 `json:"ts"`
-	FobID     int64 `json:"fob"`
+	FobID   int64 `json:"fob"`
+	Allowed bool  `json:"allowed"`
 }

@@ -41,7 +41,7 @@ func TestListing(t *testing.T) {
 	const etag = "3ac3b3f37064c09f3be2a0b733d93964ef41657dcabd00029149920e1d3939c4"
 
 	// Happy path
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", bytes.NewBufferString("[]"))
 	w := httptest.NewRecorder()
 	m.handle(w, r)
 	assert.Equal(t, 200, w.Code)
@@ -49,7 +49,7 @@ func TestListing(t *testing.T) {
 	assert.Equal(t, etag, w.Header().Get("ETag"))
 
 	// ETag hit
-	r = httptest.NewRequest("GET", "/", nil)
+	r = httptest.NewRequest("GET", "/", bytes.NewBufferString("[]"))
 	r.Header.Set("If-None-Match", etag)
 	w = httptest.NewRecorder()
 	m.handle(w, r)
@@ -77,13 +77,13 @@ func TestEvents(t *testing.T) {
 	for results.Next() {
 		var ts, fob, member int64
 		results.Scan(&ts, &fob, &member)
-		resultStrings = append(resultStrings, fmt.Sprintf("%d at %d for member %d", fob, ts, member))
+		require.NotZero(t, ts)
+		resultStrings = append(resultStrings, fmt.Sprintf("%d for member %d", fob, member))
 	}
 	require.NoError(t, results.Err())
 
 	assert.Equal(t, []string{
-		"123 at 1000 for member 1",
-		"123 at 1001 for member 1",
-		"345 at 10001 for member 0",
+		"123 for member 1",
+		"345 for member 0",
 	}, resultStrings)
 }
