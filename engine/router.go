@@ -67,17 +67,6 @@ func SystemError(w http.ResponseWriter, msg string, args ...any) {
 	slog.Error(msg, args...)
 }
 
-// OnlyLAN returns a 403 error if the request is coming from the internet.
-func OnlyLAN(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("CF-Connecting-IP") != "" {
-			w.WriteHeader(403)
-			return
-		}
-		next(w, r)
-	}
-}
-
 type responseWrapper struct {
 	http.ResponseWriter
 	status int

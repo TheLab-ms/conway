@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/google/uuid"
 )
 
@@ -23,7 +24,7 @@ func New(db *sql.DB) *Module {
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.HandleFunc("POST /api/fobs", engine.OnlyLAN(m.handle))
+	router.HandleFunc("POST /api/fobs", auth.OnlyLAN(m.handle))
 }
 
 func (m *Module) handle(w http.ResponseWriter, r *http.Request) {
