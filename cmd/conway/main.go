@@ -58,6 +58,14 @@ func main() {
 	}
 	stripe.Key = conf.StripeKey
 
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		err := engine.CheckHealthProbe("http://localhost:8080/healthz") // assume server is running on the default port
+		if err != nil {
+			panic(err)
+		}
+		return
+	}
+
 	app, err := newApp(conf, getSelfURL(conf))
 	if err != nil {
 		panic(err)
@@ -71,8 +79,9 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	if err != nil {
 		panic(err)
 	}
+
 	router := engine.NewRouter()
-	a := engine.NewApp(conf.HttpAddr, router)
+	router.HandleFunc("/healthz", auth.OnlyLAN(engine.ServeHealthProbe(db)))
 
 	var tso *auth.TurnstileOptions
 	if conf.TurnstileSiteKey != "" {
@@ -95,6 +104,8 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		fobIss     = engine.NewTokenIssuer("fobs.pem")
 		discordIss = engine.NewTokenIssuer("discord-oauth.pem")
 	)
+
+	a := engine.NewApp(conf.HttpAddr, router)
 
 	authModule := auth.New(db, self, tso, tokenIss, loginIss)
 	a.Add(authModule)
