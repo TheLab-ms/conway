@@ -2,78 +2,93 @@ package gac
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
-	"sync/atomic"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/modules/peering"
 )
 
-func NewReconciliationLoop(client *peering.Client, gacClient *Client, lastSync *atomic.Pointer[time.Time]) engine.Proc {
-	return func(ctx context.Context) error {
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-
-		for {
-			state := client.GetState()
-			if state == nil {
-				slog.Info("refusing to sync access controller because Conway state is unknown")
-				<-client.StateTransitions
-				continue
-			}
-
-			// Sync the fob IDs
-			err := syncAccessControllerConfig(state, gacClient)
-			if err == nil {
-				slog.Info("sync'd access controller", "fobCount", len(state.EnabledFobs))
-			} else {
-				slog.Error("failed to sync access controller", "error", err)
-			}
-
-			// Scrape events
-			withScrapeCursor("gac.cursor", func(last int) int {
-				err = gacClient.ListSwipes(last, func(cs *CardSwipe) error {
-					// Prefer our clock over the access controller's for non-historical events
-					client.BufferEvent(&peering.Event{
-						UID:       fmt.Sprintf("gac-%d", cs.ID),
-						Timestamp: time.Now().Unix(),
-						FobSwipe: &peering.FobSwipeEvent{
-							FobID: int64(cs.CardID),
-						},
-					})
-					slog.Info("scraped access controller event", "eventID", cs.ID, "fobID", cs.CardID)
-
-					last = max(last, cs.ID)
-					return nil
-				})
+func NewReconciliationLoop(db *sql.DB, gacClient *Client) engine.Proc {
+	var lastRev int64
+	return engine.Poll(time.Second*20, func(ctx context.Context) bool {
+		// The scrape cursor doesn't really make sense now that this function runs
+		// in-process to sqlite. But this code will hopefully go away soon anyway.
+		withScrapeCursor("gac.cursor", func(last int) int {
+			err := gacClient.ListSwipes(last, func(cs *CardSwipe) error {
+				_, err := db.ExecContext(ctx, "INSERT INTO fob_swipes (uid, timestamp, fob_id, member) VALUES ($1, $2, $3, (SELECT id FROM members WHERE fob_id = $3)) ON CONFLICT DO NOTHING", fmt.Sprintf("gac-%d", cs.ID), cs.Time, cs.CardID)
 				if err != nil {
-					slog.Error("failed to scrape access controller events", "error", err)
+					return err
 				}
-				return last
+				slog.Info("scraped access controller event", "eventID", cs.ID, "fobID", cs.CardID)
+				last = max(last, cs.ID)
+				return nil
 			})
-
-			now := time.Now()
-			lastSync.Store(&now)
-			select {
-			case <-ticker.C:
-			case <-client.StateTransitions:
+			if err != nil {
+				slog.Error("failed to scrape access controller events", "error", err)
 			}
+			return last
+		})
+
+		tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelLinearizable, ReadOnly: true})
+		if err != nil {
+			slog.Error("starting txn", "error", err)
+			return false
 		}
-	}
+		defer tx.Rollback()
+
+		// Bail out if nothing has changed
+		var rev int64
+		err = tx.QueryRowContext(ctx, "SELECT revision FROM glider_state WHERE id = 1").Scan(&rev)
+		if err != nil {
+			slog.Error("querying for glider state", "error", err)
+			return false
+		}
+		if rev <= lastRev {
+			return false // already sync'd
+		}
+
+		// List fobs
+		q, err := tx.QueryContext(ctx, "SELECT fob_id FROM active_keyfobs")
+		if err != nil {
+			slog.Error("listing fobs", "error", err)
+			return false
+		}
+		defer q.Close()
+
+		var fobs []int64
+		for q.Next() {
+			var id int64
+			if err := q.Scan(&id); err != nil {
+				slog.Error("scanning keyfob row", "error", err)
+				return false
+			}
+			fobs = append(fobs, id)
+		}
+
+		// Sync!
+		err = syncAccessControllerConfig(fobs, gacClient)
+		if err == nil {
+			slog.Info("sync'd access controller", "fobCount", len(fobs))
+		} else {
+			slog.Error("failed to sync access controller", "error", err)
+		}
+
+		return false
+	})
 }
 
-func syncAccessControllerConfig(state *peering.State, client *Client) error {
+func syncAccessControllerConfig(fobs []int64, client *Client) error {
 	cards, err := client.ListCards()
 	if err != nil {
 		return err
 	}
 
 	expectedByID := map[int64]struct{}{}
-	for _, fob := range state.EnabledFobs {
+	for _, fob := range fobs {
 		expectedByID[fob] = struct{}{}
 	}
 
@@ -94,7 +109,7 @@ func syncAccessControllerConfig(state *peering.State, client *Client) error {
 	}
 
 	// Forward reconciliation
-	for _, fob := range state.EnabledFobs {
+	for _, fob := range fobs {
 		if _, ok := currentByID[fob]; ok {
 			continue // already active
 		}

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/db"
@@ -17,6 +18,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/fobapi"
+	gac "github.com/TheLab-ms/conway/modules/generic-access-controller"
 	"github.com/TheLab-ms/conway/modules/kiosk"
 	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/TheLab-ms/conway/modules/members"
@@ -49,6 +51,8 @@ type Config struct {
 
 	TurnstileSiteKey string
 	TurnstileSecret  string
+
+	AccessControllerHost string
 }
 
 func main() {
@@ -123,6 +127,13 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a.Add(machines.New(db))
 	a.Add(pruning.New(db))
 	a.Add(fobapi.New(db))
+
+	if conf.AccessControllerHost != "" {
+		gacClient := gac.Client{Addr: conf.AccessControllerHost, Timeout: time.Second * 5}
+		a.Add(gac.NewReconciliationLoop(db, &gacClient))
+	} else {
+		slog.Info("generic access controller module disabled because a URL was not configured")
+	}
 
 	if conf.DiscordClientID != "" {
 		a.Add(discord.New(db, self, discordIss, conf.DiscordClientID, conf.DiscordClientSecret, conf.DiscordBotToken, conf.DiscordGuildID, conf.DiscordRoleID))
