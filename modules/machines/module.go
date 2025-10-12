@@ -101,12 +101,6 @@ func (m *Module) poll(ctx context.Context) bool {
 			s.JobFinishedTimestamp = &finishedTimestamp
 		}
 		state = append(state, s)
-
-		err = printer.Disconnect()
-		if err != nil {
-			slog.Warn("unable to disconnect from Bambu printer", "error", err, "printer", name)
-			continue
-		}
 	}
 	m.state.Store(&state)
 
