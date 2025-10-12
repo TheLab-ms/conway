@@ -5,13 +5,7 @@ import (
 	"time"
 )
 
-type printerStatus struct {
-	Name string
-	JobFinishedTimestamp *int64
-	ErrorCode     string
-}
-
-templ renderMachines(printers []*printerStatus) {
+templ renderMachines(printers []printerStatus) {
 	@bootstrap.View() {
 		<div class="container my-5">
 			<div class="mt-3">
@@ -28,7 +22,7 @@ templ renderMachines(printers []*printerStatus) {
 					<tbody>
 						for _, printer := range printers {
 							<tr>
-								<td>{printer.Name}</td>
+								<td>{printer.PrinterName}</td>
 								if printer.ErrorCode != "" {
 									<td>Failed</td>
 									<td></td>

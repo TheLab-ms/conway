@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
 	"log/slog"
 	"net"
 	"net/url"
@@ -53,9 +55,19 @@ type Config struct {
 	TurnstileSecret  string
 
 	AccessControllerHost string
+
+	BambuPrinters string
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+
+	// The Bambu library logs a lot of noise using the stdlib log package.
+	// We can just disable the logger entirely since Conway uses slog.
+	log.SetOutput(io.Discard)
+
 	conf, err := env.ParseAsWithOptions[Config](env.Options{Prefix: "CONWAY_", UseFieldNameByDefault: true})
 	if err != nil {
 		panic(err)
@@ -124,9 +136,14 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a.Add(waiver.New(db))
 	a.Add(kiosk.New(db, self, fobIss, conf.SpaceHost))
 	a.Add(metrics.New(db))
-	a.Add(machines.New(db))
 	a.Add(pruning.New(db))
 	a.Add(fobapi.New(db))
+
+	if conf.BambuPrinters != "" {
+		a.Add(machines.New(conf.BambuPrinters))
+	} else {
+		slog.Info("machines module disabled because no devices were configured")
+	}
 
 	if conf.AccessControllerHost != "" {
 		gacClient := gac.Client{Addr: conf.AccessControllerHost, Timeout: time.Second * 5}
