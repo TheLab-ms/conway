@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/db"
@@ -143,8 +142,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	}
 
 	if conf.AccessControllerHost != "" {
-		gacClient := gac.Client{Addr: conf.AccessControllerHost, Timeout: time.Second * 5}
-		a.Add(gac.NewReconciliationLoop(db, &gacClient))
+		a.Add(gac.New(db, conf.AccessControllerHost))
 	} else {
 		slog.Info("generic access controller module disabled because a URL was not configured")
 	}
