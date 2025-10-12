@@ -1,0 +1,3 @@
+DROP TRIGGER glider_invalidate_fob_change;
+DROP TRIGGER glider_invalidate_member_deletion;
+DROP TRIGGER glider_invalidate_member_insertion;
