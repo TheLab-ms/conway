@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strconv"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 )
 
 func NewReconciliationLoop(db *sql.DB, gacClient *Client) engine.Proc {
-	var lastRev int64
+	var lastFobs []int64
 	return engine.Poll(time.Second*20, func(ctx context.Context) bool {
 		// The scrape cursor doesn't really make sense now that this function runs
 		// in-process to sqlite. But this code will hopefully go away soon anyway.
@@ -33,26 +34,8 @@ func NewReconciliationLoop(db *sql.DB, gacClient *Client) engine.Proc {
 			return last
 		})
 
-		tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelLinearizable, ReadOnly: true})
-		if err != nil {
-			slog.Error("starting txn", "error", err)
-			return false
-		}
-		defer tx.Rollback()
-
-		// Bail out if nothing has changed
-		var rev int64
-		err = tx.QueryRowContext(ctx, "SELECT revision FROM glider_state WHERE id = 1").Scan(&rev)
-		if err != nil {
-			slog.Error("querying for glider state", "error", err)
-			return false
-		}
-		if rev <= lastRev {
-			return false // already sync'd
-		}
-
 		// List fobs
-		q, err := tx.QueryContext(ctx, "SELECT fob_id FROM active_keyfobs")
+		q, err := db.QueryContext(ctx, "SELECT fob_id FROM active_keyfobs")
 		if err != nil {
 			slog.Error("listing fobs", "error", err)
 			return false
@@ -69,10 +52,16 @@ func NewReconciliationLoop(db *sql.DB, gacClient *Client) engine.Proc {
 			fobs = append(fobs, id)
 		}
 
+		// Bail out if nothing has changed since last sync
+		if slices.Equal(lastFobs, fobs) {
+			return false
+		}
+
 		// Sync!
 		err = syncAccessControllerConfig(fobs, gacClient)
 		if err == nil {
 			slog.Info("sync'd access controller", "fobCount", len(fobs))
+			lastFobs = fobs
 		} else {
 			slog.Error("failed to sync access controller", "error", err)
 		}

@@ -27,7 +27,6 @@ import (
 	"github.com/TheLab-ms/conway/modules/metrics"
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
-	"github.com/TheLab-ms/conway/modules/peering"
 	"github.com/TheLab-ms/conway/modules/pruning"
 	"github.com/TheLab-ms/conway/modules/waiver"
 	"github.com/caarlos0/env/v11"
@@ -115,7 +114,6 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	var (
 		tokenIss   = engine.NewTokenIssuer("auth.pem")
 		loginIss   = engine.NewTokenIssuer("auth.pem")
-		gliderIss  = engine.NewTokenIssuer("glider.pem")
 		oauthIss   = engine.NewTokenIssuer("oauth2.pem")
 		fobIss     = engine.NewTokenIssuer("fobs.pem")
 		discordIss = engine.NewTokenIssuer("discord-oauth.pem")
@@ -127,7 +125,6 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	a.Add(authModule)
 	a.Router.Authenticator = authModule // IMPORTANT
 
-	a.Add(peering.New(db, gliderIss))
 	a.Add(email.New(db, sender))
 	a.Add(oauth2.New(db, self, oauthIss))
 	a.Add(payment.New(db, conf.StripeWebhookKey, self))
