@@ -24,9 +24,3 @@ You'll probably want to designate your account as leadership like this: `sqlite3
 
 See: https://github.com/TheLab-ms/infra
 
-### Architecture
-
-Conway is very simple: the main process (`conway`) runs in the cloud, and its "agent" (`glider`) runs in the makerspace.
-
-The main conway process uses sqlite for persistence and is exposed to the internet by Cloudflare tunnels.
-Glider is a local cache process for building access controls, buffers events to handle cases where the internet is out, and can check on the status of various tools.
