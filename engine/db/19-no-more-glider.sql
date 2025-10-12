@@ -1,2 +1,2 @@
-DROP printer_events;
-DROP glider_state;
+DROP TABLE printer_events;
+DROP TABLE glider_state;
