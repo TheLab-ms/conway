@@ -12,7 +12,7 @@ import (
 func TestBasics(t *testing.T) {
 	ctx := t.Context()
 	ts := time.Now()
-	db := db.NewTest(t)
+	db := db.OpenTest(t)
 	m := New(db)
 
 	_, err := db.ExecContext(ctx, `CREATE TABLE test_items (id INTEGER PRIMARY KEY, timestamp INTEGER)`)

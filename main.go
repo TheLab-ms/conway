@@ -89,13 +89,13 @@ func main() {
 }
 
 func newApp(conf Config, self *url.URL) (*engine.App, error) {
-	db, err := db.New("conway.sqlite3")
+	database, err := db.New("conway.sqlite3")
 	if err != nil {
 		panic(err)
 	}
 
 	router := engine.NewRouter()
-	router.HandleFunc("/healthz", auth.OnlyLAN(engine.ServeHealthProbe(db)))
+	router.HandleFunc("/healthz", auth.OnlyLAN(engine.ServeHealthProbe(database)))
 
 	var tso *auth.TurnstileOptions
 	if conf.TurnstileSiteKey != "" {
@@ -120,20 +120,20 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 
 	a := engine.NewApp(conf.HttpAddr, router)
 
-	authModule := auth.New(db, self, tso, tokenIss, loginIss)
+	authModule := auth.New(database, self, tso, tokenIss, loginIss)
 	a.Add(authModule)
 	a.Router.Authenticator = authModule // IMPORTANT
 
-	a.Add(email.New(db, sender))
-	a.Add(oauth2.New(db, self, oauthIss))
-	a.Add(payment.New(db, conf.StripeWebhookKey, self))
-	a.Add(admin.New(db, self, tokenIss))
-	a.Add(members.New(db))
-	a.Add(waiver.New(db))
-	a.Add(kiosk.New(db, self, fobIss, conf.SpaceHost))
-	a.Add(metrics.New(db))
-	a.Add(pruning.New(db))
-	a.Add(fobapi.New(db))
+	a.Add(email.New(database, sender))
+	a.Add(oauth2.New(database, self, oauthIss))
+	a.Add(payment.New(database, conf.StripeWebhookKey, self))
+	a.Add(admin.New(database, self, tokenIss))
+	a.Add(members.New(database))
+	a.Add(waiver.New(database))
+	a.Add(kiosk.New(database, self, fobIss, conf.SpaceHost))
+	a.Add(metrics.New(database))
+	a.Add(pruning.New(database))
+	a.Add(fobapi.New(database))
 
 	if conf.BambuPrinters != "" {
 		a.Add(machines.New(conf.BambuPrinters))
@@ -142,17 +142,18 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	}
 
 	if conf.AccessControllerHost != "" {
-		a.Add(gac.New(db, conf.AccessControllerHost))
+		a.Add(gac.New(database, conf.AccessControllerHost))
 	} else {
 		slog.Info("generic access controller module disabled because a URL was not configured")
 	}
 
 	if conf.DiscordClientID != "" {
-		a.Add(discord.New(db, self, discordIss, conf.DiscordClientID, conf.DiscordClientSecret, conf.DiscordBotToken, conf.DiscordGuildID, conf.DiscordRoleID))
+		a.Add(discord.New(database, self, discordIss, conf.DiscordClientID, conf.DiscordClientSecret, conf.DiscordBotToken, conf.DiscordGuildID, conf.DiscordRoleID))
 	} else {
 		slog.Info("discord module disabled because a client ID was not configured")
 	}
 
+	db.MustMigrate(database, db.BaseMigration)
 	return a, nil
 }
 

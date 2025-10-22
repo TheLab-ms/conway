@@ -8,13 +8,26 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/db"
 )
+
+const migration = `
+CREATE TABLE IF NOT EXISTS pruning_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    column TEXT NOT NULL DEFAULT 'timestamp',
+    ttl INTEGER NOT NULL DEFAULT (2 * 365 * 86400) -- 2 years
+);
+`
 
 type Module struct {
 	db *sql.DB
 }
 
-func New(db *sql.DB) *Module { return &Module{db: db} }
+func New(d *sql.DB) *Module {
+	db.MustMigrate(d, migration)
+	return &Module{db: d}
+}
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	mgr.Add(engine.Poll(time.Hour, m.runPruneJobs))

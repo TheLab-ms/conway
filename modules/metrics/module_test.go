@@ -9,8 +9,8 @@ import (
 )
 
 func TestSamplingBasics(t *testing.T) {
-	testDB := db.NewTest(t)
-	m := &Module{db: testDB}
+	testDB := db.OpenTest(t)
+	m := New(testDB)
 
 	// Create a custom metrics table
 	_, err := testDB.Exec(`

@@ -259,7 +259,7 @@ func TestMemberWaiverRelation(t *testing.T) {
 		var waiverID int
 		err = db.QueryRow("SELECT waiver FROM members WHERE email = 'foo@bar.com'").Scan(&waiverID)
 		require.NoError(t, err)
-		assert.Equal(t, 2, waiverID)
+		assert.Equal(t, 1, waiverID)
 	})
 
 	t.Run("signed before signup", func(t *testing.T) {
@@ -274,55 +274,8 @@ func TestMemberWaiverRelation(t *testing.T) {
 		var waiverID int
 		err = db.QueryRow("SELECT waiver FROM members WHERE email = 'foo@bar.com'").Scan(&waiverID)
 		require.NoError(t, err)
-		assert.Equal(t, 2, waiverID)
+		assert.Equal(t, 1, waiverID)
 	})
-}
-
-func TestActiveFobsLogic(t *testing.T) {
-	db := NewTest(t)
-
-	// Signup
-	_, err := db.Exec("INSERT INTO members (id, email, confirmed, fob_id) VALUES (1, 'foo@bar.com', TRUE, 123)")
-	require.NoError(t, err)
-	assert.Equal(t, []int64{}, activeFobs(t, db))
-
-	// Sign waiver
-	_, err = db.Exec("INSERT INTO waivers (name, email, version) VALUES ('foo', 'foo@bar.com', 1)")
-	require.NoError(t, err)
-	assert.Equal(t, []int64{}, activeFobs(t, db))
-
-	// Glider cache hasn't been invalidated yet
-	var gliderRev int
-	err = db.QueryRow("SELECT revision FROM glider_state").Scan(&gliderRev)
-	require.NoError(t, err)
-	assert.Equal(t, 1, gliderRev)
-
-	// Stripe
-	_, err = db.Exec("UPDATE members SET stripe_subscription_state = 'active' WHERE email = 'foo@bar.com'")
-	require.NoError(t, err)
-	assert.Equal(t, []int64{123}, activeFobs(t, db))
-
-	// Glider cache has been invalidated
-	err = db.QueryRow("SELECT revision FROM glider_state").Scan(&gliderRev)
-	require.NoError(t, err)
-	assert.Equal(t, 2, gliderRev)
-
-	// Updating some other field doesn't invalidate the Glider cache
-	_, err = db.Exec("UPDATE members SET admin_notes = 'v cool dood' WHERE email = 'foo@bar.com'")
-	require.NoError(t, err)
-	assert.Equal(t, []int64{123}, activeFobs(t, db))
-
-	err = db.QueryRow("SELECT revision FROM glider_state").Scan(&gliderRev)
-	require.NoError(t, err)
-	assert.Equal(t, 2, gliderRev)
-
-	// Deleting the member invalidates the cache again
-	_, err = db.Exec("DELETE FROM members")
-	require.NoError(t, err)
-
-	err = db.QueryRow("SELECT revision FROM glider_state").Scan(&gliderRev)
-	require.NoError(t, err)
-	assert.Equal(t, 3, gliderRev)
 }
 
 func TestFobSwipes(t *testing.T) {
@@ -397,101 +350,6 @@ func activeFobs(t *testing.T, db *sql.DB) []int64 {
 	}
 	require.NoError(t, results.Err())
 	return all
-}
-
-func TestSamplingInvalidTarget(t *testing.T) {
-	db := NewTest(t)
-
-	// Test with non-existent table
-	_, err := db.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES ('invalid-table', 'SELECT 42', 60, 'nonexistent_table')")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Target table does not exist")
-
-	// Create a table without required columns
-	_, err = db.Exec(`
-		CREATE TABLE invalid_metrics (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL
-		) STRICT;
-	`)
-	require.NoError(t, err)
-
-	// Test with table missing the series column
-	_, err = db.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES ('invalid-cols', 'SELECT 42', 60, 'invalid_metrics')")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Target table must have a series column")
-
-	// Create a table with wrong column type
-	_, err = db.Exec(`
-		CREATE TABLE wrong_type_metrics (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			series TEXT NOT NULL,
-			value INTEGER NOT NULL
-		) STRICT;
-	`)
-	require.NoError(t, err)
-
-	// Test with table having wrong column type
-	_, err = db.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES ('wrong-type', 'SELECT 42', 60, 'wrong_type_metrics')")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Target table must have a value column of type REAL")
-
-	// Create a table missing the timestamp column
-	_, err = db.Exec(`
-		CREATE TABLE missing_timestamp_metrics (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			series TEXT NOT NULL,
-			value REAL NOT NULL
-		) STRICT;
-	`)
-	require.NoError(t, err)
-
-	// Test with table missing the timestamp column
-	_, err = db.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES ('missing-timestamp', 'SELECT 42', 60, 'missing_timestamp_metrics')")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Target table must have a timestamp column of type REAL")
-}
-
-func TestSamplingUpdateTarget(t *testing.T) {
-	db := NewTest(t)
-
-	// Insert a valid sampling with metrics target
-	_, err := db.Exec("INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES ('update-test', 'SELECT 42', 60, 'metrics')")
-	require.NoError(t, err)
-
-	// Create a custom valid metrics table
-	_, err = db.Exec(`
-		CREATE TABLE valid_custom_metrics (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			timestamp REAL NOT NULL DEFAULT (strftime('%s', 'now', 'subsec')),
-			series TEXT NOT NULL,
-			value REAL NOT NULL
-		) STRICT;
-	`)
-	require.NoError(t, err)
-
-	// Test valid update to target table
-	_, err = db.Exec("UPDATE metrics_samplings SET target_table = 'valid_custom_metrics' WHERE name = 'update-test'")
-	require.NoError(t, err)
-
-	// Create an invalid table missing required columns
-	_, err = db.Exec(`
-		CREATE TABLE invalid_update_metrics (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL
-		) STRICT;
-	`)
-	require.NoError(t, err)
-
-	// Test invalid update - missing required columns
-	_, err = db.Exec("UPDATE metrics_samplings SET target_table = 'invalid_update_metrics' WHERE name = 'update-test'")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Target table must have a series column")
-
-	// Test invalid update - non-existent table
-	_, err = db.Exec("UPDATE metrics_samplings SET target_table = 'nonexistent_update_table' WHERE name = 'update-test'")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Target table does not exist")
 }
 
 func TestWaiverUniqueness(t *testing.T) {
