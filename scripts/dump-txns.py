@@ -1,3 +1,5 @@
+# Exports the last 3 years of Paypal transactions to a csv file
+
 import os
 import csv
 import requests
