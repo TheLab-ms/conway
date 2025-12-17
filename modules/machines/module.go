@@ -66,6 +66,42 @@ func New(config string) *Module {
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /machines", router.WithAuthn(m.renderView))
 	router.HandleFunc("GET /machines/stream/{serial}", router.WithAuthn(m.serveMJPEGStream))
+	router.HandleFunc("POST /machines/{serial}/stop", router.WithAuthn(m.stopPrint))
+}
+
+func (m *Module) stopPrint(w http.ResponseWriter, r *http.Request) {
+	serial := r.PathValue("serial")
+
+	// Find the printer for this serial number
+	var printer *bambulabs_api.Printer
+	for _, p := range m.printers {
+		if p.GetSerial() == serial {
+			printer = p
+			break
+		}
+	}
+	if printer == nil {
+		http.Error(w, "Printer not found", http.StatusNotFound)
+		return
+	}
+
+	// Connect and stop the print
+	if err := printer.Connect(); err != nil {
+		slog.Error("failed to connect to printer for stop", "error", err, "serial", serial)
+		http.Error(w, "Failed to connect to printer", http.StatusInternalServerError)
+		return
+	}
+
+	if err := printer.StopPrint(); err != nil {
+		slog.Error("failed to stop print", "error", err, "serial", serial)
+		http.Error(w, "Failed to stop print", http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("print stopped successfully", "serial", serial, "printer", m.serialToName[serial])
+
+	// Redirect back to machines page
+	http.Redirect(w, r, "/machines", http.StatusSeeOther)
 }
 
 func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {

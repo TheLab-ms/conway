@@ -32,6 +32,9 @@ templ renderMachines(printers []printerStatus) {
 										<br/>
 										<small class="text-muted">Error: { printer.ErrorCode }</small>
 									</p>
+									<form action={ templ.SafeURL(fmt.Sprintf("/machines/%s/stop", printer.SerialNumber)) } method="POST" onsubmit="return confirm('Are you sure you want to stop this print?\\n\\nPlease only cancel prints that have clearly failed.');">
+										<button type="submit" class="btn btn-sm btn-danger">Stop Print</button>
+									</form>
 								} else if jft := printer.JobFinishedTimestamp; jft != nil {
 									<p class="card-text">
 										<span class="badge bg-warning text-dark">In Use</span>
@@ -42,6 +45,9 @@ templ renderMachines(printers []printerStatus) {
 											<small class="text-muted">Finishing up</small>
 										}
 									</p>
+									<form action={ templ.SafeURL(fmt.Sprintf("/machines/%s/stop", printer.SerialNumber)) } method="POST" onsubmit="return confirm('Are you sure you want to stop this print?\\n\\nPlease only cancel prints that have clearly failed.');">
+										<button type="submit" class="btn btn-sm btn-outline-danger">Stop Print</button>
+									</form>
 								} else {
 									<p class="card-text">
 										<span class="badge bg-success">Available</span>
