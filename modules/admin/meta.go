@@ -30,12 +30,12 @@ var listViews = []listView{
 			{Title: "Actions", Width: 1},
 		},
 		BuildQuery: func(r *http.Request) (q, rowCountQuery string, args []any) {
-			q = "SELECT id, identifier, COALESCE(payment_status, 'Inactive') AS payment_status, access_status FROM members"
+			q = "SELECT id, COALESCE(name_override, identifier) AS identifier, COALESCE(payment_status, 'Inactive') AS payment_status, access_status FROM members"
 			rowCountQuery = "SELECT COUNT(*) FROM members"
 
 			search := r.PostFormValue("search")
 			if search != "" {
-				logic := " WHERE name LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%' OR CAST(fob_id AS TEXT) LIKE '%' || $1 || '%' OR discount_type LIKE '%' || $1 || '%'"
+				logic := " WHERE name LIKE '%' || $1 || '%' OR name_override LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%' OR CAST(fob_id AS TEXT) LIKE '%' || $1 || '%' OR discount_type LIKE '%' || $1 || '%'"
 				q += logic
 				rowCountQuery += logic
 				args = append(args, search)
@@ -94,10 +94,10 @@ var listViews = []listView{
 			{Title: "Fob ID", Width: 1},
 		},
 		BuildQuery: func(r *http.Request) (q, rowCountQuery string, args []any) {
-			q = `SELECT f.timestamp, f.member, m.identifier AS member, f.fob_id 
-				 FROM fob_swipes f 
-				 LEFT JOIN members m ON f.member = m.id 
-				 ORDER BY f.timestamp DESC 
+			q = `SELECT f.timestamp, f.member, COALESCE(m.name_override, m.identifier) AS member, f.fob_id
+				 FROM fob_swipes f
+				 LEFT JOIN members m ON f.member = m.id
+				 ORDER BY f.timestamp DESC
 				 LIMIT :limit OFFSET :offset`
 			rowCountQuery = "SELECT COUNT(*) FROM fob_swipes"
 			return
@@ -145,7 +145,7 @@ var listViews = []listView{
 			{Title: "Details", Width: 2},
 		},
 		BuildQuery: func(r *http.Request) (q, rowCountQuery string, args []any) {
-			q = `SELECT f.created, f.member, m.identifier AS member, f.event, f.details
+			q = `SELECT f.created, f.member, COALESCE(m.name_override, m.identifier) AS member, f.event, f.details
 				 FROM member_events f
 				 LEFT JOIN members m ON f.member = m.id
 				 ORDER BY f.created DESC

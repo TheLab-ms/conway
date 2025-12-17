@@ -16,6 +16,7 @@ type member struct {
 	ID              int64
 	AccessStatus    string
 	Name            string
+	NameOverride    *string
 	Email           string
 	Confirmed       bool
 	Created         engine.LocalTime
@@ -44,11 +45,11 @@ type memberEvent struct {
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
 	mem := member{}
 	err := db.QueryRowContext(ctx, `
-		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
+		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, id).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -76,7 +77,7 @@ var _ = handlePostForm(formHandler{
 	Path: "/admin/members/{id}/updates/basics",
 	Post: &engine.PostFormHandler{
 		Fields: []string{"name", "email", "confirmed", "fob_id", "admin_notes", "bill_annually", "discord_user_id"},
-		Query: `UPDATE members SET name = :name, email = :email, admin_notes = :admin_notes,
+		Query: `UPDATE members SET name_override = (CASE WHEN :name = name OR :name = '' THEN NULL ELSE :name END), email = :email, admin_notes = :admin_notes,
 			discord_user_id = (CASE WHEN :discord_user_id != '' THEN :discord_user_id ELSE NULL END),
 			confirmed = (CASE WHEN :confirmed = 'on' THEN 1 ELSE 0 END),
 			bill_annually = (CASE WHEN :bill_annually = 'on' THEN 1 ELSE 0 END),
@@ -131,9 +132,13 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 						<span class="badge text-bg-danger mb-3">{ member.AccessStatus }</span>
 					}
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/basics", member.ID)) } id="basic-info-form">
-						<div class="form-floating mb-2">
-							<input type="text" class="form-control" id="name" name="name" value={ member.Name }/>
-							<label for="name" class="form-label">Name</label>
+						<div class="input-group mb-2">
+							<span class="input-group-text">Name</span>
+							if hasNameOverride(member) {
+								<input type="text" class="form-control" id="name" name="name" value={ *member.NameOverride } placeholder={ member.Name }/>
+							} else {
+								<input type="text" class="form-control" id="name" name="name" placeholder={ member.Name }/>
+							}
 						</div>
 						<div class="input-group mb-2">
 							<div class="form-floating">
@@ -313,4 +318,8 @@ func formatLastFobSwipe(ts time.Time) string {
 	default:
 		return "within the last day"
 	}
+}
+
+func hasNameOverride(m *member) bool {
+	return m.NameOverride != nil && *m.NameOverride != ""
 }

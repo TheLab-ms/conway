@@ -1,6 +1,7 @@
 .PHONY: build cloc dev seed clean
 
 build:
+	go generate ./...
 	GOOS=linux GOARCH=amd64 go build
 
 cloc:

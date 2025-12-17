@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS members (
 
     /* Metadata */
     name TEXT NOT NULL DEFAULT '',
+    name_override TEXT,
     admin_notes TEXT NOT NULL DEFAULT '',
     identifier TEXT GENERATED ALWAYS AS (CASE WHEN (name IS NOT NULL AND name != '') THEN name ELSE email END) VIRTUAL,
 
