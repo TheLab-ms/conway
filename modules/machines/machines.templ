@@ -15,7 +15,7 @@ templ renderMachines(printers []printerStatus) {
 					<div class="col-md-4">
 						<div class="card h-100">
 							<img
-								src={ fmt.Sprintf("/machines/camera/%s", printer.SerialNumber) }
+								src={ fmt.Sprintf("/machines/stream/%s", printer.SerialNumber) }
 								class="card-img-top"
 								alt={ fmt.Sprintf("%s camera", printer.PrinterName) }
 								style="aspect-ratio: 16/9; object-fit: cover; background-color: #e9ecef;"

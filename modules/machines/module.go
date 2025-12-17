@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os/exec"
 	"sync/atomic"
 	"time"
 
@@ -27,13 +29,13 @@ type printerStatus struct {
 	SerialNumber         string `json:"serial_number"`
 	JobFinishedTimestamp *int64 `json:"job_finished_timestamp"`
 	ErrorCode            string `json:"error_code"`
-	CameraImage          []byte `json:"-"` // Cached camera snapshot, not serialized
 }
 
 type Module struct {
 	state atomic.Pointer[[]printerStatus]
 
 	printers     []*bambulabs_api.Printer
+	configs      []*printerConfig
 	serialToName map[string]string
 }
 
@@ -44,7 +46,10 @@ func New(config string) *Module {
 		panic(fmt.Sprintf("failed to parse Bambu printer config: %v", err))
 	}
 
-	m := &Module{serialToName: map[string]string{}}
+	m := &Module{
+		configs:      configs,
+		serialToName: map[string]string{},
+	}
 	for _, cfg := range configs {
 		m.serialToName[cfg.SerialNumber] = cfg.Name
 		m.printers = append(m.printers, bambulabs_api.NewPrinter(&bambulabs_api.PrinterConfig{
@@ -60,7 +65,7 @@ func New(config string) *Module {
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /machines", router.WithAuthn(m.renderView))
-	router.HandleFunc("GET /machines/camera/{serial}", router.WithAuthn(m.serveCamera))
+	router.HandleFunc("GET /machines/stream/{serial}", router.WithAuthn(m.serveMJPEGStream))
 }
 
 func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {
@@ -68,22 +73,59 @@ func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {
 	renderMachines(*m.state.Load()).Render(r.Context(), w)
 }
 
-func (m *Module) serveCamera(w http.ResponseWriter, r *http.Request) {
+func (m *Module) buildRTSPURL(cfg *printerConfig) string {
+	return fmt.Sprintf("rtsps://bblp:%s@%s:322/streaming/live/1", cfg.AccessCode, cfg.Host)
+}
+
+func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 	serial := r.PathValue("serial")
-	state := m.state.Load()
-	for _, printer := range *state {
-		if printer.SerialNumber == serial {
-			if len(printer.CameraImage) == 0 {
-				http.Error(w, "Camera image not available", http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "image/jpeg")
-			w.Header().Set("Cache-Control", "no-cache")
-			w.Write(printer.CameraImage)
-			return
+
+	// Find config for this printer
+	var cfg *printerConfig
+	for _, c := range m.configs {
+		if c.SerialNumber == serial {
+			cfg = c
+			break
 		}
 	}
-	http.Error(w, "Printer not found", http.StatusNotFound)
+	if cfg == nil {
+		http.Error(w, "Printer not found", http.StatusNotFound)
+		return
+	}
+
+	rtspURL := m.buildRTSPURL(cfg)
+
+	// ffmpeg command to transcode RTSP to MJPEG
+	cmd := exec.CommandContext(r.Context(), "ffmpeg",
+		"-rtsp_transport", "tcp",
+		"-i", rtspURL,
+		"-f", "mjpeg",
+		"-q:v", "5",
+		"-r", "15",
+		"-an",
+		"pipe:1",
+	)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		slog.Error("failed to create ffmpeg stdout pipe", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		slog.Error("failed to start ffmpeg", "error", err)
+		http.Error(w, "Failed to start camera stream", http.StatusInternalServerError)
+		return
+	}
+
+	// Set headers for MJPEG stream
+	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=ffmpeg")
+	w.Header().Set("Cache-Control", "no-cache")
+
+	// Stream MJPEG data to client
+	io.Copy(w, stdout)
+	cmd.Wait()
 }
 
 func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
@@ -121,15 +163,6 @@ func (m *Module) poll(ctx context.Context) bool {
 			// Calculate the finished timestamp based on the remaining time
 			finishedTimestamp := time.Now().Add(time.Duration(data.RemainingPrintTime) * time.Minute).Unix()
 			s.JobFinishedTimestamp = &finishedTimestamp
-		}
-
-		// Capture camera frame
-		if err := printer.ConnectCamera(); err != nil {
-			slog.Warn("unable to connect to Bambu camera", "error", err, "printer", name)
-		} else if frame, err := printer.CaptureCameraFrame(); err != nil {
-			slog.Warn("unable to capture camera frame", "error", err, "printer", name)
-		} else {
-			s.CameraImage = frame
 		}
 
 		state = append(state, s)

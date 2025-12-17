@@ -57,7 +57,7 @@ func renderMachines(printers []printerStatus) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var3 string
-				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/machines/camera/%s", printer.SerialNumber))
+				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/machines/stream/%s", printer.SerialNumber))
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `machines.templ`, Line: 18, Col: 70}
 				}
