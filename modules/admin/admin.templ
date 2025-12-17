@@ -162,22 +162,48 @@ templ renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected strin
 			for _, name := range metrics {
 				<div class="mb-5">
 					<h3>{ name }</h3>
-					<img id={ fmt.Sprintf("chart-img-%s", name) } data-series={ name } data-window={ selected } style="width: 100%; padding: 8px;" />
+					<canvas id={ fmt.Sprintf("chart-%s", name) } data-series={ name } data-window={ selected }></canvas>
 				</div>
 			}
 			<script>
-				document.addEventListener('DOMContentLoaded', function() {
-					const charts = document.querySelectorAll('img[id^="chart-img-"]');
-					charts.forEach(function(img) {
-						function setChartSrc() {
-							const width = img.clientWidth;
-							const series = img.getAttribute('data-series');
-							const windowVal = img.getAttribute('data-window');
-							img.src = `/admin/chart?series=${encodeURIComponent(series)}&window=${encodeURIComponent(windowVal)}&width=${width}`;
-						}
-						setChartSrc();
-						window.addEventListener('resize', setChartSrc);
-					});
+				document.addEventListener('DOMContentLoaded', async function() {
+					const canvases = document.querySelectorAll('canvas[id^="chart-"]');
+					for (const canvas of canvases) {
+						const series = canvas.getAttribute('data-series');
+						const windowVal = canvas.getAttribute('data-window');
+
+						const resp = await fetch(`/admin/chart?series=${encodeURIComponent(series)}&window=${encodeURIComponent(windowVal)}`);
+						const data = await resp.json();
+
+						new Chart(canvas, {
+							type: 'line',
+							data: {
+								datasets: [{
+									data: data.map(p => ({ x: p.t * 1000, y: p.v })),
+									borderColor: 'rgb(75, 192, 192)',
+									tension: 0.1,
+									fill: false
+								}]
+							},
+							options: {
+								responsive: true,
+								scales: {
+									x: {
+										type: 'time',
+										time: {
+											tooltipFormat: 'MMM d, yyyy'
+										}
+									},
+									y: {
+										beginAtZero: true
+									}
+								},
+								plugins: {
+									legend: { display: false }
+								}
+							}
+						});
+					}
 				});
 			</script>
 		</div>

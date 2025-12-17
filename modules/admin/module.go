@@ -3,6 +3,7 @@ package admin
 import (
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,7 +14,6 @@ import (
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/skip2/go-qrcode"
-	"github.com/wcharczuk/go-chart/v2"
 )
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
@@ -199,35 +199,22 @@ func (m *Module) renderMetricsChart(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	x := []time.Time{}
-	y := []float64{}
+	type dataPoint struct {
+		Timestamp int64   `json:"t"`
+		Value     float64 `json:"v"`
+	}
+	var data []dataPoint
 	for rows.Next() {
 		var ts, val float64
 		if err := rows.Scan(&ts, &val); err != nil {
 			engine.SystemError(w, err.Error())
 			return
 		}
-		x = append(x, time.Unix(int64(ts), 0))
-		y = append(y, val)
+		data = append(data, dataPoint{Timestamp: int64(ts), Value: val})
 	}
 
-	graph := chart.Chart{
-		Width: 800,
-		Series: []chart.Series{
-			chart.TimeSeries{XValues: x, YValues: y},
-		},
-	}
-	width, err := strconv.Atoi(r.URL.Query().Get("width"))
-	if err == nil {
-		graph.Width = width
-	}
-
-	w.Header().Set("Content-Type", "image/png")
-	err = graph.Render(chart.PNG, w)
-	if err != nil {
-		engine.SystemError(w, err.Error())
-		return
-	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
 }
 
 func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request) {
