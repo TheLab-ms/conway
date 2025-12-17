@@ -24,8 +24,10 @@ type printerConfig struct {
 
 type printerStatus struct {
 	PrinterName          string `json:"printer_name"`
+	SerialNumber         string `json:"serial_number"`
 	JobFinishedTimestamp *int64 `json:"job_finished_timestamp"`
 	ErrorCode            string `json:"error_code"`
+	CameraImage          []byte `json:"-"` // Cached camera snapshot, not serialized
 }
 
 type Module struct {
@@ -58,6 +60,7 @@ func New(config string) *Module {
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /machines", router.WithAuthn(m.renderView))
+	router.HandleFunc("GET /machines/camera/{serial}", router.WithAuthn(m.serveCamera))
 }
 
 func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {
@@ -65,8 +68,26 @@ func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {
 	renderMachines(*m.state.Load()).Render(r.Context(), w)
 }
 
+func (m *Module) serveCamera(w http.ResponseWriter, r *http.Request) {
+	serial := r.PathValue("serial")
+	state := m.state.Load()
+	for _, printer := range *state {
+		if printer.SerialNumber == serial {
+			if len(printer.CameraImage) == 0 {
+				http.Error(w, "Camera image not available", http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Write(printer.CameraImage)
+			return
+		}
+	}
+	http.Error(w, "Printer not found", http.StatusNotFound)
+}
+
 func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
-	procs.Add(engine.Poll(time.Second*30, m.poll))
+	procs.Add(engine.Poll(time.Second*5, m.poll))
 }
 
 func (m *Module) poll(ctx context.Context) bool {
@@ -87,8 +108,9 @@ func (m *Module) poll(ctx context.Context) bool {
 		}
 
 		s := printerStatus{
-			PrinterName: name,
-			ErrorCode:   data.PrintErrorCode,
+			PrinterName:  name,
+			SerialNumber: printer.GetSerial(),
+			ErrorCode:    data.PrintErrorCode,
 		}
 		if s.ErrorCode == "0" {
 			s.ErrorCode = ""
@@ -100,6 +122,16 @@ func (m *Module) poll(ctx context.Context) bool {
 			finishedTimestamp := time.Now().Add(time.Duration(data.RemainingPrintTime) * time.Minute).Unix()
 			s.JobFinishedTimestamp = &finishedTimestamp
 		}
+
+		// Capture camera frame
+		if err := printer.ConnectCamera(); err != nil {
+			slog.Warn("unable to connect to Bambu camera", "error", err, "printer", name)
+		} else if frame, err := printer.CaptureCameraFrame(); err != nil {
+			slog.Warn("unable to capture camera frame", "error", err, "printer", name)
+		} else {
+			s.CameraImage = frame
+		}
+
 		state = append(state, s)
 	}
 	m.state.Store(&state)
