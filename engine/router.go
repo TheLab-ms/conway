@@ -76,3 +76,10 @@ func (w *responseWrapper) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
+
+// Flush implements http.Flusher to support streaming responses (e.g., MJPEG).
+func (w *responseWrapper) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}

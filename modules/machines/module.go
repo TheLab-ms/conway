@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os/exec"
@@ -131,14 +130,16 @@ func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 
 	rtspURL := m.buildRTSPURL(cfg)
 
-	// ffmpeg command to transcode RTSP to MJPEG
+	// ffmpeg command to transcode RTSP to MJPEG with multipart boundaries
 	cmd := exec.CommandContext(r.Context(), "ffmpeg",
 		"-rtsp_transport", "tcp",
 		"-i", rtspURL,
-		"-f", "mjpeg",
+		"-c:v", "mjpeg",
 		"-q:v", "5",
 		"-r", "15",
 		"-an",
+		"-f", "mpjpeg",
+		"-boundary_tag", "frame",
 		"pipe:1",
 	)
 
@@ -156,11 +157,23 @@ func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set headers for MJPEG stream
-	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=ffmpeg")
+	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=frame")
 	w.Header().Set("Cache-Control", "no-cache")
 
-	// Stream MJPEG data to client
-	io.Copy(w, stdout)
+	// Stream MJPEG data to client with flushing
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := stdout.Read(buf)
+		if n > 0 {
+			w.Write(buf[:n])
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
 	cmd.Wait()
 }
 
