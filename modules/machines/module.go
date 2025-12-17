@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os/exec"
@@ -36,6 +37,8 @@ type Module struct {
 	printers     []*bambulabs_api.Printer
 	configs      []*printerConfig
 	serialToName map[string]string
+
+	streams map[string]*engine.StreamMux
 }
 
 func New(config string) *Module {
@@ -48,6 +51,7 @@ func New(config string) *Module {
 	m := &Module{
 		configs:      configs,
 		serialToName: map[string]string{},
+		streams:      map[string]*engine.StreamMux{},
 	}
 	for _, cfg := range configs {
 		m.serialToName[cfg.SerialNumber] = cfg.Name
@@ -56,6 +60,7 @@ func New(config string) *Module {
 			AccessCode:   cfg.AccessCode,
 			SerialNumber: cfg.SerialNumber,
 		}))
+		m.streams[cfg.SerialNumber] = m.newStreamMux(cfg)
 	}
 	zero := []printerStatus{}
 	m.state.Store(&zero)
@@ -108,73 +113,83 @@ func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {
 	renderMachines(*m.state.Load()).Render(r.Context(), w)
 }
 
-func (m *Module) buildRTSPURL(cfg *printerConfig) string {
-	return fmt.Sprintf("rtsps://bblp:%s@%s:322/streaming/live/1", cfg.AccessCode, cfg.Host)
+func (m *Module) newStreamMux(cfg *printerConfig) *engine.StreamMux {
+	rtspURL := fmt.Sprintf("rtsps://bblp:%s@%s:322/streaming/live/1", cfg.AccessCode, cfg.Host)
+	return engine.NewStreamMux(func(ctx context.Context) (io.ReadCloser, error) {
+		cmd := exec.CommandContext(ctx, "ffmpeg",
+			"-rtsp_transport", "tcp",
+			"-i", rtspURL,
+			"-c:v", "mjpeg",
+			"-q:v", "5",
+			"-r", "15",
+			"-an",
+			"-f", "mpjpeg",
+			"-boundary_tag", "frame",
+			"pipe:1",
+		)
+
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create ffmpeg stdout pipe: %w", err)
+		}
+
+		if err := cmd.Start(); err != nil {
+			return nil, fmt.Errorf("failed to start ffmpeg: %w", err)
+		}
+
+		slog.Info("started camera stream", "printer", m.serialToName[cfg.SerialNumber])
+
+		// Return a wrapper that waits for cmd on close
+		return &cmdReader{ReadCloser: stdout, cmd: cmd, name: m.serialToName[cfg.SerialNumber]}, nil
+	})
+}
+
+type cmdReader struct {
+	io.ReadCloser
+	cmd  *exec.Cmd
+	name string
+}
+
+func (c *cmdReader) Close() error {
+	err := c.ReadCloser.Close()
+	c.cmd.Wait()
+	slog.Info("stopped camera stream", "printer", c.name)
+	return err
 }
 
 func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 	serial := r.PathValue("serial")
 
-	// Find config for this printer
-	var cfg *printerConfig
-	for _, c := range m.configs {
-		if c.SerialNumber == serial {
-			cfg = c
-			break
-		}
-	}
-	if cfg == nil {
+	mux, ok := m.streams[serial]
+	if !ok {
 		http.Error(w, "Printer not found", http.StatusNotFound)
 		return
 	}
 
-	rtspURL := m.buildRTSPURL(cfg)
-
-	// ffmpeg command to transcode RTSP to MJPEG with multipart boundaries
-	cmd := exec.CommandContext(r.Context(), "ffmpeg",
-		"-rtsp_transport", "tcp",
-		"-i", rtspURL,
-		"-c:v", "mjpeg",
-		"-q:v", "5",
-		"-r", "15",
-		"-an",
-		"-f", "mpjpeg",
-		"-boundary_tag", "frame",
-		"pipe:1",
-	)
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		slog.Error("failed to create ffmpeg stdout pipe", "error", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if err := cmd.Start(); err != nil {
-		slog.Error("failed to start ffmpeg", "error", err)
+	ch := mux.Subscribe()
+	if ch == nil {
 		http.Error(w, "Failed to start camera stream", http.StatusInternalServerError)
 		return
 	}
+	defer mux.Unsubscribe(ch)
 
-	// Set headers for MJPEG stream
 	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=frame")
 	w.Header().Set("Cache-Control", "no-cache")
 
-	// Stream MJPEG data to client with flushing
-	buf := make([]byte, 32*1024)
 	for {
-		n, err := stdout.Read(buf)
-		if n > 0 {
-			w.Write(buf[:n])
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				return
+			}
+			w.Write(data)
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
-		}
-		if err != nil {
-			break
+		case <-r.Context().Done():
+			return
 		}
 	}
-	cmd.Wait()
 }
 
 func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
