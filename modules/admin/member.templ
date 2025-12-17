@@ -32,6 +32,7 @@ type member struct {
 	BillAnnually    bool
 	FobLastSeen     *engine.LocalTime
 	DiscordUserID   string
+	DiscordUsername string
 }
 
 type memberEvent struct {
@@ -43,11 +44,11 @@ type memberEvent struct {
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
 	mem := member{}
 	err := db.QueryRowContext(ctx, `
-		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, '')
+		SELECT m.id, m.access_status, m.name, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, id).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -147,8 +148,13 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 						<div class="input-group mb-2">
 							<span class="input-group-text">Fob ID</span>
 							<input type="number" class="form-control" id="fob_id" name="fob_id" value={ strconv.FormatInt(*member.FobID, 10) }/>
-							<span class="input-group-text">Discord User ID</span>
-							<input type="text" class="form-control" id="discord_user_id" name="discord_user_id" value={ member.DiscordUserID }/>
+							<span class="input-group-text">Discord</span>
+							if member.DiscordUsername != "" {
+								<input type="text" class="form-control" disabled value={ member.DiscordUsername }/>
+								<input type="hidden" name="discord_user_id" value={ member.DiscordUserID }/>
+							} else {
+								<input type="text" class="form-control" id="discord_user_id" name="discord_user_id" value={ member.DiscordUserID }/>
+							}
 						</div>
 						<div class="input-group mb-2">
 							<input type="checkbox" class="form-check-input" id="bill_annually" name="bill_annually" checked?={ member.BillAnnually }/>

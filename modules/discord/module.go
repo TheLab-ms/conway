@@ -139,24 +139,29 @@ func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
 	return false
 }
 
-func (m *Module) GetItem(ctx context.Context) (item syncItem, err error) {
+func (m *Module) GetItem(ctx context.Context) (item *syncItem, err error) {
+	item = &syncItem{}
 	err = m.db.QueryRowContext(ctx, `UPDATE members SET discord_last_synced = unixepoch() WHERE id = ( SELECT id FROM members WHERE discord_user_id IS NOT NULL AND discord_last_synced IS NULL ORDER BY id ASC LIMIT 1) RETURNING id, discord_user_id, payment_status`).Scan(&item.MemberID, &item.DiscordUserID, &item.PaymentStatus)
-	return item, err
+	if err != nil {
+		return nil, err
+	}
+	return item, nil
 }
 
-func (m *Module) ProcessItem(ctx context.Context, item syncItem) error {
+func (m *Module) ProcessItem(ctx context.Context, item *syncItem) error {
 	shouldHaveRole := item.PaymentStatus.Valid && item.PaymentStatus.String != ""
-	changed, err := m.client.EnsureRole(ctx, item.DiscordUserID, m.roleID, shouldHaveRole)
+	changed, displayName, err := m.client.EnsureRole(ctx, item.DiscordUserID, m.roleID, shouldHaveRole)
 	if err != nil {
 		return err
 	}
-	slog.Info("sync'd discord role", "memberID", item.MemberID, "discordUserID", item.DiscordUserID, "shouldHaveRole", shouldHaveRole, "changed", changed)
+	item.DisplayName = displayName
+	slog.Info("sync'd discord role", "memberID", item.MemberID, "discordUserID", item.DiscordUserID, "displayName", displayName, "shouldHaveRole", shouldHaveRole, "changed", changed)
 	return nil
 }
 
-func (m *Module) UpdateItem(ctx context.Context, item syncItem, success bool) error {
+func (m *Module) UpdateItem(ctx context.Context, item *syncItem, success bool) error {
 	if success {
-		_, err := m.db.ExecContext(ctx, "UPDATE members SET discord_last_synced = unixepoch() WHERE id = ?", item.MemberID)
+		_, err := m.db.ExecContext(ctx, "UPDATE members SET discord_last_synced = unixepoch(), discord_username = ? WHERE id = ?", item.DisplayName, item.MemberID)
 		return err
 	}
 
@@ -177,8 +182,9 @@ type syncItem struct {
 	MemberID      string
 	DiscordUserID string
 	PaymentStatus sql.NullString
+	DisplayName   string // populated during ProcessItem
 }
 
-func (s syncItem) String() string {
+func (s *syncItem) String() string {
 	return fmt.Sprintf("memberID=%s", s.MemberID)
 }

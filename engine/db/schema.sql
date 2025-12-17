@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS members (
 
 	/* Discord */
 	discord_user_id TEXT,
-	discord_last_synced INTEGER
+	discord_last_synced INTEGER,
+	discord_username TEXT
 ) STRICT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS members_email_idx ON members (email);

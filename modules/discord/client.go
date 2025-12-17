@@ -25,13 +25,13 @@ func newDiscordAPIClient(botToken, guildID string, client *http.Client, authConf
 	}
 }
 
-func (c *discordAPIClient) EnsureRole(ctx context.Context, userID string, roleID string, inRole bool) (bool, error) {
-	hasRole, err := c.HasRole(ctx, userID, roleID)
+func (c *discordAPIClient) EnsureRole(ctx context.Context, userID string, roleID string, inRole bool) (changed bool, displayName string, err error) {
+	info, err := c.GetGuildMember(ctx, userID, roleID)
 	if err != nil {
-		return false, fmt.Errorf("checking current role status: %w", err)
+		return false, "", fmt.Errorf("checking current role status: %w", err)
 	}
-	if hasRole == inRole {
-		return false, nil
+	if info.HasRole == inRole {
+		return false, info.DisplayName, nil
 	}
 
 	if inRole {
@@ -39,7 +39,7 @@ func (c *discordAPIClient) EnsureRole(ctx context.Context, userID string, roleID
 	} else {
 		err = c.RemoveRole(ctx, userID, roleID)
 	}
-	return true, err
+	return true, info.DisplayName, err
 }
 
 func (c *discordAPIClient) makeDiscordAPIRequest(ctx context.Context, method, endpoint string) (*http.Response, error) {
@@ -60,28 +60,58 @@ func (c *discordAPIClient) makeDiscordAPIRequest(ctx context.Context, method, en
 }
 
 func (c *discordAPIClient) HasRole(ctx context.Context, userID string, roleID string) (bool, error) {
+	info, err := c.GetGuildMember(ctx, userID, roleID)
+	if err != nil {
+		return false, err
+	}
+	return info.HasRole, nil
+}
+
+type GuildMemberInfo struct {
+	HasRole     bool
+	DisplayName string // nick > global_name > username
+}
+
+func (c *discordAPIClient) GetGuildMember(ctx context.Context, userID string, roleID string) (GuildMemberInfo, error) {
 	endpoint := fmt.Sprintf("/guilds/%s/members/%s", c.guildID, userID)
 	resp, err := c.makeDiscordAPIRequest(ctx, "GET", endpoint)
 	if err != nil {
-		return false, err
+		return GuildMemberInfo{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 404 {
-		return false, nil
+		return GuildMemberInfo{}, nil
 	}
 	if resp.StatusCode != 200 {
-		return false, fmt.Errorf("discord API error: %d", resp.StatusCode)
+		return GuildMemberInfo{}, fmt.Errorf("discord API error: %d", resp.StatusCode)
 	}
 
 	var member struct {
+		Nick  string   `json:"nick"`
 		Roles []string `json:"roles"`
+		User  struct {
+			Username   string `json:"username"`
+			GlobalName string `json:"global_name"`
+		} `json:"user"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&member); err != nil {
-		return false, fmt.Errorf("decoding response: %w", err)
+		return GuildMemberInfo{}, fmt.Errorf("decoding response: %w", err)
 	}
 
-	return slices.Contains(member.Roles, roleID), nil
+	// Priority: nick > global_name > username
+	displayName := member.Nick
+	if displayName == "" {
+		displayName = member.User.GlobalName
+	}
+	if displayName == "" {
+		displayName = member.User.Username
+	}
+
+	return GuildMemberInfo{
+		HasRole:     slices.Contains(member.Roles, roleID),
+		DisplayName: displayName,
+	}, nil
 }
 
 func (c *discordAPIClient) AddRole(ctx context.Context, userID string, roleID string) error {
