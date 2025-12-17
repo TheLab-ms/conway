@@ -225,15 +225,17 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 			<div class="card mt-3">
 				<div class="card-body">
 					<h5 class="card-title">
-						Stripe
-						if member.StripeStatus == nil || *member.StripeStatus != "active" {
+						Payment
+						if (member.PaypalSubID == nil || *member.PaypalSubID == "") && (member.StripeStatus == nil || *member.StripeStatus != "active") {
 							<span class="badge text-bg-danger">!</span>
 						}
 					</h5>
 					<h6 class="card-subtitle mb-2 text-muted">
-						Subscription status: 
+						Subscription status:
 						<b>
-							if member.StripeStatus == nil || *member.StripeStatus == "" {
+							if member.PaypalSubID != nil && *member.PaypalSubID != "" {
+								PayPal active
+							} else if member.StripeStatus == nil || *member.StripeStatus == "" {
 								unknown
 							} else {
 								{ *member.StripeStatus }
@@ -247,19 +249,6 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 					}
 				</div>
 			</div>
-			if member.PaypalSubID != nil && *member.PaypalSubID != "" {
-				<div class="card mt-3">
-					<div class="card-body">
-						<h5 class="card-title">Paypal</h5>
-						if member.PaypalPrice != nil {
-							<h6 class="card-subtitle mb-2 text-muted">
-								Subscription price:
-								<b>{ fmt.Sprintf("%.2f", *member.PaypalPrice) }</b>
-							</h6>
-						}
-					</div>
-				</div>
-			}
 			<div class="card mt-3">
 				<div class="card-body">
 					<h5 class="card-title mb-2">Designations</h5>
