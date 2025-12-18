@@ -59,10 +59,49 @@ templ renderOnboardingChecklist(member *member) {
 		</div>
 		<ul class="list-group list-group-flush">
 			@renderStep("1", "Sign Liability Waiver", "Required for building access", member.WaiverSigned, !member.WaiverSigned, templ.SafeURL("/waiver?r=/&email="+member.Email), "Sign Waiver")
-			@renderStep("2", "Set Up Payment", "Activate your monthly membership", member.PaymentActive, member.WaiverSigned && !member.PaymentActive, templ.SafeURL("/payment/checkout"), "Set Up Payment")
+			@renderPaymentStep(member)
 			@renderStep("3", "Get Your Key Fob", "Visit the kiosk near the front door", member.HasKeyFob, member.PaymentActive && !member.HasKeyFob, templ.SafeURL(""), "")
 		</ul>
 	</div>
+}
+
+templ renderPaymentStep(member *member) {
+	<li class="list-group-item">
+		<div class="d-flex align-items-start">
+			<div class="me-3 mt-1">
+				if member.PaymentActive {
+					<span class="badge bg-success rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+							<path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+						</svg>
+					</span>
+				} else if member.WaiverSigned {
+					<span class="badge bg-primary rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+						2
+					</span>
+				} else {
+					<span class="badge bg-secondary rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+						2
+					</span>
+				}
+			</div>
+			<div class="flex-grow-1">
+				<div>
+					<strong class={ templ.KV("text-muted", !member.PaymentActive && !member.WaiverSigned) }>Set Up Payment</strong>
+					<p class="mb-0 small text-muted">Activate your monthly membership</p>
+				</div>
+				if member.WaiverSigned {
+					<div class="mt-2">
+						if member.PaymentActive {
+							<a href="/payment/checkout" class="btn btn-outline-success btn-sm">Manage Payment</a>
+						} else {
+							<a href="/payment/checkout" class="btn btn-primary btn-sm">Set Up Payment</a>
+						}
+					</div>
+				}
+			</div>
+		</div>
+	</li>
 }
 
 templ renderStep(number string, title string, description string, complete bool, isCurrent bool, actionUrl templ.SafeURL, actionText string) {
@@ -144,7 +183,6 @@ templ renderOptionalSection(member *member) {
 
 templ renderActions(member *member) {
 	<div class="d-flex gap-2">
-		<a href="/payment/checkout" class="btn btn-outline-success">Manage Payment</a>
 		<a href="/logout" class="btn btn-outline-secondary">Logout</a>
 	</div>
 }
