@@ -24,6 +24,12 @@ func TestDashboard_ActiveMember(t *testing.T) {
 	dashboard := NewMemberDashboardPage(t, page)
 	dashboard.Navigate()
 	dashboard.ExpectActiveStatus()
+
+	// Checklist should still be visible for active members
+	dashboard.ExpectOnboardingChecklist()
+	dashboard.ExpectStepComplete("Sign Liability Waiver")
+	dashboard.ExpectStepComplete("Set Up Payment")
+	dashboard.ExpectStepComplete("Get Your Key Fob")
 }
 
 func TestDashboard_MissingWaiver(t *testing.T) {
@@ -84,6 +90,7 @@ func TestDashboard_ManagePaymentButton(t *testing.T) {
 	memberID := seedMember(t, "payment@example.com",
 		WithConfirmed(),
 		WithWaiver(),
+		WithActiveStripeSubscription(),
 	)
 
 	ctx := newContext(t)

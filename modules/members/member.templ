@@ -17,6 +17,7 @@ templ renderMember(member *member) {
 		<div class="container my-5" style="max-width: 600px;">
 			if member.AccessStatus == "Ready" {
 				@renderActiveStatus()
+				@renderOnboardingChecklist(member)
 			} else if member.AccessStatus == "FamilyInactive" {
 				@renderFamilyInactiveWarning()
 				@renderOnboardingChecklist(member)
