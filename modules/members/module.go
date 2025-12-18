@@ -26,7 +26,12 @@ func (m *Module) renderMemberView(w http.ResponseWriter, r *http.Request) {
 	authdUser := auth.GetUserMeta(r.Context()).ID
 
 	mem := member{}
-	err := m.db.QueryRowContext(r.Context(), `SELECT id, email, m.access_status, m.discord_user_id IS NOT NULL FROM members m WHERE m.id = $1`, authdUser).Scan(&mem.ID, &mem.Email, &mem.AccessStatus, &mem.DiscordLinked)
+	err := m.db.QueryRowContext(r.Context(), `
+		SELECT id, email, access_status, discord_user_id IS NOT NULL,
+			waiver IS NOT NULL, payment_status IS NOT NULL, fob_id IS NOT NULL AND fob_id != 0
+		FROM members m WHERE m.id = $1`, authdUser).Scan(
+		&mem.ID, &mem.Email, &mem.AccessStatus, &mem.DiscordLinked,
+		&mem.WaiverSigned, &mem.PaymentActive, &mem.HasKeyFob)
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return

@@ -132,7 +132,7 @@ func TestDashboard_DiscordLinkButton(t *testing.T) {
 	dashboard.Navigate()
 
 	// Verify Link Discord button is visible
-	expect(t).Locator(page.Locator("a:has-text('Link Discord Account')")).ToBeVisible()
+	expect(t).Locator(page.Locator("a:has-text('Link Discord')")).ToBeVisible()
 }
 
 func TestDashboard_DiscordButtonHiddenWhenLinked(t *testing.T) {
@@ -155,7 +155,7 @@ func TestDashboard_DiscordButtonHiddenWhenLinked(t *testing.T) {
 	dashboard.Navigate()
 
 	// Link Discord button should NOT be visible
-	expect(t).Locator(page.Locator("a:has-text('Link Discord Account')")).ToBeHidden()
+	expect(t).Locator(page.Locator("a:has-text('Link Discord')")).ToBeHidden()
 }
 
 func TestDashboard_RequiresAuthentication(t *testing.T) {
@@ -189,4 +189,57 @@ func TestDashboard_LogoutButton(t *testing.T) {
 
 	// Verify Logout button is visible
 	expect(t).Locator(page.Locator("a:has-text('Logout')")).ToBeVisible()
+}
+
+func TestDashboard_OnboardingChecklist(t *testing.T) {
+	clearTestData(t)
+
+	// Create a member with waiver signed but no payment
+	memberID := seedMember(t, "onboarding@example.com",
+		WithConfirmed(),
+		WithWaiver(),
+	)
+
+	ctx := newContext(t)
+	loginAs(t, ctx, memberID)
+	page := newPageInContext(t, ctx)
+
+	dashboard := NewMemberDashboardPage(t, page)
+	dashboard.Navigate()
+
+	// Verify welcome message and checklist are shown
+	dashboard.ExpectWelcomeMessage()
+	dashboard.ExpectOnboardingChecklist()
+
+	// Verify waiver step is complete
+	dashboard.ExpectStepComplete("Sign Liability Waiver")
+
+	// Verify payment step shows action button (since it's the current step)
+	dashboard.ExpectMissingPaymentAlert()
+
+	// Verify key fob step is pending (not yet actionable)
+	dashboard.ExpectStepPending("Get Your Key Fob")
+}
+
+func TestDashboard_PartialProgress(t *testing.T) {
+	clearTestData(t)
+
+	// Create a member with waiver and payment, but no key fob
+	memberID := seedMember(t, "partial@example.com",
+		WithConfirmed(),
+		WithWaiver(),
+		WithActiveStripeSubscription(),
+	)
+
+	ctx := newContext(t)
+	loginAs(t, ctx, memberID)
+	page := newPageInContext(t, ctx)
+
+	dashboard := NewMemberDashboardPage(t, page)
+	dashboard.Navigate()
+
+	// Verify checklist shows correct progress
+	dashboard.ExpectStepComplete("Sign Liability Waiver")
+	dashboard.ExpectStepComplete("Set Up Payment")
+	dashboard.ExpectMissingKeyFobAlert() // Shows "Action Required" for key fob
 }

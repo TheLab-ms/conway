@@ -119,28 +119,57 @@ func (p *MemberDashboardPage) Navigate() {
 }
 
 func (p *MemberDashboardPage) ExpectActiveStatus() {
-	locator := p.page.GetByText("Active Member")
+	locator := p.page.GetByText("You're all set!")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MemberDashboardPage) ExpectWelcomeMessage() {
+	locator := p.page.GetByText("Welcome!")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MemberDashboardPage) ExpectOnboardingChecklist() {
+	locator := p.page.GetByText("Membership Setup")
 	expect(p.t).Locator(locator).ToBeVisible()
 }
 
 func (p *MemberDashboardPage) ExpectMissingWaiverAlert() {
-	locator := p.page.GetByText("Missing Liability Waiver")
+	// The new UI shows the "Sign Waiver" button when waiver is missing
+	locator := p.page.Locator("a.btn:has-text('Sign Waiver')")
 	expect(p.t).Locator(locator).ToBeVisible()
 }
 
 func (p *MemberDashboardPage) ExpectMissingPaymentAlert() {
-	locator := p.page.GetByText("Missing Billing Information")
+	// The new UI shows the "Set Up Payment" button when payment is missing
+	locator := p.page.Locator("a.btn:has-text('Set Up Payment')")
 	expect(p.t).Locator(locator).ToBeVisible()
 }
 
 func (p *MemberDashboardPage) ExpectMissingKeyFobAlert() {
-	locator := p.page.GetByText("Pick Up Your Key")
+	// The new UI shows "Action Required" badge for key fob step
+	locator := p.page.GetByText("Action Required")
 	expect(p.t).Locator(locator).ToBeVisible()
 }
 
 func (p *MemberDashboardPage) ExpectFamilyInactiveAlert() {
-	locator := p.page.GetByText("Family Member Inactive")
+	locator := p.page.GetByText("Family Plan Issue")
 	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MemberDashboardPage) ExpectStepComplete(stepTitle string) {
+	// Find the step item that contains the title and check for Complete badge
+	stepLocator := p.page.Locator("li.list-group-item", playwright.PageLocatorOptions{
+		Has: p.page.GetByText(stepTitle),
+	})
+	expect(p.t).Locator(stepLocator.GetByText("Complete")).ToBeVisible()
+}
+
+func (p *MemberDashboardPage) ExpectStepPending(stepTitle string) {
+	// Find the step item that contains the title and check for Pending badge
+	stepLocator := p.page.Locator("li.list-group-item", playwright.PageLocatorOptions{
+		Has: p.page.GetByText(stepTitle),
+	})
+	expect(p.t).Locator(stepLocator.GetByText("Pending")).ToBeVisible()
 }
 
 func (p *MemberDashboardPage) ClickManagePayment() {
@@ -149,7 +178,7 @@ func (p *MemberDashboardPage) ClickManagePayment() {
 }
 
 func (p *MemberDashboardPage) ClickLinkDiscord() {
-	err := p.page.Locator("a:has-text('Link Discord Account')").Click()
+	err := p.page.Locator("a:has-text('Link Discord')").Click()
 	require.NoError(p.t, err)
 }
 

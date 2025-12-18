@@ -4,54 +4,147 @@ import "github.com/TheLab-ms/conway/modules/bootstrap"
 
 type member struct {
 	ID            int64
+	Email         string
 	AccessStatus  string
 	DiscordLinked bool
-	Email         string
+	WaiverSigned  bool
+	PaymentActive bool
+	HasKeyFob     bool
 }
 
 templ renderMember(member *member) {
 	@bootstrap.View() {
-		<div class="container my-5">
-			@renderMembershipStatus(member)
-			<div class="mt-3">
-				<a href="/payment/checkout" class="btn btn-outline-success">Manage Payment</a>
-				if !member.DiscordLinked {
-					<a href="/discord/login" class="btn btn-outline-success">Link Discord Account</a>
-				}
-				<a href="/logout" class="btn btn-outline-secondary">Logout</a>
-			</div>
+		<div class="container my-5" style="max-width: 600px;">
+			if member.AccessStatus == "Ready" {
+				@renderActiveStatus()
+			} else if member.AccessStatus == "FamilyInactive" {
+				@renderFamilyInactiveWarning()
+				@renderOnboardingChecklist(member)
+			} else {
+				@renderWelcome(member)
+				@renderOnboardingChecklist(member)
+			}
+			@renderOptionalSection(member)
+			@renderActions(member)
 		</div>
 	}
 }
 
-templ renderMembershipStatus(member *member) {
-	switch member.AccessStatus {
-		default:
-			<div class="alert alert-success">
-				<h4 class="alert-heading">Active Member</h4>
-				Your key fob is active!
+templ renderWelcome(member *member) {
+	<div class="card mb-4 border-primary">
+		<div class="card-body">
+			<h4 class="card-title mb-1">Welcome!</h4>
+		</div>
+	</div>
+}
+
+templ renderActiveStatus() {
+	<div class="alert alert-success">
+		<h4 class="alert-heading">You're all set!</h4>
+		<p class="mb-0">Your key fob is active and you have full access to the space.</p>
+	</div>
+}
+
+templ renderFamilyInactiveWarning() {
+	<div class="alert alert-warning mb-4">
+		<h4 class="alert-heading">Family Plan Issue</h4>
+		<p class="mb-0">Your membership is part of a family plan that is no longer active. Please contact the primary account holder.</p>
+	</div>
+}
+
+templ renderOnboardingChecklist(member *member) {
+	<div class="card mb-4">
+		<div class="card-header">
+			<strong>Membership Setup</strong>
+		</div>
+		<ul class="list-group list-group-flush">
+			@renderStep("1", "Sign Liability Waiver", "Required for building access", member.WaiverSigned, !member.WaiverSigned, templ.SafeURL("/waiver?r=/&email="+member.Email), "Sign Waiver")
+			@renderStep("2", "Set Up Payment", "Activate your monthly membership", member.PaymentActive, member.WaiverSigned && !member.PaymentActive, templ.SafeURL("/payment/checkout"), "Set Up Payment")
+			@renderStep("3", "Get Your Key Fob", "Visit the kiosk near the front door", member.HasKeyFob, member.PaymentActive && !member.HasKeyFob, templ.SafeURL(""), "")
+		</ul>
+	</div>
+}
+
+templ renderStep(number string, title string, description string, complete bool, isCurrent bool, actionUrl templ.SafeURL, actionText string) {
+	<li class="list-group-item">
+		<div class="d-flex align-items-start">
+			<div class="me-3 mt-1">
+				if complete {
+					<span class="badge bg-success rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+							<path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+						</svg>
+					</span>
+				} else if isCurrent {
+					<span class="badge bg-primary rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+						{ number }
+					</span>
+				} else {
+					<span class="badge bg-secondary rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+						{ number }
+					</span>
+				}
 			</div>
-		case "MissingWaiver":
-			<div class="alert alert-warning">
-				<h4 class="alert-heading">Missing Liability Waiver</h4>
-				<p>You will need to sign our liability waiver before entering the space.</p>
-				<a href={ templ.SafeURL("/waiver?r=/&email=" + member.Email) } class="btn btn-success">Sign Waiver</a>
+			<div class="flex-grow-1">
+				<div class="d-flex justify-content-between align-items-start">
+					<div>
+						<strong class={ templ.KV("text-muted", !complete && !isCurrent) }>{ title }</strong>
+						<p class="mb-0 small text-muted">{ description }</p>
+					</div>
+					<div>
+						if complete {
+							<span class="badge bg-success-subtle text-success">Complete</span>
+						} else if isCurrent && actionText != "" {
+							<a href={ actionUrl } class="btn btn-primary btn-sm">{ actionText }</a>
+						} else if isCurrent && actionText == "" {
+							<span class="badge bg-warning-subtle text-warning">Action Required</span>
+						} else {
+							<span class="badge bg-secondary-subtle text-secondary">Pending</span>
+						}
+					</div>
+				</div>
 			</div>
-		case "MissingKeyFob":
-			<div class="alert alert-warning">
-				<h4 class="alert-heading">Pick Up Your Key</h4>
-				You need an RFID key fob to access the space, but your account isn't currently linked to one.
-				If you're at the space, you can add one using the kiosk near the front door.
+		</div>
+	</li>
+}
+
+templ renderOptionalSection(member *member) {
+	if !member.DiscordLinked {
+		<div class="card mb-4">
+			<div class="card-header">
+				<strong>Optional</strong>
 			</div>
-		case "FamilyInactive":
-			<div class="alert alert-warning">
-				<h4 class="alert-heading">Family Member Inactive</h4>
-				Your membership is part of a family discount that is no longer valid due to the "root" member's account becoming inactive.
-			</div>
-		case "PaymentInactive":
-			<div class="alert alert-warning">
-				<h4 class="alert-heading">Missing Billing Information</h4>
-				Use the button below to set up payment with our secure payment processor.
-			</div>
+			<ul class="list-group list-group-flush">
+				<li class="list-group-item">
+					<div class="d-flex align-items-start">
+						<div class="me-3 mt-1">
+							<span class="badge bg-secondary rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+									<path d="M13.545 2.907a13.227 13.227 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.19 12.19 0 0 0-3.658 0 8.258 8.258 0 0 0-.412-.833.051.051 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.041.041 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032c.001.014.01.028.021.037a13.276 13.276 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019c.308-.42.582-.863.818-1.329a.05.05 0 0 0-.01-.059.051.051 0 0 0-.018-.011 8.875 8.875 0 0 1-1.248-.595.05.05 0 0 1-.02-.066.051.051 0 0 1 .015-.019c.084-.063.168-.129.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.052.052 0 0 1 .053.007c.08.066.164.132.248.195a.051.051 0 0 1-.004.085 8.254 8.254 0 0 1-1.249.594.05.05 0 0 0-.03.03.052.052 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.235 13.235 0 0 0 4.001-2.02.049.049 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.034.034 0 0 0-.02-.019Zm-8.198 7.307c-.789 0-1.438-.724-1.438-1.612 0-.889.637-1.613 1.438-1.613.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612Zm5.316 0c-.788 0-1.438-.724-1.438-1.612 0-.889.637-1.613 1.438-1.613.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612Z"/>
+								</svg>
+							</span>
+						</div>
+						<div class="flex-grow-1">
+							<div class="d-flex justify-content-between align-items-start">
+								<div>
+									<strong>Link Discord Account</strong>
+									<p class="mb-0 small text-muted">Join our community chat</p>
+								</div>
+								<div>
+									<a href="/discord/login" class="btn btn-outline-secondary btn-sm">Link Discord</a>
+								</div>
+							</div>
+						</div>
+					</div>
+				</li>
+			</ul>
+		</div>
 	}
+}
+
+templ renderActions(member *member) {
+	<div class="d-flex gap-2">
+		<a href="/payment/checkout" class="btn btn-outline-success">Manage Payment</a>
+		<a href="/logout" class="btn btn-outline-secondary">Logout</a>
+	</div>
 }
