@@ -1,0 +1,373 @@
+package e2e
+
+import (
+	"net/url"
+	"testing"
+
+	"github.com/playwright-community/playwright-go"
+	"github.com/stretchr/testify/require"
+)
+
+// LoginPage represents the login page.
+type LoginPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewLoginPage(t *testing.T, page playwright.Page) *LoginPage {
+	return &LoginPage{page: page, t: t}
+}
+
+func (p *LoginPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/login")
+	require.NoError(p.t, err)
+}
+
+func (p *LoginPage) NavigateWithCallback(callback string) {
+	_, err := p.page.Goto(baseURL + "/login?callback_uri=" + url.QueryEscape(callback))
+	require.NoError(p.t, err)
+}
+
+func (p *LoginPage) FillEmail(email string) {
+	err := p.page.Locator("#email").Fill(email)
+	require.NoError(p.t, err)
+}
+
+func (p *LoginPage) Submit() {
+	err := p.page.Locator("button[type='submit']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *LoginPage) ExpectSentPage() {
+	err := p.page.WaitForURL("**/login/sent")
+	require.NoError(p.t, err)
+}
+
+func (p *LoginPage) ExpectEmailSentMessage() {
+	locator := p.page.GetByText("We sent a login link")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+// WaiverPage represents the waiver signing page.
+type WaiverPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewWaiverPage(t *testing.T, page playwright.Page) *WaiverPage {
+	return &WaiverPage{page: page, t: t}
+}
+
+func (p *WaiverPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/waiver")
+	require.NoError(p.t, err)
+}
+
+func (p *WaiverPage) NavigateWithRedirect(redirect string) {
+	_, err := p.page.Goto(baseURL + "/waiver?r=" + url.QueryEscape(redirect))
+	require.NoError(p.t, err)
+}
+
+func (p *WaiverPage) FillName(name string) {
+	err := p.page.Locator("#name").Fill(name)
+	require.NoError(p.t, err)
+}
+
+func (p *WaiverPage) FillEmail(email string) {
+	err := p.page.Locator("#email").Fill(email)
+	require.NoError(p.t, err)
+}
+
+func (p *WaiverPage) CheckAgree1() {
+	err := p.page.Locator("#agree1").Check()
+	require.NoError(p.t, err)
+}
+
+func (p *WaiverPage) CheckAgree2() {
+	err := p.page.Locator("#agree2").Check()
+	require.NoError(p.t, err)
+}
+
+func (p *WaiverPage) Submit() {
+	err := p.page.Locator("button[type='submit']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *WaiverPage) ExpectSuccessMessage() {
+	locator := p.page.GetByText("Waiver has been submitted successfully")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *WaiverPage) ExpectWaiverText() {
+	locator := p.page.GetByText("TheLab Liability Waiver")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+// MemberDashboardPage represents the member dashboard.
+type MemberDashboardPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewMemberDashboardPage(t *testing.T, page playwright.Page) *MemberDashboardPage {
+	return &MemberDashboardPage{page: page, t: t}
+}
+
+func (p *MemberDashboardPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/")
+	require.NoError(p.t, err)
+}
+
+func (p *MemberDashboardPage) ExpectActiveStatus() {
+	locator := p.page.GetByText("Active Member")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MemberDashboardPage) ExpectMissingWaiverAlert() {
+	locator := p.page.GetByText("Missing Liability Waiver")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MemberDashboardPage) ExpectMissingPaymentAlert() {
+	locator := p.page.GetByText("Missing Billing Information")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MemberDashboardPage) ExpectMissingKeyFobAlert() {
+	locator := p.page.GetByText("Pick Up Your Key")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MemberDashboardPage) ExpectFamilyInactiveAlert() {
+	locator := p.page.GetByText("Family Member Inactive")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MemberDashboardPage) ClickManagePayment() {
+	err := p.page.Locator("a:has-text('Manage Payment')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *MemberDashboardPage) ClickLinkDiscord() {
+	err := p.page.Locator("a:has-text('Link Discord Account')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *MemberDashboardPage) ClickLogout() {
+	err := p.page.Locator("a:has-text('Logout')").Click()
+	require.NoError(p.t, err)
+}
+
+// AdminMembersListPage represents the admin members list page.
+type AdminMembersListPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewAdminMembersListPage(t *testing.T, page playwright.Page) *AdminMembersListPage {
+	return &AdminMembersListPage{page: page, t: t}
+}
+
+func (p *AdminMembersListPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/admin/members")
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMembersListPage) Search(query string) {
+	err := p.page.Locator("#searchbox").Fill(query)
+	require.NoError(p.t, err)
+	// Wait for HTMX to complete
+	err = p.page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		State: playwright.LoadStateNetworkidle,
+	})
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMembersListPage) ExpectMemberInList(identifier string) {
+	locator := p.page.Locator("#results").GetByText(identifier)
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminMembersListPage) ExpectMemberNotInList(identifier string) {
+	locator := p.page.Locator("#results").GetByText(identifier)
+	expect(p.t).Locator(locator).ToBeHidden()
+}
+
+func (p *AdminMembersListPage) ClickMemberRow(identifier string) {
+	err := p.page.Locator("tr", playwright.PageLocatorOptions{HasText: identifier}).Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMembersListPage) ClickNextPage() {
+	err := p.page.Locator("a:has-text('Next')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMembersListPage) ClickPreviousPage() {
+	err := p.page.Locator("a:has-text('Previous')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMembersListPage) ExpectPageNumber(pageNum int) {
+	locator := p.page.Locator("#currentpage")
+	expect(p.t).Locator(locator).ToHaveValue(string(rune('0' + pageNum)))
+}
+
+// AdminMemberDetailPage represents the admin member detail page.
+type AdminMemberDetailPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewAdminMemberDetailPage(t *testing.T, page playwright.Page) *AdminMemberDetailPage {
+	return &AdminMemberDetailPage{page: page, t: t}
+}
+
+func (p *AdminMemberDetailPage) NavigateToMember(memberID int64) {
+	_, err := p.page.Goto(baseURL + "/admin/members/" + string(rune(memberID)))
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) FillNameOverride(name string) {
+	err := p.page.Locator("input[name='name']").Fill(name)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) FillEmail(email string) {
+	err := p.page.Locator("input[name='email']").Fill(email)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) FillFobID(fobID string) {
+	err := p.page.Locator("input[name='fob_id']").Fill(fobID)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) FillAdminNotes(notes string) {
+	err := p.page.Locator("textarea[name='admin_notes']").Fill(notes)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) ToggleLeadership() {
+	err := p.page.Locator("input[name='leadership']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) ToggleNonBillable() {
+	err := p.page.Locator("input[name='non_billable']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) SubmitBasicsForm() {
+	// Find the form containing the basics and submit it
+	err := p.page.Locator("form[action$='/updates/basics'] button[type='submit']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) SubmitDesignationsForm() {
+	err := p.page.Locator("form[action$='/updates/designations'] button[type='submit']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) ClickGenerateLoginQR() {
+	err := p.page.Locator("a:has-text('Login Code')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) ClickDeleteMember() {
+	// Click the first Delete button (the one that shows the confirmation)
+	err := p.page.Locator("button.btn-secondary:has-text('Delete')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMemberDetailPage) ConfirmDelete() {
+	// Click the Confirm Delete button (which has id="delete-account-link")
+	err := p.page.Locator("#delete-account-link").Click()
+	require.NoError(p.t, err)
+}
+
+// AdminDataListPage represents generic admin data list pages (fobs, events, waivers).
+type AdminDataListPage struct {
+	page playwright.Page
+	t    *testing.T
+	path string
+}
+
+func NewAdminFobsPage(t *testing.T, page playwright.Page) *AdminDataListPage {
+	return &AdminDataListPage{page: page, t: t, path: "/admin/fobs"}
+}
+
+func NewAdminEventsPage(t *testing.T, page playwright.Page) *AdminDataListPage {
+	return &AdminDataListPage{page: page, t: t, path: "/admin/events"}
+}
+
+func NewAdminWaiversPage(t *testing.T, page playwright.Page) *AdminDataListPage {
+	return &AdminDataListPage{page: page, t: t, path: "/admin/waivers"}
+}
+
+func (p *AdminDataListPage) Navigate() {
+	_, err := p.page.Goto(baseURL + p.path)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDataListPage) Search(query string) {
+	err := p.page.Locator("#searchbox").Fill(query)
+	require.NoError(p.t, err)
+	err = p.page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		State: playwright.LoadStateNetworkidle,
+	})
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDataListPage) ExpectRowWithText(text string) {
+	locator := p.page.Locator("#results").GetByText(text)
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+// AdminMetricsPage represents the admin metrics page.
+type AdminMetricsPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewAdminMetricsPage(t *testing.T, page playwright.Page) *AdminMetricsPage {
+	return &AdminMetricsPage{page: page, t: t}
+}
+
+func (p *AdminMetricsPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/admin/metrics")
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMetricsPage) SelectInterval(interval string) {
+	_, err := p.page.Locator("#interval").SelectOption(playwright.SelectOptionValues{
+		Values: &[]string{interval},
+	})
+	require.NoError(p.t, err)
+}
+
+func (p *AdminMetricsPage) ExpectChartForSeries(series string) {
+	locator := p.page.Locator("canvas[data-series='" + series + "']")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+// KioskPage represents the kiosk page.
+type KioskPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewKioskPage(t *testing.T, page playwright.Page) *KioskPage {
+	return &KioskPage{page: page, t: t}
+}
+
+func (p *KioskPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/kiosk")
+	require.NoError(p.t, err)
+}
+
+func (p *KioskPage) ExpectKioskInterface() {
+	// The kiosk page should show the welcome message
+	locator := p.page.GetByText("How To Join")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
