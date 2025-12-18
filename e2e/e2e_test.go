@@ -19,6 +19,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/fobapi"
 	"github.com/TheLab-ms/conway/modules/kiosk"
+	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/TheLab-ms/conway/modules/members"
 	"github.com/TheLab-ms/conway/modules/metrics"
 	"github.com/TheLab-ms/conway/modules/oauth2"
@@ -44,6 +45,9 @@ var (
 
 	// testKeyDir stores generated key files for tests
 	testKeyDir string
+
+	// testMachinesModule is the machines module for tests (allows updating printer state)
+	testMachinesModule *machines.Module
 )
 
 func TestMain(m *testing.M) {
@@ -174,6 +178,15 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 
 	// Fob API module
 	a.Add(fobapi.New(database))
+
+	// Machines module with mock printer data for testing
+	inUseTime := time.Now().Add(30 * time.Minute).Unix()
+	testMachinesModule = machines.NewForTesting([]machines.PrinterStatus{
+		{PrinterName: "Printer A", SerialNumber: "test-001"},
+		{PrinterName: "Printer B", SerialNumber: "test-002", JobFinishedTimestamp: &inUseTime},
+		{PrinterName: "Printer C", SerialNumber: "test-003", ErrorCode: "HMS_0300_0100_0001"},
+	})
+	a.Add(testMachinesModule)
 
 	// Apply database migrations
 	db.MustMigrate(database, db.BaseMigration)

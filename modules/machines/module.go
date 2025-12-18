@@ -24,7 +24,8 @@ type printerConfig struct {
 	SerialNumber string `json:"serial_number"`
 }
 
-type printerStatus struct {
+// PrinterStatus represents the current state of a printer for UI rendering.
+type PrinterStatus struct {
 	PrinterName          string `json:"printer_name"`
 	SerialNumber         string `json:"serial_number"`
 	JobFinishedTimestamp *int64 `json:"job_finished_timestamp"`
@@ -32,13 +33,15 @@ type printerStatus struct {
 }
 
 type Module struct {
-	state atomic.Pointer[[]printerStatus]
+	state atomic.Pointer[[]PrinterStatus]
 
 	printers     []*bambulabs_api.Printer
 	configs      []*printerConfig
 	serialToName map[string]string
 
 	streams map[string]*engine.StreamMux
+
+	testMode bool // When true, skip polling and use injected state
 }
 
 func New(config string) *Module {
@@ -62,9 +65,25 @@ func New(config string) *Module {
 		}))
 		m.streams[cfg.SerialNumber] = m.newStreamMux(cfg)
 	}
-	zero := []printerStatus{}
+	zero := []PrinterStatus{}
 	m.state.Store(&zero)
 	return m
+}
+
+// NewForTesting creates a Module with mock printer data for e2e tests.
+// The printers slice defines what the UI will render - no real connections are made.
+func NewForTesting(printers []PrinterStatus) *Module {
+	m := &Module{
+		streams:  map[string]*engine.StreamMux{},
+		testMode: true,
+	}
+	m.state.Store(&printers)
+	return m
+}
+
+// SetTestState updates the printer state (for testing only).
+func (m *Module) SetTestState(printers []PrinterStatus) {
+	m.state.Store(&printers)
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -193,6 +212,9 @@ func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
+	if m.testMode {
+		return // Skip polling in test mode - use injected state
+	}
 	procs.Add(engine.Poll(time.Second*5, m.poll))
 }
 
@@ -200,7 +222,7 @@ func (m *Module) poll(ctx context.Context) bool {
 	slog.Info("starting to get Bambu printer status")
 	start := time.Now()
 
-	var state []printerStatus
+	var state []PrinterStatus
 	for _, printer := range m.printers {
 		name := m.serialToName[printer.GetSerial()]
 		if err := printer.Connect(); err != nil {
@@ -213,7 +235,7 @@ func (m *Module) poll(ctx context.Context) bool {
 			continue
 		}
 
-		s := printerStatus{
+		s := PrinterStatus{
 			PrinterName:  name,
 			SerialNumber: printer.GetSerial(),
 			ErrorCode:    data.PrintErrorCode,

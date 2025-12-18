@@ -371,3 +371,72 @@ func (p *KioskPage) ExpectKioskInterface() {
 	locator := p.page.GetByText("How To Join")
 	expect(p.t).Locator(locator).ToBeVisible()
 }
+
+// MachinesPage represents the machines/printers status page.
+type MachinesPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewMachinesPage(t *testing.T, page playwright.Page) *MachinesPage {
+	return &MachinesPage{page: page, t: t}
+}
+
+func (p *MachinesPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/machines")
+	require.NoError(p.t, err)
+}
+
+func (p *MachinesPage) ExpectHeading() {
+	locator := p.page.Locator("h2", playwright.PageLocatorOptions{HasText: "Printers"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MachinesPage) PrinterCard(name string) playwright.Locator {
+	return p.page.Locator(".card", playwright.PageLocatorOptions{
+		Has: p.page.Locator(".card-title", playwright.PageLocatorOptions{HasText: name}),
+	})
+}
+
+func (p *MachinesPage) ExpectPrinterCard(name string) {
+	expect(p.t).Locator(p.PrinterCard(name)).ToBeVisible()
+}
+
+func (p *MachinesPage) StatusBadge(printerName string) playwright.Locator {
+	return p.PrinterCard(printerName).Locator(".badge")
+}
+
+func (p *MachinesPage) ExpectStatusBadge(printerName, status string) {
+	locator := p.StatusBadge(printerName)
+	expect(p.t).Locator(locator).ToHaveText(status)
+}
+
+func (p *MachinesPage) StopButton(printerName string) playwright.Locator {
+	return p.PrinterCard(printerName).Locator("button[type='submit']")
+}
+
+func (p *MachinesPage) ExpectStopButton(printerName string) {
+	expect(p.t).Locator(p.StopButton(printerName)).ToBeVisible()
+}
+
+func (p *MachinesPage) ExpectNoStopButton(printerName string) {
+	expect(p.t).Locator(p.StopButton(printerName)).ToBeHidden()
+}
+
+func (p *MachinesPage) CameraImg(printerName string) playwright.Locator {
+	return p.PrinterCard(printerName).Locator("img.card-img-top")
+}
+
+func (p *MachinesPage) ExpectCameraImg(printerName string) {
+	expect(p.t).Locator(p.CameraImg(printerName)).ToBeVisible()
+}
+
+func (p *MachinesPage) ExpectTimeRemaining(printerName string) {
+	locator := p.PrinterCard(printerName).Locator("small.text-muted", playwright.LocatorLocatorOptions{HasText: "remaining"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MachinesPage) ExpectErrorCode(printerName, errorCode string) {
+	locator := p.PrinterCard(printerName).Locator("small.text-muted", playwright.LocatorLocatorOptions{HasText: errorCode})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
