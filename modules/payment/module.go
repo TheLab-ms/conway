@@ -1,6 +1,7 @@
 package payment
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -9,8 +10,10 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/settings"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/stripe/stripe-go/v78"
 	billingsession "github.com/stripe/stripe-go/v78/billingportal/session"
@@ -24,20 +27,47 @@ import (
 
 type Module struct {
 	db         *sql.DB
-	webhookKey string
+	settings   *settings.Store
 	self       *url.URL
+	webhookKey atomic.Pointer[string]
 }
 
-func New(db *sql.DB, webhookKey string, self *url.URL) *Module {
-	return &Module{db: db, webhookKey: webhookKey, self: self}
+func New(db *sql.DB, settingsStore *settings.Store, self *url.URL) *Module {
+	settingsStore.RegisterSection(settings.Section{
+		Title: "Stripe",
+		Fields: []settings.Field{
+			{Key: "stripe.key", Label: "API Key", Description: "Stripe API key", Sensitive: true},
+			{Key: "stripe.webhook_key", Label: "Webhook Secret", Description: "Stripe webhook signing secret", Sensitive: true},
+		},
+	})
+
+	return &Module{db: db, settings: settingsStore, self: self}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
+	ctx := context.Background()
+
+	// Watch for webhook key changes
+	m.settings.Watch(ctx, "stripe.webhook_key", func(v string) {
+		if v != "" {
+			m.webhookKey.Store(&v)
+			slog.Info("stripe webhook key configured")
+		} else {
+			m.webhookKey.Store(nil)
+		}
+	})
+
 	router.HandleFunc("POST /webhooks/stripe", m.handleStripeWebhook)
 	router.HandleFunc("GET /payment/checkout", router.WithAuthn(m.handleCheckoutForm))
 }
 
 func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
+	webhookKey := m.webhookKey.Load()
+	if webhookKey == nil || *webhookKey == "" {
+		http.Error(w, "Stripe webhook not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		engine.SystemError(w, err.Error())
@@ -45,7 +75,7 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the signature of the request and parse it
-	event, err := webhook.ConstructEvent(payload, r.Header.Get("Stripe-Signature"), m.webhookKey)
+	event, err := webhook.ConstructEvent(payload, r.Header.Get("Stripe-Signature"), *webhookKey)
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return
@@ -88,6 +118,12 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 // handleCheckoutForm redirects users to the appropriate Stripe Checkout workflow.
 func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
+	// Check if Stripe is configured
+	if stripe.Key == "" {
+		http.Error(w, "Stripe is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	var email string
 	var discountType *string
 	var existingCustomerID *string

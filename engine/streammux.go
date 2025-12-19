@@ -159,3 +159,20 @@ func (s *StreamMux) Running() bool {
 	defer s.mu.RUnlock()
 	return s.running
 }
+
+// Close stops the source and closes all client channels.
+func (s *StreamMux) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
+	s.running = false
+
+	for ch := range s.clients {
+		close(ch)
+		delete(s.clients, ch)
+	}
+}

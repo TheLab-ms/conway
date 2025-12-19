@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/db"
+	"github.com/TheLab-ms/conway/engine/settings"
 )
 
 const migration = `
@@ -30,20 +32,47 @@ const maxRPS = 1
 type Sender func(ctx context.Context, to, subj string, msg []byte) error
 
 type Module struct {
-	db     *sql.DB
-	Sender Sender
+	db       *sql.DB
+	settings *settings.Store
+	sender   atomic.Pointer[Sender]
 }
 
-func New(d *sql.DB, es Sender) *Module {
+func New(d *sql.DB, settingsStore *settings.Store) *Module {
 	db.MustMigrate(d, migration)
-	m := &Module{db: d, Sender: es}
-	if m.Sender == nil {
-		m.Sender = newNoopSender()
-	}
+
+	settingsStore.RegisterSection(settings.Section{
+		Title: "Gmail",
+		Fields: []settings.Field{
+			{Key: "email.from", Label: "From Address", Description: "Sender email address (e.g., noreply@example.com)"},
+			{Key: "email.google_service_account", Label: "Google Service Account JSON", Description: "Service account credentials for sending emails via Gmail API", Sensitive: true, Type: settings.FieldTypeTextArea},
+		},
+	})
+
+	m := &Module{db: d, settings: settingsStore}
+
+	// Set default noop sender
+	noopSender := newNoopSender()
+	m.sender.Store(&noopSender)
+
 	return m
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
+	ctx := context.Background()
+
+	// Watch for email.from changes
+	m.settings.Watch(ctx, "email.from", func(from string) {
+		if from != "" {
+			sender := NewGoogleSmtpSender(from)
+			m.sender.Store(&sender)
+			slog.Info("email sender configured", "from", from)
+		} else {
+			noopSender := newNoopSender()
+			m.sender.Store(&noopSender)
+			slog.Info("email sender using noop (no from address configured)")
+		}
+	})
+
 	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, maxRPS))))
 }
 
@@ -55,7 +84,8 @@ func (m *Module) GetItem(ctx context.Context) (message, error) {
 
 func (m *Module) ProcessItem(ctx context.Context, item message) error {
 	slog.Info("sending email", "id", item.ID, "to", item.To, "subject", item.Subject)
-	return m.Sender(ctx, item.To, item.Subject, []byte(item.Body))
+	sender := *m.sender.Load()
+	return sender(ctx, item.To, item.Subject, []byte(item.Body))
 }
 
 func (m *Module) UpdateItem(ctx context.Context, item message, success bool) (err error) {

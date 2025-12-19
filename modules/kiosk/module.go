@@ -16,31 +16,50 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/settings"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/skip2/go-qrcode"
 )
-
-// TODO: Replace?
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
 const qrTTL = time.Minute * 5 // length of time a signed QR code is valid
 
 type Module struct {
-	db     *sql.DB
-	self   *url.URL
-	signer *engine.TokenIssuer
+	db       *sql.DB
+	self     *url.URL
+	signer   *engine.TokenIssuer
+	settings *settings.Store
 
-	trustedHostname string
+	trustedHostname atomic.Pointer[string]
 	trustedIP       atomic.Pointer[net.IP]
 }
 
-func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, trustedHostname string) *Module {
-	return &Module{db: db, self: self, signer: iss, trustedHostname: trustedHostname}
+func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, settingsStore *settings.Store) *Module {
+	m := &Module{db: db, self: self, signer: iss, settings: settingsStore}
+
+	// Set default hostname
+	defaultHost := "localhost"
+	m.trustedHostname.Store(&defaultHost)
+
+	return m
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
+	ctx := context.Background()
+
+	// Watch for kiosk.space_host changes
+	m.settings.Watch(ctx, "kiosk.space_host", func(v string) {
+		if v == "" {
+			v = "localhost"
+		}
+		m.trustedHostname.Store(&v)
+		slog.Info("kiosk trusted hostname configured", "hostname", v)
+		// Immediately try to resolve the new hostname
+		m.findTrustedIP(ctx)
+	})
+
 	mgr.Add(engine.Poll(time.Minute, m.findTrustedIP))
 }
 
@@ -51,9 +70,13 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 }
 
 // findTrustedIP sets trustedIP by resolving trustedHostname.
-// This is used to make sure that only
 func (m *Module) findTrustedIP(ctx context.Context) bool {
-	conn, err := net.Dial("udp4", m.trustedHostname+":80") // any port will do
+	hostname := m.trustedHostname.Load()
+	if hostname == nil || *hostname == "" {
+		return false
+	}
+
+	conn, err := net.Dial("udp4", *hostname+":80") // any port will do
 	if err != nil {
 		slog.Error("unable to dial trusted hostname", "error", err)
 		return false

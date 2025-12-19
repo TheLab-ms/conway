@@ -11,16 +11,18 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/settings"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 )
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
-// See: https://www.cloudflare.com/application-services/products/turnstile
+// TurnstileOptions contains Cloudflare Turnstile configuration.
 type TurnstileOptions struct {
 	SiteKey string
 	Secret  string
@@ -29,16 +31,44 @@ type TurnstileOptions struct {
 type Module struct {
 	db          *sql.DB
 	self        *url.URL
-	turnstile   *TurnstileOptions
+	settings    *settings.Store
 	authLimiter *rate.Limiter
 	tokens      *engine.TokenIssuer
+	turnstile   atomic.Pointer[TurnstileOptions]
 }
 
-func New(db *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIssuer) *Module {
-	return &Module{db: db, self: self, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), tokens: tokens}
+func New(db *sql.DB, self *url.URL, settingsStore *settings.Store, tokens *engine.TokenIssuer) *Module {
+	settingsStore.RegisterSection(settings.Section{
+		Title: "Cloudflare Turnstile",
+		Fields: []settings.Field{
+			{Key: "turnstile.site_key", Label: "Site Key", Description: "Cloudflare Turnstile site key"},
+			{Key: "turnstile.secret", Label: "Secret Key", Description: "Cloudflare Turnstile secret key", Sensitive: true},
+		},
+	})
+
+	return &Module{
+		db:          db,
+		self:        self,
+		settings:    settingsStore,
+		authLimiter: rate.NewLimiter(rate.Every(time.Second), 5),
+		tokens:      tokens,
+	}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
+	ctx := context.Background()
+
+	// Watch for turnstile settings changes
+	var siteKey, secret string
+	m.settings.Watch(ctx, "turnstile.site_key", func(v string) {
+		siteKey = v
+		m.updateTurnstile(siteKey, secret)
+	})
+	m.settings.Watch(ctx, "turnstile.secret", func(v string) {
+		secret = v
+		m.updateTurnstile(siteKey, secret)
+	})
+
 	router.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("t") != "" {
 			m.handleLoginCallbackLink(w, r)
@@ -46,7 +76,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 		}
 		callback := r.URL.Query().Get("callback_uri")
 		w.Header().Set("Content-Type", "text/html")
-		renderLoginPage(callback, m.turnstile).Render(r.Context(), w)
+		renderLoginPage(callback, m.turnstile.Load()).Render(r.Context(), w)
 	})
 
 	router.HandleFunc("GET /login/sent", func(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +97,15 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	})
 
 	router.HandleFunc("POST /login", m.handleLoginFormPost)
+}
+
+func (m *Module) updateTurnstile(siteKey, secret string) {
+	if siteKey != "" && secret != "" {
+		m.turnstile.Store(&TurnstileOptions{SiteKey: siteKey, Secret: secret})
+		slog.Info("turnstile configured", "siteKey", siteKey)
+	} else {
+		m.turnstile.Store(nil)
+	}
 }
 
 // WithAuthn authenticates incoming requests, or redirects them to the login page.
@@ -161,7 +200,8 @@ func (m *Module) newLoginEmail(memberID int64, callback string) (string, error) 
 }
 
 func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
-	if s.turnstile == nil {
+	tso := s.turnstile.Load()
+	if tso == nil {
 		return true // fail open
 	}
 
@@ -174,7 +214,7 @@ func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
 	}
 	form := url.Values{}
 	form.Set("response", tsr)
-	form.Set("secret", s.turnstile.Secret)
+	form.Set("secret", tso.Secret)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(form.Encode()))
 	if err != nil {

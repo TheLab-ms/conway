@@ -8,40 +8,68 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/settings"
 )
 
 type Module struct {
-	db     *sql.DB
-	client *Client
+	db       *sql.DB
+	settings *settings.Store
+	client   atomic.Pointer[Client]
 
 	lastFobs []int64
 }
 
-func New(db *sql.DB, url string) *Module {
-	return &Module{
-		db: db,
-		client: &Client{
-			Addr:    url,
-			Timeout: time.Second * 5,
+func New(db *sql.DB, settingsStore *settings.Store) *Module {
+	settingsStore.RegisterSection(settings.Section{
+		Title: "Access Controller",
+		Fields: []settings.Field{
+			{Key: "access_controller.host", Label: "Host URL", Description: "Access controller API host URL"},
 		},
+	})
+
+	return &Module{
+		db:       db,
+		settings: settingsStore,
 	}
 }
 
 func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
+	ctx := context.Background()
+
+	// Watch for access_controller.host changes
+	m.settings.Watch(ctx, "access_controller.host", func(host string) {
+		if host != "" {
+			m.client.Store(&Client{
+				Addr:    host,
+				Timeout: time.Second * 5,
+			})
+			slog.Info("access controller configured", "host", host)
+		} else {
+			m.client.Store(nil)
+			slog.Info("access controller disabled (no host configured)")
+		}
+	})
+
 	procs.Add(engine.Poll(time.Second*20, m.sync))
 }
 
 func (m *Module) sync(ctx context.Context) bool {
+	client := m.client.Load()
+	if client == nil {
+		return false // Not configured
+	}
+
 	start := time.Now()
 	slog.Info("syncing generic access controller...")
 
 	// The scrape cursor doesn't really make sense now that this function runs
 	// in-process to sqlite. But this code will hopefully go away soon anyway.
 	withScrapeCursor("gac.cursor", func(last int) int {
-		err := m.client.ListSwipes(last, func(cs *CardSwipe) error {
+		err := client.ListSwipes(last, func(cs *CardSwipe) error {
 			_, err := m.db.ExecContext(ctx, "INSERT INTO fob_swipes (uid, timestamp, fob_id, member) VALUES ($1, $2, $3, (SELECT id FROM members WHERE fob_id = $3)) ON CONFLICT DO NOTHING", fmt.Sprintf("gac-%d", cs.ID), cs.Time.Unix(), cs.CardID)
 			if err != nil {
 				return err
@@ -80,7 +108,7 @@ func (m *Module) sync(ctx context.Context) bool {
 	}
 
 	// Sync!
-	err = m.syncAccessControllerConfig(fobs)
+	err = m.syncAccessControllerConfig(client, fobs)
 	if err == nil {
 		slog.Info("sync'd access controller", "fobCount", len(fobs))
 		m.lastFobs = fobs
@@ -92,8 +120,8 @@ func (m *Module) sync(ctx context.Context) bool {
 	return false
 }
 
-func (m *Module) syncAccessControllerConfig(fobs []int64) error {
-	cards, err := m.client.ListCards()
+func (m *Module) syncAccessControllerConfig(client *Client, fobs []int64) error {
+	cards, err := client.ListCards()
 	if err != nil {
 		return err
 	}
@@ -111,7 +139,7 @@ func (m *Module) syncAccessControllerConfig(fobs []int64) error {
 			continue // still active
 		}
 
-		err := m.client.RemoveCard(card.ID)
+		err := client.RemoveCard(card.ID)
 		if err == nil {
 			slog.Info("removed fob from access controller", "fob", card.Number)
 		} else {
@@ -125,7 +153,7 @@ func (m *Module) syncAccessControllerConfig(fobs []int64) error {
 			continue // already active
 		}
 
-		err := m.client.AddCard(int(fob), fmt.Sprintf("conway%d", fob))
+		err := client.AddCard(int(fob), fmt.Sprintf("conway%d", fob))
 		if err == nil {
 			slog.Info("added fob to access controller", "fob", fob)
 		} else {

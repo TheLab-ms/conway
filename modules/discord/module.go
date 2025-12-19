@@ -8,17 +8,16 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/settings"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
 )
-
-// TODO:
-// - Use generic cronjob for resync
-// - Decouple from members table?
 
 const maxRPS = 3
 
@@ -28,32 +27,49 @@ var endpoint = oauth2.Endpoint{
 	AuthStyle: oauth2.AuthStyleInParams,
 }
 
+type discordConfig struct {
+	ClientID     string
+	ClientSecret string
+	BotToken     string
+	GuildID      string
+	RoleID       string
+}
+
 type Module struct {
 	db             *sql.DB
 	self           *url.URL
 	stateTokIssuer *engine.TokenIssuer
-	authConf       *oauth2.Config
-	roleID         string
-	client         *discordAPIClient
+	settings       *settings.Store
+
+	config   atomic.Pointer[discordConfig]
+	authConf atomic.Pointer[oauth2.Config]
+	client   atomic.Pointer[discordAPIClient]
+	mu       sync.Mutex
 }
 
-func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, clientID, clientSecret, botToken, guildID, roleID string) *Module {
-	conf := &oauth2.Config{
-		Endpoint:     endpoint,
-		Scopes:       []string{"identify"},
-		RedirectURL:  fmt.Sprintf("%s/discord/callback", self.String()),
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-	}
-	client := &http.Client{Timeout: time.Second * 10}
-	return &Module{
+func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, settingsStore *settings.Store) *Module {
+	settingsStore.RegisterSection(settings.Section{
+		Title: "Discord",
+		Fields: []settings.Field{
+			{Key: "discord.client_id", Label: "Client ID", Description: "Discord OAuth2 client ID"},
+			{Key: "discord.client_secret", Label: "Client Secret", Description: "Discord OAuth2 client secret", Sensitive: true},
+			{Key: "discord.bot_token", Label: "Bot Token", Description: "Discord bot token", Sensitive: true},
+			{Key: "discord.guild_id", Label: "Guild ID", Description: "Discord server (guild) ID"},
+			{Key: "discord.role_id", Label: "Active Member Role ID", Description: "Discord role ID for active members"},
+		},
+	})
+
+	m := &Module{
 		db:             db,
 		self:           self,
 		stateTokIssuer: iss,
-		authConf:       conf,
-		roleID:         roleID,
-		client:         newDiscordAPIClient(botToken, guildID, client, conf),
+		settings:       settingsStore,
 	}
+
+	// Initialize with empty config
+	m.config.Store(&discordConfig{})
+
+	return m
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -61,7 +77,66 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /discord/callback", router.WithAuthn(m.handleCallback))
 }
 
+func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
+	ctx := context.Background()
+
+	// Watch for config changes
+	m.settings.Watch(ctx, "discord.client_id", func(v string) {
+		m.updateConfig(func(c *discordConfig) { c.ClientID = v })
+	})
+	m.settings.Watch(ctx, "discord.client_secret", func(v string) {
+		m.updateConfig(func(c *discordConfig) { c.ClientSecret = v })
+	})
+	m.settings.Watch(ctx, "discord.bot_token", func(v string) {
+		m.updateConfig(func(c *discordConfig) { c.BotToken = v })
+	})
+	m.settings.Watch(ctx, "discord.guild_id", func(v string) {
+		m.updateConfig(func(c *discordConfig) { c.GuildID = v })
+	})
+	m.settings.Watch(ctx, "discord.role_id", func(v string) {
+		m.updateConfig(func(c *discordConfig) { c.RoleID = v })
+	})
+
+	mgr.Add(engine.Poll(time.Minute, m.scheduleFullReconciliation))
+	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, maxRPS))))
+}
+
+func (m *Module) updateConfig(fn func(*discordConfig)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	old := m.config.Load()
+	newCfg := *old // copy
+	fn(&newCfg)
+	m.config.Store(&newCfg)
+
+	// Rebuild OAuth config and API client if we have the required fields
+	if newCfg.ClientID != "" && newCfg.ClientSecret != "" {
+		conf := &oauth2.Config{
+			Endpoint:     endpoint,
+			Scopes:       []string{"identify"},
+			RedirectURL:  fmt.Sprintf("%s/discord/callback", m.self.String()),
+			ClientID:     newCfg.ClientID,
+			ClientSecret: newCfg.ClientSecret,
+		}
+		m.authConf.Store(conf)
+
+		if newCfg.BotToken != "" && newCfg.GuildID != "" {
+			httpClient := &http.Client{Timeout: time.Second * 10}
+			client := newDiscordAPIClient(newCfg.BotToken, newCfg.GuildID, httpClient, conf)
+			m.client.Store(client)
+			slog.Info("discord module configured", "guildID", newCfg.GuildID, "roleID", newCfg.RoleID)
+		}
+	}
+}
+
 func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {
+	conf := m.authConf.Load()
+	if conf == nil {
+		http.Error(w, "Discord integration not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	state, err := m.stateTokIssuer.Sign(&jwt.RegisteredClaims{
 		Subject:   strconv.FormatInt(auth.GetUserMeta(r.Context()).ID, 10),
 		Audience:  jwt.ClaimStrings{"discord-oauth"},
@@ -72,7 +147,7 @@ func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, m.authConf.AuthCodeURL(state), http.StatusTemporaryRedirect)
+	http.Redirect(w, r, conf.AuthCodeURL(state), http.StatusTemporaryRedirect)
 }
 
 func (m *Module) handleCallback(w http.ResponseWriter, r *http.Request) {
@@ -102,11 +177,17 @@ func (m *Module) handleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authCode string) error {
-	token, err := m.authConf.Exchange(ctx, authCode)
+	conf := m.authConf.Load()
+	client := m.client.Load()
+	if conf == nil || client == nil {
+		return fmt.Errorf("discord not configured")
+	}
+
+	token, err := conf.Exchange(ctx, authCode)
 	if err != nil {
 		return err
 	}
-	discordUserID, err := m.client.GetUserInfo(ctx, token)
+	discordUserID, err := client.GetUserInfo(ctx, token)
 	if err != nil {
 		return err
 	}
@@ -115,17 +196,12 @@ func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authC
 	return err
 }
 
-func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	if m.roleID == "" {
-		slog.Warn("disabling discord role sync because the role ID was configured")
-		return
+func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
+	cfg := m.config.Load()
+	if cfg.RoleID == "" {
+		return false // Role sync disabled
 	}
 
-	mgr.Add(engine.Poll(time.Minute, m.scheduleFullReconciliation))
-	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, maxRPS))))
-}
-
-func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
 	result, err := m.db.ExecContext(ctx, `UPDATE members SET discord_last_synced = NULL WHERE discord_user_id IS NOT NULL AND (discord_last_synced IS NULL OR discord_last_synced < unixepoch() - 86400) AND id IN (SELECT id FROM members WHERE discord_user_id IS NOT NULL AND (discord_last_synced IS NULL OR discord_last_synced < unixepoch() - 86400) ORDER BY id ASC LIMIT 10)`)
 	if err != nil {
 		slog.Error("failed to schedule full Discord reconciliation", "error", err)
@@ -140,6 +216,11 @@ func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
 }
 
 func (m *Module) GetItem(ctx context.Context) (item *syncItem, err error) {
+	cfg := m.config.Load()
+	if cfg.RoleID == "" || m.client.Load() == nil {
+		return nil, sql.ErrNoRows // Not configured
+	}
+
 	item = &syncItem{}
 	err = m.db.QueryRowContext(ctx, `UPDATE members SET discord_last_synced = unixepoch() WHERE id = ( SELECT id FROM members WHERE discord_user_id IS NOT NULL AND discord_last_synced IS NULL ORDER BY id ASC LIMIT 1) RETURNING id, discord_user_id, payment_status`).Scan(&item.MemberID, &item.DiscordUserID, &item.PaymentStatus)
 	if err != nil {
@@ -149,8 +230,14 @@ func (m *Module) GetItem(ctx context.Context) (item *syncItem, err error) {
 }
 
 func (m *Module) ProcessItem(ctx context.Context, item *syncItem) error {
+	cfg := m.config.Load()
+	client := m.client.Load()
+	if client == nil {
+		return fmt.Errorf("discord client not configured")
+	}
+
 	shouldHaveRole := item.PaymentStatus.Valid && item.PaymentStatus.String != ""
-	changed, displayName, err := m.client.EnsureRole(ctx, item.DiscordUserID, m.roleID, shouldHaveRole)
+	changed, displayName, err := client.EnsureRole(ctx, item.DiscordUserID, cfg.RoleID, shouldHaveRole)
 	if err != nil {
 		return err
 	}
@@ -166,14 +253,14 @@ func (m *Module) UpdateItem(ctx context.Context, item *syncItem, success bool) e
 	}
 
 	_, err := m.db.ExecContext(ctx, `
-		UPDATE members 
+		UPDATE members
 		SET discord_last_synced = unixepoch() + MIN(
-			CASE 
+			CASE
 				WHEN discord_last_synced IS NULL OR discord_last_synced <= unixepoch() THEN 300
 				ELSE (discord_last_synced - unixepoch()) * 2
-			END, 
+			END,
 			86400
-		) 
+		)
 		WHERE id = ?`, item.MemberID)
 	return err
 }
