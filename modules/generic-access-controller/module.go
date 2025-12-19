@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
@@ -36,31 +38,23 @@ func (m *Module) sync(ctx context.Context) bool {
 	start := time.Now()
 	slog.Info("syncing generic access controller...")
 
-	// Get cursor from database
-	var cursor int
-	m.db.QueryRowContext(ctx, "SELECT value FROM cursors WHERE name = 'gac'").Scan(&cursor)
-
-	newCursor := cursor
-	err := m.client.ListSwipes(cursor, func(cs *CardSwipe) error {
-		_, err := m.db.ExecContext(ctx, "INSERT INTO fob_swipes (uid, timestamp, fob_id, member) VALUES ($1, $2, $3, (SELECT id FROM members WHERE fob_id = $3)) ON CONFLICT DO NOTHING", fmt.Sprintf("gac-%d", cs.ID), cs.Time.Unix(), cs.CardID)
+	// The scrape cursor doesn't really make sense now that this function runs
+	// in-process to sqlite. But this code will hopefully go away soon anyway.
+	withScrapeCursor("gac.cursor", func(last int) int {
+		err := m.client.ListSwipes(last, func(cs *CardSwipe) error {
+			_, err := m.db.ExecContext(ctx, "INSERT INTO fob_swipes (uid, timestamp, fob_id, member) VALUES ($1, $2, $3, (SELECT id FROM members WHERE fob_id = $3)) ON CONFLICT DO NOTHING", fmt.Sprintf("gac-%d", cs.ID), cs.Time.Unix(), cs.CardID)
+			if err != nil {
+				return err
+			}
+			slog.Info("scraped access controller event", "eventID", cs.ID, "fobID", cs.CardID)
+			last = max(last, cs.ID)
+			return nil
+		})
 		if err != nil {
-			return err
+			slog.Error("failed to scrape access controller events", "error", err)
 		}
-		slog.Info("scraped access controller event", "eventID", cs.ID, "fobID", cs.CardID)
-		newCursor = max(newCursor, cs.ID)
-		return nil
+		return last
 	})
-	if err != nil {
-		slog.Error("failed to scrape access controller events", "error", err)
-	}
-
-	// Update cursor in database if changed
-	if newCursor != cursor {
-		_, err = m.db.ExecContext(ctx, "INSERT INTO cursors (name, value) VALUES ('gac', $1) ON CONFLICT (name) DO UPDATE SET value = $1", newCursor)
-		if err != nil {
-			slog.Error("failed to update gac cursor", "error", err)
-		}
-	}
 
 	// List fobs
 	q, err := m.db.QueryContext(ctx, "SELECT fob_id FROM active_keyfobs")
@@ -140,4 +134,22 @@ func (m *Module) syncAccessControllerConfig(fobs []int64) error {
 	}
 
 	return nil
+}
+
+func withScrapeCursor(fp string, fn func(last int) int) {
+	raw, err := os.ReadFile(fp)
+	if err != nil && !os.IsNotExist(err) {
+		panic(err)
+	}
+	i, _ := strconv.Atoi(string(raw))
+
+	next := fn(i)
+	if next == i {
+		return
+	}
+
+	err = os.WriteFile(fp, []byte(strconv.Itoa(next)), 0644)
+	if err != nil {
+		panic(err)
+	}
 }
