@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/skip2/go-qrcode"
 )
@@ -37,12 +36,12 @@ func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer) *Module {
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	for _, view := range listViews {
-		router.HandleFunc("GET /admin"+view.RelPath, router.WithAuthn(m.onlyLeadership(func(w http.ResponseWriter, r *http.Request) {
+		router.HandleFunc("GET /admin"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
 			renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath).Render(r.Context(), w)
-		})))
+		}))
 
-		router.HandleFunc("POST /admin/search"+view.RelPath, router.WithAuthn(m.onlyLeadership(func(w http.ResponseWriter, r *http.Request) {
+		router.HandleFunc("POST /admin/search"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 			const limit = 20
 			txn, err := m.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 			if err != nil {
@@ -79,14 +78,14 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 			w.Header().Set("Content-Type", "text/html")
 			renderAdminListElements(view.Rows, rows, max(currentPage, 1), max(rowCount/limit, 1)).Render(r.Context(), w)
-		})))
+		}))
 	}
 
-	router.HandleFunc("GET /admin", router.WithAuthn(m.onlyLeadership(func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("GET /admin", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, m.nav[0].Path, http.StatusSeeOther)
-	})))
+	}))
 
-	router.HandleFunc("GET /admin/members/{id}", router.WithAuthn(m.onlyLeadership(func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("GET /admin/members/{id}", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		mem, events, err := querySingleMember(r.Context(), m.db, r.PathValue("id"))
 		if err != nil {
 			engine.SystemError(w, err.Error())
@@ -94,9 +93,9 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 		}
 		w.Header().Set("Content-Type", "text/html")
 		renderSingleMember(m.nav, mem, events).Render(r.Context(), w)
-	})))
+	}))
 
-	router.HandleFunc("GET /admin/members/{id}/logincode", router.WithAuthn(m.onlyLeadership(func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("GET /admin/members/{id}/logincode", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		tok, err := m.links.Sign(&jwt.RegisteredClaims{
 			Subject:   r.PathValue("id"),
 			ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
@@ -115,24 +114,14 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 		w.Header().Set("Content-Type", "image/png")
 		w.Write(p)
-	})))
+	}))
 
-	router.HandleFunc("GET /admin/export/{table}", router.WithAuthn(m.onlyLeadership(m.exportCSV)))
-	router.HandleFunc("GET /admin/chart", router.WithAuthn(m.onlyLeadership(m.renderMetricsChart)))
-	router.HandleFunc("GET /admin/metrics", router.WithAuthn(m.onlyLeadership(m.renderMetricsPageHandler)))
+	router.HandleFunc("GET /admin/export/{table}", router.WithLeadership(m.exportCSV))
+	router.HandleFunc("GET /admin/chart", router.WithLeadership(m.renderMetricsChart))
+	router.HandleFunc("GET /admin/metrics", router.WithLeadership(m.renderMetricsPageHandler))
 
 	for _, handle := range formHandlers {
-		router.HandleFunc("POST "+handle.Path, router.WithAuthn(m.onlyLeadership(handle.BuildHandler(m.db))))
-	}
-}
-
-func (m *Module) onlyLeadership(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if meta := auth.GetUserMeta(r.Context()); meta == nil || !meta.Leadership {
-			http.Error(w, "You must be a member of leadership to access this page", 403)
-			return
-		}
-		next(w, r)
+		router.HandleFunc("POST "+handle.Path, router.WithLeadership(handle.BuildHandler(m.db)))
 	}
 }
 
