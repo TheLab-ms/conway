@@ -184,7 +184,7 @@ BEGIN
     UPDATE members SET discord_last_synced = NULL WHERE id = NEW.id;
 END;
 
-CREATE TRIGGER IF NOT EXISTS discord_sync_on_payment_affecting_change AFTER UPDATE ON members 
+CREATE TRIGGER IF NOT EXISTS discord_sync_on_payment_affecting_change AFTER UPDATE ON members
 WHEN NEW.discord_user_id IS NOT NULL AND (
     (OLD.confirmed != NEW.confirmed) OR
     (OLD.stripe_subscription_state != NEW.stripe_subscription_state) OR
@@ -194,4 +194,9 @@ WHEN NEW.discord_user_id IS NOT NULL AND (
 BEGIN
     UPDATE members SET discord_last_synced = NULL WHERE id = NEW.id;
 END;
+
+CREATE TABLE IF NOT EXISTS cursors (
+    name TEXT PRIMARY KEY,
+    value INTEGER NOT NULL DEFAULT 0
+) STRICT;
 
