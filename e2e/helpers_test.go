@@ -337,3 +337,32 @@ func expect(t *testing.T) playwright.PlaywrightAssertions {
 	t.Helper()
 	return playwright.NewPlaywrightAssertions()
 }
+
+// setupAdminTest creates an admin, logs in, and returns the admin ID and page.
+func setupAdminTest(t *testing.T) (adminID int64, page playwright.Page) {
+	t.Helper()
+	clearTestData(t)
+	adminID = seedMember(t, "admin@example.com", WithConfirmed(), WithLeadership())
+	ctx := newContext(t)
+	loginAs(t, ctx, adminID)
+	page = newPageInContext(t, ctx)
+	return adminID, page
+}
+
+// setupMemberTest creates a member with given options, logs in, and returns the member ID and page.
+func setupMemberTest(t *testing.T, email string, opts ...MemberOption) (memberID int64, page playwright.Page) {
+	t.Helper()
+	clearTestData(t)
+	memberID = seedMember(t, email, opts...)
+	ctx := newContext(t)
+	loginAs(t, ctx, memberID)
+	page = newPageInContext(t, ctx)
+	return memberID, page
+}
+
+// setupUnauthenticatedTest clears data and returns an unauthenticated page.
+func setupUnauthenticatedTest(t *testing.T) playwright.Page {
+	t.Helper()
+	clearTestData(t)
+	return newPage(t)
+}
