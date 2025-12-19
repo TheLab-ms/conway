@@ -11,8 +11,13 @@ import (
 
 func TestDB(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "test.db")
-	newTest(t, file)
-	newTest(t, file)
+	db1, err := Open(file)
+	require.NoError(t, err)
+	db1.Close()
+
+	db2, err := Open(file)
+	require.NoError(t, err)
+	db2.Close()
 }
 
 func TestMemberActive(t *testing.T) {

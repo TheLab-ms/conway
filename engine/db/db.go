@@ -39,21 +39,12 @@ func MustMigrate(db *sql.DB, migration string) {
 	}
 }
 
-// deprecated
-func New(path string) (*sql.DB, error) {
-	return Open(path)
-}
-
 func NewTest(t *testing.T) *sql.DB {
-	db := newTest(t, filepath.Join(t.TempDir(), "test.db"))
-	MustMigrate(db, BaseMigration)
-	return db
-}
-
-func newTest(t *testing.T, file string) *sql.DB {
-	db, err := New(file)
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(path)
 	if err != nil {
 		t.Fatalf("creating db: %s", err)
 	}
+	MustMigrate(db, BaseMigration)
 	return db
 }

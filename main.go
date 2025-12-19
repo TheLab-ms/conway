@@ -89,7 +89,7 @@ func main() {
 }
 
 func newApp(conf Config, self *url.URL) (*engine.App, error) {
-	database, err := db.New("conway.sqlite3")
+	database, err := db.Open("conway.sqlite3")
 	if err != nil {
 		panic(err)
 	}
