@@ -82,7 +82,7 @@ func loginPageAs(t *testing.T, page playwright.Page, memberID int64) {
 func generateAuthToken(t *testing.T, memberID int64) string {
 	t.Helper()
 	exp := time.Now().Add(time.Hour * 24)
-	token, err := tokenIssuer.Sign(&jwt.RegisteredClaims{
+	token, err := authIssuer.Sign(&jwt.RegisteredClaims{
 		Issuer:    "conway",
 		Subject:   strconv.FormatInt(memberID, 10),
 		Audience:  jwt.ClaimStrings{"conway"},
@@ -95,7 +95,7 @@ func generateAuthToken(t *testing.T, memberID int64) string {
 // generateMagicLinkToken creates a valid magic link token for login.
 func generateMagicLinkToken(t *testing.T, memberID int64) string {
 	t.Helper()
-	token, err := linksIssuer.Sign(&jwt.RegisteredClaims{
+	token, err := authIssuer.Sign(&jwt.RegisteredClaims{
 		Subject:   strconv.FormatInt(memberID, 10),
 		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
 	})
@@ -106,7 +106,7 @@ func generateMagicLinkToken(t *testing.T, memberID int64) string {
 // generateExpiredMagicLinkToken creates an expired magic link token.
 func generateExpiredMagicLinkToken(t *testing.T, memberID int64) string {
 	t.Helper()
-	token, err := linksIssuer.Sign(&jwt.RegisteredClaims{
+	token, err := authIssuer.Sign(&jwt.RegisteredClaims{
 		Subject:   strconv.FormatInt(memberID, 10),
 		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(-time.Minute)}, // already expired
 	})

@@ -31,12 +31,11 @@ type Module struct {
 	self        *url.URL
 	turnstile   *TurnstileOptions
 	authLimiter *rate.Limiter
-	links       *engine.TokenIssuer
 	tokens      *engine.TokenIssuer
 }
 
-func New(db *sql.DB, self *url.URL, tso *TurnstileOptions, links, tokens *engine.TokenIssuer) *Module {
-	return &Module{db: db, self: self, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), links: links, tokens: tokens}
+func New(db *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIssuer) *Module {
+	return &Module{db: db, self: self, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), tokens: tokens}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -134,7 +133,7 @@ func (s *Module) handleLoginFormPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) newLoginEmail(memberID int64, callback string) (string, error) {
-	tok, err := m.links.Sign(&jwt.RegisteredClaims{
+	tok, err := m.tokens.Sign(&jwt.RegisteredClaims{
 		Subject:   strconv.FormatInt(memberID, 10),
 		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
 	})
@@ -190,7 +189,7 @@ func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
 func (s *Module) handleLoginCallbackLink(w http.ResponseWriter, r *http.Request) {
 	s.authLimiter.Wait(r.Context())
 
-	claims, err := s.links.Verify(r.FormValue("t"))
+	claims, err := s.tokens.Verify(r.FormValue("t"))
 	if err != nil {
 		http.Error(w, "invalid login link", 400)
 		return

@@ -38,10 +38,8 @@ var (
 	appCtx   context.Context
 	cancelFn context.CancelFunc
 
-	// tokenIssuer is used to generate auth tokens for tests
-	tokenIssuer *engine.TokenIssuer
-	// linksIssuer is used to generate magic link tokens
-	linksIssuer *engine.TokenIssuer
+	// authIssuer is used to generate auth/magic link tokens for tests
+	authIssuer *engine.TokenIssuer
 
 	// testKeyDir stores generated key files for tests
 	testKeyDir string
@@ -136,15 +134,14 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 	router := engine.NewRouter()
 
 	// Create token issuers in test directory
-	tokenIssuer = engine.NewTokenIssuer(filepath.Join(keyDir, "auth.pem"))
-	linksIssuer = engine.NewTokenIssuer(filepath.Join(keyDir, "links.pem"))
+	authIssuer = engine.NewTokenIssuer(filepath.Join(keyDir, "auth.pem"))
 	oauthIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "oauth2.pem"))
 	fobIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "fobs.pem"))
 
 	a := engine.NewApp(":18080", router)
 
 	// Auth module (no Turnstile for tests)
-	authModule := auth.New(database, self, nil, linksIssuer, tokenIssuer)
+	authModule := auth.New(database, self, nil, authIssuer)
 	a.Add(authModule)
 	a.Router.Authenticator = authModule
 
@@ -159,7 +156,7 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 	a.Add(payment.New(database, webhookKey, self))
 
 	// Admin module
-	a.Add(admin.New(database, self, linksIssuer))
+	a.Add(admin.New(database, self, authIssuer))
 
 	// Members module
 	a.Add(members.New(database))

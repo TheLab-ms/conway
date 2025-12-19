@@ -111,8 +111,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	}
 
 	var (
-		tokenIss   = engine.NewTokenIssuer("auth.pem")
-		loginIss   = engine.NewTokenIssuer("auth.pem")
+		authIss    = engine.NewTokenIssuer("auth.pem")
 		oauthIss   = engine.NewTokenIssuer("oauth2.pem")
 		fobIss     = engine.NewTokenIssuer("fobs.pem")
 		discordIss = engine.NewTokenIssuer("discord-oauth.pem")
@@ -120,14 +119,14 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 
 	a := engine.NewApp(conf.HttpAddr, router)
 
-	authModule := auth.New(database, self, tso, tokenIss, loginIss)
+	authModule := auth.New(database, self, tso, authIss)
 	a.Add(authModule)
 	a.Router.Authenticator = authModule // IMPORTANT
 
 	a.Add(email.New(database, sender))
 	a.Add(oauth2.New(database, self, oauthIss))
 	a.Add(payment.New(database, conf.StripeWebhookKey, self))
-	a.Add(admin.New(database, self, tokenIss))
+	a.Add(admin.New(database, self, authIss))
 	a.Add(members.New(database))
 	a.Add(waiver.New(database))
 	a.Add(kiosk.New(database, self, fobIss, conf.SpaceHost))
