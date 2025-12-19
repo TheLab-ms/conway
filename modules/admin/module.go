@@ -44,8 +44,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 		router.HandleFunc("POST /admin/search"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 			const limit = 20
 			txn, err := m.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
-			if err != nil {
-				engine.SystemError(w, err.Error())
+			if engine.HandleError(w, err) {
 				return
 			}
 			defer txn.Rollback()
@@ -55,8 +54,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			// Get the row count
 			var rowCount int64
 			err = txn.QueryRowContext(r.Context(), rowCountQuery, args...).Scan(&rowCount)
-			if err != nil {
-				engine.SystemError(w, err.Error())
+			if engine.HandleError(w, err) {
 				return
 			}
 			currentPage, _ := strconv.ParseInt(r.FormValue("currentpage"), 10, 0)
@@ -64,15 +62,13 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			// Query
 			args = append(args, sql.Named("limit", limit), sql.Named("offset", max(currentPage-1, 0)*limit))
 			results, err := txn.QueryContext(r.Context(), q, args...)
-			if err != nil {
-				engine.SystemError(w, err.Error())
+			if engine.HandleError(w, err) {
 				return
 			}
 			defer results.Close()
 
 			rows, err := view.BuildRows(results)
-			if err != nil {
-				engine.SystemError(w, err.Error())
+			if engine.HandleError(w, err) {
 				return
 			}
 
@@ -87,8 +83,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 	router.HandleFunc("GET /admin/members/{id}", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		mem, events, err := querySingleMember(r.Context(), m.db, r.PathValue("id"))
-		if err != nil {
-			engine.SystemError(w, err.Error())
+		if engine.HandleError(w, err) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
@@ -100,15 +95,13 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			Subject:   r.PathValue("id"),
 			ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
 		})
-		if err != nil {
-			engine.SystemError(w, err.Error())
+		if engine.HandleError(w, err) {
 			return
 		}
 
 		url := fmt.Sprintf("%s/login?t=%s", m.self, url.QueryEscape(tok))
 		p, err := qrcode.Encode(url, qrcode.Medium, 512)
-		if err != nil {
-			engine.SystemError(w, err.Error())
+		if engine.HandleError(w, err) {
 			return
 		}
 
@@ -127,15 +120,13 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 func (m *Module) exportCSV(w http.ResponseWriter, r *http.Request) {
 	rows, err := m.db.QueryContext(r.Context(), fmt.Sprintf("SELECT * FROM %s", r.PathValue("table")))
-	if err != nil {
-		engine.SystemError(w, err.Error())
+	if engine.HandleError(w, err) {
 		return
 	}
 	defer rows.Close()
 
 	cols, err := rows.Columns()
-	if err != nil {
-		engine.SystemError(w, err.Error())
+	if engine.HandleError(w, err) {
 		return
 	}
 
@@ -152,8 +143,7 @@ func (m *Module) exportCSV(w http.ResponseWriter, r *http.Request) {
 		for i := range vals {
 			ptrs[i] = &vals[i]
 		}
-		if err := rows.Scan(ptrs...); err != nil {
-			engine.SystemError(w, err.Error())
+		if engine.HandleError(w, rows.Scan(ptrs...)) {
 			return
 		}
 		// Convert vals to strings
@@ -182,8 +172,7 @@ func (m *Module) renderMetricsChart(w http.ResponseWriter, r *http.Request) {
 
 	const q = "SELECT timestamp, value FROM metrics WHERE series = $1 AND timestamp > strftime('%s', 'now') - $2"
 	rows, err := m.db.QueryContext(r.Context(), q, r.URL.Query().Get("series"), windowDuration.Seconds())
-	if err != nil {
-		engine.SystemError(w, err.Error())
+	if engine.HandleError(w, err) {
 		return
 	}
 	defer rows.Close()
@@ -195,8 +184,7 @@ func (m *Module) renderMetricsChart(w http.ResponseWriter, r *http.Request) {
 	var data []dataPoint
 	for rows.Next() {
 		var ts, val float64
-		if err := rows.Scan(&ts, &val); err != nil {
-			engine.SystemError(w, err.Error())
+		if engine.HandleError(w, rows.Scan(&ts, &val)) {
 			return
 		}
 		data = append(data, dataPoint{Timestamp: int64(ts), Value: val})
@@ -218,8 +206,7 @@ func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	rows, err := m.db.QueryContext(r.Context(), `SELECT DISTINCT series FROM metrics WHERE timestamp > strftime('%s', 'now') - ? ORDER BY series`, int64(dur.Seconds()))
-	if err != nil {
-		engine.SystemError(w, err.Error())
+	if engine.HandleError(w, err) {
 		return
 	}
 	defer rows.Close()

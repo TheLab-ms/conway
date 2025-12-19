@@ -69,6 +69,20 @@ func SystemError(w http.ResponseWriter, msg string, args ...any) {
 	slog.Error(msg, args...)
 }
 
+// HandleError returns true if err is non-nil, logging the error and sending
+// a 500 response. This allows cleaner error handling in handlers:
+//
+//	if engine.HandleError(w, err) {
+//	    return
+//	}
+func HandleError(w http.ResponseWriter, err error) bool {
+	if err == nil {
+		return false
+	}
+	SystemError(w, err.Error())
+	return true
+}
+
 type responseWrapper struct {
 	http.ResponseWriter
 	status int
