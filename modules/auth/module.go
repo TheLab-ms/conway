@@ -100,6 +100,17 @@ func (m *Module) WithAuthn(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// WithLeadership wraps WithAuthn and additionally requires the user to be a member of leadership.
+func (m *Module) WithLeadership(next http.HandlerFunc) http.HandlerFunc {
+	return m.WithAuthn(func(w http.ResponseWriter, r *http.Request) {
+		if meta := GetUserMeta(r.Context()); meta == nil || !meta.Leadership {
+			http.Error(w, "You must be a member of leadership to access this page", 403)
+			return
+		}
+		next(w, r)
+	})
+}
+
 // handleLoginFormPost starts a login flow for the given member (by email).
 func (s *Module) handleLoginFormPost(w http.ResponseWriter, r *http.Request) {
 	email := strings.ToLower(r.FormValue("email"))

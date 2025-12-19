@@ -13,11 +13,13 @@ var assetFS embed.FS
 
 type Authenticator interface {
 	WithAuthn(http.HandlerFunc) http.HandlerFunc
+	WithLeadership(http.HandlerFunc) http.HandlerFunc
 }
 
 type noopAuthenticator struct{}
 
-func (noopAuthenticator) WithAuthn(fn http.HandlerFunc) http.HandlerFunc { return fn }
+func (noopAuthenticator) WithAuthn(fn http.HandlerFunc) http.HandlerFunc     { return fn }
+func (noopAuthenticator) WithLeadership(fn http.HandlerFunc) http.HandlerFunc { return fn }
 
 type Router struct {
 	router *http.ServeMux
