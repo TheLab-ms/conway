@@ -24,11 +24,10 @@ func Open(path string) (*sql.DB, error) {
 
 func OpenTest(t *testing.T) *sql.DB {
 	path := filepath.Join(t.TempDir(), "db")
-	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", path))
+	db, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	db.SetMaxOpenConns(1)
 	return db
 }
 
