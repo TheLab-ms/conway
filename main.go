@@ -14,7 +14,6 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/db"
-	"github.com/TheLab-ms/conway/engine/settings"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/discord"
@@ -35,6 +34,27 @@ import (
 
 type Config struct {
 	HttpAddr string `envDefault:":8080"`
+
+	// SpaceHost is a hostname that resolves to the public IP used to egress the makerspace LAN.
+	SpaceHost string `envDefault:"localhost"`
+
+	StripeKey        string
+	StripeWebhookKey string
+
+	DiscordClientID     string
+	DiscordClientSecret string
+	DiscordBotToken     string
+	DiscordGuildID      string
+	DiscordRoleID       string
+
+	EmailFrom string
+
+	TurnstileSiteKey string
+	TurnstileSecret  string
+
+	AccessControllerHost string
+
+	BambuPrinters string
 }
 
 func main() {
@@ -50,6 +70,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	stripe.Key = conf.StripeKey
 
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		err := engine.CheckHealthProbe("http://localhost:8080/healthz") // assume server is running on the default port
@@ -73,42 +94,21 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		panic(err)
 	}
 
-	// Run base migration first
-	db.MustMigrate(database, db.BaseMigration)
-
-	// Initialize settings store
-	ctx := context.Background()
-	settingsStore := settings.New(database)
-
-	// Register core settings section
-	settingsStore.RegisterSection(settings.Section{
-		Title: "Core Settings",
-		Fields: []settings.Field{
-			{Key: "core.self_url", Label: "Public URL", Description: "Public URL of this server"},
-			{Key: "kiosk.space_host", Label: "Space Hostname", Description: "Hostname resolving to makerspace public IP"},
-		},
-	})
-
-	// Ensure all setting definitions exist in database
-	if err := settings.EnsureDefaults(ctx, database); err != nil {
-		panic(fmt.Errorf("failed to ensure settings defaults: %w", err))
-	}
-
-	// One-time migration from environment variables
-	if err := settings.MigrateFromEnv(ctx, database); err != nil {
-		panic(fmt.Errorf("failed to migrate settings from env: %w", err))
-	}
-
-	// Watch Stripe key for immediate updates
-	settingsStore.Watch(ctx, "stripe.key", func(v string) {
-		if v != "" {
-			stripe.Key = v
-			slog.Info("updated Stripe API key from settings")
-		}
-	})
-
 	router := engine.NewRouter()
 	router.HandleFunc("/healthz", auth.OnlyLAN(engine.ServeHealthProbe(database)))
+
+	var tso *auth.TurnstileOptions
+	if conf.TurnstileSiteKey != "" {
+		tso = &auth.TurnstileOptions{
+			SiteKey: conf.TurnstileSiteKey,
+			Secret:  conf.TurnstileSecret,
+		}
+	}
+
+	var sender email.Sender
+	if conf.EmailFrom != "" {
+		sender = email.NewGoogleSmtpSender(conf.EmailFrom)
+	}
 
 	var (
 		authIss    = engine.NewTokenIssuer("auth.pem")
@@ -119,24 +119,40 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 
 	a := engine.NewApp(conf.HttpAddr, router)
 
-	authModule := auth.New(database, self, settingsStore, authIss)
+	authModule := auth.New(database, self, tso, authIss)
 	a.Add(authModule)
 	a.Router.Authenticator = authModule // IMPORTANT
 
-	a.Add(email.New(database, settingsStore))
+	a.Add(email.New(database, sender))
 	a.Add(oauth2.New(database, self, oauthIss))
-	a.Add(payment.New(database, settingsStore, self))
-	a.Add(admin.New(database, self, authIss, settingsStore))
+	a.Add(payment.New(database, conf.StripeWebhookKey, self))
+	a.Add(admin.New(database, self, authIss))
 	a.Add(members.New(database))
 	a.Add(waiver.New(database))
-	a.Add(kiosk.New(database, self, fobIss, settingsStore))
+	a.Add(kiosk.New(database, self, fobIss, conf.SpaceHost))
 	a.Add(metrics.New(database))
 	a.Add(pruning.New(database))
 	a.Add(fobapi.New(database))
-	a.Add(machines.New(settingsStore))
-	a.Add(gac.New(database, settingsStore))
-	a.Add(discord.New(database, self, discordIss, settingsStore))
 
+	if conf.BambuPrinters != "" {
+		a.Add(machines.New(conf.BambuPrinters))
+	} else {
+		slog.Info("machines module disabled because no devices were configured")
+	}
+
+	if conf.AccessControllerHost != "" {
+		a.Add(gac.New(database, conf.AccessControllerHost))
+	} else {
+		slog.Info("generic access controller module disabled because a URL was not configured")
+	}
+
+	if conf.DiscordClientID != "" {
+		a.Add(discord.New(database, self, discordIss, conf.DiscordClientID, conf.DiscordClientSecret, conf.DiscordBotToken, conf.DiscordGuildID, conf.DiscordRoleID))
+	} else {
+		slog.Info("discord module disabled because a client ID was not configured")
+	}
+
+	db.MustMigrate(database, db.BaseMigration)
 	return a, nil
 }
 

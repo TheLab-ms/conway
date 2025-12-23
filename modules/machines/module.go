@@ -8,12 +8,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os/exec"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/engine/settings"
 	"github.com/torbenconto/bambulabs_api"
 )
 
@@ -35,23 +33,37 @@ type PrinterStatus struct {
 }
 
 type Module struct {
-	settings *settings.Store
-	state    atomic.Pointer[[]PrinterStatus]
+	state atomic.Pointer[[]PrinterStatus]
 
-	mu           sync.Mutex
 	printers     []*bambulabs_api.Printer
 	configs      []*printerConfig
 	serialToName map[string]string
-	streams      map[string]*engine.StreamMux
+
+	streams map[string]*engine.StreamMux
 
 	testMode bool // When true, skip polling and use injected state
 }
 
-func New(settingsStore *settings.Store) *Module {
+func New(config string) *Module {
+	configs := []*printerConfig{}
+	err := json.Unmarshal([]byte(config), &configs)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse Bambu printer config: %v", err))
+	}
+
 	m := &Module{
-		settings:     settingsStore,
+		configs:      configs,
 		serialToName: map[string]string{},
 		streams:      map[string]*engine.StreamMux{},
+	}
+	for _, cfg := range configs {
+		m.serialToName[cfg.SerialNumber] = cfg.Name
+		m.printers = append(m.printers, bambulabs_api.NewPrinter(&bambulabs_api.PrinterConfig{
+			Host:         cfg.Host,
+			AccessCode:   cfg.AccessCode,
+			SerialNumber: cfg.SerialNumber,
+		}))
+		m.streams[cfg.SerialNumber] = m.newStreamMux(cfg)
 	}
 	zero := []PrinterStatus{}
 	m.state.Store(&zero)
@@ -62,9 +74,8 @@ func New(settingsStore *settings.Store) *Module {
 // The printers slice defines what the UI will render - no real connections are made.
 func NewForTesting(printers []PrinterStatus) *Module {
 	m := &Module{
-		streams:      map[string]*engine.StreamMux{},
-		serialToName: map[string]string{},
-		testMode:     true,
+		streams:  map[string]*engine.StreamMux{},
+		testMode: true,
 	}
 	m.state.Store(&printers)
 	return m
@@ -81,65 +92,10 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("POST /machines/{serial}/stop", router.WithAuthn(m.stopPrint))
 }
 
-func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
-	if m.testMode {
-		return // Skip polling in test mode - use injected state
-	}
-
-	ctx := context.Background()
-
-	// Watch for bambu.printers changes
-	m.settings.Watch(ctx, "bambu.printers", func(configJSON string) {
-		m.updatePrinterConfig(configJSON)
-	})
-
-	procs.Add(engine.Poll(time.Second*5, m.poll))
-}
-
-func (m *Module) updatePrinterConfig(configJSON string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Close existing streams
-	for _, stream := range m.streams {
-		stream.Close()
-	}
-
-	// Clear existing config
-	m.printers = nil
-	m.configs = nil
-	m.serialToName = map[string]string{}
-	m.streams = map[string]*engine.StreamMux{}
-
-	if configJSON == "" {
-		slog.Info("bambu printers disabled (no configuration)")
-		return
-	}
-
-	configs := []*printerConfig{}
-	if err := json.Unmarshal([]byte(configJSON), &configs); err != nil {
-		slog.Error("failed to parse Bambu printer config", "error", err)
-		return
-	}
-
-	m.configs = configs
-	for _, cfg := range configs {
-		m.serialToName[cfg.SerialNumber] = cfg.Name
-		m.printers = append(m.printers, bambulabs_api.NewPrinter(&bambulabs_api.PrinterConfig{
-			Host:         cfg.Host,
-			AccessCode:   cfg.AccessCode,
-			SerialNumber: cfg.SerialNumber,
-		}))
-		m.streams[cfg.SerialNumber] = m.newStreamMux(cfg)
-	}
-
-	slog.Info("bambu printers configured", "count", len(configs))
-}
-
 func (m *Module) stopPrint(w http.ResponseWriter, r *http.Request) {
 	serial := r.PathValue("serial")
 
-	m.mu.Lock()
+	// Find the printer for this serial number
 	var printer *bambulabs_api.Printer
 	for _, p := range m.printers {
 		if p.GetSerial() == serial {
@@ -147,9 +103,6 @@ func (m *Module) stopPrint(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	printerName := m.serialToName[serial]
-	m.mu.Unlock()
-
 	if printer == nil {
 		http.Error(w, "Printer not found", http.StatusNotFound)
 		return
@@ -168,7 +121,7 @@ func (m *Module) stopPrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("print stopped successfully", "serial", serial, "printer", printerName)
+	slog.Info("print stopped successfully", "serial", serial, "printer", m.serialToName[serial])
 
 	// Redirect back to machines page
 	http.Redirect(w, r, "/machines", http.StatusSeeOther)
@@ -181,7 +134,6 @@ func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) newStreamMux(cfg *printerConfig) *engine.StreamMux {
 	rtspURL := fmt.Sprintf("rtsps://bblp:%s@%s:322/streaming/live/1", cfg.AccessCode, cfg.Host)
-	printerName := cfg.Name
 	return engine.NewStreamMux(func(ctx context.Context) (io.ReadCloser, error) {
 		cmd := exec.CommandContext(ctx, "ffmpeg",
 			"-rtsp_transport", "tcp",
@@ -204,10 +156,10 @@ func (m *Module) newStreamMux(cfg *printerConfig) *engine.StreamMux {
 			return nil, fmt.Errorf("failed to start ffmpeg: %w", err)
 		}
 
-		slog.Info("started camera stream", "printer", printerName)
+		slog.Info("started camera stream", "printer", m.serialToName[cfg.SerialNumber])
 
 		// Return a wrapper that waits for cmd on close
-		return &cmdReader{ReadCloser: stdout, cmd: cmd, name: printerName}, nil
+		return &cmdReader{ReadCloser: stdout, cmd: cmd, name: m.serialToName[cfg.SerialNumber]}, nil
 	})
 }
 
@@ -227,10 +179,7 @@ func (c *cmdReader) Close() error {
 func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 	serial := r.PathValue("serial")
 
-	m.mu.Lock()
 	mux, ok := m.streams[serial]
-	m.mu.Unlock()
-
 	if !ok {
 		http.Error(w, "Printer not found", http.StatusNotFound)
 		return
@@ -262,22 +211,20 @@ func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (m *Module) poll(ctx context.Context) bool {
-	m.mu.Lock()
-	printers := m.printers
-	serialToName := m.serialToName
-	m.mu.Unlock()
-
-	if len(printers) == 0 {
-		return false // Not configured
+func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
+	if m.testMode {
+		return // Skip polling in test mode - use injected state
 	}
+	procs.Add(engine.Poll(time.Second*5, m.poll))
+}
 
+func (m *Module) poll(ctx context.Context) bool {
 	slog.Info("starting to get Bambu printer status")
 	start := time.Now()
 
 	var state []PrinterStatus
-	for _, printer := range printers {
-		name := serialToName[printer.GetSerial()]
+	for _, printer := range m.printers {
+		name := m.serialToName[printer.GetSerial()]
 		if err := printer.Connect(); err != nil {
 			slog.Warn("unable to connect to Bambu printer", "error", err, "printer", name)
 			continue

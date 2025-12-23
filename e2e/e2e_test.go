@@ -14,13 +14,10 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/db"
-	"github.com/TheLab-ms/conway/engine/settings"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
-	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/fobapi"
-	gac "github.com/TheLab-ms/conway/modules/generic-access-controller"
 	"github.com/TheLab-ms/conway/modules/kiosk"
 	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/TheLab-ms/conway/modules/members"
@@ -140,45 +137,26 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 	authIssuer = engine.NewTokenIssuer(filepath.Join(keyDir, "auth.pem"))
 	oauthIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "oauth2.pem"))
 	fobIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "fobs.pem"))
-	discordIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "discord-oauth.pem"))
-
-	// Create settings store for tests
-	settingsStore := settings.New(database)
-
-	// Apply database migrations (before settings operations)
-	db.MustMigrate(database, db.BaseMigration)
-
-	// Register core settings section (matches main.go)
-	settingsStore.RegisterSection(settings.Section{
-		Title: "Core Settings",
-		Fields: []settings.Field{
-			{Key: "core.self_url", Label: "Public URL", Description: "Public URL of this server"},
-		},
-	})
-
-	// Ensure settings defaults exist in database
-	if err := settings.EnsureDefaults(context.Background(), database); err != nil {
-		return nil, fmt.Errorf("failed to ensure settings defaults: %w", err)
-	}
 
 	a := engine.NewApp(":18080", router)
 
 	// Auth module (no Turnstile for tests)
-	authModule := auth.New(database, self, settingsStore, authIssuer)
+	authModule := auth.New(database, self, nil, authIssuer)
 	a.Add(authModule)
 	a.Router.Authenticator = authModule
 
 	// Email module with no-op sender (emails stored in outbound_mail table)
-	a.Add(email.New(database, settingsStore))
+	a.Add(email.New(database, nil))
 
 	// OAuth2 provider
 	a.Add(oauth2.New(database, self, oauthIssuer))
 
 	// Payment module (no webhook key for tests, use Stripe test mode)
-	a.Add(payment.New(database, settingsStore, self))
+	webhookKey := os.Getenv("STRIPE_TEST_WEBHOOK_KEY")
+	a.Add(payment.New(database, webhookKey, self))
 
 	// Admin module
-	a.Add(admin.New(database, self, authIssuer, settingsStore))
+	a.Add(admin.New(database, self, authIssuer))
 
 	// Members module
 	a.Add(members.New(database))
@@ -186,8 +164,8 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 	// Waiver module
 	a.Add(waiver.New(database))
 
-	// Kiosk module
-	a.Add(kiosk.New(database, self, fobIssuer, settingsStore))
+	// Kiosk module - use "localhost" as SpaceHost for testing
+	a.Add(kiosk.New(database, self, fobIssuer, "localhost"))
 
 	// Metrics module
 	a.Add(metrics.New(database))
@@ -207,19 +185,8 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 	})
 	a.Add(testMachinesModule)
 
-	// Register machines section for testing (NewForTesting doesn't register it)
-	settingsStore.RegisterSection(settings.Section{
-		Title: "Machines (Bambu Printers)",
-		Fields: []settings.Field{
-			{Key: "bambu.printers", Label: "Printer Configuration", Description: "Bambu printer configuration (JSON array)", Type: settings.FieldTypeTextArea},
-		},
-	})
-
-	// GAC module
-	a.Add(gac.New(database, settingsStore))
-
-	// Discord module
-	a.Add(discord.New(database, self, discordIssuer, settingsStore))
+	// Apply database migrations
+	db.MustMigrate(database, db.BaseMigration)
 
 	return a, nil
 }

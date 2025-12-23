@@ -5,15 +5,12 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/engine/settings"
-	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/skip2/go-qrcode"
 )
@@ -21,21 +18,20 @@ import (
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
 type Module struct {
-	db       *sql.DB
-	self     *url.URL
-	links    *engine.TokenIssuer
-	nav      []*navbarTab
-	settings *settings.Store
+	db    *sql.DB
+	self  *url.URL
+	links *engine.TokenIssuer
+	nav   []*navbarTab
 }
 
-func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer, settingsStore *settings.Store) *Module {
+func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer) *Module {
 	nav := []*navbarTab{}
 	for _, view := range listViews {
 		nav = append(nav, &navbarTab{Title: view.Title, Path: "/admin" + view.RelPath})
 	}
 	nav = append(nav, &navbarTab{Title: "Metrics", Path: "/admin/metrics"})
 
-	return &Module{db: db, self: self, links: linksIss, nav: nav, settings: settingsStore}
+	return &Module{db: db, self: self, links: linksIss, nav: nav}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -116,8 +112,6 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /admin/export/{table}", router.WithLeadership(m.exportCSV))
 	router.HandleFunc("GET /admin/chart", router.WithLeadership(m.renderMetricsChart))
 	router.HandleFunc("GET /admin/metrics", router.WithLeadership(m.renderMetricsPageHandler))
-	router.HandleFunc("GET /admin/settings", router.WithLeadership(m.renderSettingsPageHandler))
-	router.HandleFunc("POST /admin/settings", router.WithLeadership(m.handleSettingsSave))
 
 	for _, handle := range formHandlers {
 		router.HandleFunc("POST "+handle.Path, router.WithLeadership(handle.BuildHandler(m.db)))
@@ -228,99 +222,4 @@ func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "text/html")
 	renderMetricsAdminPage(m.nav, metrics, selected).Render(r.Context(), w)
-}
-
-func (m *Module) renderSettingsPageHandler(w http.ResponseWriter, r *http.Request) {
-	sections := m.settings.SectionValues(r.Context())
-
-	// Get bambu printers JSON and parse it
-	bambuJSON := m.settings.Get(r.Context(), "bambu.printers")
-	bambuPrinters := parseBambuPrinters(bambuJSON)
-
-	savedMsg := ""
-	if r.URL.Query().Get("saved") == "1" {
-		savedMsg = "Settings saved successfully!"
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	renderSettingsPage(m.nav, sections, bambuPrinters, savedMsg).Render(r.Context(), w)
-}
-
-func (m *Module) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		engine.HandleError(w, err)
-		return
-	}
-
-	user := auth.GetUserMeta(r.Context())
-	ctx := r.Context()
-
-	// Process all registered settings sections
-	for _, section := range m.settings.Sections() {
-		for _, field := range section.Fields {
-			// Skip bambu.printers as it's handled specially
-			if field.Key == "bambu.printers" {
-				continue
-			}
-
-			newValue := r.FormValue(field.Key)
-
-			// For sensitive fields, empty submission means "keep existing"
-			if field.Sensitive && newValue == "" {
-				continue
-			}
-
-			if err := m.settings.Set(ctx, field.Key, newValue); err != nil {
-				engine.HandleError(w, err)
-				return
-			}
-		}
-	}
-
-	// Handle bambu.printers specially - need to preserve access codes marked as __KEEP__
-	bambuJSON := r.FormValue("bambu.printers")
-	if bambuJSON != "" {
-		var newPrinters []bambuPrinter
-		if err := json.Unmarshal([]byte(bambuJSON), &newPrinters); err == nil {
-			// Get existing printers to preserve access codes
-			existingJSON := m.settings.Get(ctx, "bambu.printers")
-			existingPrinters := parseBambuPrinters(existingJSON)
-
-			// Build a map of existing printers by serial number for access code lookup
-			existingBySerial := make(map[string]string)
-			for _, p := range existingPrinters {
-				if p.SerialNumber != "" && p.AccessCode != "" {
-					existingBySerial[p.SerialNumber] = p.AccessCode
-				}
-			}
-
-			// Replace __KEEP__ placeholders with actual values
-			for i := range newPrinters {
-				if newPrinters[i].AccessCode == "__KEEP__" {
-					if code, ok := existingBySerial[newPrinters[i].SerialNumber]; ok {
-						newPrinters[i].AccessCode = code
-					} else if i < len(existingPrinters) {
-						newPrinters[i].AccessCode = existingPrinters[i].AccessCode
-					}
-				}
-			}
-
-			// Serialize and save
-			finalJSON, _ := json.Marshal(newPrinters)
-			if err := m.settings.Set(ctx, "bambu.printers", string(finalJSON)); err != nil {
-				engine.HandleError(w, err)
-				return
-			}
-		}
-	} else {
-		// Empty means clear all printers
-		if err := m.settings.Set(ctx, "bambu.printers", ""); err != nil {
-			engine.HandleError(w, err)
-			return
-		}
-	}
-
-	slog.Info("settings updated by admin", "adminID", user.ID, "adminEmail", user.Email)
-
-	http.Redirect(w, r, "/admin/settings?saved=1", http.StatusSeeOther)
 }
