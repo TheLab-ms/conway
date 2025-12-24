@@ -31,34 +31,120 @@ templ renderLoginPage(callbackURI string, tso *TurnstileOptions) {
 	}
 }
 
-templ renderLoginSentPage() {
+templ renderLoginSentPage(email string) {
 	@bootstrap.View() {
 		<body class="d-flex align-items-center justify-content-center vh-100 bg-light p-3">
 			<div id="login-code" class="text-center">
-				<div class="card shadow p-4">
-					<h5 class="mb-3">Email Sent</h5>
-					<p class="col-xs">
-						We sent a login link to the provided email address.
+				<div class="card shadow p-4" style="max-width: 400px;">
+					<h5 class="mb-3">Check Your Email</h5>
+					if email != "" {
+						<p class="text-muted mb-4">
+							We sent a login code to <strong>{ email }</strong>
+						</p>
+					} else {
+						<p class="text-muted mb-4">
+							We sent a login code to your email address.
+						</p>
+					}
+					<form action="/login/code" method="post" id="code-form">
+						<label class="form-label">Enter your 5-digit code</label>
+						<div class="d-flex justify-content-center gap-2 mb-3">
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="0" autofocus/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="1"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="2"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="3"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="4"/>
+						</div>
+						<input type="hidden" name="code" id="code-value"/>
+						<div id="code-error" class="text-danger mb-3" style="display: none;"></div>
+						<button type="submit" class="btn btn-primary w-100" id="submit-btn" disabled>Verify Code</button>
+					</form>
+					<hr class="my-4"/>
+					<p class="text-muted small mb-0">
+						You can also click the link in your email to sign in.
 					</p>
 				</div>
 			</div>
+			<script>
+				(function() {
+					const digits = document.querySelectorAll('.code-digit');
+					const codeValue = document.getElementById('code-value');
+					const submitBtn = document.getElementById('submit-btn');
+					const form = document.getElementById('code-form');
+
+					function updateCode() {
+						let code = '';
+						digits.forEach(d => code += d.value);
+						codeValue.value = code;
+						submitBtn.disabled = code.length !== 5;
+
+						if (code.length === 5) {
+							form.submit();
+						}
+					}
+
+					digits.forEach((digit, index) => {
+						digit.addEventListener('input', (e) => {
+							digit.value = digit.value.replace(/[^0-9]/g, '');
+							if (digit.value && index < 4) {
+								digits[index + 1].focus();
+							}
+							updateCode();
+						});
+
+						digit.addEventListener('keydown', (e) => {
+							if (e.key === 'Backspace' && !digit.value && index > 0) {
+								digits[index - 1].focus();
+							}
+						});
+
+						digit.addEventListener('paste', (e) => {
+							e.preventDefault();
+							const paste = (e.clipboardData || window.clipboardData).getData('text');
+							const nums = paste.replace(/[^0-9]/g, '').slice(0, 5);
+							for (let i = 0; i < nums.length && i < 5; i++) {
+								digits[i].value = nums[i];
+							}
+							if (nums.length > 0) {
+								digits[Math.min(nums.length, 4)].focus();
+							}
+							updateCode();
+						});
+					});
+				})();
+			</script>
 		</body>
 	}
 }
 
-templ renderLoginEmail(self *url.URL, token, callback string) {
-	<div>
-		<p>
-			Here is your login code for TheLab Makerspace:
+templ renderLoginEmail(self *url.URL, code string) {
+	<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+		<p>Here is your login code for TheLab Makerspace:</p>
+		<div style="text-align: center; margin: 30px 0;">
+			<div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; display: inline-block;">
+				<p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">Your login code:</p>
+				<div style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #212529;">
+					{ code }
+				</div>
+			</div>
+		</div>
+		<p style="text-align: center; color: #666;">
+			Enter this code on the login page, or click the link below:
 		</p>
-		<a href={ templ.SafeURL(fmt.Sprintf("%s/login?t=%s&n=%s", self.String(), url.QueryEscape(token), url.QueryEscape(callback))) }>
-			{ self.String() }/login
-		</a>
-		<p>
-			This link will expire in 5 minutes.
+		<p style="text-align: center; margin: 20px 0;">
+			<a href={ templ.SafeURL(fmt.Sprintf("%s/login/code/%s", self.String(), code)) } style="background-color: #0d6efd; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+				Sign In to TheLab
+			</a>
 		</p>
-		<p>
-			Please ignore this message if you did not request a login code from TheLab Makerspace.
+		<p style="text-align: center; color: #999; font-size: 12px;">
+			Or copy this link: <a href={ templ.SafeURL(fmt.Sprintf("%s/login/code/%s", self.String(), code)) }>{ self.String() }/login/code/{ code }</a>
+		</p>
+		<hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;"/>
+		<p style="color: #666; font-size: 14px;">
+			This code expires in 5 minutes.
+		</p>
+		<p style="color: #999; font-size: 12px;">
+			If you did not request this login code, please ignore this message.
 		</p>
 	</div>
 }

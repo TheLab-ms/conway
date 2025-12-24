@@ -3,8 +3,11 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -40,19 +43,19 @@ func New(db *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenI
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("t") != "" {
-			m.handleLoginCallbackLink(w, r)
-			return
-		}
 		callback := r.URL.Query().Get("callback_uri")
 		w.Header().Set("Content-Type", "text/html")
 		renderLoginPage(callback, m.turnstile).Render(r.Context(), w)
 	})
 
 	router.HandleFunc("GET /login/sent", func(w http.ResponseWriter, r *http.Request) {
+		email := r.URL.Query().Get("email")
 		w.Header().Set("Content-Type", "text/html")
-		renderLoginSentPage().Render(r.Context(), w)
+		renderLoginSentPage(email).Render(r.Context(), w)
 	})
+
+	router.HandleFunc("POST /login/code", m.handleLoginCodeSubmit)
+	router.HandleFunc("GET /login/code/{code}", m.handleLoginCodeLink)
 
 	router.HandleFunc("GET /whoami", m.WithAuthn(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -114,6 +117,7 @@ func (m *Module) WithLeadership(next http.HandlerFunc) http.HandlerFunc {
 // handleLoginFormPost starts a login flow for the given member (by email).
 func (s *Module) handleLoginFormPost(w http.ResponseWriter, r *http.Request) {
 	email := strings.ToLower(r.FormValue("email"))
+	callback := r.FormValue("callback_uri")
 
 	if !s.verifyTurnstileResponse(r) {
 		http.Error(w, "We weren't able to verify that you are a human", 401)
@@ -128,36 +132,77 @@ func (s *Module) handleLoginFormPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send the login email
-	body, err := s.newLoginEmail(memberID, r.FormValue("callback_uri"))
+	// Generate login code and email
+	code, body, err := s.newLoginEmail(memberID, callback)
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return
 	}
+
+	// Queue the email
 	_, err = s.db.ExecContext(r.Context(), "INSERT INTO outbound_mail (recipient, subject, body) VALUES ($1, 'Makerspace Login', $2);", email, body)
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return
 	}
 
-	http.Redirect(w, r, "/login/sent", http.StatusSeeOther)
+	// Redirect to sent page with email for display
+	q := url.Values{}
+	q.Set("email", email)
+	if callback != "" {
+		q.Set("callback_uri", callback)
+	}
+	_ = code // code is stored in DB during newLoginEmail
+	http.Redirect(w, r, "/login/sent?"+q.Encode(), http.StatusSeeOther)
 }
 
-func (m *Module) newLoginEmail(memberID int64, callback string) (string, error) {
+// generateLoginCode generates a cryptographically secure 5-digit code.
+func generateLoginCode() (string, error) {
+	var n uint32
+	if err := binary.Read(rand.Reader, binary.BigEndian, &n); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%05d", n%100000), nil
+}
+
+func (m *Module) newLoginEmail(memberID int64, callback string) (code string, body string, err error) {
+	expiresAt := time.Now().Add(time.Minute * 5)
+
 	tok, err := m.tokens.Sign(&jwt.RegisteredClaims{
 		Subject:   strconv.FormatInt(memberID, 10),
-		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
+		ExpiresAt: &jwt.NumericDate{Time: expiresAt},
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+
+	// Generate a unique 5-digit code
+	for attempts := 0; attempts < 3; attempts++ {
+		code, err = generateLoginCode()
+		if err != nil {
+			return "", "", err
+		}
+
+		// Try to insert the code (will fail if code already exists due to PRIMARY KEY)
+		_, err = m.db.Exec(
+			"INSERT INTO login_codes (code, token, email, callback, expires_at) VALUES (?, ?, (SELECT email FROM members WHERE id = ?), ?, ?)",
+			code, tok, memberID, callback, expiresAt.Unix(),
+		)
+		if err == nil {
+			break
+		}
+		// If we get here, code collision occurred, try again
+		if attempts == 2 {
+			return "", "", fmt.Errorf("failed to generate unique login code after 3 attempts")
+		}
 	}
 
 	var buf bytes.Buffer
-	err = renderLoginEmail(m.self, tok, callback).Render(context.Background(), &buf)
+	err = renderLoginEmail(m.self, code).Render(context.Background(), &buf)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return buf.String(), nil
+	return code, buf.String(), nil
 }
 
 func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
@@ -196,11 +241,68 @@ func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
 	return result.Success
 }
 
-// handleLoginCallbackLink handles requests to the URL sent in login emails.
-func (s *Module) handleLoginCallbackLink(w http.ResponseWriter, r *http.Request) {
+// handleLoginCodeSubmit handles code entry from the login sent page form.
+func (s *Module) handleLoginCodeSubmit(w http.ResponseWriter, r *http.Request) {
 	s.authLimiter.Wait(r.Context())
 
-	claims, err := s.tokens.Verify(r.FormValue("t"))
+	code := r.FormValue("code")
+	s.verifyCodeAndLogin(w, r, code)
+}
+
+// handleLoginCodeLink handles short link clicks from email (GET /login/code/{code}).
+func (s *Module) handleLoginCodeLink(w http.ResponseWriter, r *http.Request) {
+	s.authLimiter.Wait(r.Context())
+
+	code := r.PathValue("code")
+	s.verifyCodeAndLogin(w, r, code)
+}
+
+// verifyCodeAndLogin looks up a login code and completes the login flow.
+func (s *Module) verifyCodeAndLogin(w http.ResponseWriter, r *http.Request, code string) {
+	// Validate code format
+	if len(code) != 5 {
+		http.Error(w, "invalid code", 400)
+		return
+	}
+	for _, c := range code {
+		if c < '0' || c > '9' {
+			http.Error(w, "invalid code", 400)
+			return
+		}
+	}
+
+	// Look up code in database
+	var token, callback string
+	var expiresAt int64
+	err := s.db.QueryRowContext(r.Context(),
+		"SELECT token, callback, expires_at FROM login_codes WHERE code = ?",
+		code).Scan(&token, &callback, &expiresAt)
+	if err == sql.ErrNoRows {
+		http.Error(w, "invalid or expired code", 400)
+		return
+	}
+	if err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	// Check expiration
+	if time.Now().Unix() > expiresAt {
+		s.db.Exec("DELETE FROM login_codes WHERE code = ?", code)
+		http.Error(w, "code has expired", 400)
+		return
+	}
+
+	// Delete code (single use)
+	s.db.Exec("DELETE FROM login_codes WHERE code = ?", code)
+
+	// Complete login with the stored token
+	s.completeLogin(w, r, token, callback)
+}
+
+// completeLogin verifies a JWT token and sets up the session.
+func (s *Module) completeLogin(w http.ResponseWriter, r *http.Request, token, callback string) {
+	claims, err := s.tokens.Verify(token)
 	if err != nil {
 		http.Error(w, "invalid login link", 400)
 		return
@@ -213,7 +315,7 @@ func (s *Module) handleLoginCallbackLink(w http.ResponseWriter, r *http.Request)
 	}
 
 	exp := time.Now().Add(time.Hour * 24 * 30)
-	token, err := s.tokens.Sign(&jwt.RegisteredClaims{
+	sessionToken, err := s.tokens.Sign(&jwt.RegisteredClaims{
 		Issuer:    "conway",
 		Subject:   claims.Subject,
 		Audience:  jwt.ClaimStrings{"conway"},
@@ -223,16 +325,21 @@ func (s *Module) handleLoginCallbackLink(w http.ResponseWriter, r *http.Request)
 		engine.SystemError(w, err.Error())
 		return
 	}
+
 	cook := &http.Cookie{
 		Name:     "token",
-		Value:    token,
+		Value:    sessionToken,
 		Path:     "/",
 		SameSite: http.SameSiteLaxMode,
 		Expires:  exp,
 		Secure:   strings.Contains(s.self.Scheme, "s"),
 	}
 	http.SetCookie(w, cook)
-	http.Redirect(w, r, r.FormValue("n"), http.StatusFound)
+
+	if callback == "" {
+		callback = "/"
+	}
+	http.Redirect(w, r, callback, http.StatusFound)
 }
 
 // OnlyLAN returns a 403 error if the request is coming from the internet.

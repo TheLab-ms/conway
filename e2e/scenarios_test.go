@@ -3,25 +3,25 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/playwright-community/playwright-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestLogin_MagicLinkValid verifies that a valid magic link token authenticates
-// the user and redirects them to the dashboard.
-func TestLogin_MagicLinkValid(t *testing.T) {
+// TestLogin_CodeLinkValid verifies that clicking a code link from the email
+// authenticates the user and redirects them to the dashboard.
+func TestLogin_CodeLinkValid(t *testing.T) {
 	clearTestData(t)
-	memberID := seedMember(t, "valid@example.com", WithConfirmed())
-	token := generateMagicLinkToken(t, memberID)
+	memberID := seedMember(t, "codelink@example.com", WithConfirmed())
+	seedLoginCode(t, "12345", memberID, "/", time.Now().Add(5*time.Minute))
 
 	page := newPage(t)
-	_, err := page.Goto(baseURL + "/login?t=" + url.QueryEscape(token) + "&n=" + url.QueryEscape("/"))
+	_, err := page.Goto(baseURL + "/login/code/12345")
 	require.NoError(t, err)
 
 	err = page.WaitForURL("**/")
@@ -31,31 +31,92 @@ func TestLogin_MagicLinkValid(t *testing.T) {
 	dashboard.ExpectMissingWaiverAlert()
 }
 
-// TestLogin_MagicLinkExpired verifies that an expired magic link token returns
-// a 400 error with an appropriate message.
-func TestLogin_MagicLinkExpired(t *testing.T) {
+// TestLogin_CodeLinkExpired verifies that an expired code returns a 400 error.
+func TestLogin_CodeLinkExpired(t *testing.T) {
 	clearTestData(t)
-	memberID := seedMember(t, "expired@example.com", WithConfirmed())
-	token := generateExpiredMagicLinkToken(t, memberID)
+	memberID := seedMember(t, "expiredcode@example.com", WithConfirmed())
+	seedLoginCode(t, "99999", memberID, "/", time.Now().Add(-1*time.Minute))
 
 	page := newPage(t)
-	resp, err := page.Goto(baseURL + "/login?t=" + url.QueryEscape(token) + "&n=/")
+	resp, err := page.Goto(baseURL + "/login/code/99999")
 	require.NoError(t, err)
 
 	assert.Equal(t, 400, resp.Status())
-	locator := page.GetByText("invalid login link")
-	expect(t).Locator(locator).ToBeVisible()
 }
 
-// TestLogin_MagicLinkInvalid verifies that an invalid magic link token returns
-// a 400 error.
-func TestLogin_MagicLinkInvalid(t *testing.T) {
+// TestLogin_CodeLinkInvalid verifies that a non-existent code returns a 400 error.
+func TestLogin_CodeLinkInvalid(t *testing.T) {
 	page := setupUnauthenticatedTest(t)
 
-	resp, err := page.Goto(baseURL + "/login?t=invalid-token&n=/")
+	resp, err := page.Goto(baseURL + "/login/code/00000")
 	require.NoError(t, err)
 
 	assert.Equal(t, 400, resp.Status())
+}
+
+// TestLogin_CodeFormEntry verifies that entering a code on the sent page
+// authenticates the user.
+func TestLogin_CodeFormEntry(t *testing.T) {
+	clearTestData(t)
+	memberID := seedMember(t, "codeform@example.com", WithConfirmed())
+	seedLoginCode(t, "54321", memberID, "/", time.Now().Add(5*time.Minute))
+
+	page := newPage(t)
+	_, err := page.Goto(baseURL + "/login/sent?email=codeform@example.com")
+	require.NoError(t, err)
+
+	// Enter each digit
+	digits := page.Locator(".code-digit")
+	code := "54321"
+	for i, digit := range code {
+		err = digits.Nth(i).Fill(string(digit))
+		require.NoError(t, err)
+	}
+
+	// Auto-submit should trigger, wait for redirect
+	err = page.WaitForURL("**/")
+	require.NoError(t, err)
+
+	dashboard := NewMemberDashboardPage(t, page)
+	dashboard.ExpectMissingWaiverAlert()
+}
+
+// TestLogin_CodeSingleUse verifies that a code can only be used once.
+func TestLogin_CodeSingleUse(t *testing.T) {
+	clearTestData(t)
+	memberID := seedMember(t, "singleuse@example.com", WithConfirmed())
+	seedLoginCode(t, "11111", memberID, "/", time.Now().Add(5*time.Minute))
+
+	// First use should succeed
+	page := newPage(t)
+	_, err := page.Goto(baseURL + "/login/code/11111")
+	require.NoError(t, err)
+	err = page.WaitForURL("**/")
+	require.NoError(t, err)
+
+	// Second use should fail
+	page2 := newPage(t)
+	resp, err := page2.Goto(baseURL + "/login/code/11111")
+	require.NoError(t, err)
+	assert.Equal(t, 400, resp.Status())
+}
+
+// TestLogin_SentPageShowsEmail verifies that the sent page displays the user's email.
+func TestLogin_SentPageShowsEmail(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+
+	_, err := page.Goto(baseURL + "/login/sent?email=test@example.com")
+	require.NoError(t, err)
+
+	// Check that the email is displayed
+	emailText := page.GetByText("test@example.com")
+	expect(t).Locator(emailText).ToBeVisible()
+
+	// Check that code input boxes are present
+	digits := page.Locator(".code-digit")
+	count, err := digits.Count()
+	require.NoError(t, err)
+	assert.Equal(t, 5, count, "should have 5 code digit inputs")
 }
 
 // TestLogout verifies that logging out clears the session and redirects
@@ -98,9 +159,9 @@ func TestAuth_CallbackPreservation(t *testing.T) {
 	url := page.URL()
 	assert.Contains(t, url, "callback_uri")
 
-	// Login via magic link with the callback
-	token := generateMagicLinkToken(t, memberID)
-	_, err = page.Goto(baseURL + "/login?t=" + token + "&n=" + "/admin/members")
+	// Login via code link with the callback
+	seedLoginCode(t, "22222", memberID, "/admin/members", time.Now().Add(5*time.Minute))
+	_, err = page.Goto(baseURL + "/login/code/22222")
 	require.NoError(t, err)
 
 	err = page.WaitForURL("**/admin/members**")
@@ -261,7 +322,7 @@ func TestDashboard_RequiresAuthentication(t *testing.T) {
 }
 
 // TestJourney_NewMemberOnboarding tests the complete new member signup flow:
-// sign waiver, request login email, click magic link, and view dashboard.
+// sign waiver, request login email, use login code, and view dashboard.
 func TestJourney_NewMemberOnboarding(t *testing.T) {
 	page := setupUnauthenticatedTest(t)
 	email := "newmember@example.com"
@@ -293,9 +354,12 @@ func TestJourney_NewMemberOnboarding(t *testing.T) {
 	err = testDB.QueryRow("SELECT id FROM members WHERE email = ?", email).Scan(&memberID)
 	require.NoError(t, err, "member should be created")
 
-	// Step 3: Use magic link to login
-	token := generateMagicLinkToken(t, memberID)
-	_, err = page.Goto(baseURL + "/login?t=" + token + "&n=/")
+	// Step 3: Get login code from database and use it
+	var code string
+	err = testDB.QueryRow("SELECT code FROM login_codes WHERE email = ?", email).Scan(&code)
+	require.NoError(t, err, "login code should be created")
+
+	_, err = page.Goto(baseURL + "/login/code/" + code)
 	require.NoError(t, err)
 
 	err = page.WaitForURL("**/")
@@ -335,9 +399,12 @@ func TestJourney_WaiverThenLogin(t *testing.T) {
 	err := testDB.QueryRow("SELECT id FROM members WHERE email = ?", email).Scan(&memberID)
 	require.NoError(t, err)
 
-	// Use magic link
-	token := generateMagicLinkToken(t, memberID)
-	_, err = page.Goto(baseURL + "/login?t=" + token + "&n=/")
+	// Use login code from database
+	var code string
+	err = testDB.QueryRow("SELECT code FROM login_codes WHERE email = ?", email).Scan(&code)
+	require.NoError(t, err, "login code should be created")
+
+	_, err = page.Goto(baseURL + "/login/code/" + code)
 	require.NoError(t, err)
 
 	// Check that member has waiver linked

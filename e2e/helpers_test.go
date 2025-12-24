@@ -3,7 +3,7 @@ package e2e
 import (
 	"database/sql"
 	"fmt"
-	"net/url"
+	"regexp"
 	"strconv"
 	"testing"
 	"time"
@@ -92,25 +92,14 @@ func generateAuthToken(t *testing.T, memberID int64) string {
 	return token
 }
 
-// generateMagicLinkToken creates a valid magic link token for login.
-func generateMagicLinkToken(t *testing.T, memberID int64) string {
+// generateLoginToken creates a valid login token for testing.
+func generateLoginToken(t *testing.T, memberID int64) string {
 	t.Helper()
 	token, err := authIssuer.Sign(&jwt.RegisteredClaims{
 		Subject:   strconv.FormatInt(memberID, 10),
 		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
 	})
-	require.NoError(t, err, "could not generate magic link token")
-	return token
-}
-
-// generateExpiredMagicLinkToken creates an expired magic link token.
-func generateExpiredMagicLinkToken(t *testing.T, memberID int64) string {
-	t.Helper()
-	token, err := authIssuer.Sign(&jwt.RegisteredClaims{
-		Subject:   strconv.FormatInt(memberID, 10),
-		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(-time.Minute)}, // already expired
-	})
-	require.NoError(t, err, "could not generate expired magic link token")
+	require.NoError(t, err, "could not generate login token")
 	return token
 }
 
@@ -261,50 +250,6 @@ func getLastEmail(t *testing.T, recipient string) (subject, body string, found b
 	return subject, body, true
 }
 
-// extractMagicLinkFromEmail parses the magic link token from an email body.
-func extractMagicLinkFromEmail(t *testing.T, body string) string {
-	t.Helper()
-	// The email body contains a URL like: http://localhost:18080/login?t=TOKEN&n=CALLBACK
-	// Parse and extract the 't' parameter
-	parsed, err := url.Parse(body)
-	if err != nil {
-		// Try to find URL pattern in the body
-		// Format: <a href="URL">
-		start := findSubstring(body, `href="`)
-		if start == -1 {
-			t.Fatal("could not find magic link URL in email body")
-		}
-		start += 6
-		end := findSubstring(body[start:], `"`)
-		if end == -1 {
-			t.Fatal("could not find end of magic link URL in email body")
-		}
-		parsed, err = url.Parse(body[start : start+end])
-		require.NoError(t, err, "could not parse URL from email body")
-	}
-
-	token := parsed.Query().Get("t")
-	if token == "" {
-		// Try parsing the entire body as the URL
-		for _, line := range splitLines(body) {
-			if u, err := url.Parse(line); err == nil && u.Query().Get("t") != "" {
-				return u.Query().Get("t")
-			}
-		}
-		t.Fatal("could not extract magic link token from email body")
-	}
-	return token
-}
-
-func findSubstring(s, sub string) int {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
-}
-
 func splitLines(s string) []string {
 	var lines []string
 	start := 0
@@ -320,10 +265,51 @@ func splitLines(s string) []string {
 	return lines
 }
 
+// extractLoginCodeFromEmail parses the 5-digit login code from an email body.
+func extractLoginCodeFromEmail(t *testing.T, body string) string {
+	t.Helper()
+	// Look for 5-digit code pattern in the styled box
+	// The code is displayed in a div with letter-spacing
+	re := regexp.MustCompile(`>\s*(\d{5})\s*<`)
+	matches := re.FindStringSubmatch(body)
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	t.Fatal("could not extract login code from email body")
+	return ""
+}
+
+// extractLoginCodeLinkFromEmail parses the short link URL from an email body.
+func extractLoginCodeLinkFromEmail(t *testing.T, body string) string {
+	t.Helper()
+	// Look for /login/code/{code} pattern
+	re := regexp.MustCompile(`href="([^"]*\/login\/code\/\d{5})"`)
+	matches := re.FindStringSubmatch(body)
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	t.Fatal("could not extract login code link from email body")
+	return ""
+}
+
+// seedLoginCode creates a login code in the database for testing.
+func seedLoginCode(t *testing.T, code string, memberID int64, callback string, expiresAt time.Time) {
+	t.Helper()
+	token := generateLoginToken(t, memberID)
+	var email string
+	err := testDB.QueryRow("SELECT email FROM members WHERE id = ?", memberID).Scan(&email)
+	require.NoError(t, err, "could not get member email")
+
+	_, err = testDB.Exec(
+		"INSERT INTO login_codes (code, token, email, callback, expires_at) VALUES (?, ?, ?, ?, ?)",
+		code, token, email, callback, expiresAt.Unix())
+	require.NoError(t, err, "could not insert login code")
+}
+
 // clearTestData removes all test data from the database between tests.
 func clearTestData(t *testing.T) {
 	t.Helper()
-	tables := []string{"members", "waivers", "fob_swipes", "member_events", "outbound_mail", "metrics"}
+	tables := []string{"members", "waivers", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes"}
 	for _, table := range tables {
 		_, err := testDB.Exec(fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
