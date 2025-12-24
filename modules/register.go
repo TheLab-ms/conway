@@ -8,6 +8,7 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/core"
 	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/email"
@@ -66,6 +67,10 @@ type Options struct {
 // Register adds all modules to the app and returns the auth module
 // (which must be set as the router's authenticator by the caller).
 func Register(a *engine.App, opts Options) *auth.Module {
+	// Core module must be registered first to apply base schema
+	// before other modules attempt to use the core tables.
+	a.Add(core.New(opts.Database))
+
 	authModule := auth.New(opts.Database, opts.Self, opts.Turnstile, opts.AuthIssuer)
 	a.Add(authModule)
 

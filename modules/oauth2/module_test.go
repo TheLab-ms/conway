@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/engine/db"
+	"github.com/TheLab-ms/conway/modules/core"
 	"github.com/gavv/httpexpect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,7 +21,7 @@ func TestRootDomain(t *testing.T) {
 }
 
 func TestUserInfo(t *testing.T) {
-	db := db.NewTest(t)
+	db := core.NewTestDB(t)
 	m := New(db, &url.URL{}, engine.NewTokenIssuer(filepath.Join(t.TempDir(), "test.pem")))
 
 	router := engine.NewRouter()

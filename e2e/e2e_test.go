@@ -150,9 +150,6 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 	})
 	a.Router.Authenticator = authModule
 
-	// Apply database migrations
-	db.MustMigrate(database, db.BaseMigration)
-
 	return a, nil
 }
 

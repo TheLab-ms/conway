@@ -161,7 +161,6 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	})
 	a.Router.Authenticator = authModule // IMPORTANT
 
-	db.MustMigrate(database, db.BaseMigration)
 	return a, nil
 }
 
