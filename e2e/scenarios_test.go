@@ -13,10 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// =============================================================================
-// SECTION 1: AUTHENTICATION & LOGIN TESTS
-// =============================================================================
-
 // TestLogin_MagicLinkValid verifies that a valid magic link token authenticates
 // the user and redirects them to the dashboard.
 func TestLogin_MagicLinkValid(t *testing.T) {
@@ -111,10 +107,6 @@ func TestAuth_CallbackPreservation(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// =============================================================================
-// SECTION 2: WAIVER TESTS
-// =============================================================================
-
 // TestWaiver_Display verifies that the waiver page renders with all required
 // form elements including checkboxes, name, and email fields.
 func TestWaiver_Display(t *testing.T) {
@@ -170,10 +162,6 @@ func TestWaiver_WithRedirect(t *testing.T) {
 	waiverPage.ExpectSuccessMessage()
 	expect(t).Locator(page.Locator("a:has-text('Done')")).ToBeVisible()
 }
-
-// =============================================================================
-// SECTION 3: MEMBER DASHBOARD TESTS
-// =============================================================================
 
 // TestDashboard_OnboardingStates verifies that the dashboard correctly displays
 // the member's onboarding progress through all possible status states.
@@ -272,10 +260,6 @@ func TestDashboard_RequiresAuthentication(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// =============================================================================
-// SECTION 4: MEMBER JOURNEY TESTS
-// =============================================================================
-
 // TestJourney_NewMemberOnboarding tests the complete new member signup flow:
 // sign waiver, request login email, click magic link, and view dashboard.
 func TestJourney_NewMemberOnboarding(t *testing.T) {
@@ -367,10 +351,6 @@ func TestJourney_WaiverThenLogin(t *testing.T) {
 	dashboard.ExpectMissingPaymentAlert()
 }
 
-// =============================================================================
-// SECTION 5: ADMIN AUTHORIZATION TESTS
-// =============================================================================
-
 // TestAdmin_RequiresLeadership verifies that non-leadership members receive
 // a 403 Forbidden error when accessing any admin endpoint.
 func TestAdmin_RequiresLeadership(t *testing.T) {
@@ -397,10 +377,6 @@ func TestAdmin_RequiresLeadership(t *testing.T) {
 		})
 	}
 }
-
-// =============================================================================
-// SECTION 6: ADMIN MEMBER MANAGEMENT TESTS
-// =============================================================================
 
 // TestAdmin_MembersListAndSearch verifies the admin members list page displays
 // members and search filters results correctly.
@@ -570,10 +546,6 @@ func TestJourney_MultipleMembers(t *testing.T) {
 	assert.Equal(t, "Second member notes", notes2)
 }
 
-// =============================================================================
-// SECTION 7: ADMIN DATA PAGES TESTS
-// =============================================================================
-
 // TestAdmin_DataListPages verifies that all admin data list pages load
 // and display results correctly.
 func TestAdmin_DataListPages(t *testing.T) {
@@ -677,10 +649,6 @@ func TestJourney_AdminExportsAllData(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// SECTION 8: ADMIN METRICS TESTS
-// =============================================================================
-
 // TestAdmin_MetricsDashboard verifies the metrics page displays charts,
 // interval selector, and responds to API requests correctly.
 func TestAdmin_MetricsDashboard(t *testing.T) {
@@ -725,10 +693,6 @@ func TestAdmin_MetricsDashboard(t *testing.T) {
 		assert.NotEmpty(t, data, "should have metric data points")
 	})
 }
-
-// =============================================================================
-// SECTION 9: OAUTH2 TESTS
-// =============================================================================
 
 // TestOAuth2_Discovery verifies the OpenID configuration and JWKS endpoints
 // return properly formatted responses with required fields.
@@ -820,10 +784,6 @@ func TestOAuth2_UserInfo_RequiresAuth(t *testing.T) {
 	assert.GreaterOrEqual(t, resp.Status(), 400)
 }
 
-// =============================================================================
-// SECTION 10: MACHINES/PRINTERS TESTS
-// =============================================================================
-
 // TestMachines_RequiresAuth verifies that unauthenticated access to the
 // machines page redirects to login.
 func TestMachines_RequiresAuth(t *testing.T) {
@@ -907,10 +867,6 @@ func TestMachines_AllPrinterStatuses(t *testing.T) {
 		assert.NotContains(t, classC, "btn-outline-danger")
 	})
 }
-
-// =============================================================================
-// SECTION 11: KIOSK & KEYFOB TESTS
-// =============================================================================
 
 // TestKiosk_AccessFromPhysicalSpace verifies the kiosk page loads correctly
 // when accessed from the physical space network.
