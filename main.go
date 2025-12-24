@@ -14,20 +14,10 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/db"
-	"github.com/TheLab-ms/conway/modules/admin"
+	"github.com/TheLab-ms/conway/modules"
 	"github.com/TheLab-ms/conway/modules/auth"
-	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/email"
-	"github.com/TheLab-ms/conway/modules/fobapi"
-	gac "github.com/TheLab-ms/conway/modules/generic-access-controller"
-	"github.com/TheLab-ms/conway/modules/kiosk"
 	"github.com/TheLab-ms/conway/modules/machines"
-	"github.com/TheLab-ms/conway/modules/members"
-	"github.com/TheLab-ms/conway/modules/metrics"
-	"github.com/TheLab-ms/conway/modules/oauth2"
-	"github.com/TheLab-ms/conway/modules/payment"
-	"github.com/TheLab-ms/conway/modules/pruning"
-	"github.com/TheLab-ms/conway/modules/waiver"
 	"github.com/caarlos0/env/v11"
 	"github.com/stripe/stripe-go/v78"
 )
@@ -110,47 +100,43 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		sender = email.NewGoogleSmtpSender(conf.EmailFrom)
 	}
 
-	var (
-		authIss    = engine.NewTokenIssuer("auth.pem")
-		oauthIss   = engine.NewTokenIssuer("oauth2.pem")
-		fobIss     = engine.NewTokenIssuer("fobs.pem")
-		discordIss = engine.NewTokenIssuer("discord-oauth.pem")
-	)
-
-	a := engine.NewApp(conf.HttpAddr, router)
-
-	authModule := auth.New(database, self, tso, authIss)
-	a.Add(authModule)
-	a.Router.Authenticator = authModule // IMPORTANT
-
-	a.Add(email.New(database, sender))
-	a.Add(oauth2.New(database, self, oauthIss))
-	a.Add(payment.New(database, conf.StripeWebhookKey, self))
-	a.Add(admin.New(database, self, authIss))
-	a.Add(members.New(database))
-	a.Add(waiver.New(database))
-	a.Add(kiosk.New(database, self, fobIss, conf.SpaceHost))
-	a.Add(metrics.New(database))
-	a.Add(pruning.New(database))
-	a.Add(fobapi.New(database))
-
+	var machinesMod *machines.Module
 	if conf.BambuPrinters != "" {
-		a.Add(machines.New(conf.BambuPrinters))
+		machinesMod = machines.New(conf.BambuPrinters)
 	} else {
 		slog.Info("machines module disabled because no devices were configured")
 	}
 
-	if conf.AccessControllerHost != "" {
-		a.Add(gac.New(database, conf.AccessControllerHost))
-	} else {
+	if conf.AccessControllerHost == "" {
 		slog.Info("generic access controller module disabled because a URL was not configured")
 	}
 
-	if conf.DiscordClientID != "" {
-		a.Add(discord.New(database, self, discordIss, conf.DiscordClientID, conf.DiscordClientSecret, conf.DiscordBotToken, conf.DiscordGuildID, conf.DiscordRoleID))
-	} else {
+	if conf.DiscordClientID == "" {
 		slog.Info("discord module disabled because a client ID was not configured")
 	}
+
+	a := engine.NewApp(conf.HttpAddr, router)
+
+	authModule := modules.Register(a, modules.Options{
+		Database:             database,
+		Self:                 self,
+		AuthIssuer:           engine.NewTokenIssuer("auth.pem"),
+		OAuthIssuer:          engine.NewTokenIssuer("oauth2.pem"),
+		FobIssuer:            engine.NewTokenIssuer("fobs.pem"),
+		DiscordIssuer:        engine.NewTokenIssuer("discord-oauth.pem"),
+		Turnstile:            tso,
+		EmailSender:          sender,
+		StripeWebhookKey:     conf.StripeWebhookKey,
+		SpaceHost:            conf.SpaceHost,
+		MachinesModule:       machinesMod,
+		AccessControllerHost: conf.AccessControllerHost,
+		DiscordClientID:      conf.DiscordClientID,
+		DiscordClientSecret:  conf.DiscordClientSecret,
+		DiscordBotToken:      conf.DiscordBotToken,
+		DiscordGuildID:       conf.DiscordGuildID,
+		DiscordRoleID:        conf.DiscordRoleID,
+	})
+	a.Router.Authenticator = authModule // IMPORTANT
 
 	db.MustMigrate(database, db.BaseMigration)
 	return a, nil
