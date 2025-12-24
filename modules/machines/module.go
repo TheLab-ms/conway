@@ -15,6 +15,7 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/db"
+	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/torbenconto/bambulabs_api"
 )
 
@@ -37,11 +38,6 @@ CREATE TABLE IF NOT EXISTS print_jobs (
 CREATE INDEX IF NOT EXISTS print_jobs_status_idx ON print_jobs (status);
 CREATE INDEX IF NOT EXISTS print_jobs_printer_serial_idx ON print_jobs (printer_serial);
 `
-
-// NotificationQueuer is an interface for queuing Discord notifications.
-type NotificationQueuer interface {
-	QueueMessage(ctx context.Context, channelID, payload string) error
-}
 
 // discordUserIDPrefixPattern matches Discord snowflake IDs (17-19 digits) at the start of a filename
 var discordUserIDPrefixPattern = regexp.MustCompile(`^(\d{17,19})_`)
@@ -71,7 +67,7 @@ type Module struct {
 	state atomic.Pointer[[]PrinterStatus]
 
 	db                   *sql.DB
-	notifier             NotificationQueuer
+	notifier             discordwebhook.MessageQueuer
 	notificationChannel  string
 	printers             []*bambulabs_api.Printer
 	configs              []*printerConfig
@@ -82,7 +78,7 @@ type Module struct {
 	testMode bool // When true, skip polling and use injected state
 }
 
-func New(config string, database *sql.DB, notifier NotificationQueuer, notificationChannel string) *Module {
+func New(config string, database *sql.DB, notifier discordwebhook.MessageQueuer, notificationChannel string) *Module {
 	if database != nil {
 		db.MustMigrate(database, migration)
 	}

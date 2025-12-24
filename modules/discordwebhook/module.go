@@ -27,6 +27,12 @@ const maxRPS = 5
 
 type Sender func(ctx context.Context, webhookURL, payload string) error
 
+// MessageQueuer allows modules to queue Discord webhook messages.
+// Implemented by *Module.
+type MessageQueuer interface {
+	QueueMessage(ctx context.Context, channelID, payload string) error
+}
+
 type Module struct {
 	db          *sql.DB
 	sender      Sender
