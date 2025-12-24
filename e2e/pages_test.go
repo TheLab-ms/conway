@@ -39,7 +39,7 @@ func (p *LoginPage) Submit() {
 }
 
 func (p *LoginPage) ExpectSentPage() {
-	err := p.page.WaitForURL("**/login/sent")
+	err := p.page.WaitForURL("**/login/sent**")
 	require.NoError(p.t, err)
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/db"
 	"github.com/TheLab-ms/conway/modules"
+	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/playwright-community/playwright-go"
 	"github.com/stripe/stripe-go/v78"
@@ -125,6 +126,8 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 
 	// Create token issuers in test directory
 	authIssuer = engine.NewTokenIssuer(filepath.Join(keyDir, "auth.pem"))
+	oauthIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "oauth2.pem"))
+	fobIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "fobs.pem"))
 
 	// Machines module with mock printer data for testing
 	inUseTime := time.Now().Add(30 * time.Minute).Unix()
@@ -136,19 +139,24 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 
 	a := engine.NewApp(":18080", router)
 
-	authModule := modules.Register(a, modules.Options{
+	// Create the auth module first and set it as the authenticator BEFORE registering other modules.
+	// This ensures that when modules call router.WithAuthn(), they get the real authenticator
+	// instead of the noopAuthenticator default.
+	authModule := auth.New(database, self, nil, authIssuer)
+	a.Router.Authenticator = authModule
+
+	modules.Register(a, modules.Options{
 		Database:         database,
 		Self:             self,
 		AuthIssuer:       authIssuer,
-		OAuthIssuer:      engine.NewTokenIssuer(filepath.Join(keyDir, "oauth2.pem")),
-		FobIssuer:        engine.NewTokenIssuer(filepath.Join(keyDir, "fobs.pem")),
+		OAuthIssuer:      oauthIssuer,
+		FobIssuer:        fobIssuer,
 		Turnstile:        nil, // No Turnstile for tests
 		EmailSender:      nil, // Emails stored in outbound_mail table
 		StripeWebhookKey: os.Getenv("STRIPE_TEST_WEBHOOK_KEY"),
 		SpaceHost:        "localhost",
 		MachinesModule:   testMachinesModule,
 	})
-	a.Router.Authenticator = authModule
 
 	return a, nil
 }
