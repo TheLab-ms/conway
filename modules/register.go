@@ -9,6 +9,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/discord"
+	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/fobapi"
 	gac "github.com/TheLab-ms/conway/modules/generic-access-controller"
@@ -48,6 +49,9 @@ type Options struct {
 	// Machines config (nil disables the module)
 	MachinesModule *machines.Module
 
+	// Discord Webhook module (nil disables the module)
+	DiscordWebhookModule *discordwebhook.Module
+
 	// Generic Access Controller config (empty disables the module)
 	AccessControllerHost string
 
@@ -78,6 +82,10 @@ func Register(a *engine.App, opts Options) *auth.Module {
 
 	if opts.MachinesModule != nil {
 		a.Add(opts.MachinesModule)
+	}
+
+	if opts.DiscordWebhookModule != nil {
+		a.Add(opts.DiscordWebhookModule)
 	}
 
 	if opts.AccessControllerHost != "" {
