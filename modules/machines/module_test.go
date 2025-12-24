@@ -1,8 +1,232 @@
 package machines
 
 import (
+	"context"
+	"database/sql"
 	"testing"
+	"time"
+
+	"github.com/TheLab-ms/conway/engine/db"
+	_ "modernc.org/sqlite"
 )
+
+// discordWebhookMigration is the migration for the discord_webhook_queue table.
+// This is needed because the trigger inserts into this table.
+const discordWebhookMigration = `
+CREATE TABLE IF NOT EXISTS discord_webhook_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    send_at INTEGER DEFAULT (strftime('%s', 'now')),
+    channel_id TEXT NOT NULL,
+    payload TEXT NOT NULL
+) STRICT;
+`
+
+func TestTrigger_NotificationQueuedOnCompletion(t *testing.T) {
+	database, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open test database: %v", err)
+	}
+	defer database.Close()
+
+	// Apply the discord webhook migration first (trigger depends on this table)
+	db.MustMigrate(database, discordWebhookMigration)
+	// Apply the machines migration
+	db.MustMigrate(database, migration)
+
+	ctx := context.Background()
+
+	// Insert a running job with notification_channel set
+	_, err = database.ExecContext(ctx, `
+		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, gcode_file_display, discord_user_id, notification_channel, started_at, status)
+		VALUES ('ABC123', 'Printer1', '123456789012345678_benchy.gcode', 'benchy.gcode', '123456789012345678', 'test-channel', $1, 'running')`,
+		time.Now().Unix())
+	if err != nil {
+		t.Fatalf("failed to insert print job: %v", err)
+	}
+
+	// Update the job to completed - trigger should fire
+	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed', completed_at = $1 WHERE status = 'running'`, time.Now().Unix())
+	if err != nil {
+		t.Fatalf("failed to update print job: %v", err)
+	}
+
+	// Verify notification was queued
+	var count int
+	err = database.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to query queue: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 notification in queue, got %d", count)
+	}
+
+	// Verify the notification content
+	var channelID, payload string
+	err = database.QueryRow("SELECT channel_id, payload FROM discord_webhook_queue").Scan(&channelID, &payload)
+	if err != nil {
+		t.Fatalf("failed to query notification: %v", err)
+	}
+	if channelID != "test-channel" {
+		t.Errorf("expected channel_id 'test-channel', got %q", channelID)
+	}
+	// Check that the payload contains expected content
+	if !contains(payload, "benchy.gcode") {
+		t.Errorf("payload should contain filename, got: %s", payload)
+	}
+	if !contains(payload, "completed successfully") {
+		t.Errorf("payload should contain 'completed successfully', got: %s", payload)
+	}
+	if !contains(payload, "<@123456789012345678>") {
+		t.Errorf("payload should contain Discord mention, got: %s", payload)
+	}
+
+	// Verify notification_sent was set
+	var notificationSent int
+	err = database.QueryRow("SELECT notification_sent FROM print_jobs").Scan(&notificationSent)
+	if err != nil {
+		t.Fatalf("failed to query notification_sent: %v", err)
+	}
+	if notificationSent != 1 {
+		t.Errorf("expected notification_sent = 1, got %d", notificationSent)
+	}
+}
+
+func TestTrigger_NoNotificationWhenChannelNull(t *testing.T) {
+	database, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open test database: %v", err)
+	}
+	defer database.Close()
+
+	db.MustMigrate(database, discordWebhookMigration)
+	db.MustMigrate(database, migration)
+
+	ctx := context.Background()
+
+	// Insert a running job WITHOUT notification_channel
+	_, err = database.ExecContext(ctx, `
+		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, started_at, status)
+		VALUES ('ABC123', 'Printer1', 'benchy.gcode', $1, 'running')`,
+		time.Now().Unix())
+	if err != nil {
+		t.Fatalf("failed to insert print job: %v", err)
+	}
+
+	// Update the job to completed
+	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed', completed_at = $1 WHERE status = 'running'`, time.Now().Unix())
+	if err != nil {
+		t.Fatalf("failed to update print job: %v", err)
+	}
+
+	// Verify NO notification was queued
+	var count int
+	err = database.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to query queue: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 notifications in queue (channel was null), got %d", count)
+	}
+}
+
+func TestTrigger_Idempotent(t *testing.T) {
+	database, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open test database: %v", err)
+	}
+	defer database.Close()
+
+	db.MustMigrate(database, discordWebhookMigration)
+	db.MustMigrate(database, migration)
+
+	ctx := context.Background()
+
+	// Insert a running job with notification_channel set
+	_, err = database.ExecContext(ctx, `
+		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, notification_channel, started_at, status)
+		VALUES ('ABC123', 'Printer1', 'benchy.gcode', 'test-channel', $1, 'running')`,
+		time.Now().Unix())
+	if err != nil {
+		t.Fatalf("failed to insert print job: %v", err)
+	}
+
+	// Update the job to completed
+	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed', completed_at = $1 WHERE status = 'running'`, time.Now().Unix())
+	if err != nil {
+		t.Fatalf("failed to update print job: %v", err)
+	}
+
+	// Try to update again (should be idempotent - no new notification)
+	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed' WHERE status = 'completed'`)
+	if err != nil {
+		t.Fatalf("failed to update print job again: %v", err)
+	}
+
+	// Verify only 1 notification was queued
+	var count int
+	err = database.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to query queue: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 notification (idempotent), got %d", count)
+	}
+}
+
+func TestTrigger_FailedStatus(t *testing.T) {
+	database, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open test database: %v", err)
+	}
+	defer database.Close()
+
+	db.MustMigrate(database, discordWebhookMigration)
+	db.MustMigrate(database, migration)
+
+	ctx := context.Background()
+
+	// Insert a running job
+	_, err = database.ExecContext(ctx, `
+		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, notification_channel, started_at, status)
+		VALUES ('ABC123', 'Printer1', 'benchy.gcode', 'test-channel', $1, 'running')`,
+		time.Now().Unix())
+	if err != nil {
+		t.Fatalf("failed to insert print job: %v", err)
+	}
+
+	// Update the job to failed with error code
+	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'failed', error_code = 'E001' WHERE status = 'running'`)
+	if err != nil {
+		t.Fatalf("failed to update print job: %v", err)
+	}
+
+	// Verify notification was queued with failure message
+	var payload string
+	err = database.QueryRow("SELECT payload FROM discord_webhook_queue").Scan(&payload)
+	if err != nil {
+		t.Fatalf("failed to query notification: %v", err)
+	}
+	if !contains(payload, "has failed") {
+		t.Errorf("payload should contain 'has failed', got: %s", payload)
+	}
+	if !contains(payload, "E001") {
+		t.Errorf("payload should contain error code 'E001', got: %s", payload)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
 
 func TestParseDiscordUserID(t *testing.T) {
 	tests := []struct {

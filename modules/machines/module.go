@@ -15,7 +15,6 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/db"
-	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/torbenconto/bambulabs_api"
 )
 
@@ -26,7 +25,9 @@ CREATE TABLE IF NOT EXISTS print_jobs (
     printer_serial TEXT NOT NULL,
     printer_name TEXT NOT NULL,
     gcode_file TEXT NOT NULL,
+    gcode_file_display TEXT,
     discord_user_id TEXT,
+    notification_channel TEXT,
     started_at INTEGER NOT NULL,
     estimated_finish_at INTEGER,
     completed_at INTEGER,
@@ -37,6 +38,36 @@ CREATE TABLE IF NOT EXISTS print_jobs (
 
 CREATE INDEX IF NOT EXISTS print_jobs_status_idx ON print_jobs (status);
 CREATE INDEX IF NOT EXISTS print_jobs_printer_serial_idx ON print_jobs (printer_serial);
+
+-- Trigger to queue Discord notification when job reaches terminal state
+-- This ensures atomicity: status update and notification queueing happen in the same transaction
+CREATE TRIGGER IF NOT EXISTS print_job_notification_trigger
+AFTER UPDATE ON print_jobs
+WHEN NEW.status IN ('completed', 'failed', 'stuck')
+  AND OLD.status NOT IN ('completed', 'failed', 'stuck')
+  AND NEW.notification_channel IS NOT NULL
+  AND NEW.notification_sent = 0
+BEGIN
+  INSERT INTO discord_webhook_queue (channel_id, payload)
+  VALUES (
+    NEW.notification_channel,
+    json_object(
+      'content',
+      CASE
+        WHEN NEW.discord_user_id IS NOT NULL
+        THEN '<@' || NEW.discord_user_id || '> '
+        ELSE ''
+      END ||
+      CASE NEW.status
+        WHEN 'completed' THEN 'Your print ''' || COALESCE(NEW.gcode_file_display, NEW.gcode_file) || ''' on ' || NEW.printer_name || ' has completed successfully.'
+        WHEN 'failed' THEN 'Your print ''' || COALESCE(NEW.gcode_file_display, NEW.gcode_file) || ''' on ' || NEW.printer_name || ' has failed. Error code: ' || COALESCE(NEW.error_code, 'unknown')
+        WHEN 'stuck' THEN 'Your print ''' || COALESCE(NEW.gcode_file_display, NEW.gcode_file) || ''' on ' || NEW.printer_name || ' appears to be stuck (past estimated completion time).'
+      END,
+      'username', 'Conway Print Bot'
+    )
+  );
+  UPDATE print_jobs SET notification_sent = 1 WHERE id = NEW.id;
+END;
 `
 
 // discordUserIDPrefixPattern matches Discord snowflake IDs (17-19 digits) at the start of a filename
@@ -67,7 +98,6 @@ type Module struct {
 	state atomic.Pointer[[]PrinterStatus]
 
 	db                   *sql.DB
-	notifier             discordwebhook.MessageQueuer
 	notificationChannel  string
 	printers             []*bambulabs_api.Printer
 	configs              []*printerConfig
@@ -78,7 +108,7 @@ type Module struct {
 	testMode bool // When true, skip polling and use injected state
 }
 
-func New(config string, database *sql.DB, notifier discordwebhook.MessageQueuer, notificationChannel string) *Module {
+func New(config string, database *sql.DB, notificationChannel string) *Module {
 	if database != nil {
 		db.MustMigrate(database, migration)
 	}
@@ -91,7 +121,6 @@ func New(config string, database *sql.DB, notifier discordwebhook.MessageQueuer,
 
 	m := &Module{
 		db:                  database,
-		notifier:            notifier,
 		notificationChannel: notificationChannel,
 		configs:             configs,
 		serialToName:        map[string]string{},
@@ -371,6 +400,7 @@ func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []Pr
 // onJobStarted handles when a new print job starts.
 func (m *Module) onJobStarted(ctx context.Context, printer PrinterStatus) {
 	discordUserID := parseDiscordUserID(printer.GcodeFile)
+	displayName := stripDiscordID(printer.GcodeFile)
 
 	var estimatedFinish *int64
 	if printer.JobFinishedTimestamp != nil {
@@ -378,9 +408,9 @@ func (m *Module) onJobStarted(ctx context.Context, printer PrinterStatus) {
 	}
 
 	_, err := m.db.ExecContext(ctx, `
-		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, discord_user_id, started_at, estimated_finish_at, status)
-		VALUES ($1, $2, $3, $4, $5, $6, 'running')`,
-		printer.SerialNumber, printer.PrinterName, printer.GcodeFile, nullString(discordUserID),
+		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, gcode_file_display, discord_user_id, notification_channel, started_at, estimated_finish_at, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running')`,
+		printer.SerialNumber, printer.PrinterName, printer.GcodeFile, displayName, nullString(discordUserID), nullString(m.notificationChannel),
 		time.Now().Unix(), estimatedFinish)
 	if err != nil {
 		slog.Error("failed to insert print job", "error", err, "printer", printer.PrinterName)
@@ -391,131 +421,45 @@ func (m *Module) onJobStarted(ctx context.Context, printer PrinterStatus) {
 
 // onJobCompleted handles when a print job successfully completes.
 func (m *Module) onJobCompleted(ctx context.Context, serial, printerName string) {
-	// Find the running job for this printer
-	var jobID int64
-	var gcodeFile string
-	var discordUserID sql.NullString
-	err := m.db.QueryRowContext(ctx, `
-		SELECT id, gcode_file, discord_user_id FROM print_jobs
-		WHERE printer_serial = $1 AND status = 'running'
-		ORDER BY created DESC LIMIT 1`, serial).Scan(&jobID, &gcodeFile, &discordUserID)
+	// Update the job status - the trigger will queue the notification
+	result, err := m.db.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed', completed_at = $1 WHERE printer_serial = $2 AND status = 'running'`,
+		time.Now().Unix(), serial)
 	if err != nil {
-		if err != sql.ErrNoRows {
-			slog.Error("failed to find running print job", "error", err, "printer", printerName)
-		}
+		slog.Error("failed to update print job status", "error", err, "printer", printerName)
 		return
 	}
-
-	// Update the job status
-	_, err = m.db.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed', completed_at = $1 WHERE id = $2`, time.Now().Unix(), jobID)
-	if err != nil {
-		slog.Error("failed to update print job status", "error", err, "job_id", jobID)
-		return
+	if n, _ := result.RowsAffected(); n > 0 {
+		slog.Info("print job completed", "printer", printerName)
 	}
-
-	slog.Info("print job completed", "printer", printerName, "gcode", gcodeFile)
-	m.sendNotification(ctx, jobID, gcodeFile, printerName, discordUserID.String, "completed", "")
 }
 
 // onJobFailed handles when a print job fails.
 func (m *Module) onJobFailed(ctx context.Context, printer PrinterStatus) {
-	// Find the running job for this printer
-	var jobID int64
-	var gcodeFile string
-	var discordUserID sql.NullString
-	err := m.db.QueryRowContext(ctx, `
-		SELECT id, gcode_file, discord_user_id FROM print_jobs
-		WHERE printer_serial = $1 AND status = 'running'
-		ORDER BY created DESC LIMIT 1`, printer.SerialNumber).Scan(&jobID, &gcodeFile, &discordUserID)
+	// Update the job status - the trigger will queue the notification
+	result, err := m.db.ExecContext(ctx, `UPDATE print_jobs SET status = 'failed', completed_at = $1, error_code = $2 WHERE printer_serial = $3 AND status = 'running'`,
+		time.Now().Unix(), printer.ErrorCode, printer.SerialNumber)
 	if err != nil {
-		if err != sql.ErrNoRows {
-			slog.Error("failed to find running print job for failure", "error", err, "printer", printer.PrinterName)
-		}
+		slog.Error("failed to update print job status", "error", err, "printer", printer.PrinterName)
 		return
 	}
-
-	// Update the job status
-	_, err = m.db.ExecContext(ctx, `UPDATE print_jobs SET status = 'failed', completed_at = $1, error_code = $2 WHERE id = $3`,
-		time.Now().Unix(), printer.ErrorCode, jobID)
-	if err != nil {
-		slog.Error("failed to update print job status", "error", err, "job_id", jobID)
-		return
+	if n, _ := result.RowsAffected(); n > 0 {
+		slog.Info("print job failed", "printer", printer.PrinterName, "error_code", printer.ErrorCode)
 	}
-
-	slog.Info("print job failed", "printer", printer.PrinterName, "gcode", gcodeFile, "error_code", printer.ErrorCode)
-	m.sendNotification(ctx, jobID, gcodeFile, printer.PrinterName, discordUserID.String, "failed", printer.ErrorCode)
 }
 
 // checkStuckJobs checks for jobs that are past their estimated finish time.
 func (m *Module) checkStuckJobs(ctx context.Context) {
-	rows, err := m.db.QueryContext(ctx, `
-		SELECT id, gcode_file, printer_name, discord_user_id FROM print_jobs
+	// Update all stuck jobs in one query - the trigger will queue notifications for each
+	result, err := m.db.ExecContext(ctx, `
+		UPDATE print_jobs SET status = 'stuck'
 		WHERE status = 'running' AND estimated_finish_at IS NOT NULL AND estimated_finish_at < $1 AND notification_sent = 0`,
 		time.Now().Unix())
 	if err != nil {
-		slog.Error("failed to query stuck jobs", "error", err)
+		slog.Error("failed to mark stuck jobs", "error", err)
 		return
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var jobID int64
-		var gcodeFile, printerName string
-		var discordUserID sql.NullString
-		if err := rows.Scan(&jobID, &gcodeFile, &printerName, &discordUserID); err != nil {
-			slog.Error("failed to scan stuck job", "error", err)
-			continue
-		}
-
-		// Update the job status to stuck
-		_, err = m.db.ExecContext(ctx, `UPDATE print_jobs SET status = 'stuck' WHERE id = $1`, jobID)
-		if err != nil {
-			slog.Error("failed to mark job as stuck", "error", err, "job_id", jobID)
-			continue
-		}
-
-		slog.Info("print job stuck", "printer", printerName, "gcode", gcodeFile)
-		m.sendNotification(ctx, jobID, gcodeFile, printerName, discordUserID.String, "stuck", "")
-	}
-}
-
-// sendNotification queues a Discord notification for a print job status change.
-func (m *Module) sendNotification(ctx context.Context, jobID int64, gcodeFile, printerName, discordUserID, status, errorCode string) {
-	if m.notifier == nil || m.notificationChannel == "" {
-		return
-	}
-
-	// Mark notification as sent
-	_, err := m.db.ExecContext(ctx, `UPDATE print_jobs SET notification_sent = 1 WHERE id = $1`, jobID)
-	if err != nil {
-		slog.Error("failed to mark notification as sent", "error", err, "job_id", jobID)
-	}
-
-	// Build message content
-	var message string
-	displayName := stripDiscordID(gcodeFile)
-
-	switch status {
-	case "completed":
-		message = fmt.Sprintf("Your print '%s' on %s has completed successfully! ✅", displayName, printerName)
-	case "failed":
-		message = fmt.Sprintf("Your print '%s' on %s has failed. ❌ Error code: %s", displayName, printerName, errorCode)
-	case "stuck":
-		message = fmt.Sprintf("Your print '%s' on %s appears to be stuck (past estimated completion time). ⚠️", displayName, printerName)
-	default:
-		return
-	}
-
-	// Add Discord mention if user ID is available
-	if discordUserID != "" {
-		message = fmt.Sprintf("<@%s> %s", discordUserID, message)
-	}
-
-	// Build JSON payload
-	payload := fmt.Sprintf(`{"content":%q,"username":"Conway Print Bot"}`, message)
-
-	if err := m.notifier.QueueMessage(ctx, m.notificationChannel, payload); err != nil {
-		slog.Error("failed to queue discord notification", "error", err, "job_id", jobID)
+	if n, _ := result.RowsAffected(); n > 0 {
+		slog.Info("marked jobs as stuck", "count", n)
 	}
 }
 
