@@ -39,6 +39,12 @@ type Config struct {
 	DiscordGuildID      string
 	DiscordRoleID       string
 
+	// DiscordWebhooks is a JSON map of channel_id -> webhook_url for Discord notifications
+	DiscordWebhooks string
+
+	// DiscordPrintChannel is the channel_id to use for 3D print notifications
+	DiscordPrintChannel string
+
 	EmailFrom string
 
 	TurnstileSiteKey string
@@ -47,11 +53,6 @@ type Config struct {
 	AccessControllerHost string
 
 	BambuPrinters string
-
-	// DiscordWebhooks is a JSON map of channel_id -> webhook_url for Discord notifications
-	DiscordWebhooks string
-	// DiscordPrintChannel is the channel_id to use for 3D print notifications
-	DiscordPrintChannel string
 }
 
 func main() {
