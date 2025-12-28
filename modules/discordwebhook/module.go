@@ -49,6 +49,8 @@ func New(d *sql.DB, sender Sender, webhookURLs map[string]string) *Module {
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
+	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "stale discord webhooks",
+		"DELETE FROM discord_webhook_queue WHERE unixepoch() - created > 3600")))
 	if len(m.webhookURLs) == 0 {
 		slog.Warn("disabling discord webhook processing because no webhook URLs were configured")
 		return

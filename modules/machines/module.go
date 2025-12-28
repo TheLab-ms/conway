@@ -18,6 +18,8 @@ import (
 	"github.com/torbenconto/bambulabs_api"
 )
 
+const printJobsTTL = 90 * 24 * 60 * 60 // 90 days in seconds
+
 const migration = `
 CREATE TABLE IF NOT EXISTS print_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -286,6 +288,8 @@ func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
 		return // Skip polling in test mode - use injected state
 	}
 	procs.Add(engine.Poll(time.Second*5, m.poll))
+	procs.Add(engine.Poll(time.Hour*24, engine.Cleanup(m.db, "old print jobs",
+		"DELETE FROM print_jobs WHERE status IN ('completed', 'failed', 'stuck') AND completed_at < unixepoch() - ?", printJobsTTL)))
 }
 
 func (m *Module) poll(ctx context.Context) bool {

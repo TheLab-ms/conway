@@ -11,6 +11,8 @@ import (
 	"github.com/TheLab-ms/conway/engine/db"
 )
 
+const defaultTTL = 2 * 365 * 24 * 60 * 60 // 2 years in seconds
+
 const migration = `
 CREATE TABLE IF NOT EXISTS metrics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,6 +132,8 @@ func New(d *sql.DB) *Module {
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	mgr.Add(engine.Poll(time.Minute, m.visitSamplings))
+	mgr.Add(engine.Poll(time.Hour*24, engine.Cleanup(m.db, "old metrics",
+		"DELETE FROM metrics WHERE timestamp < unixepoch('subsec') - ?", defaultTTL)))
 }
 
 func (m *Module) visitSamplings(ctx context.Context) bool {
