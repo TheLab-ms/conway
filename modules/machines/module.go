@@ -94,6 +94,7 @@ type PrinterStatus struct {
 	JobFinishedTimestamp *int64 `json:"job_finished_timestamp"`
 	ErrorCode            string `json:"error_code"`
 	GcodeFile            string `json:"gcode_file"`
+	OwnerDiscordUsername string `json:"owner_discord_username"`
 }
 
 type Module struct {
@@ -330,6 +331,12 @@ func (m *Module) poll(ctx context.Context) bool {
 
 		state = append(state, s)
 	}
+
+	// Populate owner usernames from database
+	if m.db != nil {
+		m.populateOwnerUsernames(ctx, state)
+	}
+
 	m.state.Store(&state)
 
 	// Detect state changes and update print jobs
@@ -489,4 +496,27 @@ func nullString(s string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: s, Valid: true}
+}
+
+// populateOwnerUsernames looks up Discord usernames for printers with running jobs.
+func (m *Module) populateOwnerUsernames(ctx context.Context, state []PrinterStatus) {
+	for i := range state {
+		if state[i].JobFinishedTimestamp == nil && state[i].ErrorCode == "" {
+			continue // No active job
+		}
+		var username sql.NullString
+		err := m.db.QueryRowContext(ctx, `
+			SELECT m.discord_username
+			FROM print_jobs pj
+			JOIN members m ON pj.discord_user_id = m.discord_user_id
+			WHERE pj.printer_serial = $1 AND pj.status = 'running'
+			LIMIT 1`, state[i].SerialNumber).Scan(&username)
+		if err != nil && err != sql.ErrNoRows {
+			slog.Warn("failed to query owner username", "error", err, "printer", state[i].PrinterName)
+			continue
+		}
+		if username.Valid {
+			state[i].OwnerDiscordUsername = username.String
+		}
+	}
 }

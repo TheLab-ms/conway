@@ -31,6 +31,10 @@ templ renderMachines(printers []PrinterStatus) {
 										<span class="badge bg-danger">Failed</span>
 										<br/>
 										<small class="text-muted">Error: { printer.ErrorCode }</small>
+										if printer.OwnerDiscordUsername != "" {
+											<br/>
+											<small class="text-muted">Owner: { printer.OwnerDiscordUsername }</small>
+										}
 									</p>
 									<form action={ templ.SafeURL(fmt.Sprintf("/machines/%s/stop", printer.SerialNumber)) } method="POST" onsubmit="return confirm('Are you sure you want to stop this print?\\n\\nPlease only cancel prints that have clearly failed.');">
 										<button type="submit" class="btn btn-sm btn-danger">Stop Print</button>
@@ -43,6 +47,10 @@ templ renderMachines(printers []PrinterStatus) {
 											<small class="text-muted">{ time.Until(time.Unix(*jft, 0)).Round(time.Minute).String() } remaining</small>
 										} else {
 											<small class="text-muted">Finishing up</small>
+										}
+										if printer.OwnerDiscordUsername != "" {
+											<br/>
+											<small class="text-muted">Owner: { printer.OwnerDiscordUsername }</small>
 										}
 									</p>
 									<form action={ templ.SafeURL(fmt.Sprintf("/machines/%s/stop", printer.SerialNumber)) } method="POST" onsubmit="return confirm('Are you sure you want to stop this print?\\n\\nPlease only cancel prints that have clearly failed.');">
