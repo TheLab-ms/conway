@@ -31,7 +31,7 @@ func (m *Module) handleSubmitWaiver(w http.ResponseWriter, r *http.Request) {
 	a1 := r.FormValue("agree1")
 	a2 := r.FormValue("agree2")
 	if a1 != "on" || a2 != "on" {
-		http.Error(w, "you must agree to all terms", 400)
+		engine.ClientError(w, "Agreement Required", "You must agree to all terms to continue", 400)
 		return
 	}
 

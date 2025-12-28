@@ -79,16 +79,16 @@ func (m *Module) handleCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
 	claims, err := m.stateTokIssuer.Verify(state)
 	if err != nil {
-		http.Error(w, "Invalid oauth state - try again", 400)
+		engine.ClientError(w, "Invalid State", "The OAuth state is invalid - please try again", 400)
 		return
 	}
 
 	userID := auth.GetUserMeta(r.Context()).ID
 	if id, err := strconv.ParseInt(claims.Subject, 10, 64); err != nil {
-		http.Error(w, "Invalid user ID", 400)
+		engine.ClientError(w, "Invalid Request", "The user ID is invalid", 400)
 		return
 	} else if id != userID {
-		http.Error(w, "Unauthorized", 403)
+		engine.ClientError(w, "Unauthorized", "You are not authorized to perform this action", 403)
 		return
 	}
 

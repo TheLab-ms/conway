@@ -7,17 +7,6 @@ type member struct {
 	AccessStatus string
 }
 
-templ renderOffsiteError() {
-	@bootstrap.View() {
-		<div class="container my-5">
-			<div class="alert alert-danger">
-				<h4 class="alert-heading">Uh oh</h4>
-				You need to be at the physical makerspace to assign keyfobs.
-			</div>
-		</div>
-	}
-}
-
 templ renderKiosk(qrImg []byte) {
 	@bootstrap.DarkmodeView() {
 		<div class="container my-5">

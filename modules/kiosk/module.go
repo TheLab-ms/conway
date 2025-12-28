@@ -80,8 +80,7 @@ func (m *Module) atPhysicalSpace(next http.HandlerFunc) http.HandlerFunc {
 		ip := net.ParseIP(strings.Split(addr, ":")[0])
 		if trusted := m.trustedIP.Load(); trusted == nil || !ip.Equal(*trusted) {
 			slog.Info("not allowing member to bind keyfob from this IP", "addr", addr, "ip", ip, "trusted", trusted)
-			w.Header().Set("Content-Type", "text/html")
-			renderOffsiteError().Render(r.Context(), w)
+			engine.ClientError(w, "Uh oh", "You need to be at the physical makerspace to assign keyfobs", 403)
 			return
 		}
 		next(w, r)
@@ -119,12 +118,12 @@ func (m *Module) handleBindKeyfob(w http.ResponseWriter, r *http.Request) {
 
 	claims, err := m.signer.Verify(r.FormValue("val"))
 	if err != nil {
-		http.Error(w, "Invalid QR code", 400)
+		engine.ClientError(w, "Invalid QR Code", "The QR code is invalid or has expired", 400)
 		return
 	}
 	fobID, err := strconv.ParseInt(claims.Subject, 10, 0)
 	if err != nil {
-		http.Error(w, "QR code references a non-integer fob ID", 400)
+		engine.ClientError(w, "Invalid QR Code", "The QR code references an invalid keyfob", 400)
 		return
 	}
 

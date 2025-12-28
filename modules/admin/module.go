@@ -165,7 +165,7 @@ func (m *Module) renderMetricsChart(w http.ResponseWriter, r *http.Request) {
 		var err error
 		windowDuration, err = time.ParseDuration(window)
 		if err != nil {
-			http.Error(w, "invalid window duration", 400)
+			engine.ClientError(w, "Invalid Request", "Invalid window duration", 400)
 			return
 		}
 	}
@@ -201,7 +201,7 @@ func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request
 	}
 	dur, err := time.ParseDuration(selected)
 	if err != nil {
-		http.Error(w, "invalid interval", 400)
+		engine.ClientError(w, "Invalid Request", "Invalid interval", 400)
 		return
 	}
 

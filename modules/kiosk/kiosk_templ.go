@@ -15,7 +15,7 @@ type member struct {
 	AccessStatus string
 }
 
-func renderOffsiteError() templ.Component {
+func renderKiosk(qrImg []byte) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -48,88 +48,41 @@ func renderOffsiteError() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"container my-5\"><div class=\"alert alert-danger\"><h4 class=\"alert-heading\">Uh oh</h4>You need to be at the physical makerspace to assign keyfobs.</div></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = bootstrap.View().Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-func renderKiosk(qrImg []byte) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var3 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var3 == nil {
-			templ_7745c5c3_Var3 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var4 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"container my-5\"><form id=\"fobform\" method=\"GET\"><input type=\"hidden\" id=\"fobid\" name=\"fobid\" value=\"\"></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"container my-5\"><form id=\"fobform\" method=\"GET\"><input type=\"hidden\" id=\"fobid\" name=\"fobid\" value=\"\"></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if qrImg == nil {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<h1>Welcome to TheLab</h1><div class=\"mt-4\"><a href=\"https://wiki.thelab.ms/join\" class=\"btn btn-secondary btn-lg\">How To Join</a> <a href=\"/waiver?r=/kiosk\" class=\"btn btn-secondary btn-lg\">Sign Waiver</a></div><div class=\"mt-4\">Scan a key fob any time to link it to your account.\t</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<h1>Welcome to TheLab</h1><div class=\"mt-4\"><a href=\"https://wiki.thelab.ms/join\" class=\"btn btn-secondary btn-lg\">How To Join</a> <a href=\"/waiver?r=/kiosk\" class=\"btn btn-secondary btn-lg\">Sign Waiver</a></div><div class=\"mt-4\">Scan a key fob any time to link it to your account.\t</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div><h4>Link to Your Account</h4>Scan the QR from your device to link the key fob to your account.</div><img class=\"mt-3 img-fluid\" src=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div><h4>Link to Your Account</h4>Scan the QR from your device to link the key fob to your account.</div><img class=\"mt-3 img-fluid\" src=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var5 string
-				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs("data:image/png;base64," + string(qrImg))
+				var templ_7745c5c3_Var3 string
+				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs("data:image/png;base64," + string(qrImg))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `kiosk.templ`, Line: 41, Col: 78}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `kiosk.templ`, Line: 30, Col: 78}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"img-fluid\"><div class=\"mt-3\"><a href=\"/kiosk\" class=\"btn btn-secondary btn-lg\">Done</a></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" class=\"img-fluid\"><div class=\"mt-3\"><a href=\"/kiosk\" class=\"btn btn-secondary btn-lg\">Done</a></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div><script>\n\t\t\tlet buffer = ''\n\t\t\tlet timeout\n\n\t\t\tconst flush = () => {\n\t\t\t\tdocument.getElementById('fobid').value = buffer\n\t\t\t\tdocument.getElementById('fobform').submit()\n\t\t\t\tbuffer = ''\n\t\t\t}\n\n\t\t\tdocument.addEventListener('keypress', event => {\n\t\t\t\tif (event.key === 'Enter') {\n\t\t\t\t\tflush()\n\t\t\t\t\treturn\n\t\t\t\t}\n\n\t\t\t\tbuffer += event.key\n\t\t\t\tclearTimeout(timeout)\n\t\t\t\ttimeout = setTimeout(flush, 1000)\n\t\t\t})\n\n\t\t\t// Redirect away from the QR eventually\n            if (window.location.href.includes(\"fobid\")) {\n                setTimeout(() => {\n                    window.location.href = \"/kiosk\"\n                }, 1000 * 60 * 5) // 5 minutes\n\n\t\t\t\tlet firstResponseStatus = null\n\t\t\t\tsetInterval(() => {\n\t\t\t\t\tconst fobid = new URLSearchParams(window.location.search).get('fobid')\n\t\t\t\t\tfetch(`/keyfob/status/${fobid}`)\n\t\t\t\t\t\t.then(response => response.json())\n\t\t\t\t\t\t.then(data => {\n\t\t\t\t\t\t\tif (firstResponseStatus === null || firstResponseStatus === true) {\n\t\t\t\t\t\t\t\tfirstResponseStatus = data\n\t\t\t\t\t\t\t\treturn\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tif (data === true) {\n\t\t\t\t\t\t\t\twindow.location.href = \"/kiosk\";\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t})\n\t\t\t\t\t\t.catch(error => console.error('Error checking keyfob status:', error))\n                }, 1000)\n            }\n\n\t\t\t// Reload the page periodically in case it's changed\n            setTimeout(() => {\n\t\t\t\tlocation.reload();\n            }, 1000 * 60 * 60) // 1 hour\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div><script>\n\t\t\tlet buffer = ''\n\t\t\tlet timeout\n\n\t\t\tconst flush = () => {\n\t\t\t\tdocument.getElementById('fobid').value = buffer\n\t\t\t\tdocument.getElementById('fobform').submit()\n\t\t\t\tbuffer = ''\n\t\t\t}\n\n\t\t\tdocument.addEventListener('keypress', event => {\n\t\t\t\tif (event.key === 'Enter') {\n\t\t\t\t\tflush()\n\t\t\t\t\treturn\n\t\t\t\t}\n\n\t\t\t\tbuffer += event.key\n\t\t\t\tclearTimeout(timeout)\n\t\t\t\ttimeout = setTimeout(flush, 1000)\n\t\t\t})\n\n\t\t\t// Redirect away from the QR eventually\n            if (window.location.href.includes(\"fobid\")) {\n                setTimeout(() => {\n                    window.location.href = \"/kiosk\"\n                }, 1000 * 60 * 5) // 5 minutes\n\n\t\t\t\tlet firstResponseStatus = null\n\t\t\t\tsetInterval(() => {\n\t\t\t\t\tconst fobid = new URLSearchParams(window.location.search).get('fobid')\n\t\t\t\t\tfetch(`/keyfob/status/${fobid}`)\n\t\t\t\t\t\t.then(response => response.json())\n\t\t\t\t\t\t.then(data => {\n\t\t\t\t\t\t\tif (firstResponseStatus === null || firstResponseStatus === true) {\n\t\t\t\t\t\t\t\tfirstResponseStatus = data\n\t\t\t\t\t\t\t\treturn\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tif (data === true) {\n\t\t\t\t\t\t\t\twindow.location.href = \"/kiosk\";\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t})\n\t\t\t\t\t\t.catch(error => console.error('Error checking keyfob status:', error))\n                }, 1000)\n            }\n\n\t\t\t// Reload the page periodically in case it's changed\n            setTimeout(() => {\n\t\t\t\tlocation.reload();\n            }, 1000 * 60 * 60) // 1 hour\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = bootstrap.DarkmodeView().Render(templ.WithChildren(ctx, templ_7745c5c3_Var4), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = bootstrap.DarkmodeView().Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

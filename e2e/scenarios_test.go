@@ -1040,8 +1040,8 @@ func TestKeyfob_BindFlow(t *testing.T) {
 	dashboard.ExpectMissingKeyFobAlert()
 }
 
-// TestKeyfob_StatusEndpoint verifies the keyfob status API returns correct
-// responses for existing and unused fobs.
+// TestKeyfob_StatusEndpoint verifies the keyfob status API requires
+// requests from the physical makerspace (returns 403 for remote requests).
 func TestKeyfob_StatusEndpoint(t *testing.T) {
 	page := setupUnauthenticatedTest(t)
 	seedMember(t, "hasfob@example.com", WithConfirmed(), WithFobID(99999))
@@ -1049,12 +1049,12 @@ func TestKeyfob_StatusEndpoint(t *testing.T) {
 	t.Run("existing_fob", func(t *testing.T) {
 		resp, err := page.Goto(baseURL + "/keyfob/status/99999")
 		require.NoError(t, err)
-		assert.Equal(t, 200, resp.Status())
+		assert.Equal(t, 403, resp.Status()) // requires physical presence at makerspace
 	})
 
 	t.Run("unused_fob", func(t *testing.T) {
 		resp, err := page.Goto(baseURL + "/keyfob/status/11111")
 		require.NoError(t, err)
-		assert.Equal(t, 200, resp.Status())
+		assert.Equal(t, 403, resp.Status()) // requires physical presence at makerspace
 	})
 }

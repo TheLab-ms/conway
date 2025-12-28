@@ -104,7 +104,7 @@ func (m *Module) handleOauthToken(w http.ResponseWriter, r *http.Request) {
 	// This means clients should treat oauth tokens as relatively low trust which is fine for this use-case.
 	clientID, _, _ := r.BasicAuth()
 	if clientID == "conway" {
-		http.Error(w, "cannot create token for reserved audience", 400)
+		http.Error(w, "cannot create token for reserved audience", 400) // keep plain text for API clients
 		return
 	}
 

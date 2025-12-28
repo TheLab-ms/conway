@@ -124,7 +124,7 @@ func (m *Module) WithAuthn(next http.HandlerFunc) http.HandlerFunc {
 func (m *Module) WithLeadership(next http.HandlerFunc) http.HandlerFunc {
 	return m.WithAuthn(func(w http.ResponseWriter, r *http.Request) {
 		if meta := GetUserMeta(r.Context()); meta == nil || !meta.Leadership {
-			http.Error(w, "You must be a member of leadership to access this page", 403)
+			engine.ClientError(w, "Access Denied", "You must be a member of leadership to access this page", 403)
 			return
 		}
 		next(w, r)
@@ -137,7 +137,7 @@ func (s *Module) handleLoginFormPost(w http.ResponseWriter, r *http.Request) {
 	callback := r.FormValue("callback_uri")
 
 	if !s.verifyTurnstileResponse(r) {
-		http.Error(w, "We weren't able to verify that you are a human", 401)
+		engine.ClientError(w, "Verification Failed", "We weren't able to verify that you are a human", 401)
 		return
 	}
 
@@ -278,12 +278,12 @@ func (s *Module) handleLoginCodeLink(w http.ResponseWriter, r *http.Request) {
 func (s *Module) verifyCodeAndLogin(w http.ResponseWriter, r *http.Request, code string) {
 	// Validate code format
 	if len(code) != 5 {
-		http.Error(w, "invalid code", 400)
+		engine.ClientError(w, "Invalid Code", "The code you entered is invalid", 400)
 		return
 	}
 	for _, c := range code {
 		if c < '0' || c > '9' {
-			http.Error(w, "invalid code", 400)
+			engine.ClientError(w, "Invalid Code", "The code you entered is invalid", 400)
 			return
 		}
 	}
@@ -295,7 +295,7 @@ func (s *Module) verifyCodeAndLogin(w http.ResponseWriter, r *http.Request, code
 		"SELECT token, callback, expires_at FROM login_codes WHERE code = ?",
 		code).Scan(&token, &callback, &expiresAt)
 	if err == sql.ErrNoRows {
-		http.Error(w, "invalid or expired code", 400)
+		engine.ClientError(w, "Invalid Code", "The code you entered is invalid or has expired", 400)
 		return
 	}
 	if err != nil {
@@ -306,7 +306,7 @@ func (s *Module) verifyCodeAndLogin(w http.ResponseWriter, r *http.Request, code
 	// Check expiration
 	if time.Now().Unix() > expiresAt {
 		s.db.Exec("DELETE FROM login_codes WHERE code = ?", code)
-		http.Error(w, "code has expired", 400)
+		engine.ClientError(w, "Code Expired", "The login code has expired - please request a new one", 400)
 		return
 	}
 
@@ -321,7 +321,7 @@ func (s *Module) verifyCodeAndLogin(w http.ResponseWriter, r *http.Request, code
 func (s *Module) completeLogin(w http.ResponseWriter, r *http.Request, token, callback string) {
 	claims, err := s.tokens.Verify(token)
 	if err != nil {
-		http.Error(w, "invalid login link", 400)
+		engine.ClientError(w, "Invalid Link", "The login link is invalid or has expired", 400)
 		return
 	}
 

@@ -63,10 +63,17 @@ func (r *Router) HandleFunc(route string, fn http.HandlerFunc) {
 	})
 }
 
-// SystemError logs the given message+args while returning a generic 500 error.
+// SystemError logs the given message+args while returning a styled 500 error page.
 func SystemError(w http.ResponseWriter, msg string, args ...any) {
-	http.Error(w, "Internal error - please try again later", 500)
 	slog.Error(msg, args...)
+	ClientError(w, "Uh oh", "Internal error - please try again later", 500)
+}
+
+// ClientError renders a styled HTML error page with the given title, message, and status code.
+func ClientError(w http.ResponseWriter, title, message string, code int) {
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(code)
+	RenderError(title, message).Render(context.Background(), w)
 }
 
 // HandleError returns true if err is non-nil, logging the error and sending

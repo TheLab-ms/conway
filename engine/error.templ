@@ -1,0 +1,15 @@
+package engine
+
+import "github.com/TheLab-ms/conway/modules/bootstrap"
+
+templ RenderError(title string, message string) {
+	@bootstrap.View() {
+		<div class="container my-5" style="max-width: 600px;">
+			<div class="alert alert-danger">
+				<h4 class="alert-heading">{ title }</h4>
+				<p class="mb-0">{ message }</p>
+			</div>
+			<a href="/" class="btn btn-secondary">Go Home</a>
+		</div>
+	}
+}

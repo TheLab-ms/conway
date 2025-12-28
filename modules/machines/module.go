@@ -176,20 +176,20 @@ func (m *Module) stopPrint(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if printer == nil {
-		http.Error(w, "Printer not found", http.StatusNotFound)
+		engine.ClientError(w, "Not Found", "Printer not found", http.StatusNotFound)
 		return
 	}
 
 	// Connect and stop the print
 	if err := printer.Connect(); err != nil {
 		slog.Error("failed to connect to printer for stop", "error", err, "serial", serial)
-		http.Error(w, "Failed to connect to printer", http.StatusInternalServerError)
+		engine.ClientError(w, "Connection Failed", "Failed to connect to printer", http.StatusInternalServerError)
 		return
 	}
 
 	if err := printer.StopPrint(); err != nil {
 		slog.Error("failed to stop print", "error", err, "serial", serial)
-		http.Error(w, "Failed to stop print", http.StatusInternalServerError)
+		engine.ClientError(w, "Stop Failed", "Failed to stop print", http.StatusInternalServerError)
 		return
 	}
 
@@ -253,13 +253,13 @@ func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 
 	mux, ok := m.streams[serial]
 	if !ok {
-		http.Error(w, "Printer not found", http.StatusNotFound)
+		engine.ClientError(w, "Not Found", "Printer not found", http.StatusNotFound)
 		return
 	}
 
 	ch := mux.Subscribe()
 	if ch == nil {
-		http.Error(w, "Failed to start camera stream", http.StatusInternalServerError)
+		engine.ClientError(w, "Stream Error", "Failed to start camera stream", http.StatusInternalServerError)
 		return
 	}
 	defer mux.Unsubscribe(ch)
