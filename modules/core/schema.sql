@@ -194,3 +194,5 @@ WHEN NEW.discord_user_id IS NOT NULL AND (
 BEGIN
     UPDATE members SET discord_last_synced = NULL WHERE id = NEW.id;
 END;
+
+DROP TABLE IF EXISTS pruning_jobs;

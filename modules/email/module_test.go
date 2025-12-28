@@ -87,3 +87,32 @@ func TestExponentialBackoffOnFailure(t *testing.T) {
 
 	assert.True(t, finalSendAt > newSendAt, "send_at should increase exponentially on repeated failures")
 }
+
+func TestCleanupStaleOutboundMail(t *testing.T) {
+	ctx := context.Background()
+	db := db.OpenTest(t)
+	m := New(db, nil)
+
+	// Insert stale email (2 hours ago)
+	_, err := db.Exec("INSERT INTO outbound_mail (recipient, subject, body, created) VALUES ('old@test.com', 'Old', 'body', ?)", time.Now().Add(-2*time.Hour).Unix())
+	require.NoError(t, err)
+
+	// Insert fresh email (5 minutes ago)
+	_, err = db.Exec("INSERT INTO outbound_mail (recipient, subject, body, created) VALUES ('new@test.com', 'New', 'body', ?)", time.Now().Add(-5*time.Minute).Unix())
+	require.NoError(t, err)
+
+	// Run cleanup
+	result := m.cleanupStaleOutboundMail(ctx)
+	assert.False(t, result)
+
+	// Verify only fresh email remains
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM outbound_mail").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	var recipient string
+	err = db.QueryRow("SELECT recipient FROM outbound_mail").Scan(&recipient)
+	require.NoError(t, err)
+	assert.Equal(t, "new@test.com", recipient)
+}

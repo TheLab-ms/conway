@@ -369,3 +369,21 @@ func OnlyLAN(next http.HandlerFunc) http.HandlerFunc {
 		next(w, r)
 	}
 }
+
+func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
+	mgr.Add(engine.Poll(time.Hour, m.cleanupExpiredLoginCodes))
+}
+
+func (m *Module) cleanupExpiredLoginCodes(ctx context.Context) bool {
+	start := time.Now()
+	result, err := m.db.ExecContext(ctx, "DELETE FROM login_codes WHERE expires_at < unixepoch()")
+	if err != nil {
+		slog.Error("failed to cleanup expired login codes", "error", err)
+		return false
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		slog.Info("cleaned up expired login codes", "duration", time.Since(start), "rows", rowsAffected)
+	}
+	return false
+}

@@ -45,6 +45,7 @@ func New(d *sql.DB, es Sender) *Module {
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, maxRPS))))
+	mgr.Add(engine.Poll(time.Hour, m.cleanupStaleOutboundMail))
 }
 
 func (m *Module) GetItem(ctx context.Context) (message, error) {
@@ -83,3 +84,17 @@ type message struct {
 }
 
 func (m *message) String() string { return fmt.Sprintf("id=%d", m.ID) }
+
+func (m *Module) cleanupStaleOutboundMail(ctx context.Context) bool {
+	start := time.Now()
+	result, err := m.db.ExecContext(ctx, "DELETE FROM outbound_mail WHERE unixepoch() - created > 3600")
+	if err != nil {
+		slog.Error("failed to cleanup stale outbound mail", "error", err)
+		return false
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		slog.Info("cleaned up stale outbound mail", "duration", time.Since(start), "rows", rowsAffected)
+	}
+	return false
+}

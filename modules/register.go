@@ -20,7 +20,6 @@ import (
 	"github.com/TheLab-ms/conway/modules/metrics"
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
-	"github.com/TheLab-ms/conway/modules/pruning"
 	"github.com/TheLab-ms/conway/modules/waiver"
 )
 
@@ -83,7 +82,6 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(waiver.New(opts.Database))
 	a.Add(kiosk.New(opts.Database, opts.Self, opts.FobIssuer, opts.SpaceHost))
 	a.Add(metrics.New(opts.Database))
-	a.Add(pruning.New(opts.Database))
 	a.Add(fobapi.New(opts.Database))
 
 	if opts.MachinesModule != nil {
