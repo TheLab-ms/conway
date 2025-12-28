@@ -315,9 +315,6 @@ func (m *Module) poll(ctx context.Context) bool {
 			continue
 		}
 
-		js, _ := json.Marshal(data)
-		println("TODO", string(js))
-
 		s := PrinterStatus{
 			PrinterName:  name,
 			SerialNumber: printer.GetSerial(),
