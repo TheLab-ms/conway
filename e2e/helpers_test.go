@@ -340,7 +340,15 @@ func stripeTestEnabled() bool {
 func startStripeCLI(t *testing.T, forwardURL string) {
 	t.Helper()
 
-	cmd := exec.Command("stripe", "listen", "--forward-to", forwardURL)
+	apiKey := os.Getenv("STRIPE_TEST_KEY")
+	if apiKey == "" {
+		apiKey = os.Getenv("CONWAY_STRIPE_KEY")
+	}
+	if apiKey == "" {
+		t.Fatal("stripe API key not configured - set STRIPE_TEST_KEY or CONWAY_STRIPE_KEY")
+	}
+
+	cmd := exec.Command("stripe", "listen", "--forward-to", forwardURL, "--api-key", apiKey)
 
 	// Capture stdout to detect when the CLI is ready
 	stdout, err := cmd.StdoutPipe()
