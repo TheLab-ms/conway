@@ -17,9 +17,25 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/db"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 )
+
+const migration = `
+/* Login Codes - Maps 5-digit codes to JWT tokens for passwordless login */
+CREATE TABLE IF NOT EXISTS login_codes (
+    code TEXT PRIMARY KEY,
+    token TEXT NOT NULL,
+    email TEXT NOT NULL,
+    callback TEXT NOT NULL DEFAULT '',
+    expires_at INTEGER NOT NULL,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS login_codes_expires_at_idx ON login_codes (expires_at);
+CREATE INDEX IF NOT EXISTS login_codes_email_idx ON login_codes (email);
+`
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
@@ -37,8 +53,9 @@ type Module struct {
 	tokens      *engine.TokenIssuer
 }
 
-func New(db *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIssuer) *Module {
-	return &Module{db: db, self: self, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), tokens: tokens}
+func New(d *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIssuer) *Module {
+	db.MustMigrate(d, migration)
+	return &Module{db: d, self: self, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), tokens: tokens}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {

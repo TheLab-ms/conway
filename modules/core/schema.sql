@@ -194,17 +194,3 @@ WHEN NEW.discord_user_id IS NOT NULL AND (
 BEGIN
     UPDATE members SET discord_last_synced = NULL WHERE id = NEW.id;
 END;
-
-/* Login Codes - Maps 5-digit codes to JWT tokens for passwordless login */
-CREATE TABLE IF NOT EXISTS login_codes (
-    code TEXT PRIMARY KEY,
-    token TEXT NOT NULL,
-    email TEXT NOT NULL,
-    callback TEXT NOT NULL DEFAULT '',
-    expires_at INTEGER NOT NULL,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS login_codes_expires_at_idx ON login_codes (expires_at);
-CREATE INDEX IF NOT EXISTS login_codes_email_idx ON login_codes (email);
-
