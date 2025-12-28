@@ -1,27 +1,25 @@
 package bootstrap
 
 templ View() {
+	@view("") { { children... }}
+}
+
+templ DarkmodeView() {
+	@view("dark") { { children... }}
+}
+
+templ view(theme string) {
 	<!DOCTYPE html>
-	<html lang="en">
+	<html lang="en" data-bs-theme={theme}>
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>Conway Makerspace System</title>
-			<link href="/assets/styles.css" rel="stylesheet"/>
+			<link href="/assets/bootstrap/css/bootstrap.min.css" rel="stylesheet"/>
+			<script src="/assets/bootstrap/js/bootstrap.bundle.min.js"></script>
 			<script src="/assets/htmx.min.js"></script>
 			<script src="/assets/chartjs/chart.umd.min.js"></script>
 			<script src="/assets/chartjs/chartjs-adapter-date-fns.bundle.min.js"></script>
-			<script>
-				document.addEventListener('DOMContentLoaded', function() {
-					const toggler = document.querySelector('.navbar-toggler');
-					const collapse = document.querySelector('.navbar-collapse');
-					if (toggler && collapse) {
-						toggler.addEventListener('click', function() {
-							collapse.classList.toggle('show');
-						});
-					}
-				});
-			</script>
 		</head>
 		{ children... }
 	</html>
