@@ -3,6 +3,7 @@ package e2e
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"testing"
@@ -322,6 +323,28 @@ func clearTestData(t *testing.T) {
 func expect(t *testing.T) playwright.PlaywrightAssertions {
 	t.Helper()
 	return playwright.NewPlaywrightAssertions()
+}
+
+// stripeTestEnabled returns true if Stripe test credentials are configured.
+func stripeTestEnabled() bool {
+	// Check both possible env var names
+	return os.Getenv("STRIPE_TEST_KEY") != "" || os.Getenv("CONWAY_STRIPE_KEY") != ""
+}
+
+// waitForMemberState polls the database until the member's fields match the expected values or times out.
+// The check function receives the current stripe_subscription_state and name, and returns true if the condition is met.
+func waitForMemberState(t *testing.T, email string, timeout time.Duration, check func(subState, name string) bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		var subState, name sql.NullString
+		err := testDB.QueryRow("SELECT stripe_subscription_state, name FROM members WHERE email = ?", email).Scan(&subState, &name)
+		if err == nil && check(subState.String, name.String) {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for member state: email=%s", email)
 }
 
 // setupAdminTest creates an admin, logs in, and returns the admin ID and page.

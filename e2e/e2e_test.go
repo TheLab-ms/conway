@@ -99,6 +99,8 @@ func setupTestServer() error {
 	// Configure Stripe test mode
 	if key := os.Getenv("STRIPE_TEST_KEY"); key != "" {
 		stripe.Key = key
+	} else if key := os.Getenv("CONWAY_STRIPE_KEY"); key != "" {
+		stripe.Key = key
 	}
 
 	// Create app with test config
@@ -153,7 +155,7 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 		FobIssuer:        fobIssuer,
 		Turnstile:        nil, // No Turnstile for tests
 		EmailSender:      nil, // Emails stored in outbound_mail table
-		StripeWebhookKey: os.Getenv("STRIPE_TEST_WEBHOOK_KEY"),
+		StripeWebhookKey: getEnvWithFallback("STRIPE_TEST_WEBHOOK_KEY", "CONWAY_STRIPE_WEBHOOK_KEY"),
 		SpaceHost:        "localhost",
 		MachinesModule:   testMachinesModule,
 	})
@@ -176,4 +178,14 @@ func waitForServer(url string) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("server did not become ready at %s", url)
+}
+
+// getEnvWithFallback returns the value of the first env var that is set.
+func getEnvWithFallback(keys ...string) string {
+	for _, key := range keys {
+		if val := os.Getenv(key); val != "" {
+			return val
+		}
+	}
+	return ""
 }

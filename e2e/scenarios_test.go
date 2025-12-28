@@ -1058,3 +1058,149 @@ func TestKeyfob_StatusEndpoint(t *testing.T) {
 		assert.Equal(t, 403, resp.Status()) // requires physical presence at makerspace
 	})
 }
+
+// TestStripe_SubscriptionLifecycle tests the complete Stripe subscription
+// workflow through the browser UI: create via Checkout and cancel via Billing Portal.
+// This test requires:
+//   - STRIPE_TEST_KEY or CONWAY_STRIPE_KEY environment variable
+//   - STRIPE_TEST_WEBHOOK_KEY or CONWAY_STRIPE_WEBHOOK_KEY environment variable
+//   - Stripe CLI forwarding webhooks: stripe listen --forward-to localhost:18080/webhooks/stripe
+//   - A price with lookup_key "monthly" in your Stripe test account
+func TestStripe_SubscriptionLifecycle(t *testing.T) {
+	if !stripeTestEnabled() {
+		t.Skip("Skipping Stripe test: STRIPE_TEST_KEY not set. Run with Stripe CLI: stripe listen --forward-to localhost:18080/webhooks/stripe")
+	}
+
+	clearTestData(t)
+
+	// Use unique email to avoid conflicts between test runs
+	email := fmt.Sprintf("stripe-test-%d@example.com", time.Now().UnixNano())
+	memberID := seedMember(t, email, WithConfirmed(), WithWaiver())
+
+	// Set up authenticated browser context
+	ctx := newContext(t)
+	loginAs(t, ctx, memberID)
+	page := newPageInContext(t, ctx)
+
+	// Step 1: Navigate to dashboard and click "Set Up Payment"
+	t.Log("Step 1: Starting Stripe Checkout flow from member dashboard")
+
+	dashboard := NewMemberDashboardPage(t, page)
+	dashboard.Navigate()
+	dashboard.ExpectMissingPaymentAlert()
+
+	// Click "Set Up Payment" button - this redirects to Stripe Checkout
+	setupPaymentBtn := page.Locator("a.btn-primary:has-text('Set Up Payment')")
+	expect(t).Locator(setupPaymentBtn).ToBeVisible()
+	err := setupPaymentBtn.Click()
+	require.NoError(t, err)
+
+	// Wait for redirect to Stripe Checkout (checkout.stripe.com)
+	err = page.WaitForURL("**/checkout.stripe.com/**", playwright.PageWaitForURLOptions{
+		Timeout: playwright.Float(30000),
+	})
+	require.NoError(t, err, "should redirect to Stripe Checkout")
+
+	// Step 2: Fill Stripe Checkout form with test card
+	t.Log("Step 2: Filling Stripe Checkout form with test card")
+
+	// Wait for Stripe Checkout form to be ready (card number field)
+	cardNumberField := page.Locator("#cardNumber")
+	err = cardNumberField.WaitFor(playwright.LocatorWaitForOptions{
+		State:   playwright.WaitForSelectorStateVisible,
+		Timeout: playwright.Float(30000),
+	})
+	require.NoError(t, err, "card number field should be visible")
+
+	// Fill card details (Stripe test card 4242 4242 4242 4242)
+	err = cardNumberField.Fill("4242424242424242")
+	require.NoError(t, err)
+	err = page.Locator("#cardExpiry").Fill("12/30")
+	require.NoError(t, err)
+	err = page.Locator("#cardCvc").Fill("123")
+	require.NoError(t, err)
+	err = page.Locator("#billingName").Fill("Test User")
+	require.NoError(t, err)
+
+	// Fill postal code if required
+	postalCodeField := page.Locator("#billingPostalCode")
+	if visible, _ := postalCodeField.IsVisible(); visible {
+		err = postalCodeField.Fill("12345")
+		require.NoError(t, err)
+	}
+
+	// Submit payment
+	t.Log("Step 3: Submitting payment")
+	submitBtn := page.Locator("button[type='submit']:has-text('Subscribe')")
+	err = submitBtn.Click()
+	require.NoError(t, err)
+
+	// Wait for redirect back to our app
+	err = page.WaitForURL("**/localhost:18080/**", playwright.PageWaitForURLOptions{
+		Timeout: playwright.Float(60000),
+	})
+	require.NoError(t, err, "should redirect back to app after payment")
+
+	// Wait for webhook to process and update database
+	t.Log("Step 4: Waiting for subscription webhook")
+	waitForMemberState(t, email, 30*time.Second, func(subState, name string) bool {
+		return subState == "active"
+	})
+
+	// Verify dashboard now shows active subscription
+	dashboard.Navigate()
+	dashboard.ExpectStepComplete("Set Up Payment")
+
+	// Verify "Manage Payment" button is now visible
+	managePaymentBtn := page.Locator("a.btn-outline-success:has-text('Manage Payment')")
+	expect(t).Locator(managePaymentBtn).ToBeVisible()
+
+	// Step 5: Go to Billing Portal and cancel subscription
+	t.Log("Step 5: Opening Stripe Billing Portal to cancel subscription")
+
+	err = managePaymentBtn.Click()
+	require.NoError(t, err)
+
+	// Wait for redirect to Stripe Billing Portal
+	err = page.WaitForURL("**/billing.stripe.com/**", playwright.PageWaitForURLOptions{
+		Timeout: playwright.Float(30000),
+	})
+	require.NoError(t, err, "should redirect to Stripe Billing Portal")
+
+	// Wait for Billing Portal to fully render
+	time.Sleep(2 * time.Second)
+
+	// Find and click "Cancel subscription" link
+	cancelLink := page.Locator("a:has-text('Cancel subscription'), button:has-text('Cancel subscription')").First()
+	err = cancelLink.WaitFor(playwright.LocatorWaitForOptions{
+		State:   playwright.WaitForSelectorStateVisible,
+		Timeout: playwright.Float(15000),
+	})
+	require.NoError(t, err, "Cancel subscription link should be visible")
+	err = cancelLink.Click()
+	require.NoError(t, err)
+
+	// Wait for confirmation dialog
+	time.Sleep(2 * time.Second)
+
+	// Click the confirmation button
+	confirmBtn := page.Locator("button:has-text('Cancel subscription'), button:has-text('Cancel plan')").Last()
+	err = confirmBtn.WaitFor(playwright.LocatorWaitForOptions{
+		State:   playwright.WaitForSelectorStateVisible,
+		Timeout: playwright.Float(10000),
+	})
+	require.NoError(t, err, "Cancel confirmation button should be visible")
+	err = confirmBtn.Click()
+	require.NoError(t, err)
+
+	// Wait for cancellation to be processed
+	// Note: Stripe Billing Portal schedules cancellation at period end by default,
+	// so the subscription status may remain "active" with cancel_at_period_end=true.
+	time.Sleep(3 * time.Second)
+
+	// Navigate back to our app
+	_, err = page.Goto(baseURL + "/")
+	require.NoError(t, err)
+
+	t.Log("Test completed: subscription created and cancellation initiated via Billing Portal")
+}
