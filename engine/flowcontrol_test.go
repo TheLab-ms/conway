@@ -6,7 +6,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/TheLab-ms/conway/engine/db"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPollWorkqueue(t *testing.T) {
@@ -118,3 +120,33 @@ func (m *mockWorkqueue) GetItem(ctx context.Context) (any, error) {
 
 func (m *mockWorkqueue) ProcessItem(ctx context.Context, item any) error      { return m.processError }
 func (m *mockWorkqueue) UpdateItem(ctx context.Context, i any, ok bool) error { return m.updateError }
+
+func TestCleanup(t *testing.T) {
+	ctx := t.Context()
+	database := db.OpenTest(t)
+
+	_, err := database.ExecContext(ctx, `CREATE TABLE test_items (id INTEGER PRIMARY KEY, timestamp INTEGER)`)
+	require.NoError(t, err)
+
+	// Insert old row (to be deleted)
+	_, err = database.ExecContext(ctx, `INSERT INTO test_items (id, timestamp) VALUES (1, 100)`)
+	require.NoError(t, err)
+
+	// Insert new row (to be kept)
+	_, err = database.ExecContext(ctx, `INSERT INTO test_items (id, timestamp) VALUES (2, 9999999999)`)
+	require.NoError(t, err)
+
+	cleanup := Cleanup(database, "test items", "DELETE FROM test_items WHERE timestamp < ?", 1000)
+	result := cleanup(ctx)
+	assert.False(t, result) // Cleanup always returns false
+
+	var count int
+	err = database.QueryRowContext(ctx, "SELECT COUNT(*) FROM test_items").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	var id int
+	err = database.QueryRowContext(ctx, "SELECT id FROM test_items").Scan(&id)
+	require.NoError(t, err)
+	assert.Equal(t, 2, id)
+}

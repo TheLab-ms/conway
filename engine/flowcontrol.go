@@ -101,3 +101,21 @@ func (r *rateLimitedWorkqueue[T]) ProcessItem(ctx context.Context, item T) error
 	}
 	return r.Workqueue.ProcessItem(ctx, item)
 }
+
+// Cleanup returns a PollingFunc that periodically runs a DELETE query.
+// It logs errors and successful cleanups (when rows are affected).
+func Cleanup(db *sql.DB, name, query string, args ...any) PollingFunc {
+	return func(ctx context.Context) bool {
+		start := time.Now()
+		result, err := db.ExecContext(ctx, query, args...)
+		if err != nil {
+			slog.Error("failed to cleanup "+name, "error", err)
+			return false
+		}
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected > 0 {
+			slog.Info("cleaned up "+name, "duration", time.Since(start), "rows", rowsAffected)
+		}
+		return false
+	}
+}
