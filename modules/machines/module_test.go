@@ -2,283 +2,232 @@ package machines
 
 import (
 	"context"
-	"database/sql"
+	"sync"
 	"testing"
-	"time"
-
-	"github.com/TheLab-ms/conway/engine/db"
-	_ "modernc.org/sqlite"
 )
 
-// discordWebhookMigration is the migration for the discord_webhook_queue table.
-// This is needed because the trigger inserts into this table.
-const discordWebhookMigration = `
-CREATE TABLE IF NOT EXISTS discord_webhook_queue (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    send_at INTEGER DEFAULT (strftime('%s', 'now')),
-    channel_id TEXT NOT NULL,
-    payload TEXT NOT NULL
-) STRICT;
-`
+// mockMessageQueuer is a test implementation of discordwebhook.MessageQueuer
+type mockMessageQueuer struct {
+	mu       sync.Mutex
+	messages []queuedMessage
+}
 
-func TestTrigger_NotificationQueuedOnCompletion(t *testing.T) {
-	database, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("failed to open test database: %v", err)
+type queuedMessage struct {
+	channelID string
+	payload   string
+}
+
+func (m *mockMessageQueuer) QueueMessage(ctx context.Context, channelID, payload string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.messages = append(m.messages, queuedMessage{channelID: channelID, payload: payload})
+	return nil
+}
+
+func (m *mockMessageQueuer) getMessages() []queuedMessage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]queuedMessage{}, m.messages...)
+}
+
+func (m *mockMessageQueuer) reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.messages = nil
+}
+
+func TestStateTransition_JobCompleted(t *testing.T) {
+	mock := &mockMessageQueuer{}
+	m := &Module{
+		notificationChannel: "test-channel",
+		messageQueuer:       mock,
 	}
-	defer database.Close()
-
-	// Apply the discord webhook migration first (trigger depends on this table)
-	db.MustMigrate(database, discordWebhookMigration)
-	// Apply the machines migration
-	db.MustMigrate(database, migration)
 
 	ctx := context.Background()
+	finishTime := int64(1234567890)
 
-	// Insert a running job with notification_channel set
-	_, err = database.ExecContext(ctx, `
-		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, gcode_file_display, discord_user_id, notification_channel, started_at, status)
-		VALUES ('ABC123', 'Printer1', '123456789012345678_benchy.gcode', 'benchy.gcode', '123456789012345678', 'test-channel', $1, 'running')`,
-		time.Now().Unix())
-	if err != nil {
-		t.Fatalf("failed to insert print job: %v", err)
+	// Simulate job starting
+	oldState := []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
-
-	// Update the job to completed - trigger should fire
-	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed', completed_at = $1 WHERE status = 'running'`, time.Now().Unix())
-	if err != nil {
-		t.Fatalf("failed to update print job: %v", err)
+	newState := []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "123456789012345678_benchy.gcode", GcodeFileDisplay: "benchy.gcode", DiscordUserID: "123456789012345678"},
 	}
 
-	// Verify notification was queued
-	var count int
-	err = database.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
-	if err != nil {
-		t.Fatalf("failed to query queue: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("expected 1 notification in queue, got %d", count)
+	m.detectStateChanges(ctx, oldState, newState)
+
+	// No notification on start
+	if len(mock.getMessages()) != 0 {
+		t.Errorf("expected no notifications on job start, got %d", len(mock.getMessages()))
 	}
 
-	// Verify the notification content
-	var channelID, payload string
-	err = database.QueryRow("SELECT channel_id, payload FROM discord_webhook_queue").Scan(&channelID, &payload)
-	if err != nil {
-		t.Fatalf("failed to query notification: %v", err)
-	}
-	if channelID != "test-channel" {
-		t.Errorf("expected channel_id 'test-channel', got %q", channelID)
-	}
-	// Check that the payload contains expected content
-	if !contains(payload, "benchy.gcode") {
-		t.Errorf("payload should contain filename, got: %s", payload)
-	}
-	if !contains(payload, "completed successfully") {
-		t.Errorf("payload should contain 'completed successfully', got: %s", payload)
-	}
-	if !contains(payload, "<@123456789012345678>") {
-		t.Errorf("payload should contain Discord mention, got: %s", payload)
+	// Now simulate job completing
+	oldState = newState
+	newState = []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil, GcodeFile: "", GcodeFileDisplay: "", DiscordUserID: ""},
 	}
 
-	// Verify notification_sent was set
-	var notificationSent int
-	err = database.QueryRow("SELECT notification_sent FROM print_jobs").Scan(&notificationSent)
-	if err != nil {
-		t.Fatalf("failed to query notification_sent: %v", err)
+	m.detectStateChanges(ctx, oldState, newState)
+
+	// Should have 1 completion notification
+	messages := mock.getMessages()
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 notification on job completion, got %d", len(messages))
 	}
-	if notificationSent != 1 {
-		t.Errorf("expected notification_sent = 1, got %d", notificationSent)
+
+	if messages[0].channelID != "test-channel" {
+		t.Errorf("expected channel_id 'test-channel', got %q", messages[0].channelID)
+	}
+	if !contains(messages[0].payload, "benchy.gcode") {
+		t.Errorf("payload should contain filename, got: %s", messages[0].payload)
+	}
+	if !contains(messages[0].payload, "completed successfully") {
+		t.Errorf("payload should contain 'completed successfully', got: %s", messages[0].payload)
+	}
+	if !contains(messages[0].payload, "<@123456789012345678>") {
+		t.Errorf("payload should contain Discord mention, got: %s", messages[0].payload)
 	}
 }
 
-func TestTrigger_NoNotificationWhenChannelNull(t *testing.T) {
-	database, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("failed to open test database: %v", err)
+func TestStateTransition_JobFailed(t *testing.T) {
+	mock := &mockMessageQueuer{}
+	m := &Module{
+		notificationChannel: "test-channel",
+		messageQueuer:       mock,
 	}
-	defer database.Close()
-
-	db.MustMigrate(database, discordWebhookMigration)
-	db.MustMigrate(database, migration)
 
 	ctx := context.Background()
+	finishTime := int64(1234567890)
 
-	// Insert a running job WITHOUT notification_channel
-	_, err = database.ExecContext(ctx, `
-		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, started_at, status)
-		VALUES ('ABC123', 'Printer1', 'benchy.gcode', $1, 'running')`,
-		time.Now().Unix())
-	if err != nil {
-		t.Fatalf("failed to insert print job: %v", err)
+	// Simulate job running then failing
+	oldState := []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "benchy.gcode", GcodeFileDisplay: "benchy.gcode", ErrorCode: ""},
+	}
+	// Set hadJob state with job metadata
+	m.updateLastNotifiedState("ABC123", notifiedState{
+		hadJob:           true,
+		gcodeFile:        "benchy.gcode",
+		gcodeFileDisplay: "benchy.gcode",
+		printerName:      "Printer1",
+	})
+
+	newState := []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "benchy.gcode", GcodeFileDisplay: "benchy.gcode", ErrorCode: "E001"},
 	}
 
-	// Update the job to completed
-	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed', completed_at = $1 WHERE status = 'running'`, time.Now().Unix())
-	if err != nil {
-		t.Fatalf("failed to update print job: %v", err)
+	m.detectStateChanges(ctx, oldState, newState)
+
+	// Should have 1 failure notification
+	messages := mock.getMessages()
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 notification on job failure, got %d", len(messages))
 	}
 
-	// Verify NO notification was queued
-	var count int
-	err = database.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
-	if err != nil {
-		t.Fatalf("failed to query queue: %v", err)
+	if !contains(messages[0].payload, "has failed") {
+		t.Errorf("payload should contain 'has failed', got: %s", messages[0].payload)
 	}
-	if count != 0 {
-		t.Errorf("expected 0 notifications in queue (channel was null), got %d", count)
+	if !contains(messages[0].payload, "E001") {
+		t.Errorf("payload should contain error code 'E001', got: %s", messages[0].payload)
 	}
 }
 
-func TestTrigger_Idempotent(t *testing.T) {
-	database, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("failed to open test database: %v", err)
+func TestStateTransition_NoDuplicateNotifications(t *testing.T) {
+	mock := &mockMessageQueuer{}
+	m := &Module{
+		notificationChannel: "test-channel",
+		messageQueuer:       mock,
 	}
-	defer database.Close()
-
-	db.MustMigrate(database, discordWebhookMigration)
-	db.MustMigrate(database, migration)
 
 	ctx := context.Background()
+	finishTime := int64(1234567890)
 
-	// Insert a running job with notification_channel set
-	_, err = database.ExecContext(ctx, `
-		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, notification_channel, started_at, status)
-		VALUES ('ABC123', 'Printer1', 'benchy.gcode', 'test-channel', $1, 'running')`,
-		time.Now().Unix())
-	if err != nil {
-		t.Fatalf("failed to insert print job: %v", err)
+	// Start a job
+	oldState := []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
-
-	// Update the job to completed
-	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed', completed_at = $1 WHERE status = 'running'`, time.Now().Unix())
-	if err != nil {
-		t.Fatalf("failed to update print job: %v", err)
+	newState := []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "benchy.gcode", GcodeFileDisplay: "benchy.gcode"},
 	}
-
-	// Try to update again (should be idempotent - no new notification)
-	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed' WHERE status = 'completed'`)
-	if err != nil {
-		t.Fatalf("failed to update print job again: %v", err)
-	}
-
-	// Verify only 1 notification was queued
-	var count int
-	err = database.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
-	if err != nil {
-		t.Fatalf("failed to query queue: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("expected exactly 1 notification (idempotent), got %d", count)
-	}
-}
-
-func TestTrigger_FailedStatus(t *testing.T) {
-	database, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("failed to open test database: %v", err)
-	}
-	defer database.Close()
-
-	db.MustMigrate(database, discordWebhookMigration)
-	db.MustMigrate(database, migration)
-
-	ctx := context.Background()
-
-	// Insert a running job
-	_, err = database.ExecContext(ctx, `
-		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, notification_channel, started_at, status)
-		VALUES ('ABC123', 'Printer1', 'benchy.gcode', 'test-channel', $1, 'running')`,
-		time.Now().Unix())
-	if err != nil {
-		t.Fatalf("failed to insert print job: %v", err)
-	}
-
-	// Update the job to failed with error code
-	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'failed', error_code = 'E001' WHERE status = 'running'`)
-	if err != nil {
-		t.Fatalf("failed to update print job: %v", err)
-	}
-
-	// Verify notification was queued with failure message
-	var payload string
-	err = database.QueryRow("SELECT payload FROM discord_webhook_queue").Scan(&payload)
-	if err != nil {
-		t.Fatalf("failed to query notification: %v", err)
-	}
-	if !contains(payload, "has failed") {
-		t.Errorf("payload should contain 'has failed', got: %s", payload)
-	}
-	if !contains(payload, "E001") {
-		t.Errorf("payload should contain error code 'E001', got: %s", payload)
-	}
-}
-
-func TestDuplicateRunningJobsPrevented(t *testing.T) {
-	database, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("failed to open test database: %v", err)
-	}
-	defer database.Close()
-
-	db.MustMigrate(database, discordWebhookMigration)
-	db.MustMigrate(database, migration)
-
-	ctx := context.Background()
-
-	// Simulate the INSERT query used by onJobStarted (with NOT EXISTS pattern)
-	insertQuery := `
-		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, notification_channel, started_at, status)
-		SELECT $1, $2, $3, $4, $5, 'running'
-		WHERE NOT EXISTS (SELECT 1 FROM print_jobs WHERE printer_serial = $1 AND status = 'running')`
-
-	// First insert should succeed
-	result, err := database.ExecContext(ctx, insertQuery,
-		"ABC123", "Printer1", "benchy.gcode", "test-channel", time.Now().Unix())
-	if err != nil {
-		t.Fatalf("failed to insert first print job: %v", err)
-	}
-	rows, _ := result.RowsAffected()
-	if rows != 1 {
-		t.Errorf("expected 1 row affected for first insert, got %d", rows)
-	}
-
-	// Second insert for same printer should be skipped (NOT EXISTS prevents it)
-	result, err = database.ExecContext(ctx, insertQuery,
-		"ABC123", "Printer1", "benchy2.gcode", "test-channel", time.Now().Unix())
-	if err != nil {
-		t.Fatalf("second insert failed unexpectedly: %v", err)
-	}
-	rows, _ = result.RowsAffected()
-	if rows != 0 {
-		t.Errorf("expected 0 rows affected for duplicate insert, got %d", rows)
-	}
-
-	// Verify only 1 job exists
-	var count int
-	err = database.QueryRow("SELECT COUNT(*) FROM print_jobs WHERE status = 'running'").Scan(&count)
-	if err != nil {
-		t.Fatalf("failed to count jobs: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("expected exactly 1 running job, got %d", count)
-	}
+	m.detectStateChanges(ctx, oldState, newState)
 
 	// Complete the job
-	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed' WHERE printer_serial = 'ABC123' AND status = 'running'`)
-	if err != nil {
-		t.Fatalf("failed to complete job: %v", err)
+	oldState = newState
+	newState = []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
+	}
+	m.detectStateChanges(ctx, oldState, newState)
+
+	// Should have exactly 1 notification
+	if len(mock.getMessages()) != 1 {
+		t.Fatalf("expected exactly 1 notification, got %d", len(mock.getMessages()))
 	}
 
-	// Verify only 1 notification was queued (not 2)
-	err = database.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
-	if err != nil {
-		t.Fatalf("failed to count notifications: %v", err)
+	// Call detectStateChanges again with same state (simulating repeated polls)
+	m.detectStateChanges(ctx, newState, newState)
+	m.detectStateChanges(ctx, newState, newState)
+	m.detectStateChanges(ctx, newState, newState)
+
+	// Should still have exactly 1 notification (idempotent)
+	if len(mock.getMessages()) != 1 {
+		t.Errorf("expected exactly 1 notification after repeated polls, got %d", len(mock.getMessages()))
 	}
-	if count != 1 {
-		t.Errorf("expected exactly 1 notification, got %d", count)
+}
+
+func TestStateTransition_NoNotificationWhenChannelEmpty(t *testing.T) {
+	mock := &mockMessageQueuer{}
+	m := &Module{
+		notificationChannel: "", // No channel configured
+		messageQueuer:       mock,
 	}
+
+	ctx := context.Background()
+	finishTime := int64(1234567890)
+
+	// Start and complete a job
+	m.updateLastNotifiedState("ABC123", notifiedState{
+		hadJob:           true,
+		gcodeFile:        "benchy.gcode",
+		gcodeFileDisplay: "benchy.gcode",
+		printerName:      "Printer1",
+	})
+	oldState := []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "benchy.gcode"},
+	}
+	newState := []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
+	}
+	m.detectStateChanges(ctx, oldState, newState)
+
+	// Should have no notifications (channel not configured)
+	if len(mock.getMessages()) != 0 {
+		t.Errorf("expected 0 notifications when channel is empty, got %d", len(mock.getMessages()))
+	}
+}
+
+func TestStateTransition_NoNotificationWhenQueuerNil(t *testing.T) {
+	m := &Module{
+		notificationChannel: "test-channel",
+		messageQueuer:       nil, // No queuer
+	}
+
+	ctx := context.Background()
+	finishTime := int64(1234567890)
+
+	// Start and complete a job - should not panic
+	m.updateLastNotifiedState("ABC123", notifiedState{
+		hadJob:           true,
+		gcodeFile:        "benchy.gcode",
+		gcodeFileDisplay: "benchy.gcode",
+		printerName:      "Printer1",
+	})
+	oldState := []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "benchy.gcode"},
+	}
+	newState := []PrinterStatus{
+		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
+	}
+	m.detectStateChanges(ctx, oldState, newState)
+	// Should complete without panic
 }
 
 func contains(s, substr string) bool {
