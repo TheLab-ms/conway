@@ -73,6 +73,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 
 	authModule := auth.New(opts.Database, opts.Self, opts.Turnstile, opts.AuthIssuer)
 	a.Add(authModule)
+	a.Router.Authenticator = authModule // Must set before adding modules that use WithAuthn
 
 	a.Add(email.New(opts.Database, opts.EmailSender))
 	a.Add(oauth2.New(opts.Database, opts.Self, opts.OAuthIssuer))

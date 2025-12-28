@@ -139,7 +139,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 
 	a := engine.NewApp(conf.HttpAddr, router)
 
-	authModule := modules.Register(a, modules.Options{
+	modules.Register(a, modules.Options{
 		Database:             database,
 		Self:                 self,
 		AuthIssuer:           engine.NewTokenIssuer("auth.pem"),
@@ -159,7 +159,6 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		DiscordGuildID:       conf.DiscordGuildID,
 		DiscordRoleID:        conf.DiscordRoleID,
 	})
-	a.Router.Authenticator = authModule // IMPORTANT
 
 	return a, nil
 }
