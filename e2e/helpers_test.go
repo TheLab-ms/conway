@@ -1,11 +1,14 @@
 package e2e
 
 import (
+	"bufio"
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -329,6 +332,85 @@ func expect(t *testing.T) playwright.PlaywrightAssertions {
 func stripeTestEnabled() bool {
 	// Check both possible env var names
 	return os.Getenv("STRIPE_TEST_KEY") != "" || os.Getenv("CONWAY_STRIPE_KEY") != ""
+}
+
+// startStripeCLI spawns the Stripe CLI for webhook forwarding and returns when ready.
+// It registers a cleanup function to kill the process when the test ends.
+// The forwardURL should be the full URL to forward webhooks to (e.g., "localhost:18080/webhooks/stripe").
+func startStripeCLI(t *testing.T, forwardURL string) {
+	t.Helper()
+
+	cmd := exec.Command("stripe", "listen", "--forward-to", forwardURL)
+
+	// Capture stdout to detect when the CLI is ready
+	stdout, err := cmd.StdoutPipe()
+	require.NoError(t, err, "could not create stdout pipe for stripe CLI")
+
+	// Capture stderr for debugging (Stripe CLI outputs to stderr too)
+	stderr, err := cmd.StderrPipe()
+	require.NoError(t, err, "could not create stderr pipe for stripe CLI")
+
+	err = cmd.Start()
+	require.NoError(t, err, "could not start stripe CLI - ensure 'stripe' is installed and authenticated")
+
+	// Register cleanup to kill the process
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			t.Log("Stopping Stripe CLI webhook forwarding")
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	})
+
+	// Wait for the CLI to be ready by looking for "Ready!" in the output
+	ready := make(chan struct{})
+	errChan := make(chan error, 1)
+
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			t.Logf("stripe stdout: %s", line)
+			if strings.Contains(line, "Ready!") {
+				close(ready)
+				return
+			}
+		}
+	}()
+
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			t.Logf("stripe stderr: %s", line)
+			if strings.Contains(line, "Ready!") {
+				close(ready)
+				return
+			}
+		}
+	}()
+
+	// Also check for early exit
+	go func() {
+		err := cmd.Wait()
+		if err != nil {
+			select {
+			case errChan <- fmt.Errorf("stripe CLI exited unexpectedly: %w", err):
+			default:
+			}
+		}
+	}()
+
+	// Wait for ready signal or timeout
+	select {
+	case <-ready:
+		t.Log("Stripe CLI webhook forwarding is ready")
+	case err := <-errChan:
+		t.Fatalf("stripe CLI failed: %v", err)
+	case <-time.After(30 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("timeout waiting for stripe CLI to become ready")
+	}
 }
 
 // waitForMemberState polls the database until the member's fields match the expected values or times out.

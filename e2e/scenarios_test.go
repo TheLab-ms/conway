@@ -1064,12 +1064,15 @@ func TestKeyfob_StatusEndpoint(t *testing.T) {
 // This test requires:
 //   - STRIPE_TEST_KEY or CONWAY_STRIPE_KEY environment variable
 //   - STRIPE_TEST_WEBHOOK_KEY or CONWAY_STRIPE_WEBHOOK_KEY environment variable
-//   - Stripe CLI forwarding webhooks: stripe listen --forward-to localhost:18080/webhooks/stripe
+//   - The 'stripe' CLI installed and authenticated
 //   - A price with lookup_key "monthly" in your Stripe test account
 func TestStripe_SubscriptionLifecycle(t *testing.T) {
 	if !stripeTestEnabled() {
-		t.Skip("Skipping Stripe test: STRIPE_TEST_KEY not set. Run with Stripe CLI: stripe listen --forward-to localhost:18080/webhooks/stripe")
+		t.Skip("Skipping Stripe test: STRIPE_TEST_KEY not set")
 	}
+
+	// Start Stripe CLI for webhook forwarding
+	startStripeCLI(t, "localhost:18080/webhooks/stripe")
 
 	clearTestData(t)
 
