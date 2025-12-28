@@ -21,7 +21,7 @@ func TestLogin_CodeLinkValid(t *testing.T) {
 	seedLoginCode(t, "12345", memberID, "/", time.Now().Add(5*time.Minute))
 
 	page := newPage(t)
-	_, err := page.Goto(baseURL + "/login/code/12345")
+	_, err := page.Goto(baseURL + "/login/code?code=12345")
 	require.NoError(t, err)
 
 	err = page.WaitForURL("**/")
@@ -38,7 +38,7 @@ func TestLogin_CodeLinkExpired(t *testing.T) {
 	seedLoginCode(t, "99999", memberID, "/", time.Now().Add(-1*time.Minute))
 
 	page := newPage(t)
-	resp, err := page.Goto(baseURL + "/login/code/99999")
+	resp, err := page.Goto(baseURL + "/login/code?code=99999")
 	require.NoError(t, err)
 
 	assert.Equal(t, 400, resp.Status())
@@ -48,7 +48,7 @@ func TestLogin_CodeLinkExpired(t *testing.T) {
 func TestLogin_CodeLinkInvalid(t *testing.T) {
 	page := setupUnauthenticatedTest(t)
 
-	resp, err := page.Goto(baseURL + "/login/code/00000")
+	resp, err := page.Goto(baseURL + "/login/code?code=00000")
 	require.NoError(t, err)
 
 	assert.Equal(t, 400, resp.Status())
@@ -89,14 +89,14 @@ func TestLogin_CodeSingleUse(t *testing.T) {
 
 	// First use should succeed
 	page := newPage(t)
-	_, err := page.Goto(baseURL + "/login/code/11111")
+	_, err := page.Goto(baseURL + "/login/code?code=11111")
 	require.NoError(t, err)
 	err = page.WaitForURL("**/")
 	require.NoError(t, err)
 
 	// Second use should fail
 	page2 := newPage(t)
-	resp, err := page2.Goto(baseURL + "/login/code/11111")
+	resp, err := page2.Goto(baseURL + "/login/code?code=11111")
 	require.NoError(t, err)
 	assert.Equal(t, 400, resp.Status())
 }
@@ -117,6 +117,80 @@ func TestLogin_SentPageShowsEmail(t *testing.T) {
 	count, err := digits.Count()
 	require.NoError(t, err)
 	assert.Equal(t, 5, count, "should have 5 code digit inputs")
+}
+
+// TestLoginFlow_TypeCode tests the full login flow where the user types
+// the login code from their email into the code entry form.
+func TestLoginFlow_TypeCode(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+	email := "typeflow@example.com"
+
+	// Step 1: Navigate to login page and submit email
+	loginPage := NewLoginPage(t, page)
+	loginPage.Navigate()
+	loginPage.FillEmail(email)
+	loginPage.Submit()
+	loginPage.ExpectSentPage()
+
+	// Step 2: Verify email was queued
+	subject, body, found := getLastEmail(t, email)
+	require.True(t, found, "login email should be queued in outbound_mail")
+	assert.Equal(t, "Makerspace Login", subject)
+
+	// Step 3: Extract the code from the email body
+	code := extractLoginCodeFromEmail(t, body)
+	require.Len(t, code, 5, "login code should be 5 digits")
+
+	// Step 4: Enter the code digit-by-digit on the sent page
+	digits := page.Locator(".code-digit")
+	for i, digit := range code {
+		err := digits.Nth(i).Fill(string(digit))
+		require.NoError(t, err)
+	}
+
+	// Step 5: Auto-submit should trigger, wait for redirect to dashboard
+	err := page.WaitForURL("**/")
+	require.NoError(t, err)
+
+	// Step 6: Verify we're logged in and on the dashboard
+	dashboard := NewMemberDashboardPage(t, page)
+	dashboard.ExpectMissingWaiverAlert() // New member won't have waiver
+}
+
+// TestLoginFlow_ClickEmailLink tests the full login flow where the user
+// clicks the login link from their email.
+func TestLoginFlow_ClickEmailLink(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+	email := "linkflow@example.com"
+
+	// Step 1: Navigate to login page and submit email
+	loginPage := NewLoginPage(t, page)
+	loginPage.Navigate()
+	loginPage.FillEmail(email)
+	loginPage.Submit()
+	loginPage.ExpectSentPage()
+
+	// Step 2: Verify email was queued
+	subject, body, found := getLastEmail(t, email)
+	require.True(t, found, "login email should be queued in outbound_mail")
+	assert.Equal(t, "Makerspace Login", subject)
+
+	// Step 3: Extract the login link from the email body
+	link := extractLoginCodeLinkFromEmail(t, body)
+	require.NotEmpty(t, link, "email should contain login link")
+	assert.Contains(t, link, "/login/code?code=")
+
+	// Step 4: Click the link (navigate to it)
+	_, err := page.Goto(link)
+	require.NoError(t, err)
+
+	// Step 5: Wait for redirect to dashboard
+	err = page.WaitForURL("**/")
+	require.NoError(t, err)
+
+	// Step 6: Verify we're logged in and on the dashboard
+	dashboard := NewMemberDashboardPage(t, page)
+	dashboard.ExpectMissingWaiverAlert() // New member won't have waiver
 }
 
 // TestLogout verifies that logging out clears the session and redirects
@@ -161,7 +235,7 @@ func TestAuth_CallbackPreservation(t *testing.T) {
 
 	// Login via code link with the callback
 	seedLoginCode(t, "22222", memberID, "/admin/members", time.Now().Add(5*time.Minute))
-	_, err = page.Goto(baseURL + "/login/code/22222")
+	_, err = page.Goto(baseURL + "/login/code?code=22222")
 	require.NoError(t, err)
 
 	err = page.WaitForURL("**/admin/members**")
@@ -359,7 +433,7 @@ func TestJourney_NewMemberOnboarding(t *testing.T) {
 	err = testDB.QueryRow("SELECT code FROM login_codes WHERE email = ?", email).Scan(&code)
 	require.NoError(t, err, "login code should be created")
 
-	_, err = page.Goto(baseURL + "/login/code/" + code)
+	_, err = page.Goto(baseURL + "/login/code?code=" + code)
 	require.NoError(t, err)
 
 	err = page.WaitForURL("**/")
@@ -404,7 +478,7 @@ func TestJourney_WaiverThenLogin(t *testing.T) {
 	err = testDB.QueryRow("SELECT code FROM login_codes WHERE email = ?", email).Scan(&code)
 	require.NoError(t, err, "login code should be created")
 
-	_, err = page.Goto(baseURL + "/login/code/" + code)
+	_, err = page.Goto(baseURL + "/login/code?code=" + code)
 	require.NoError(t, err)
 
 	// Check that member has waiver linked

@@ -279,11 +279,11 @@ func extractLoginCodeFromEmail(t *testing.T, body string) string {
 	return ""
 }
 
-// extractLoginCodeLinkFromEmail parses the short link URL from an email body.
+// extractLoginCodeLinkFromEmail parses the login link URL from an email body.
 func extractLoginCodeLinkFromEmail(t *testing.T, body string) string {
 	t.Helper()
-	// Look for /login/code/{code} pattern
-	re := regexp.MustCompile(`href="([^"]*\/login\/code\/\d{5})"`)
+	// Look for /login/code?code={code} pattern
+	re := regexp.MustCompile(`href="([^"]*\/login\/code\?code=\d{5})"`)
 	matches := re.FindStringSubmatch(body)
 	if len(matches) >= 2 {
 		return matches[1]
