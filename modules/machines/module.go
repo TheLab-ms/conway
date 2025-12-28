@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS print_jobs (
 CREATE INDEX IF NOT EXISTS print_jobs_status_idx ON print_jobs (status);
 CREATE INDEX IF NOT EXISTS print_jobs_printer_serial_idx ON print_jobs (printer_serial);
 
+-- Ensure only one running job per printer (prevents duplicate notifications)
+CREATE UNIQUE INDEX IF NOT EXISTS print_jobs_one_running_per_printer ON print_jobs (printer_serial) WHERE status = 'running';
+
 -- Trigger to queue Discord notification when job reaches terminal state
 -- This ensures atomicity: status update and notification queueing happen in the same transaction
 CREATE TRIGGER IF NOT EXISTS print_job_notification_trigger
@@ -100,11 +103,11 @@ type PrinterStatus struct {
 type Module struct {
 	state atomic.Pointer[[]PrinterStatus]
 
-	db                   *sql.DB
-	notificationChannel  string
-	printers             []*bambulabs_api.Printer
-	configs              []*printerConfig
-	serialToName         map[string]string
+	db                  *sql.DB
+	notificationChannel string
+	printers            []*bambulabs_api.Printer
+	configs             []*printerConfig
+	serialToName        map[string]string
 
 	streams map[string]*engine.StreamMux
 
@@ -312,6 +315,9 @@ func (m *Module) poll(ctx context.Context) bool {
 			continue
 		}
 
+		js, _ := json.Marshal(data)
+		println("TODO", string(js))
+
 		s := PrinterStatus{
 			PrinterName:  name,
 			SerialNumber: printer.GetSerial(),
@@ -420,7 +426,8 @@ func (m *Module) onJobStarted(ctx context.Context, printer PrinterStatus) {
 
 	_, err := m.db.ExecContext(ctx, `
 		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, gcode_file_display, discord_user_id, notification_channel, started_at, estimated_finish_at, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running')`,
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, 'running'
+		WHERE NOT EXISTS (SELECT 1 FROM print_jobs WHERE printer_serial = $1 AND status = 'running')`,
 		printer.SerialNumber, printer.PrinterName, printer.GcodeFile, displayName, nullString(discordUserID), nullString(m.notificationChannel),
 		time.Now().Unix(), estimatedFinish)
 	if err != nil {

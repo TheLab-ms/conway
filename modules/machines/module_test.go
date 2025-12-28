@@ -215,6 +215,72 @@ func TestTrigger_FailedStatus(t *testing.T) {
 	}
 }
 
+func TestDuplicateRunningJobsPrevented(t *testing.T) {
+	database, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open test database: %v", err)
+	}
+	defer database.Close()
+
+	db.MustMigrate(database, discordWebhookMigration)
+	db.MustMigrate(database, migration)
+
+	ctx := context.Background()
+
+	// Simulate the INSERT query used by onJobStarted (with NOT EXISTS pattern)
+	insertQuery := `
+		INSERT INTO print_jobs (printer_serial, printer_name, gcode_file, notification_channel, started_at, status)
+		SELECT $1, $2, $3, $4, $5, 'running'
+		WHERE NOT EXISTS (SELECT 1 FROM print_jobs WHERE printer_serial = $1 AND status = 'running')`
+
+	// First insert should succeed
+	result, err := database.ExecContext(ctx, insertQuery,
+		"ABC123", "Printer1", "benchy.gcode", "test-channel", time.Now().Unix())
+	if err != nil {
+		t.Fatalf("failed to insert first print job: %v", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows != 1 {
+		t.Errorf("expected 1 row affected for first insert, got %d", rows)
+	}
+
+	// Second insert for same printer should be skipped (NOT EXISTS prevents it)
+	result, err = database.ExecContext(ctx, insertQuery,
+		"ABC123", "Printer1", "benchy2.gcode", "test-channel", time.Now().Unix())
+	if err != nil {
+		t.Fatalf("second insert failed unexpectedly: %v", err)
+	}
+	rows, _ = result.RowsAffected()
+	if rows != 0 {
+		t.Errorf("expected 0 rows affected for duplicate insert, got %d", rows)
+	}
+
+	// Verify only 1 job exists
+	var count int
+	err = database.QueryRow("SELECT COUNT(*) FROM print_jobs WHERE status = 'running'").Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to count jobs: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 running job, got %d", count)
+	}
+
+	// Complete the job
+	_, err = database.ExecContext(ctx, `UPDATE print_jobs SET status = 'completed' WHERE printer_serial = 'ABC123' AND status = 'running'`)
+	if err != nil {
+		t.Fatalf("failed to complete job: %v", err)
+	}
+
+	// Verify only 1 notification was queued (not 2)
+	err = database.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to count notifications: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 notification, got %d", count)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
 }
