@@ -132,12 +132,12 @@ templ renderLoginEmail(self *url.URL, code string) {
 			Enter this code on the login page, or click the link below:
 		</p>
 		<p style="text-align: center; margin: 20px 0;">
-			<a href={ templ.SafeURL(fmt.Sprintf("%s/login/code/%s", self.String(), code)) } style="background-color: #0d6efd; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+			<a href={ templ.SafeURL(fmt.Sprintf("%s/login/code?code=%s", self.String(), code)) } style="background-color: #0d6efd; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
 				Sign In to TheLab
 			</a>
 		</p>
 		<p style="text-align: center; color: #999; font-size: 12px;">
-			Or copy this link: <a href={ templ.SafeURL(fmt.Sprintf("%s/login/code/%s", self.String(), code)) }>{ self.String() }/login/code/{ code }</a>
+			Or copy this link: <a href={ templ.SafeURL(fmt.Sprintf("%s/login/code?code=%s", self.String(), code)) }>{ self.String() }/login/code?code={ code }</a>
 		</p>
 		<hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;"/>
 		<p style="color: #666; font-size: 14px;">

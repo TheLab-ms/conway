@@ -55,7 +55,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	})
 
 	router.HandleFunc("POST /login/code", m.handleLoginCodeSubmit)
-	router.HandleFunc("GET /login/code/{code}", m.handleLoginCodeLink)
+	router.HandleFunc("GET /login/code", m.handleLoginCodeLink)
 
 	router.HandleFunc("GET /whoami", m.WithAuthn(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -249,11 +249,11 @@ func (s *Module) handleLoginCodeSubmit(w http.ResponseWriter, r *http.Request) {
 	s.verifyCodeAndLogin(w, r, code)
 }
 
-// handleLoginCodeLink handles short link clicks from email (GET /login/code/{code}).
+// handleLoginCodeLink handles short link clicks from email (GET /login/code?code=xxxxx).
 func (s *Module) handleLoginCodeLink(w http.ResponseWriter, r *http.Request) {
 	s.authLimiter.Wait(r.Context())
 
-	code := r.PathValue("code")
+	code := r.URL.Query().Get("code")
 	s.verifyCodeAndLogin(w, r, code)
 }
 
