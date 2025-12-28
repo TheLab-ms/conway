@@ -35,3 +35,6 @@ jobs:
 
     - name: Run tests
       run: go test ./... -v
+      env:
+        CONWAY_STRIPE_KEY: ${{ secrets.CONWAY_STRIPE_KEY }}
+        CONWAY_STRIPE_WEBHOOK_KEY: ${{ secrets.CONWAY_STRIPE_WEBHOOK_KEY }}
