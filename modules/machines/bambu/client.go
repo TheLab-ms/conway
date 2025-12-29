@@ -1,6 +1,3 @@
-// Package bambu provides a minimal MQTT client for Bambu Lab printers.
-// This client exposes only the fields needed by the machines module,
-// including SubtaskName (plate name) which is user-editable in Bambu Studio.
 package bambu
 
 import (
@@ -239,7 +236,6 @@ func (p *Printer) publishCommand(cmd map[string]any) error {
 }
 
 // mqttMessage represents the structure of MQTT messages from Bambu printers.
-// This is a minimal struct containing only the fields we need.
 type mqttMessage struct {
 	Print struct {
 		GcodeFile        string `json:"gcode_file"`

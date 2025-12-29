@@ -113,6 +113,14 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /admin/chart", router.WithLeadership(m.renderMetricsChart))
 	router.HandleFunc("GET /admin/metrics", router.WithLeadership(m.renderMetricsPageHandler))
 
+	router.HandleFunc("POST /admin/members/{id}/delete", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
+		_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", r.PathValue("id"))
+		if engine.HandleError(w, err) {
+			return
+		}
+		http.Redirect(w, r, "/admin/members", http.StatusSeeOther)
+	}))
+
 	for _, handle := range formHandlers {
 		router.HandleFunc("POST "+handle.Path, router.WithLeadership(handle.BuildHandler(m.db)))
 	}

@@ -16,7 +16,6 @@ import (
 	"github.com/TheLab-ms/conway/modules"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/machines"
-	"github.com/TheLab-ms/conway/modules/machines/bambu"
 	"github.com/playwright-community/playwright-go"
 	"github.com/stripe/stripe-go/v78"
 )
@@ -133,7 +132,7 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 
 	// Machines module with mock printer data for testing
 	inUseTime := time.Now().Add(30 * time.Minute).Unix()
-	testMachinesModule = machines.NewForTesting([]bambu.PrinterData{
+	testMachinesModule = machines.NewForTesting([]machines.PrinterStatus{
 		{PrinterName: "Printer A", SerialNumber: "test-001"},
 		{PrinterName: "Printer B", SerialNumber: "test-002", JobFinishedTimestamp: &inUseTime},
 		{PrinterName: "Printer C", SerialNumber: "test-003", ErrorCode: "HMS_0300_0100_0001"},

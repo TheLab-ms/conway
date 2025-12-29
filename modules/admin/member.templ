@@ -75,7 +75,7 @@ func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*
 
 var _ = handlePostForm(formHandler{
 	Path: "/admin/members/{id}/updates/basics",
-	Post: &engine.PostFormHandler{
+	Handler: &engine.FormHandler{
 		Fields: []string{"name", "email", "confirmed", "fob_id", "admin_notes", "bill_annually", "discord_user_id"},
 		Query: `UPDATE members SET name_override = (CASE WHEN :name = name OR :name = '' THEN NULL ELSE :name END), email = :email, admin_notes = :admin_notes,
 			discord_user_id = (CASE WHEN :discord_user_id != '' THEN :discord_user_id ELSE NULL END),
@@ -88,7 +88,7 @@ var _ = handlePostForm(formHandler{
 
 var _ = handlePostForm(formHandler{
 	Path: "/admin/members/{id}/updates/designations",
-	Post: &engine.PostFormHandler{
+	Handler: &engine.FormHandler{
 		Fields: []string{"leadership", "non_billable"},
 		Query: `UPDATE members SET
 			leadership = (CASE WHEN :leadership = 'on' THEN 1 ELSE 0 END),
@@ -99,20 +99,12 @@ var _ = handlePostForm(formHandler{
 
 var _ = handlePostForm(formHandler{
 	Path: "/admin/members/{id}/updates/discounts",
-	Post: &engine.PostFormHandler{
+	Handler: &engine.FormHandler{
 		Fields: []string{"family_email", "discount"},
 		Query: `UPDATE members SET
 			discount_type = (CASE WHEN :discount = '' THEN NULL ELSE :discount END),
 			root_family_member = (SELECT id FROM members WHERE email = :family_email AND root_family_member IS NULL)
 			WHERE id = :route_id`,
-	},
-})
-
-var _ = handlePostForm(formHandler{
-	Path: "/admin/members/{id}/delete",
-	Delete: &engine.DeleteFormHandler{
-		Table:    "members",
-		Redirect: "/admin/members",
 	},
 })
 
