@@ -17,38 +17,17 @@ type StreamMux struct {
 	cancel  context.CancelFunc
 	gen     uint64 // generation counter to track broadcast instances
 
-	// StartSource is called when the first client subscribes.
+	// source is called when the first client subscribes.
 	// It should return an io.ReadCloser that provides the stream data.
 	// The context will be canceled when all clients disconnect.
-	StartSource func(ctx context.Context) (io.ReadCloser, error)
-
-	// BufSize is the read buffer size. Defaults to 32KB if zero.
-	BufSize int
-
-	// ChanSize is the per-client channel buffer size. Defaults to 30 if zero.
-	ChanSize int
+	source func(ctx context.Context) (io.ReadCloser, error)
 }
 
-// NewStreamMux creates a new StreamMux with the given source function.
-func NewStreamMux(startSource func(ctx context.Context) (io.ReadCloser, error)) *StreamMux {
+func NewStreamMux(source func(ctx context.Context) (io.ReadCloser, error)) *StreamMux {
 	return &StreamMux{
-		clients:     make(map[chan []byte]struct{}),
-		StartSource: startSource,
+		clients: make(map[chan []byte]struct{}),
+		source:  source,
 	}
-}
-
-func (s *StreamMux) bufSize() int {
-	if s.BufSize > 0 {
-		return s.BufSize
-	}
-	return 32 * 1024
-}
-
-func (s *StreamMux) chanSize() int {
-	if s.ChanSize > 0 {
-		return s.ChanSize
-	}
-	return 30
 }
 
 // Subscribe returns a channel that receives stream data.
@@ -65,7 +44,7 @@ func (s *StreamMux) Subscribe() chan []byte {
 		s.gen++
 		myGen := s.gen
 
-		reader, err := s.StartSource(ctx)
+		reader, err := s.source(ctx)
 		if err != nil {
 			slog.Error("streammux: failed to start source", "error", err)
 			cancel()
@@ -76,7 +55,7 @@ func (s *StreamMux) Subscribe() chan []byte {
 		go s.broadcast(ctx, reader, myGen)
 	}
 
-	ch := make(chan []byte, s.chanSize())
+	ch := make(chan []byte, 30)
 	s.clients[ch] = struct{}{}
 	return ch
 }
@@ -114,7 +93,7 @@ func (s *StreamMux) broadcast(ctx context.Context, reader io.ReadCloser, myGen u
 		s.mu.Unlock()
 	}()
 
-	buf := make([]byte, s.bufSize())
+	buf := make([]byte, 64*1024)
 	for {
 		select {
 		case <-ctx.Done():

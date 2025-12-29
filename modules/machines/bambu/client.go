@@ -1,10 +1,13 @@
 package bambu
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"os/exec"
 	"strconv"
 	"sync"
 	"time"
@@ -245,4 +248,48 @@ type mqttMessage struct {
 		McRemainingTime  int    `json:"mc_remaining_time"` // Minutes
 		McPercent        int    `json:"mc_percent"`        // 0-100
 	} `json:"print"`
+}
+
+// CameraStream returns an io.ReadCloser that provides MJPEG frames from the printer's camera.
+// The caller is responsible for closing the reader when done.
+// The context is used to terminate the FFmpeg process.
+func (p *Printer) CameraStream(ctx context.Context) (io.ReadCloser, error) {
+	rtspURL := fmt.Sprintf("rtsps://bblp:%s@%s:322/streaming/live/1", p.config.AccessCode, p.config.Host)
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-rtsp_transport", "tcp",
+		"-i", rtspURL,
+		"-c:v", "mjpeg",
+		"-q:v", "5",
+		"-r", "15",
+		"-an",
+		"-f", "mpjpeg",
+		"-boundary_tag", "frame",
+		"pipe:1",
+	)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ffmpeg stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+
+	slog.Info("started camera stream", "serial", p.config.SerialNumber)
+
+	return &cmdReader{ReadCloser: stdout, cmd: cmd, serial: p.config.SerialNumber}, nil
+}
+
+type cmdReader struct {
+	io.ReadCloser
+	cmd    *exec.Cmd
+	serial string
+}
+
+func (c *cmdReader) Close() error {
+	err := c.ReadCloser.Close()
+	c.cmd.Wait()
+	slog.Info("stopped camera stream", "serial", c.serial)
+	return err
 }

@@ -129,21 +129,6 @@ func TestStreamMux_BroadcastToMultiple(t *testing.T) {
 	}
 }
 
-func TestStreamMux_DefaultSizes(t *testing.T) {
-	mux := &StreamMux{}
-	assert.Equal(t, 32*1024, mux.bufSize())
-	assert.Equal(t, 30, mux.chanSize())
-}
-
-func TestStreamMux_CustomSizes(t *testing.T) {
-	mux := &StreamMux{
-		BufSize:  1024,
-		ChanSize: 10,
-	}
-	assert.Equal(t, 1024, mux.bufSize())
-	assert.Equal(t, 10, mux.chanSize())
-}
-
 // blockingReader blocks on Read until context is canceled
 type blockingReader struct {
 	ctx context.Context

@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os/exec"
 	"regexp"
 	"sync"
 	"sync/atomic"
@@ -97,12 +96,15 @@ func New(config string, database *sql.DB, notificationChannel string, messageQue
 	}
 	for _, cfg := range configs {
 		m.serialToName[cfg.SerialNumber] = cfg.Name
-		m.printers = append(m.printers, bambu.NewPrinter(&bambu.PrinterConfig{
+		printer := bambu.NewPrinter(&bambu.PrinterConfig{
 			Host:         cfg.Host,
 			AccessCode:   cfg.AccessCode,
 			SerialNumber: cfg.SerialNumber,
-		}))
-		m.streams[cfg.SerialNumber] = m.newStreamMux(cfg)
+		})
+		m.printers = append(m.printers, printer)
+		m.streams[cfg.SerialNumber] = engine.NewStreamMux(func(ctx context.Context) (io.ReadCloser, error) {
+			return printer.CameraStream(ctx)
+		})
 	}
 	zero := []PrinterStatus{}
 	m.state.Store(&zero)
@@ -171,50 +173,6 @@ func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {
 	renderMachines(*m.state.Load()).Render(r.Context(), w)
 }
 
-func (m *Module) newStreamMux(cfg *printerConfig) *engine.StreamMux {
-	rtspURL := fmt.Sprintf("rtsps://bblp:%s@%s:322/streaming/live/1", cfg.AccessCode, cfg.Host)
-	return engine.NewStreamMux(func(ctx context.Context) (io.ReadCloser, error) {
-		cmd := exec.CommandContext(ctx, "ffmpeg",
-			"-rtsp_transport", "tcp",
-			"-i", rtspURL,
-			"-c:v", "mjpeg",
-			"-q:v", "5",
-			"-r", "15",
-			"-an",
-			"-f", "mpjpeg",
-			"-boundary_tag", "frame",
-			"pipe:1",
-		)
-
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create ffmpeg stdout pipe: %w", err)
-		}
-
-		if err := cmd.Start(); err != nil {
-			return nil, fmt.Errorf("failed to start ffmpeg: %w", err)
-		}
-
-		slog.Info("started camera stream", "printer", m.serialToName[cfg.SerialNumber])
-
-		// Return a wrapper that waits for cmd on close
-		return &cmdReader{ReadCloser: stdout, cmd: cmd, name: m.serialToName[cfg.SerialNumber]}, nil
-	})
-}
-
-type cmdReader struct {
-	io.ReadCloser
-	cmd  *exec.Cmd
-	name string
-}
-
-func (c *cmdReader) Close() error {
-	err := c.ReadCloser.Close()
-	c.cmd.Wait()
-	slog.Info("stopped camera stream", "printer", c.name)
-	return err
-}
-
 func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 	serial := r.PathValue("serial")
 
@@ -277,10 +235,10 @@ func (m *Module) poll(ctx context.Context) bool {
 		}
 
 		s := PrinterStatus{
-			PrinterData:  data,
-			PrinterName:  name,
-			SerialNumber: printer.GetSerial(),
-			ErrorCode:    data.PrintErrorCode,
+			PrinterData:   data,
+			PrinterName:   name,
+			SerialNumber:  printer.GetSerial(),
+			ErrorCode:     data.PrintErrorCode,
 			DiscordUserID: parseDiscordUserID(data.GcodeFile),
 		}
 		// Prefer SubtaskName (plate name) for display, fall back to stripped gcode filename
