@@ -19,19 +19,16 @@ const (
 	mqttClientID   = "conway-bambu-client"
 	mqttPort       = 8883
 	mqttQoS        = 0
-	updateInterval = 10 * time.Second
 	connectTimeout = 5 * time.Second
+	dataTimeout    = 10 * time.Second
 )
 
-// PrinterConfig holds the configuration for connecting to a Bambu printer.
 type PrinterConfig struct {
 	Host         string
 	AccessCode   string
 	SerialNumber string
 }
 
-// PrinterData contains the relevant printer status fields.
-// This is a minimal struct exposing only what we need from the printer's MQTT data.
 type PrinterData struct {
 	GcodeFile          string // Current gcode filename
 	SubtaskName        string // User-editable plate name from Bambu Studio
@@ -41,33 +38,24 @@ type PrinterData struct {
 	PrintPercentDone   int    // Completion percentage (0-100)
 }
 
-// IsEmpty returns true if no meaningful data has been received.
-func (d *PrinterData) IsEmpty() bool {
-	return d.GcodeFile == "" && d.SubtaskName == "" && d.GcodeState == ""
-}
-
-// Printer represents a connection to a Bambu Lab printer.
 type Printer struct {
 	config *PrinterConfig
 	client paho.Client
 
-	mu         sync.RWMutex
+	mu         sync.Mutex
+	cond       *sync.Cond
 	data       mqttMessage
 	lastUpdate time.Time
-
-	stopChan chan struct{}
-	stopped  bool
 }
 
-// NewPrinter creates a new Printer instance.
 func NewPrinter(config *PrinterConfig) *Printer {
-	return &Printer{
-		config:   config,
-		stopChan: make(chan struct{}),
+	p := &Printer{
+		config: config,
 	}
+	p.cond = sync.NewCond(&p.mu)
+	return p
 }
 
-// Connect establishes an MQTT connection to the printer.
 func (p *Printer) Connect() error {
 	p.mu.Lock()
 	if p.client != nil && p.client.IsConnected() {
@@ -96,19 +84,12 @@ func (p *Printer) Connect() error {
 		return fmt.Errorf("failed to connect to printer MQTT: %w", token.Error())
 	}
 
-	// Start periodic update goroutine
-	go p.periodicUpdate()
-
 	return nil
 }
 
-// Disconnect closes the MQTT connection.
 func (p *Printer) Disconnect() {
 	p.mu.Lock()
-	if !p.stopped {
-		p.stopped = true
-		close(p.stopChan)
-	}
+	p.cond.Broadcast()
 	p.mu.Unlock()
 
 	if p.client != nil {
@@ -116,32 +97,63 @@ func (p *Printer) Disconnect() {
 	}
 }
 
-// GetSerial returns the printer's serial number.
 func (p *Printer) GetSerial() string {
 	return p.config.SerialNumber
 }
 
-// Data returns the current printer data.
+// Data blocks until fresh printer data is received, then returns it.
+// Returns an error if no data is received within the timeout.
 func (p *Printer) Data() (PrinterData, error) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	// Request update if data is stale
-	if time.Since(p.lastUpdate) > connectTimeout {
-		go p.requestUpdate()
+	// Request fresh data
+	p.requestUpdateLocked()
+
+	// Wait for data to arrive (with timeout)
+	deadline := time.Now().Add(dataTimeout)
+	lastUpdateBefore := p.lastUpdate
+
+	for {
+		// Check if we received new data since requesting
+		if p.lastUpdate.After(lastUpdateBefore) {
+			return PrinterData{
+				GcodeFile:          p.data.Print.GcodeFile,
+				SubtaskName:        p.data.Print.SubtaskName,
+				GcodeState:         p.data.Print.GcodeState,
+				PrintErrorCode:     p.data.Print.McPrintErrorCode,
+				RemainingPrintTime: p.data.Print.McRemainingTime,
+				PrintPercentDone:   p.data.Print.McPercent,
+			}, nil
+		}
+
+		// Check timeout
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return PrinterData{}, fmt.Errorf("timeout waiting for printer data")
+		}
+
+		// Wait for signal with timeout using a goroutine
+		done := make(chan struct{})
+		go func() {
+			time.Sleep(remaining)
+			p.mu.Lock()
+			p.cond.Broadcast()
+			p.mu.Unlock()
+			close(done)
+		}()
+
+		p.cond.Wait()
+
+		select {
+		case <-done:
+			// Timer fired, will check timeout on next iteration
+		default:
+			// Data arrived, will check on next iteration
+		}
 	}
-
-	return PrinterData{
-		GcodeFile:          p.data.Print.GcodeFile,
-		SubtaskName:        p.data.Print.SubtaskName,
-		GcodeState:         p.data.Print.GcodeState,
-		PrintErrorCode:     p.data.Print.McPrintErrorCode,
-		RemainingPrintTime: p.data.Print.McRemainingTime,
-		PrintPercentDone:   p.data.Print.McPercent,
-	}, nil
 }
 
-// StopPrint sends a stop command to the printer.
 func (p *Printer) StopPrint() error {
 	state := p.getGcodeState()
 	if state == "IDLE" || state == "" {
@@ -157,8 +169,8 @@ func (p *Printer) StopPrint() error {
 }
 
 func (p *Printer) getGcodeState() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.data.Print.GcodeState
 }
 
@@ -187,47 +199,16 @@ func (p *Printer) handleMessage(client paho.Client, msg paho.Message) {
 	}
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// Merge non-zero fields from received into p.data
-	p.mergeData(&received)
+	p.data = received
 	p.lastUpdate = time.Now()
+	p.cond.Broadcast()
+	p.mu.Unlock()
 }
 
-func (p *Printer) mergeData(received *mqttMessage) {
-	// Only update fields that have non-zero values in the received message
-	if received.Print.GcodeFile != "" {
-		p.data.Print.GcodeFile = received.Print.GcodeFile
-	}
-	if received.Print.SubtaskName != "" {
-		p.data.Print.SubtaskName = received.Print.SubtaskName
-	}
-	if received.Print.GcodeState != "" {
-		p.data.Print.GcodeState = received.Print.GcodeState
-	}
-	if received.Print.McPrintErrorCode != "" {
-		p.data.Print.McPrintErrorCode = received.Print.McPrintErrorCode
-	}
-	if received.Print.McRemainingTime != 0 {
-		p.data.Print.McRemainingTime = received.Print.McRemainingTime
-	}
-	if received.Print.McPercent != 0 {
-		p.data.Print.McPercent = received.Print.McPercent
-	}
-}
-
-func (p *Printer) periodicUpdate() {
-	ticker := time.NewTicker(updateInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			p.requestUpdate()
-		case <-p.stopChan:
-			return
-		}
-	}
+func (p *Printer) requestUpdateLocked() {
+	p.mu.Unlock()
+	p.requestUpdate()
+	p.mu.Lock()
 }
 
 func (p *Printer) requestUpdate() {
