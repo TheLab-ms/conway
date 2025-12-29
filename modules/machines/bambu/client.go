@@ -31,7 +31,7 @@ type PrinterConfig struct {
 }
 
 // PrinterData contains the relevant printer status fields.
-// This is a minimal struct exposing only what we need.
+// This is a minimal struct exposing only what we need from the printer's MQTT data.
 type PrinterData struct {
 	GcodeFile          string // Current gcode filename
 	SubtaskName        string // User-editable plate name from Bambu Studio
@@ -39,15 +39,6 @@ type PrinterData struct {
 	PrintErrorCode     string // Error code if print failed
 	RemainingPrintTime int    // Minutes remaining
 	PrintPercentDone   int    // Completion percentage (0-100)
-
-	// UI-related fields populated by the machines module
-	PrinterName          string `json:"printer_name"`
-	SerialNumber         string `json:"serial_number"`
-	JobFinishedTimestamp *int64 `json:"job_finished_timestamp"`
-	ErrorCode            string `json:"error_code"`
-	GcodeFileDisplay     string `json:"gcode_file_display"` // Display name (SubtaskName if set, else stripped gcode filename)
-	DiscordUserID        string `json:"discord_user_id"`
-	OwnerDiscordUsername string `json:"owner_discord_username"`
 }
 
 // IsEmpty returns true if no meaningful data has been received.

@@ -9,7 +9,7 @@ import (
 )
 
 func TestSamplingBasics(t *testing.T) {
-	testDB := engine.OpenTest(t)
+	testDB := engine.OpenTestDB(t)
 	m := New(testDB)
 
 	// Create a custom metrics table

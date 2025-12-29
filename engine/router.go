@@ -18,7 +18,7 @@ type Authenticator interface {
 
 type noopAuthenticator struct{}
 
-func (noopAuthenticator) WithAuthn(fn http.HandlerFunc) http.HandlerFunc     { return fn }
+func (noopAuthenticator) WithAuthn(fn http.HandlerFunc) http.HandlerFunc      { return fn }
 func (noopAuthenticator) WithLeadership(fn http.HandlerFunc) http.HandlerFunc { return fn }
 
 type Router struct {
@@ -73,7 +73,7 @@ func SystemError(w http.ResponseWriter, msg string, args ...any) {
 func ClientError(w http.ResponseWriter, title, message string, code int) {
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(code)
-	RenderError(title, message).Render(context.Background(), w)
+	renderError(title, message).Render(context.Background(), w)
 }
 
 // HandleError returns true if err is non-nil, logging the error and sending

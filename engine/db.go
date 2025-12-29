@@ -9,8 +9,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Open opens a SQLite database at the given path.
-func Open(path string) (*sql.DB, error) {
+// OpenDB opens a SQLite database at the given path.
+func OpenDB(path string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?cache=shared&mode=rwc&_journal_mode=WAL", path))
 	if err != nil {
 		return nil, err
@@ -19,10 +19,10 @@ func Open(path string) (*sql.DB, error) {
 	return db, err
 }
 
-// OpenTest creates a test database in a temporary directory.
-func OpenTest(t *testing.T) *sql.DB {
+// OpenTestDB creates a test database in a temporary directory.
+func OpenTestDB(t *testing.T) *sql.DB {
 	path := filepath.Join(t.TempDir(), "db")
-	db, err := Open(path)
+	db, err := OpenDB(path)
 	if err != nil {
 		t.Fatal(err)
 	}

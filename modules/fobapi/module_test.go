@@ -33,7 +33,7 @@ CREATE UNIQUE INDEX fob_swipes_uniq ON fob_swipes (fob_id, timestamp);
 `
 
 func TestListing(t *testing.T) {
-	db := engine.OpenTest(t)
+	db := engine.OpenTestDB(t)
 	_, err := db.Exec(migration)
 	require.NoError(t, err)
 
@@ -59,7 +59,7 @@ func TestListing(t *testing.T) {
 }
 
 func TestEvents(t *testing.T) {
-	db := engine.OpenTest(t)
+	db := engine.OpenTestDB(t)
 	_, err := db.Exec(migration)
 	require.NoError(t, err)
 

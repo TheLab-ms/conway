@@ -34,8 +34,23 @@ type printerConfig struct {
 	SerialNumber string `json:"serial_number"`
 }
 
+// PrinterStatus contains the full printer status including UI-related fields.
+// It embeds PrinterData for the raw printer data and adds computed/enriched fields
+// that the machines module populates for display purposes.
+type PrinterStatus struct {
+	bambu.PrinterData
+
+	PrinterName          string `json:"printer_name"`
+	SerialNumber         string `json:"serial_number"`
+	JobFinishedTimestamp *int64 `json:"job_finished_timestamp"`
+	ErrorCode            string `json:"error_code"`
+	GcodeFileDisplay     string `json:"gcode_file_display"`
+	DiscordUserID        string `json:"discord_user_id"`
+	OwnerDiscordUsername string `json:"owner_discord_username"`
+}
+
 type Module struct {
-	state atomic.Pointer[[]bambu.PrinterData]
+	state atomic.Pointer[[]PrinterStatus]
 
 	db                  *sql.DB // Only used for member username lookups
 	notificationChannel string
@@ -89,14 +104,14 @@ func New(config string, database *sql.DB, notificationChannel string, messageQue
 		}))
 		m.streams[cfg.SerialNumber] = m.newStreamMux(cfg)
 	}
-	zero := []bambu.PrinterData{}
+	zero := []PrinterStatus{}
 	m.state.Store(&zero)
 	return m
 }
 
 // NewForTesting creates a Module with mock printer data for e2e tests.
 // The printers slice defines what the UI will render - no real connections are made.
-func NewForTesting(printers []bambu.PrinterData) *Module {
+func NewForTesting(printers []PrinterStatus) *Module {
 	m := &Module{
 		streams:  map[string]*engine.StreamMux{},
 		testMode: true,
@@ -106,7 +121,7 @@ func NewForTesting(printers []bambu.PrinterData) *Module {
 }
 
 // SetTestState updates the printer state (for testing only).
-func (m *Module) SetTestState(printers []bambu.PrinterData) {
+func (m *Module) SetTestState(printers []PrinterStatus) {
 	m.state.Store(&printers)
 }
 
@@ -248,7 +263,7 @@ func (m *Module) poll(ctx context.Context) bool {
 
 	oldState := m.state.Load()
 
-	var state []bambu.PrinterData
+	var state []PrinterStatus
 	for _, printer := range m.printers {
 		name := m.serialToName[printer.GetSerial()]
 		if err := printer.Connect(); err != nil {
@@ -261,15 +276,12 @@ func (m *Module) poll(ctx context.Context) bool {
 			continue
 		}
 
-		s := bambu.PrinterData{
-			PrinterName:    name,
-			SerialNumber:   printer.GetSerial(),
-			GcodeFile:      data.GcodeFile,
-			SubtaskName:    data.SubtaskName,
-			GcodeState:     data.GcodeState,
-			PrintErrorCode: data.PrintErrorCode,
-			ErrorCode:      data.PrintErrorCode,
-			DiscordUserID:  parseDiscordUserID(data.GcodeFile),
+		s := PrinterStatus{
+			PrinterData:  data,
+			PrinterName:  name,
+			SerialNumber: printer.GetSerial(),
+			ErrorCode:    data.PrintErrorCode,
+			DiscordUserID: parseDiscordUserID(data.GcodeFile),
 		}
 		// Prefer SubtaskName (plate name) for display, fall back to stripped gcode filename
 		if s.SubtaskName != "" {
@@ -326,7 +338,7 @@ func parseDiscordUserID(filename string) string {
 }
 
 // findPrinterBySerial finds a printer in a state slice by serial number.
-func findPrinterBySerial(state []bambu.PrinterData, serial string) *bambu.PrinterData {
+func findPrinterBySerial(state []PrinterStatus, serial string) *PrinterStatus {
 	for i := range state {
 		if state[i].SerialNumber == serial {
 			return &state[i]
@@ -336,7 +348,7 @@ func findPrinterBySerial(state []bambu.PrinterData, serial string) *bambu.Printe
 }
 
 // detectStateChanges compares old and new printer states to detect job transitions and send notifications.
-func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []bambu.PrinterData) {
+func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []PrinterStatus) {
 	for _, newPrinter := range newState {
 		oldPrinter := findPrinterBySerial(oldState, newPrinter.SerialNumber)
 
@@ -425,7 +437,7 @@ func (m *Module) sendCompletedNotificationFromState(ctx context.Context, state n
 }
 
 // sendFailedNotification queues a Discord notification for a failed print.
-func (m *Module) sendFailedNotification(ctx context.Context, printer bambu.PrinterData) {
+func (m *Module) sendFailedNotification(ctx context.Context, printer PrinterStatus) {
 	if m.notificationChannel == "" || m.messageQueuer == nil {
 		return
 	}
@@ -470,7 +482,7 @@ func stripDiscordID(filename string) string {
 }
 
 // populateOwnerUsernames looks up Discord usernames for printers with active jobs.
-func (m *Module) populateOwnerUsernames(ctx context.Context, state []bambu.PrinterData) {
+func (m *Module) populateOwnerUsernames(ctx context.Context, state []PrinterStatus) {
 	for i := range state {
 		if state[i].JobFinishedTimestamp == nil && state[i].ErrorCode == "" {
 			continue // No active job

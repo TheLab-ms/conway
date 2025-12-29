@@ -49,11 +49,11 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 	finishTime := int64(1234567890)
 
 	// Simulate job starting
-	oldState := []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
+	oldState := []PrinterStatus{
+		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
-	newState := []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "123456789012345678_benchy.gcode", GcodeFileDisplay: "benchy.gcode", DiscordUserID: "123456789012345678"},
+	newState := []PrinterStatus{
+		{PrinterData: bambu.PrinterData{GcodeFile: "123456789012345678_benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFileDisplay: "benchy.gcode", DiscordUserID: "123456789012345678"},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -65,8 +65,8 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 
 	// Now simulate job completing
 	oldState = newState
-	newState = []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil, GcodeFile: "", GcodeFileDisplay: "", DiscordUserID: ""},
+	newState = []PrinterStatus{
+		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil, GcodeFileDisplay: "", DiscordUserID: ""},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -102,8 +102,8 @@ func TestStateTransition_JobFailed(t *testing.T) {
 	finishTime := int64(1234567890)
 
 	// Simulate job running then failing
-	oldState := []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "benchy.gcode", GcodeFileDisplay: "benchy.gcode", ErrorCode: ""},
+	oldState := []PrinterStatus{
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFileDisplay: "benchy.gcode", ErrorCode: ""},
 	}
 	// Set hadJob state with job metadata
 	m.updateLastNotifiedState("ABC123", notifiedState{
@@ -113,8 +113,8 @@ func TestStateTransition_JobFailed(t *testing.T) {
 		printerName:      "Printer1",
 	})
 
-	newState := []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "benchy.gcode", GcodeFileDisplay: "benchy.gcode", ErrorCode: "E001"},
+	newState := []PrinterStatus{
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFileDisplay: "benchy.gcode", ErrorCode: "E001"},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -144,18 +144,18 @@ func TestStateTransition_NoDuplicateNotifications(t *testing.T) {
 	finishTime := int64(1234567890)
 
 	// Start a job
-	oldState := []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
+	oldState := []PrinterStatus{
+		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
-	newState := []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "benchy.gcode", GcodeFileDisplay: "benchy.gcode"},
+	newState := []PrinterStatus{
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFileDisplay: "benchy.gcode"},
 	}
 	m.detectStateChanges(ctx, oldState, newState)
 
 	// Complete the job
 	oldState = newState
-	newState = []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
+	newState = []PrinterStatus{
+		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
 	m.detectStateChanges(ctx, oldState, newState)
 
@@ -192,11 +192,11 @@ func TestStateTransition_NoNotificationWhenChannelEmpty(t *testing.T) {
 		gcodeFileDisplay: "benchy.gcode",
 		printerName:      "Printer1",
 	})
-	oldState := []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "benchy.gcode"},
+	oldState := []PrinterStatus{
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime},
 	}
-	newState := []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
+	newState := []PrinterStatus{
+		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
 	m.detectStateChanges(ctx, oldState, newState)
 
@@ -222,11 +222,11 @@ func TestStateTransition_NoNotificationWhenQueuerNil(t *testing.T) {
 		gcodeFileDisplay: "benchy.gcode",
 		printerName:      "Printer1",
 	})
-	oldState := []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFile: "benchy.gcode"},
+	oldState := []PrinterStatus{
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime},
 	}
-	newState := []bambu.PrinterData{
-		{SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
+	newState := []PrinterStatus{
+		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
 	m.detectStateChanges(ctx, oldState, newState)
 	// Should complete without panic

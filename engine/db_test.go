@@ -9,11 +9,11 @@ import (
 
 func TestDB(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "test.db")
-	db1, err := Open(file)
+	db1, err := OpenDB(file)
 	require.NoError(t, err)
 	db1.Close()
 
-	db2, err := Open(file)
+	db2, err := OpenDB(file)
 	require.NoError(t, err)
 	db2.Close()
 }

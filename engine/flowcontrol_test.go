@@ -122,7 +122,7 @@ func (m *mockWorkqueue) UpdateItem(ctx context.Context, i any, ok bool) error { 
 
 func TestCleanup(t *testing.T) {
 	ctx := t.Context()
-	database := OpenTest(t)
+	database := OpenTestDB(t)
 
 	_, err := database.ExecContext(ctx, `CREATE TABLE test_items (id INTEGER PRIMARY KEY, timestamp INTEGER)`)
 	require.NoError(t, err)

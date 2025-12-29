@@ -91,7 +91,7 @@ func setupTestServer() error {
 	testKeyDir = tmpDir
 
 	dbPath := filepath.Join(tmpDir, "test.db")
-	testDB, err = engine.Open(dbPath)
+	testDB, err = engine.OpenDB(dbPath)
 	if err != nil {
 		return fmt.Errorf("could not open test database: %w", err)
 	}

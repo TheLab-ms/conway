@@ -9,7 +9,7 @@ import (
 
 // NewTestDB creates a test database with the core schema applied.
 func NewTestDB(t *testing.T) *sql.DB {
-	d := engine.OpenTest(t)
+	d := engine.OpenTestDB(t)
 	engine.MustMigrate(d, Migration)
 	return d
 }
