@@ -6,7 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/TheLab-ms/conway/engine/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -123,7 +122,7 @@ func (m *mockWorkqueue) UpdateItem(ctx context.Context, i any, ok bool) error { 
 
 func TestCleanup(t *testing.T) {
 	ctx := t.Context()
-	database := db.OpenTest(t)
+	database := OpenTest(t)
 
 	_, err := database.ExecContext(ctx, `CREATE TABLE test_items (id INTEGER PRIMARY KEY, timestamp INTEGER)`)
 	require.NoError(t, err)

@@ -1,7 +1,4 @@
-// Package db provides database utilities for Conway.
-// This package contains generic database infrastructure only.
-// Schema definitions belong in the modules that use them.
-package db
+package engine
 
 import (
 	"database/sql"
