@@ -124,7 +124,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 
 	var machinesMod *machines.Module
 	if conf.BambuPrinters != "" {
-		machinesMod = machines.New(conf.BambuPrinters, database, conf.DiscordPrintChannel, discordWebhookMod)
+		machinesMod = machines.New(conf.BambuPrinters, conf.DiscordPrintChannel, discordWebhookMod)
 	} else {
 		slog.Info("machines module disabled because no devices were configured")
 	}

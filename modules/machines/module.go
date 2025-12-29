@@ -2,13 +2,11 @@ package machines
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,12 +15,6 @@ import (
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/machines/bambu"
 )
-
-// discordUserIDPrefixPattern matches Discord snowflake IDs (17-19 digits) at the start of a filename
-var discordUserIDPrefixPattern = regexp.MustCompile(`^(\d{17,19})_`)
-
-// discordUserIDSuffixPattern matches Discord snowflake IDs (17-19 digits) at the end of a filename (before extension)
-var discordUserIDSuffixPattern = regexp.MustCompile(`_(\d{17,19})\.`)
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
@@ -43,15 +35,12 @@ type PrinterStatus struct {
 	SerialNumber         string `json:"serial_number"`
 	JobFinishedTimestamp *int64 `json:"job_finished_timestamp"`
 	ErrorCode            string `json:"error_code"`
-	GcodeFileDisplay     string `json:"gcode_file_display"`
-	DiscordUserID        string `json:"discord_user_id"`
 	OwnerDiscordUsername string `json:"owner_discord_username"`
 }
 
 type Module struct {
 	state atomic.Pointer[[]PrinterStatus]
 
-	db                  *sql.DB // Only used for member username lookups
 	notificationChannel string
 	messageQueuer       discordwebhook.MessageQueuer
 
@@ -70,16 +59,15 @@ type Module struct {
 
 // notifiedState tracks what state we last notified about for a printer.
 type notifiedState struct {
-	hadJob           bool
-	errorCode        string
-	gcodeFile        string
-	subtaskName      string // User-editable plate name from Bambu Studio
-	gcodeFileDisplay string
-	discordUserID    string
-	printerName      string
+	hadJob               bool
+	errorCode            string
+	gcodeFile            string
+	subtaskName          string // User-editable plate name from Bambu Studio (contains Discord username)
+	ownerDiscordUsername string
+	printerName          string
 }
 
-func New(config string, database *sql.DB, notificationChannel string, messageQueuer discordwebhook.MessageQueuer) *Module {
+func New(config string, notificationChannel string, messageQueuer discordwebhook.MessageQueuer) *Module {
 	configs := []*printerConfig{}
 	err := json.Unmarshal([]byte(config), &configs)
 	if err != nil {
@@ -87,7 +75,6 @@ func New(config string, database *sql.DB, notificationChannel string, messageQue
 	}
 
 	m := &Module{
-		db:                  database,
 		notificationChannel: notificationChannel,
 		messageQueuer:       messageQueuer,
 		configs:             configs,
@@ -235,17 +222,11 @@ func (m *Module) poll(ctx context.Context) bool {
 		}
 
 		s := PrinterStatus{
-			PrinterData:   data,
-			PrinterName:   name,
-			SerialNumber:  printer.GetSerial(),
-			ErrorCode:     data.PrintErrorCode,
-			DiscordUserID: parseDiscordUserID(data.GcodeFile),
-		}
-		// Prefer SubtaskName (plate name) for display, fall back to stripped gcode filename
-		if s.SubtaskName != "" {
-			s.GcodeFileDisplay = s.SubtaskName
-		} else {
-			s.GcodeFileDisplay = stripDiscordID(data.GcodeFile)
+			PrinterData:          data,
+			PrinterName:          name,
+			SerialNumber:         printer.GetSerial(),
+			ErrorCode:            data.PrintErrorCode,
+			OwnerDiscordUsername: data.SubtaskName,
 		}
 		if s.ErrorCode == "0" {
 			s.ErrorCode = ""
@@ -261,11 +242,6 @@ func (m *Module) poll(ctx context.Context) bool {
 		state = append(state, s)
 	}
 
-	// Populate owner usernames from database
-	if m.db != nil {
-		m.populateOwnerUsernames(ctx, state)
-	}
-
 	m.state.Store(&state)
 
 	// Detect state changes and send notifications
@@ -275,24 +251,6 @@ func (m *Module) poll(ctx context.Context) bool {
 
 	slog.Info("finished getting Bambu printer status", "seconds", time.Since(start).Seconds())
 	return false
-}
-
-// parseDiscordUserID extracts a Discord user ID from a filename.
-// Supports both prefix and suffix formats. Discord user IDs are 17-19 digit snowflakes.
-// Examples:
-//   - "123456789012345678_benchy.gcode" -> "123456789012345678" (prefix)
-//   - "benchy_123456789012345678.gcode" -> "123456789012345678" (suffix)
-//   - "benchy.gcode" -> ""
-func parseDiscordUserID(filename string) string {
-	// Try prefix first
-	if matches := discordUserIDPrefixPattern.FindStringSubmatch(filename); len(matches) >= 2 {
-		return matches[1]
-	}
-	// Try suffix
-	if matches := discordUserIDSuffixPattern.FindStringSubmatch(filename); len(matches) >= 2 {
-		return matches[1]
-	}
-	return ""
 }
 
 // findPrinterBySerial finds a printer in a state slice by serial number.
@@ -330,13 +288,12 @@ func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []Pr
 		if oldPrinter != nil && oldPrinter.ErrorCode == "" && hasError {
 			m.sendFailedNotification(ctx, newPrinter)
 			m.updateLastNotifiedState(newPrinter.SerialNumber, notifiedState{
-				hadJob:           hasJob,
-				errorCode:        newPrinter.ErrorCode,
-				gcodeFile:        newPrinter.GcodeFile,
-				subtaskName:      newPrinter.SubtaskName,
-				gcodeFileDisplay: newPrinter.GcodeFileDisplay,
-				discordUserID:    newPrinter.DiscordUserID,
-				printerName:      newPrinter.PrinterName,
+				hadJob:               hasJob,
+				errorCode:            newPrinter.ErrorCode,
+				gcodeFile:            newPrinter.GcodeFile,
+				subtaskName:          newPrinter.SubtaskName,
+				ownerDiscordUsername: newPrinter.OwnerDiscordUsername,
+				printerName:          newPrinter.PrinterName,
 			})
 			slog.Info("print job failed", "printer", newPrinter.PrinterName, "error_code", newPrinter.ErrorCode)
 			continue
@@ -345,14 +302,13 @@ func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []Pr
 		// Job started: update tracking with job metadata (no notification needed for start)
 		if (oldPrinter == nil || oldPrinter.JobFinishedTimestamp == nil) && hasJob && newPrinter.GcodeFile != "" {
 			m.updateLastNotifiedState(newPrinter.SerialNumber, notifiedState{
-				hadJob:           true,
-				gcodeFile:        newPrinter.GcodeFile,
-				subtaskName:      newPrinter.SubtaskName,
-				gcodeFileDisplay: newPrinter.GcodeFileDisplay,
-				discordUserID:    newPrinter.DiscordUserID,
-				printerName:      newPrinter.PrinterName,
+				hadJob:               true,
+				gcodeFile:            newPrinter.GcodeFile,
+				subtaskName:          newPrinter.SubtaskName,
+				ownerDiscordUsername: newPrinter.OwnerDiscordUsername,
+				printerName:          newPrinter.PrinterName,
 			})
-			slog.Info("print job started", "printer", newPrinter.PrinterName, "gcode", newPrinter.GcodeFile, "discord_user_id", newPrinter.DiscordUserID)
+			slog.Info("print job started", "printer", newPrinter.PrinterName, "gcode", newPrinter.GcodeFile, "owner", newPrinter.OwnerDiscordUsername)
 		}
 	}
 }
@@ -376,18 +332,13 @@ func (m *Module) sendCompletedNotificationFromState(ctx context.Context, state n
 		return
 	}
 
-	mention := ""
-	if state.discordUserID != "" {
-		mention = fmt.Sprintf("<@%s> ", state.discordUserID)
+	owner := ""
+	if state.ownerDiscordUsername != "" {
+		owner = fmt.Sprintf("%s: ", state.ownerDiscordUsername)
 	}
 
-	displayName := state.gcodeFileDisplay
-	if displayName == "" {
-		displayName = state.gcodeFile
-	}
-
-	payload := fmt.Sprintf(`{"content":"%sYour print '%s' on %s has completed successfully.","username":"Conway Print Bot"}`,
-		mention, displayName, state.printerName)
+	payload := fmt.Sprintf(`{"content":"%sYour print on %s has completed successfully.","username":"Conway Print Bot"}`,
+		owner, state.printerName)
 
 	if err := m.messageQueuer.QueueMessage(ctx, m.notificationChannel, payload); err != nil {
 		slog.Error("failed to queue completion notification", "error", err, "printer", state.printerName)
@@ -400,14 +351,9 @@ func (m *Module) sendFailedNotification(ctx context.Context, printer PrinterStat
 		return
 	}
 
-	mention := ""
-	if printer.DiscordUserID != "" {
-		mention = fmt.Sprintf("<@%s> ", printer.DiscordUserID)
-	}
-
-	displayName := printer.GcodeFileDisplay
-	if displayName == "" {
-		displayName = printer.GcodeFile
+	owner := ""
+	if printer.OwnerDiscordUsername != "" {
+		owner = fmt.Sprintf("%s: ", printer.OwnerDiscordUsername)
 	}
 
 	errorCode := printer.ErrorCode
@@ -415,49 +361,10 @@ func (m *Module) sendFailedNotification(ctx context.Context, printer PrinterStat
 		errorCode = "unknown"
 	}
 
-	payload := fmt.Sprintf(`{"content":"%sYour print '%s' on %s has failed. Error code: %s","username":"Conway Print Bot"}`,
-		mention, displayName, printer.PrinterName, errorCode)
+	payload := fmt.Sprintf(`{"content":"%sYour print on %s has failed. Error code: %s","username":"Conway Print Bot"}`,
+		owner, printer.PrinterName, errorCode)
 
 	if err := m.messageQueuer.QueueMessage(ctx, m.notificationChannel, payload); err != nil {
 		slog.Error("failed to queue failure notification", "error", err, "printer", printer.PrinterName)
-	}
-}
-
-// stripDiscordID removes the Discord user ID (prefix or suffix) from a filename for display.
-func stripDiscordID(filename string) string {
-	// Try prefix first
-	if loc := discordUserIDPrefixPattern.FindStringIndex(filename); loc != nil {
-		return filename[loc[1]:]
-	}
-	// Try suffix - need to preserve the extension
-	if loc := discordUserIDSuffixPattern.FindStringIndex(filename); loc != nil {
-		// loc[0] is start of "_ID.", we want everything before "_" and after "ID"
-		// Extract extension (everything from the last .)
-		ext := filename[loc[1]-1:] // includes the dot
-		return filename[:loc[0]] + ext
-	}
-	return filename
-}
-
-// populateOwnerUsernames looks up Discord usernames for printers with active jobs.
-func (m *Module) populateOwnerUsernames(ctx context.Context, state []PrinterStatus) {
-	for i := range state {
-		if state[i].JobFinishedTimestamp == nil && state[i].ErrorCode == "" {
-			continue // No active job
-		}
-		if state[i].DiscordUserID == "" {
-			continue // No Discord ID in filename
-		}
-		var username sql.NullString
-		err := m.db.QueryRowContext(ctx, `
-			SELECT discord_username FROM members WHERE discord_user_id = $1 LIMIT 1`,
-			state[i].DiscordUserID).Scan(&username)
-		if err != nil && err != sql.ErrNoRows {
-			slog.Warn("failed to query owner username", "error", err, "printer", state[i].PrinterName)
-			continue
-		}
-		if username.Valid {
-			state[i].OwnerDiscordUsername = username.String
-		}
 	}
 }

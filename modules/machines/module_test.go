@@ -53,7 +53,7 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
 	newState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "123456789012345678_benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFileDisplay: "benchy.gcode", DiscordUserID: "123456789012345678"},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "jordan"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "jordan"},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -66,7 +66,7 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 	// Now simulate job completing
 	oldState = newState
 	newState = []PrinterStatus{
-		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil, GcodeFileDisplay: "", DiscordUserID: ""},
+		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil, OwnerDiscordUsername: ""},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -80,14 +80,11 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 	if messages[0].channelID != "test-channel" {
 		t.Errorf("expected channel_id 'test-channel', got %q", messages[0].channelID)
 	}
-	if !contains(messages[0].payload, "benchy.gcode") {
-		t.Errorf("payload should contain filename, got: %s", messages[0].payload)
-	}
 	if !contains(messages[0].payload, "completed successfully") {
 		t.Errorf("payload should contain 'completed successfully', got: %s", messages[0].payload)
 	}
-	if !contains(messages[0].payload, "<@123456789012345678>") {
-		t.Errorf("payload should contain Discord mention, got: %s", messages[0].payload)
+	if !contains(messages[0].payload, "jordan:") {
+		t.Errorf("payload should contain Discord username 'jordan:', got: %s", messages[0].payload)
 	}
 }
 
@@ -103,18 +100,18 @@ func TestStateTransition_JobFailed(t *testing.T) {
 
 	// Simulate job running then failing
 	oldState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFileDisplay: "benchy.gcode", ErrorCode: ""},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "testuser", ErrorCode: ""},
 	}
 	// Set hadJob state with job metadata
 	m.updateLastNotifiedState("ABC123", notifiedState{
-		hadJob:           true,
-		gcodeFile:        "benchy.gcode",
-		gcodeFileDisplay: "benchy.gcode",
-		printerName:      "Printer1",
+		hadJob:               true,
+		gcodeFile:            "benchy.gcode",
+		ownerDiscordUsername: "testuser",
+		printerName:          "Printer1",
 	})
 
 	newState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFileDisplay: "benchy.gcode", ErrorCode: "E001"},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "testuser", ErrorCode: "E001"},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -130,6 +127,9 @@ func TestStateTransition_JobFailed(t *testing.T) {
 	}
 	if !contains(messages[0].payload, "E001") {
 		t.Errorf("payload should contain error code 'E001', got: %s", messages[0].payload)
+	}
+	if !contains(messages[0].payload, "testuser:") {
+		t.Errorf("payload should contain Discord username 'testuser:', got: %s", messages[0].payload)
 	}
 }
 
@@ -148,7 +148,7 @@ func TestStateTransition_NoDuplicateNotifications(t *testing.T) {
 		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
 	newState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, GcodeFileDisplay: "benchy.gcode"},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime},
 	}
 	m.detectStateChanges(ctx, oldState, newState)
 
@@ -187,10 +187,9 @@ func TestStateTransition_NoNotificationWhenChannelEmpty(t *testing.T) {
 
 	// Start and complete a job
 	m.updateLastNotifiedState("ABC123", notifiedState{
-		hadJob:           true,
-		gcodeFile:        "benchy.gcode",
-		gcodeFileDisplay: "benchy.gcode",
-		printerName:      "Printer1",
+		hadJob:      true,
+		gcodeFile:   "benchy.gcode",
+		printerName: "Printer1",
 	})
 	oldState := []PrinterStatus{
 		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime},
@@ -217,10 +216,9 @@ func TestStateTransition_NoNotificationWhenQueuerNil(t *testing.T) {
 
 	// Start and complete a job - should not panic
 	m.updateLastNotifiedState("ABC123", notifiedState{
-		hadJob:           true,
-		gcodeFile:        "benchy.gcode",
-		gcodeFileDisplay: "benchy.gcode",
-		printerName:      "Printer1",
+		hadJob:      true,
+		gcodeFile:   "benchy.gcode",
+		printerName: "Printer1",
 	})
 	oldState := []PrinterStatus{
 		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime},
@@ -243,162 +241,4 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
-}
-
-func TestParseDiscordUserID(t *testing.T) {
-	tests := []struct {
-		name     string
-		filename string
-		want     string
-	}{
-		// Prefix format tests
-		{
-			name:     "prefix: valid 17-digit ID",
-			filename: "12345678901234567_benchy.gcode",
-			want:     "12345678901234567",
-		},
-		{
-			name:     "prefix: valid 18-digit ID",
-			filename: "123456789012345678_benchy.gcode",
-			want:     "123456789012345678",
-		},
-		{
-			name:     "prefix: valid 19-digit ID",
-			filename: "1234567890123456789_benchy.gcode",
-			want:     "1234567890123456789",
-		},
-		{
-			name:     "prefix: 3mf extension",
-			filename: "123456789012345678_phone-case.3mf",
-			want:     "123456789012345678",
-		},
-		// Suffix format tests
-		{
-			name:     "suffix: valid 17-digit ID",
-			filename: "benchy_12345678901234567.gcode",
-			want:     "12345678901234567",
-		},
-		{
-			name:     "suffix: valid 18-digit ID",
-			filename: "benchy_123456789012345678.gcode",
-			want:     "123456789012345678",
-		},
-		{
-			name:     "suffix: valid 19-digit ID",
-			filename: "benchy_1234567890123456789.gcode",
-			want:     "1234567890123456789",
-		},
-		{
-			name:     "suffix: 3mf extension",
-			filename: "phone-case_123456789012345678.3mf",
-			want:     "123456789012345678",
-		},
-		{
-			name:     "suffix: with dashes in name",
-			filename: "my-cool-print_123456789012345678.gcode",
-			want:     "123456789012345678",
-		},
-		// No ID tests
-		{
-			name:     "no ID",
-			filename: "benchy.gcode",
-			want:     "",
-		},
-		{
-			name:     "too short ID prefix (16 digits)",
-			filename: "1234567890123456_benchy.gcode",
-			want:     "",
-		},
-		{
-			name:     "too short ID suffix (16 digits)",
-			filename: "benchy_1234567890123456.gcode",
-			want:     "",
-		},
-		{
-			name:     "too long ID prefix (20 digits)",
-			filename: "12345678901234567890_benchy.gcode",
-			want:     "",
-		},
-		{
-			name:     "no underscore separator",
-			filename: "123456789012345678benchy.gcode",
-			want:     "",
-		},
-		{
-			name:     "empty filename",
-			filename: "",
-			want:     "",
-		},
-		// Prefix takes precedence when both could match
-		{
-			name:     "prefix takes precedence",
-			filename: "123456789012345678_benchy_987654321012345678.gcode",
-			want:     "123456789012345678",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseDiscordUserID(tt.filename)
-			if got != tt.want {
-				t.Errorf("parseDiscordUserID(%q) = %q, want %q", tt.filename, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestStripDiscordID(t *testing.T) {
-	tests := []struct {
-		name     string
-		filename string
-		want     string
-	}{
-		// Prefix format
-		{
-			name:     "prefix: with ID",
-			filename: "123456789012345678_benchy.gcode",
-			want:     "benchy.gcode",
-		},
-		// Suffix format
-		{
-			name:     "suffix: with ID",
-			filename: "benchy_123456789012345678.gcode",
-			want:     "benchy.gcode",
-		},
-		{
-			name:     "suffix: with dashes in name",
-			filename: "my-cool-print_123456789012345678.gcode",
-			want:     "my-cool-print.gcode",
-		},
-		{
-			name:     "suffix: 3mf extension",
-			filename: "phone-case_123456789012345678.3mf",
-			want:     "phone-case.3mf",
-		},
-		// No ID
-		{
-			name:     "without ID",
-			filename: "benchy.gcode",
-			want:     "benchy.gcode",
-		},
-		{
-			name:     "empty string",
-			filename: "",
-			want:     "",
-		},
-		{
-			name:     "underscore but no valid ID",
-			filename: "short_benchy.gcode",
-			want:     "short_benchy.gcode",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := stripDiscordID(tt.filename)
-			if got != tt.want {
-				t.Errorf("stripDiscordID(%q) = %q, want %q", tt.filename, got, tt.want)
-			}
-		})
-	}
 }
