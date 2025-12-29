@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/TheLab-ms/conway/engine/db"
+	"github.com/TheLab-ms/conway/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +33,7 @@ CREATE UNIQUE INDEX fob_swipes_uniq ON fob_swipes (fob_id, timestamp);
 `
 
 func TestListing(t *testing.T) {
-	db := db.OpenTest(t)
+	db := engine.OpenTest(t)
 	_, err := db.Exec(migration)
 	require.NoError(t, err)
 
@@ -59,7 +59,7 @@ func TestListing(t *testing.T) {
 }
 
 func TestEvents(t *testing.T) {
-	db := db.OpenTest(t)
+	db := engine.OpenTest(t)
 	_, err := db.Exec(migration)
 	require.NoError(t, err)
 

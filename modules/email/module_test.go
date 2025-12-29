@@ -7,14 +7,13 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/engine/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMailDispatch(t *testing.T) {
 	ctx := context.Background()
-	db := db.OpenTest(t)
+	db := engine.OpenTest(t)
 
 	messages := []string{}
 	m := New(db, func(ctx context.Context, to, subj string, msg []byte) error {
@@ -45,7 +44,7 @@ func TestMailDispatch(t *testing.T) {
 
 func TestExponentialBackoffOnFailure(t *testing.T) {
 	ctx := context.Background()
-	db := db.OpenTest(t)
+	db := engine.OpenTest(t)
 
 	failCount := 0
 	m := New(db, func(ctx context.Context, to, subj string, msg []byte) error {

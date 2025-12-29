@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/engine/db"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 )
@@ -54,7 +53,7 @@ type Module struct {
 }
 
 func New(d *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIssuer) *Module {
-	db.MustMigrate(d, migration)
+	engine.MustMigrate(d, migration)
 	return &Module{db: d, self: self, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), tokens: tokens}
 }
 

@@ -3,13 +3,13 @@ package discordwebhook
 import (
 	"testing"
 
-	"github.com/TheLab-ms/conway/engine/db"
+	"github.com/TheLab-ms/conway/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestQueueMessage(t *testing.T) {
-	testDB := db.OpenTest(t)
+	testDB := engine.OpenTest(t)
 
 	webhookURLs := map[string]string{
 		"3d-printing": "https://discord.com/api/webhooks/test",
@@ -39,7 +39,7 @@ func TestQueueMessage(t *testing.T) {
 }
 
 func TestGetItem(t *testing.T) {
-	testDB := db.OpenTest(t)
+	testDB := engine.OpenTest(t)
 
 	webhookURLs := map[string]string{
 		"test-channel": "https://discord.com/api/webhooks/test",
@@ -61,7 +61,7 @@ func TestGetItem(t *testing.T) {
 }
 
 func TestProcessItemNoWebhookURL(t *testing.T) {
-	testDB := db.OpenTest(t)
+	testDB := engine.OpenTest(t)
 
 	// Empty webhook URLs
 	webhookURLs := map[string]string{}
@@ -81,7 +81,7 @@ func TestProcessItemNoWebhookURL(t *testing.T) {
 }
 
 func TestUpdateItemSuccess(t *testing.T) {
-	testDB := db.OpenTest(t)
+	testDB := engine.OpenTest(t)
 
 	m := New(testDB, nil, nil)
 	ctx := t.Context()

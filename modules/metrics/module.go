@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/engine/db"
 )
 
 const defaultTTL = 2 * 365 * 24 * 60 * 60 // 2 years in seconds
@@ -126,7 +125,7 @@ type Module struct {
 }
 
 func New(d *sql.DB) *Module {
-	db.MustMigrate(d, migration)
+	engine.MustMigrate(d, migration)
 	return &Module{db: d}
 }
 

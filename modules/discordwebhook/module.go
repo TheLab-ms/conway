@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/engine/db"
 )
 
 const migration = `
@@ -40,7 +39,7 @@ type Module struct {
 }
 
 func New(d *sql.DB, sender Sender, webhookURLs map[string]string) *Module {
-	db.MustMigrate(d, migration)
+	engine.MustMigrate(d, migration)
 	m := &Module{db: d, sender: sender, webhookURLs: webhookURLs}
 	if m.sender == nil {
 		m.sender = newNoopSender()

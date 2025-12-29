@@ -16,7 +16,7 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
-	"github.com/torbenconto/bambulabs_api"
+	"github.com/TheLab-ms/conway/modules/machines/bambu"
 )
 
 // discordUserIDPrefixPattern matches Discord snowflake IDs (17-19 digits) at the start of a filename
@@ -34,20 +34,8 @@ type printerConfig struct {
 	SerialNumber string `json:"serial_number"`
 }
 
-// PrinterStatus represents the current state of a printer for UI rendering.
-type PrinterStatus struct {
-	PrinterName          string `json:"printer_name"`
-	SerialNumber         string `json:"serial_number"`
-	JobFinishedTimestamp *int64 `json:"job_finished_timestamp"`
-	ErrorCode            string `json:"error_code"`
-	GcodeFile            string `json:"gcode_file"`
-	GcodeFileDisplay     string `json:"gcode_file_display"`
-	DiscordUserID        string `json:"discord_user_id"`
-	OwnerDiscordUsername string `json:"owner_discord_username"`
-}
-
 type Module struct {
-	state atomic.Pointer[[]PrinterStatus]
+	state atomic.Pointer[[]bambu.PrinterData]
 
 	db                  *sql.DB // Only used for member username lookups
 	notificationChannel string
@@ -57,7 +45,7 @@ type Module struct {
 	// Key: serial number, Value: notifiedState
 	lastNotifiedState sync.Map
 
-	printers     []*bambulabs_api.Printer
+	printers     []*bambu.Printer
 	configs      []*printerConfig
 	serialToName map[string]string
 
@@ -71,6 +59,7 @@ type notifiedState struct {
 	hadJob           bool
 	errorCode        string
 	gcodeFile        string
+	subtaskName      string // User-editable plate name from Bambu Studio
 	gcodeFileDisplay string
 	discordUserID    string
 	printerName      string
@@ -93,21 +82,21 @@ func New(config string, database *sql.DB, notificationChannel string, messageQue
 	}
 	for _, cfg := range configs {
 		m.serialToName[cfg.SerialNumber] = cfg.Name
-		m.printers = append(m.printers, bambulabs_api.NewPrinter(&bambulabs_api.PrinterConfig{
+		m.printers = append(m.printers, bambu.NewPrinter(&bambu.PrinterConfig{
 			Host:         cfg.Host,
 			AccessCode:   cfg.AccessCode,
 			SerialNumber: cfg.SerialNumber,
 		}))
 		m.streams[cfg.SerialNumber] = m.newStreamMux(cfg)
 	}
-	zero := []PrinterStatus{}
+	zero := []bambu.PrinterData{}
 	m.state.Store(&zero)
 	return m
 }
 
 // NewForTesting creates a Module with mock printer data for e2e tests.
 // The printers slice defines what the UI will render - no real connections are made.
-func NewForTesting(printers []PrinterStatus) *Module {
+func NewForTesting(printers []bambu.PrinterData) *Module {
 	m := &Module{
 		streams:  map[string]*engine.StreamMux{},
 		testMode: true,
@@ -117,7 +106,7 @@ func NewForTesting(printers []PrinterStatus) *Module {
 }
 
 // SetTestState updates the printer state (for testing only).
-func (m *Module) SetTestState(printers []PrinterStatus) {
+func (m *Module) SetTestState(printers []bambu.PrinterData) {
 	m.state.Store(&printers)
 }
 
@@ -131,7 +120,7 @@ func (m *Module) stopPrint(w http.ResponseWriter, r *http.Request) {
 	serial := r.PathValue("serial")
 
 	// Find the printer for this serial number
-	var printer *bambulabs_api.Printer
+	var printer *bambu.Printer
 	for _, p := range m.printers {
 		if p.GetSerial() == serial {
 			printer = p
@@ -259,7 +248,7 @@ func (m *Module) poll(ctx context.Context) bool {
 
 	oldState := m.state.Load()
 
-	var state []PrinterStatus
+	var state []bambu.PrinterData
 	for _, printer := range m.printers {
 		name := m.serialToName[printer.GetSerial()]
 		if err := printer.Connect(); err != nil {
@@ -272,13 +261,21 @@ func (m *Module) poll(ctx context.Context) bool {
 			continue
 		}
 
-		s := PrinterStatus{
-			PrinterName:      name,
-			SerialNumber:     printer.GetSerial(),
-			ErrorCode:        data.PrintErrorCode,
-			GcodeFile:        data.GcodeFile,
-			GcodeFileDisplay: stripDiscordID(data.GcodeFile),
-			DiscordUserID:    parseDiscordUserID(data.GcodeFile),
+		s := bambu.PrinterData{
+			PrinterName:    name,
+			SerialNumber:   printer.GetSerial(),
+			GcodeFile:      data.GcodeFile,
+			SubtaskName:    data.SubtaskName,
+			GcodeState:     data.GcodeState,
+			PrintErrorCode: data.PrintErrorCode,
+			ErrorCode:      data.PrintErrorCode,
+			DiscordUserID:  parseDiscordUserID(data.GcodeFile),
+		}
+		// Prefer SubtaskName (plate name) for display, fall back to stripped gcode filename
+		if s.SubtaskName != "" {
+			s.GcodeFileDisplay = s.SubtaskName
+		} else {
+			s.GcodeFileDisplay = stripDiscordID(data.GcodeFile)
 		}
 		if s.ErrorCode == "0" {
 			s.ErrorCode = ""
@@ -329,7 +326,7 @@ func parseDiscordUserID(filename string) string {
 }
 
 // findPrinterBySerial finds a printer in a state slice by serial number.
-func findPrinterBySerial(state []PrinterStatus, serial string) *PrinterStatus {
+func findPrinterBySerial(state []bambu.PrinterData, serial string) *bambu.PrinterData {
 	for i := range state {
 		if state[i].SerialNumber == serial {
 			return &state[i]
@@ -339,7 +336,7 @@ func findPrinterBySerial(state []PrinterStatus, serial string) *PrinterStatus {
 }
 
 // detectStateChanges compares old and new printer states to detect job transitions and send notifications.
-func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []PrinterStatus) {
+func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []bambu.PrinterData) {
 	for _, newPrinter := range newState {
 		oldPrinter := findPrinterBySerial(oldState, newPrinter.SerialNumber)
 
@@ -366,6 +363,7 @@ func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []Pr
 				hadJob:           hasJob,
 				errorCode:        newPrinter.ErrorCode,
 				gcodeFile:        newPrinter.GcodeFile,
+				subtaskName:      newPrinter.SubtaskName,
 				gcodeFileDisplay: newPrinter.GcodeFileDisplay,
 				discordUserID:    newPrinter.DiscordUserID,
 				printerName:      newPrinter.PrinterName,
@@ -379,6 +377,7 @@ func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []Pr
 			m.updateLastNotifiedState(newPrinter.SerialNumber, notifiedState{
 				hadJob:           true,
 				gcodeFile:        newPrinter.GcodeFile,
+				subtaskName:      newPrinter.SubtaskName,
 				gcodeFileDisplay: newPrinter.GcodeFileDisplay,
 				discordUserID:    newPrinter.DiscordUserID,
 				printerName:      newPrinter.PrinterName,
@@ -426,7 +425,7 @@ func (m *Module) sendCompletedNotificationFromState(ctx context.Context, state n
 }
 
 // sendFailedNotification queues a Discord notification for a failed print.
-func (m *Module) sendFailedNotification(ctx context.Context, printer PrinterStatus) {
+func (m *Module) sendFailedNotification(ctx context.Context, printer bambu.PrinterData) {
 	if m.notificationChannel == "" || m.messageQueuer == nil {
 		return
 	}
@@ -471,7 +470,7 @@ func stripDiscordID(filename string) string {
 }
 
 // populateOwnerUsernames looks up Discord usernames for printers with active jobs.
-func (m *Module) populateOwnerUsernames(ctx context.Context, state []PrinterStatus) {
+func (m *Module) populateOwnerUsernames(ctx context.Context, state []bambu.PrinterData) {
 	for i := range state {
 		if state[i].JobFinishedTimestamp == nil && state[i].ErrorCode == "" {
 			continue // No active job

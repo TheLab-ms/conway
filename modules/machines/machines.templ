@@ -3,10 +3,11 @@ package machines
 import (
 	"fmt"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
+	"github.com/TheLab-ms/conway/modules/machines/bambu"
 	"time"
 )
 
-templ renderMachines(printers []PrinterStatus) {
+templ renderMachines(printers []bambu.PrinterData) {
 	@bootstrap.View() {
 		<div class="container my-5">
 			<h2>Printers</h2>

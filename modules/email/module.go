@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/engine/db"
 )
 
 const migration = `
@@ -35,7 +34,7 @@ type Module struct {
 }
 
 func New(d *sql.DB, es Sender) *Module {
-	db.MustMigrate(d, migration)
+	engine.MustMigrate(d, migration)
 	m := &Module{db: d, Sender: es}
 	if m.Sender == nil {
 		m.Sender = newNoopSender()

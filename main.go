@@ -14,7 +14,6 @@ import (
 	"os"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/engine/db"
 	"github.com/TheLab-ms/conway/modules"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
@@ -87,7 +86,7 @@ func main() {
 }
 
 func newApp(conf Config, self *url.URL) (*engine.App, error) {
-	database, err := db.Open("conway.sqlite3")
+	database, err := engine.Open("conway.sqlite3")
 	if err != nil {
 		panic(err)
 	}
