@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +16,19 @@ import (
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/machines/bambu"
 )
+
+var discordHandleRegex = regexp.MustCompile(`@([a-zA-Z0-9_.]+)`)
+
+// extractDiscordHandle extracts a Discord handle from a string.
+// It looks for patterns like @username and returns the username without the @ prefix.
+// Returns empty string if no Discord handle is found.
+func extractDiscordHandle(s string) string {
+	match := discordHandleRegex.FindStringSubmatch(s)
+	if len(match) >= 2 {
+		return match[1]
+	}
+	return ""
+}
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
@@ -226,7 +240,7 @@ func (m *Module) poll(ctx context.Context) bool {
 			PrinterName:          name,
 			SerialNumber:         printer.GetSerial(),
 			ErrorCode:            data.PrintErrorCode,
-			OwnerDiscordUsername: data.SubtaskName,
+			OwnerDiscordUsername: extractDiscordHandle(data.SubtaskName),
 		}
 		if s.ErrorCode == "0" {
 			s.ErrorCode = ""

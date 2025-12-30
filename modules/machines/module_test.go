@@ -53,7 +53,7 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
 	newState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "jordan"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "jordan"},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@jordan"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "jordan"},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -100,7 +100,7 @@ func TestStateTransition_JobFailed(t *testing.T) {
 
 	// Simulate job running then failing
 	oldState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "testuser", ErrorCode: ""},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "testuser", ErrorCode: ""},
 	}
 	// Set hadJob state with job metadata
 	m.updateLastNotifiedState("ABC123", notifiedState{
@@ -111,7 +111,7 @@ func TestStateTransition_JobFailed(t *testing.T) {
 	})
 
 	newState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "testuser", ErrorCode: "E001"},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "testuser", ErrorCode: "E001"},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -241,4 +241,30 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestExtractDiscordHandle(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"@jordan", "jordan"},
+		{"Print job for @jordan", "jordan"},
+		{"@user_123", "user_123"},
+		{"@user.name", "user.name"},
+		{"no handle here", ""},
+		{"", ""},
+		{"just text without at sign", ""},
+		{"email@example.com", "example.com"}, // @ in email will match (acceptable edge case)
+		{"@first @second", "first"},          // returns first match
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			result := extractDiscordHandle(tc.input)
+			if result != tc.expected {
+				t.Errorf("extractDiscordHandle(%q) = %q, want %q", tc.input, result, tc.expected)
+			}
+		})
+	}
 }
