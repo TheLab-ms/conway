@@ -174,6 +174,13 @@ func (p *Printer) handleMessage(client paho.Client, msg paho.Message) {
 		return
 	}
 
+	// Ignore messages that aren't print status responses.
+	// Valid responses have a gcode_state field populated.
+	if received.Print.GcodeState == "" {
+		slog.Debug("ignoring non-status printer message", "serial", p.config.SerialNumber)
+		return
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
