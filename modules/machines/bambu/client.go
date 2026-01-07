@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	mqttClientID   = "conway-bambu-client"
 	mqttPort       = 8883
 	mqttQoS        = 0
 	connectTimeout = 5 * time.Second
@@ -40,33 +39,66 @@ type PrinterData struct {
 
 type Printer struct {
 	config *PrinterConfig
-	client paho.Client
 
 	mu         sync.Mutex
-	cond       *sync.Cond
-	data       mqttMessage
-	lastUpdate time.Time
+	client     paho.Client
+	responseCh chan mqttMessage
 }
 
 func NewPrinter(config *PrinterConfig) *Printer {
-	p := &Printer{
-		config: config,
-	}
-	p.cond = sync.NewCond(&p.mu)
-	return p
+	return &Printer{config: config}
 }
 
-func (p *Printer) Connect() error {
+// GetState performs a blocking roundtrip to get fresh printer data.
+// It connects to the printer if not already connected, requests current state,
+// and waits for the response with a timeout.
+func (p *Printer) GetState() (PrinterData, error) {
 	p.mu.Lock()
-	if p.client != nil && p.client.IsConnected() {
+
+	// Connect if needed
+	if err := p.ensureConnectedLocked(); err != nil {
 		p.mu.Unlock()
+		return PrinterData{}, err
+	}
+
+	// Set up response channel for this request
+	p.responseCh = make(chan mqttMessage, 1)
+	p.mu.Unlock()
+
+	// Request fresh data
+	if err := p.requestUpdate(); err != nil {
+		return PrinterData{}, err
+	}
+
+	// Wait for response with timeout
+	select {
+	case msg := <-p.responseCh:
+		return PrinterData{
+			GcodeFile:          msg.Print.GcodeFile,
+			SubtaskName:        msg.Print.SubtaskName,
+			GcodeState:         msg.Print.GcodeState,
+			PrintErrorCode:     msg.Print.McPrintErrorCode,
+			RemainingPrintTime: msg.Print.McRemainingTime,
+			PrintPercentDone:   msg.Print.McPercent,
+		}, nil
+	case <-time.After(dataTimeout):
+		p.mu.Lock()
+		p.responseCh = nil
+		p.mu.Unlock()
+		return PrinterData{}, fmt.Errorf("timeout waiting for printer data")
+	}
+}
+
+// ensureConnectedLocked connects to the printer if not already connected.
+// Must be called with p.mu held.
+func (p *Printer) ensureConnectedLocked() error {
+	if p.client != nil && p.client.IsConnected() {
 		return nil
 	}
-	p.mu.Unlock()
 
 	opts := paho.NewClientOptions().
 		AddBroker(fmt.Sprintf("ssl://%s:%d", p.config.Host, mqttPort)).
-		SetClientID(mqttClientID).
+		SetClientID(fmt.Sprintf("conway-%s", p.config.SerialNumber)).
 		SetUsername("bblp").
 		SetPassword(p.config.AccessCode).
 		SetTLSConfig(&tls.Config{InsecureSkipVerify: true}).
@@ -89,7 +121,10 @@ func (p *Printer) Connect() error {
 
 func (p *Printer) Disconnect() {
 	p.mu.Lock()
-	p.cond.Broadcast()
+	if p.responseCh != nil {
+		close(p.responseCh)
+		p.responseCh = nil
+	}
 	p.mu.Unlock()
 
 	if p.client != nil {
@@ -101,64 +136,13 @@ func (p *Printer) GetSerial() string {
 	return p.config.SerialNumber
 }
 
-// Data blocks until fresh printer data is received, then returns it.
-// Returns an error if no data is received within the timeout.
-func (p *Printer) Data() (PrinterData, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// Request fresh data
-	p.requestUpdateLocked()
-
-	// Wait for data to arrive (with timeout)
-	deadline := time.Now().Add(dataTimeout)
-	lastUpdateBefore := p.lastUpdate
-
-	for {
-		// Check if we received new data since requesting
-		if p.lastUpdate.After(lastUpdateBefore) {
-			return PrinterData{
-				GcodeFile:          p.data.Print.GcodeFile,
-				SubtaskName:        p.data.Print.SubtaskName,
-				GcodeState:         p.data.Print.GcodeState,
-				PrintErrorCode:     p.data.Print.McPrintErrorCode,
-				RemainingPrintTime: p.data.Print.McRemainingTime,
-				PrintPercentDone:   p.data.Print.McPercent,
-			}, nil
-		}
-
-		// Check timeout
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return PrinterData{}, fmt.Errorf("timeout waiting for printer data")
-		}
-
-		// Wait for signal with timeout using a goroutine
-		done := make(chan struct{})
-		go func() {
-			time.Sleep(remaining)
-			p.mu.Lock()
-			p.cond.Broadcast()
-			p.mu.Unlock()
-			close(done)
-		}()
-
-		p.cond.Wait()
-
-		select {
-		case <-done:
-			// Timer fired, will check timeout on next iteration
-		default:
-			// Data arrived, will check on next iteration
-		}
-	}
-}
-
 func (p *Printer) StopPrint() error {
-	state := p.getGcodeState()
-	if state == "IDLE" || state == "" {
-		return fmt.Errorf("cannot stop print: printer is %s", state)
+	p.mu.Lock()
+	if err := p.ensureConnectedLocked(); err != nil {
+		p.mu.Unlock()
+		return fmt.Errorf("failed to connect: %w", err)
 	}
+	p.mu.Unlock()
 
 	return p.publishCommand(map[string]any{
 		"print": map[string]any{
@@ -166,12 +150,6 @@ func (p *Printer) StopPrint() error {
 			"sequence_id": strconv.FormatInt(time.Now().UnixMilli(), 10),
 		},
 	})
-}
-
-func (p *Printer) getGcodeState() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.data.Print.GcodeState
 }
 
 func (p *Printer) onConnect(client paho.Client) {
@@ -182,8 +160,6 @@ func (p *Printer) onConnect(client paho.Client) {
 		return
 	}
 	slog.Debug("subscribed to printer MQTT topic", "serial", p.config.SerialNumber)
-
-	// Request initial data
 	p.requestUpdate()
 }
 
@@ -199,28 +175,24 @@ func (p *Printer) handleMessage(client paho.Client, msg paho.Message) {
 	}
 
 	p.mu.Lock()
-	p.data = received
-	p.lastUpdate = time.Now()
-	p.cond.Broadcast()
-	p.mu.Unlock()
+	defer p.mu.Unlock()
+
+	if p.responseCh != nil {
+		select {
+		case p.responseCh <- received:
+		default:
+			// Channel full, drop message
+		}
+	}
 }
 
-func (p *Printer) requestUpdateLocked() {
-	p.mu.Unlock()
-	p.requestUpdate()
-	p.mu.Lock()
-}
-
-func (p *Printer) requestUpdate() {
-	err := p.publishCommand(map[string]any{
+func (p *Printer) requestUpdate() error {
+	return p.publishCommand(map[string]any{
 		"pushing": map[string]any{
 			"command":     "pushall",
 			"sequence_id": strconv.FormatInt(time.Now().UnixMilli(), 10),
 		},
 	})
-	if err != nil {
-		slog.Debug("failed to request printer update", "error", err, "serial", p.config.SerialNumber)
-	}
 }
 
 func (p *Printer) publishCommand(cmd map[string]any) error {

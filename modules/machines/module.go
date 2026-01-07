@@ -150,13 +150,6 @@ func (m *Module) stopPrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Connect and stop the print
-	if err := printer.Connect(); err != nil {
-		slog.Error("failed to connect to printer for stop", "error", err, "serial", serial)
-		engine.ClientError(w, "Connection Failed", "Failed to connect to printer", http.StatusInternalServerError)
-		return
-	}
-
 	if err := printer.StopPrint(); err != nil {
 		slog.Error("failed to stop print", "error", err, "serial", serial)
 		engine.ClientError(w, "Stop Failed", "Failed to stop print", http.StatusInternalServerError)
@@ -225,11 +218,7 @@ func (m *Module) poll(ctx context.Context) bool {
 	var state []PrinterStatus
 	for _, printer := range m.printers {
 		name := m.serialToName[printer.GetSerial()]
-		if err := printer.Connect(); err != nil {
-			slog.Warn("unable to connect to Bambu printer", "error", err, "printer", name)
-			continue
-		}
-		data, err := printer.Data()
+		data, err := printer.GetState()
 		if err != nil {
 			slog.Warn("unable to get status from Bambu printer", "error", err, "printer", name)
 			continue
