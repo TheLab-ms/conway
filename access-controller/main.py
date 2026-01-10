@@ -52,7 +52,9 @@ async def wifi_loop():
 
             if not net.isconnected():
                 print("wifi connection failed, retrying in 5s...")
+                net.active(False)
                 await asyncio.sleep(5)
+                net.active(True)
 
         await asyncio.sleep(3)
 
@@ -148,8 +150,8 @@ class ConwayClient:
 
 
 class Wiegand:
-    CARD_MASK = (1 << 17) - 2
-    FACILITY_MASK = 0xFF << 17
+    CARD_MASK = (1 << 16) - 1        # bits 0-15: card ID (16 bits)
+    FACILITY_MASK = 0xFF << 16       # bits 16-23: facility code (8 bits)
     DEBOUNCE_US = 200
     END_OF_TX_US = 25000
 
@@ -179,22 +181,29 @@ class Wiegand:
             if self.last_bit_time and self.bit_buffer and utime.ticks_diff(now, self.last_bit_time) >= Wiegand.END_OF_TX_US:
                 value = int("".join(map(str, self.bit_buffer)), 2)
 
+                bit_count = len(self.bit_buffer)
+                if bit_count != 34:
+                    print(f"unknown wiegand format: {bit_count} bits")
+                    self._reset()
+                    continue
+
                 if not self._check_parity(value):
-                    print("parity check failed!")
+                    print("parity check failed!", value)
                     self._reset()
                     continue
 
                 self.last_card = value
                 self.cards_read += 1
-                card_id = (value & Wiegand.CARD_MASK) >> 1
-                facility = (value & Wiegand.FACILITY_MASK) >> 17
-                await self.callback(card_id, facility, self.cards_read)
+
+                # 34-bit: 1 parity + 32 data + 1 parity
+                raw_32bit = (value >> 1) & 0xFFFFFFFF
+                await self.callback(raw_32bit)
                 self._reset()
 
     def _check_parity(self, value):
-        leading, trailing = (value >> 25) & 1, value & 1
-        data = (value >> 1) & ((1 << 24) - 1)
-        return (bin(data >> 12).count("1") % 2) == leading and (bin(data & 0xFFF).count("1") % 2) != trailing
+        leading, trailing = (value >> 33) & 1, value & 1
+        data = (value >> 1) & ((1 << 32) - 1)
+        return (bin(data >> 16).count("1") % 2) == leading and (bin(data & 0xFFFF).count("1") % 2) != trailing
 
     def _reset(self):
         self.bit_buffer.clear()
@@ -222,7 +231,9 @@ class Server:
                 if line == b"\r\n" or not line:
                     break
 
-            response_body = """
+            etag = self._main.conway._etag or "(none)"
+            response_body = f"""
+                <p>Cache ETag: {etag}</p>
                 <form action="/unlock" method="post">
                     <button type="submit">Unlock</button>
                 </form>
@@ -254,21 +265,31 @@ class MainLoop:
         self._failed_attempts = 0
         self._backoff_until = 0
 
-    async def on_card(self, card_number, facility_code, _):
+    async def on_card(self, raw_wiegand):
         now = utime.ticks_ms()
         if now < self._backoff_until:
             print("ignoring card read due to backoff")
             return
 
-        combined = int(f"{facility_code}{card_number}")
-        print(f"saw card {combined}")
+        # Decode "traditional" RFID fobs
+        card_id = raw_wiegand & Wiegand.CARD_MASK
+        facility = (raw_wiegand & Wiegand.FACILITY_MASK) >> 16
+        fob = int(f"{facility}{card_id}")
 
-        allowed = self.conway.check_fob(combined)
+        # Decode NFC tags
+        tag = self._reverse_bytes(raw_wiegand)
+        formatted_uid = f"{tag:08X}"
+        formatted_uid = ":".join(formatted_uid[i : i + 2] for i in range(0, 8, 2))
+
+        # Auth against the cache, fill the cache on failures
+        print(f"scan: fob:{fob} tag:{tag} nfchex:{formatted_uid}")
+        allowed = self.conway.check_fob(fob) or self.conway.check_fob(tag)
         if not allowed:
             await self.conway.sync()
-            allowed = self.conway.check_fob(combined)
+            allowed = self.conway.check_fob(fob) or self.conway.check_fob(tag)
 
-        self.conway.push_event(combined, allowed)
+        credential = fob if self.conway.check_fob(fob) else tag
+        self.conway.push_event(credential, allowed)
 
         if allowed:
             print("access granted")
@@ -292,6 +313,25 @@ class MainLoop:
             # Just make sure the asyncio loop isn't blocked
             await asyncio.sleep(20)
             wdt.feed()
+
+    def _reverse_bytes(self, raw_data: int) -> int:
+        b0 = (raw_data >> 24) & 0xFF
+        b1 = (raw_data >> 16) & 0xFF
+        b2 = (raw_data >> 8) & 0xFF
+        b3 = raw_data & 0xFF
+        return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
+
+
+def boom():
+    """
+    Stop the asyncio worker and remove the source code.
+    This makes it easy to upload new code, etc.
+    """
+    import os
+    import sys
+
+    os.remove("main.py")
+    sys.exit(1)
 
 
 conway = ConwayClient()
