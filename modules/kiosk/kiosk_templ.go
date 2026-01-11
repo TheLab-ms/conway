@@ -53,7 +53,7 @@ func renderKiosk(qrImg []byte) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if qrImg == nil {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<h1>Welcome to TheLab</h1><div class=\"mt-4\"><a href=\"https://wiki.thelab.ms/join\" class=\"btn btn-secondary btn-lg\">How To Join</a> <a href=\"/waiver?r=/kiosk\" class=\"btn btn-secondary btn-lg\">Sign Waiver</a></div><div class=\"mt-4\">Scan a key fob any time to link it to your account.\t</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"mt-4\">Scan a key fob any time to link it to your account.</div><div class=\"mt-4\"><a href=\"/waiver?r=/kiosk\" class=\"btn btn-secondary btn-lg\">Sign Waiver</a></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -65,7 +65,7 @@ func renderKiosk(qrImg []byte) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs("data:image/png;base64," + string(qrImg))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `kiosk.templ`, Line: 30, Col: 78}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `kiosk.templ`, Line: 28, Col: 78}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
