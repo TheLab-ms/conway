@@ -160,46 +160,130 @@ templ renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected strin
 				</select>
 			</form>
 			for _, name := range metrics {
-				<div class="mb-5">
-					<h3>{ name }</h3>
-					<canvas id={ fmt.Sprintf("chart-%s", name) } data-series={ name } data-window={ selected }></canvas>
+				<div class="card mb-4">
+					<div class="card-header">
+						<h5 class="card-title mb-0">{ name }</h5>
+					</div>
+					<div class="card-body">
+						<div style="position: relative; height: 280px;">
+							<canvas id={ fmt.Sprintf("chart-%s", name) } data-series={ name } data-window={ selected }></canvas>
+						</div>
+					</div>
 				</div>
 			}
 			<script>
 				document.addEventListener('DOMContentLoaded', async function() {
+					const chartColors = {
+						'active-members': { border: 'rgb(13, 110, 253)', bg: 'rgba(13, 110, 253, 0.1)' },
+						'daily-unique-visitors': { border: 'rgb(25, 135, 84)', bg: 'rgba(25, 135, 84, 0.1)' },
+						'weekly-unique-visitors': { border: 'rgb(111, 66, 193)', bg: 'rgba(111, 66, 193, 0.1)' },
+						'monthly-unique-visitors': { border: 'rgb(253, 126, 20)', bg: 'rgba(253, 126, 20, 0.1)' },
+					};
+					const defaultColors = { border: 'rgb(75, 192, 192)', bg: 'rgba(75, 192, 192, 0.1)' };
+
+					function getTimeConfig(windowHours) {
+						if (windowHours <= 168) return { unit: 'day', format: { day: 'MMM d' } };
+						if (windowHours <= 720) return { unit: 'day', format: { day: 'MMM d' } };
+						if (windowHours <= 2160) return { unit: 'week', format: { week: 'MMM d' } };
+						return { unit: 'month', format: { month: 'MMM yyyy' } };
+					}
+
 					const canvases = document.querySelectorAll('canvas[id^="chart-"]');
 					for (const canvas of canvases) {
 						const series = canvas.getAttribute('data-series');
 						const windowVal = canvas.getAttribute('data-window');
+						const windowHours = parseInt(windowVal);
 
 						const resp = await fetch(`/admin/chart?series=${encodeURIComponent(series)}&window=${encodeURIComponent(windowVal)}`);
 						const data = await resp.json();
+
+						const colors = chartColors[series] || defaultColors;
+						const timeConfig = getTimeConfig(windowHours);
 
 						new Chart(canvas, {
 							type: 'line',
 							data: {
 								datasets: [{
 									data: data.map(p => ({ x: p.t * 1000, y: p.v })),
-									borderColor: 'rgb(75, 192, 192)',
-									tension: 0.1,
-									fill: false
+									borderColor: colors.border,
+									backgroundColor: colors.bg,
+									borderWidth: 2,
+									tension: 0.3,
+									fill: true,
+									pointRadius: 0,
+									pointHoverRadius: 6,
+									pointBackgroundColor: colors.border,
+									pointBorderColor: '#fff',
+									pointBorderWidth: 2,
+									pointHitRadius: 10,
 								}]
 							},
 							options: {
 								responsive: true,
+								maintainAspectRatio: false,
+								interaction: {
+									mode: 'index',
+									intersect: false,
+								},
+								animation: {
+									duration: 750,
+									easing: 'easeOutQuart',
+								},
 								scales: {
 									x: {
 										type: 'time',
 										time: {
-											tooltipFormat: 'MMM d, yyyy'
-										}
+											unit: timeConfig.unit,
+											displayFormats: timeConfig.format,
+											tooltipFormat: 'MMM d, yyyy',
+										},
+										grid: {
+											display: true,
+											color: 'rgba(0, 0, 0, 0.05)',
+										},
+										border: { display: false },
+										ticks: {
+											maxRotation: 0,
+											autoSkip: true,
+											maxTicksLimit: 8,
+											color: '#6c757d',
+											font: { size: 11 },
+										},
 									},
 									y: {
-										beginAtZero: true
-									}
+										beginAtZero: true,
+										grid: {
+											display: true,
+											color: 'rgba(0, 0, 0, 0.05)',
+										},
+										border: { display: false },
+										ticks: {
+											color: '#6c757d',
+											font: { size: 11 },
+											padding: 8,
+											callback: function(value) {
+												return Number.isInteger(value) ? value.toLocaleString() : value;
+											}
+										},
+									},
 								},
 								plugins: {
-									legend: { display: false }
+									legend: { display: false },
+									tooltip: {
+										backgroundColor: 'rgba(33, 37, 41, 0.9)',
+										titleColor: '#fff',
+										bodyColor: '#fff',
+										borderColor: 'rgba(255, 255, 255, 0.1)',
+										borderWidth: 1,
+										cornerRadius: 4,
+										padding: 12,
+										displayColors: false,
+										callbacks: {
+											label: function(context) {
+												return context.parsed.y.toLocaleString();
+											}
+										}
+									}
 								}
 							}
 						});
