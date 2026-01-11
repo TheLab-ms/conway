@@ -4,6 +4,7 @@ package machines
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,6 +49,7 @@ func (p PrinterStatus) OwnerDiscordHandle() string {
 type Module struct {
 	state atomic.Pointer[[]PrinterStatus]
 
+	db                  *sql.DB
 	notificationChannel string
 	messageQueuer       discordwebhook.MessageQueuer
 
@@ -74,7 +76,7 @@ type notifiedState struct {
 	printerName          string
 }
 
-func New(config string, notificationChannel string, messageQueuer discordwebhook.MessageQueuer) *Module {
+func New(db *sql.DB, config string, notificationChannel string, messageQueuer discordwebhook.MessageQueuer) *Module {
 	configs := []*printerConfig{}
 	err := json.Unmarshal([]byte(config), &configs)
 	if err != nil {
@@ -82,6 +84,7 @@ func New(config string, notificationChannel string, messageQueuer discordwebhook
 	}
 
 	m := &Module{
+		db:                  db,
 		notificationChannel: notificationChannel,
 		messageQueuer:       messageQueuer,
 		configs:             configs,
@@ -323,8 +326,12 @@ func (m *Module) sendCompletedNotificationFromState(ctx context.Context, printer
 	if m.notificationChannel == "" || m.messageQueuer == nil || printer.OwnerDiscordHandle() == "" {
 		return
 	}
+	userID := m.resolveDiscordUserID(ctx, printer.OwnerDiscordHandle())
+	if userID == "" {
+		return
+	}
 
-	payload := fmt.Sprintf(`{"content":"%s - your print has completed successfully on %s.","username":"Conway Print Bot"}`, printer.OwnerDiscordHandle(), printer.PrinterName)
+	payload := fmt.Sprintf(`{"content":"<@%s>: your print has completed successfully on %s.","username":"Conway Print Bot"}`, userID, printer.PrinterName)
 
 	if err := m.messageQueuer.QueueMessage(ctx, m.notificationChannel, payload); err != nil {
 		slog.Error("failed to queue completion notification", "error", err, "printer", printer.PrinterName)
@@ -342,13 +349,29 @@ func (m *Module) sendFailedNotification(ctx context.Context, printer PrinterStat
 	}
 
 	var payload string
-	if printer.OwnerDiscordHandle() == "" {
+	if userID := m.resolveDiscordUserID(ctx, printer.OwnerDiscordHandle()); userID == "" {
 		payload = fmt.Sprintf(`{"content":"A print on %s has failed with error code: %s","username":"Conway Print Bot"}`, printer.PrinterName, errorCode)
 	} else {
-		payload = fmt.Sprintf(`{"content":"%s - your print on %s has failed with error code: %s","username":"Conway Print Bot"}`, printer.OwnerDiscordHandle(), printer.PrinterName, errorCode)
+		payload = fmt.Sprintf(`{"content":"<@%s>: your print on %s has failed with error code: %s","username":"Conway Print Bot"}`, userID, printer.PrinterName, errorCode)
 	}
 
 	if err := m.messageQueuer.QueueMessage(ctx, m.notificationChannel, payload); err != nil {
 		slog.Error("failed to queue failure notification", "error", err, "printer", printer.PrinterName)
 	}
+}
+
+func (m *Module) resolveDiscordUserID(ctx context.Context, username string) string {
+	if m.db == nil || username == "" {
+		return ""
+	}
+
+	var userID string
+	err := m.db.QueryRowContext(ctx, `SELECT discord_user_id FROM members WHERE discord_username = ? AND discord_user_id IS NOT NULL`, username).Scan(&userID)
+	if err == nil {
+		return userID
+	}
+	if err != sql.ErrNoRows {
+		slog.Warn("failed to look up Discord user ID", "error", err, "username", username)
+	}
+	return ""
 }
