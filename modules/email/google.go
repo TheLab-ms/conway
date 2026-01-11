@@ -11,7 +11,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func NewGoogleSmtpSender(from string) Sender {
+func NewGoogleSmtpSender(from, senderName string) Sender {
 	creds, err := google.FindDefaultCredentialsWithParams(context.Background(), google.CredentialsParams{
 		Scopes:  []string{"https://mail.google.com/"},
 		Subject: from,
@@ -34,7 +34,7 @@ func NewGoogleSmtpSender(from string) Sender {
 		auth := &googleSmtpOauth{From: from, AccessToken: tok.AccessToken}
 
 		buf := &bytes.Buffer{}
-		fmt.Fprintf(buf, "From: TheLab Makerspace\r\n")
+		fmt.Fprintf(buf, "From: %s\r\n", senderName)
 		fmt.Fprintf(buf, "To: %s\r\n", to)
 		fmt.Fprintf(buf, "Subject: %s\r\n", subj)
 		fmt.Fprintf(buf, "MIME-version: 1.0;\r\n")

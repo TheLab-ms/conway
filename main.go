@@ -44,7 +44,8 @@ type Config struct {
 	// DiscordPrintChannel is the channel_id to use for 3D print notifications
 	DiscordPrintChannel string
 
-	EmailFrom string
+	EmailFrom       string
+	EmailSenderName string
 
 	TurnstileSiteKey string
 	TurnstileSecret  string
@@ -103,8 +104,8 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	}
 
 	var sender email.Sender
-	if conf.EmailFrom != "" {
-		sender = email.NewGoogleSmtpSender(conf.EmailFrom)
+	if conf.EmailFrom != "" && conf.EmailSenderName != "" {
+		sender = email.NewGoogleSmtpSender(conf.EmailFrom, conf.EmailSenderName)
 	}
 
 	// Parse Discord webhook configuration
