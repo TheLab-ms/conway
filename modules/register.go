@@ -8,7 +8,6 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
-	"github.com/TheLab-ms/conway/modules/core"
 	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/email"
@@ -66,9 +65,9 @@ type Options struct {
 // Register adds all modules to the app and returns the auth module
 // (which must be set as the router's authenticator by the caller).
 func Register(a *engine.App, opts Options) *auth.Module {
-	// Core module must be registered first to apply base schema
-	// before other modules attempt to use the core tables.
-	a.Add(core.New(opts.Database))
+	// Members module must be registered first to apply base schema
+	// before other modules attempt to use the members tables.
+	a.Add(members.New(opts.Database))
 
 	authModule := auth.New(opts.Database, opts.Self, opts.Turnstile, opts.AuthIssuer)
 	a.Add(authModule)
@@ -78,7 +77,6 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(oauth2.New(opts.Database, opts.Self, opts.OAuthIssuer))
 	a.Add(payment.New(opts.Database, opts.StripeWebhookKey, opts.Self))
 	a.Add(admin.New(opts.Database, opts.Self, opts.AuthIssuer))
-	a.Add(members.New(opts.Database))
 	a.Add(waiver.New(opts.Database))
 	a.Add(kiosk.New(opts.Database, opts.Self, opts.FobIssuer, opts.SpaceHost))
 	a.Add(metrics.New(opts.Database))

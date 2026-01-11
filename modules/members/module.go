@@ -1,25 +1,41 @@
 package members
 
+//go:generate go run github.com/a-h/templ/cmd/templ generate
+
 import (
 	"database/sql"
+	_ "embed"
 	"net/http"
+	"testing"
+	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
 )
 
-//go:generate go run github.com/a-h/templ/cmd/templ generate
+//go:embed schema.sql
+var migration string
+
+const defaultTTL = 2 * 365 * 24 * 60 * 60 // 2 years in seconds
 
 type Module struct {
 	db *sql.DB
 }
 
 func New(db *sql.DB) *Module {
+	engine.MustMigrate(db, migration)
 	return &Module{db: db}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /{$}", router.WithAuthn(m.renderMemberView))
+}
+
+func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
+	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "fob swipes",
+		"DELETE FROM fob_swipes WHERE timestamp < unixepoch() - ?", defaultTTL)))
+	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "member events",
+		"DELETE FROM member_events WHERE created < unixepoch() - ?", defaultTTL)))
 }
 
 func (m *Module) renderMemberView(w http.ResponseWriter, r *http.Request) {
@@ -39,4 +55,10 @@ func (m *Module) renderMemberView(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 	renderMember(&mem).Render(r.Context(), w)
+}
+
+func NewTestDB(t *testing.T) *sql.DB {
+	d := engine.OpenTestDB(t)
+	engine.MustMigrate(d, migration)
+	return d
 }

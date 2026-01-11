@@ -1,4 +1,4 @@
-package core
+package members
 
 import (
 	"database/sql"
