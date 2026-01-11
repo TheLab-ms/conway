@@ -199,7 +199,7 @@ func renderLoginEmail(self *url.URL, code string) templ.Component {
 			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\"><p>Here is your login code for TheLab Makerspace:</p><div style=\"text-align: center; margin: 30px 0;\"><div style=\"background-color: #f8f9fa; border-radius: 8px; padding: 20px; display: inline-block;\"><p style=\"margin: 0 0 10px 0; color: #666; font-size: 14px;\">Your login code:</p><div style=\"font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #212529;\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\"><p>Here is your makerspace login code:</p><div style=\"text-align: center; margin: 30px 0;\"><div style=\"background-color: #f8f9fa; border-radius: 8px; padding: 20px; display: inline-block;\"><p style=\"margin: 0 0 10px 0; color: #666; font-size: 14px;\">Your login code:</p><div style=\"font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #212529;\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -225,7 +225,7 @@ func renderLoginEmail(self *url.URL, code string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" style=\"background-color: #0d6efd; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;\">Sign In to TheLab</a></p><p style=\"text-align: center; color: #999; font-size: 12px;\">Or copy this link: <a href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" style=\"background-color: #0d6efd; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;\">Sign In</a></p><p style=\"text-align: center; color: #999; font-size: 12px;\">Or copy this link: <a href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
