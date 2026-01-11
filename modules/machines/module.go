@@ -1,5 +1,7 @@
 package machines
 
+//go:generate go run github.com/a-h/templ/cmd/templ generate
+
 import (
 	"context"
 	"encoding/json"
@@ -19,19 +21,6 @@ import (
 
 var discordHandleRegex = regexp.MustCompile(`@([a-zA-Z0-9_.]+)`)
 
-// extractDiscordHandle extracts a Discord handle from a string.
-// It looks for patterns like @username and returns the username without the @ prefix.
-// Returns empty string if no Discord handle is found.
-func extractDiscordHandle(s string) string {
-	match := discordHandleRegex.FindStringSubmatch(s)
-	if len(match) >= 2 {
-		return match[1]
-	}
-	return ""
-}
-
-//go:generate go run github.com/a-h/templ/cmd/templ generate
-
 type printerConfig struct {
 	Name         string `json:"name"`
 	Host         string `json:"host"`
@@ -39,9 +28,6 @@ type printerConfig struct {
 	SerialNumber string `json:"serial_number"`
 }
 
-// PrinterStatus contains the full printer status including UI-related fields.
-// It embeds PrinterData for the raw printer data and adds computed/enriched fields
-// that the machines module populates for display purposes.
 type PrinterStatus struct {
 	bambu.PrinterData
 
@@ -49,7 +35,14 @@ type PrinterStatus struct {
 	SerialNumber         string `json:"serial_number"`
 	JobFinishedTimestamp *int64 `json:"job_finished_timestamp"`
 	ErrorCode            string `json:"error_code"`
-	OwnerDiscordUsername string `json:"owner_discord_username"`
+}
+
+func (p PrinterStatus) OwnerDiscordHandle() string {
+	match := discordHandleRegex.FindStringSubmatch(p.SubtaskName)
+	if len(match) >= 2 {
+		return match[1]
+	}
+	return ""
 }
 
 type Module struct {
@@ -225,11 +218,10 @@ func (m *Module) poll(ctx context.Context) bool {
 		}
 
 		s := PrinterStatus{
-			PrinterData:          data,
-			PrinterName:          name,
-			SerialNumber:         printer.GetSerial(),
-			ErrorCode:            data.PrintErrorCode,
-			OwnerDiscordUsername: extractDiscordHandle(data.SubtaskName),
+			PrinterData:  data,
+			PrinterName:  name,
+			SerialNumber: printer.GetSerial(),
+			ErrorCode:    data.PrintErrorCode,
 		}
 		if s.ErrorCode == "0" {
 			s.ErrorCode = ""
@@ -281,7 +273,7 @@ func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []Pr
 		// Job completed: had job before, no job now, no error
 		if lastNotified.hadJob && !hasJob && !hasError {
 			// Use the stored job metadata from when the job was running
-			m.sendCompletedNotificationFromState(ctx, lastNotified)
+			m.sendCompletedNotificationFromState(ctx, newPrinter)
 			m.updateLastNotifiedState(newPrinter.SerialNumber, notifiedState{hadJob: false})
 			slog.Info("print job completed", "printer", newPrinter.PrinterName)
 			continue
@@ -295,7 +287,7 @@ func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []Pr
 				errorCode:            newPrinter.ErrorCode,
 				gcodeFile:            newPrinter.GcodeFile,
 				subtaskName:          newPrinter.SubtaskName,
-				ownerDiscordUsername: newPrinter.OwnerDiscordUsername,
+				ownerDiscordUsername: newPrinter.OwnerDiscordHandle(),
 				printerName:          newPrinter.PrinterName,
 			})
 			slog.Info("print job failed", "printer", newPrinter.PrinterName, "error_code", newPrinter.ErrorCode)
@@ -308,15 +300,14 @@ func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []Pr
 				hadJob:               true,
 				gcodeFile:            newPrinter.GcodeFile,
 				subtaskName:          newPrinter.SubtaskName,
-				ownerDiscordUsername: newPrinter.OwnerDiscordUsername,
+				ownerDiscordUsername: newPrinter.OwnerDiscordHandle(),
 				printerName:          newPrinter.PrinterName,
 			})
-			slog.Info("print job started", "printer", newPrinter.PrinterName, "gcode", newPrinter.GcodeFile, "owner", newPrinter.OwnerDiscordUsername)
+			slog.Info("print job started", "printer", newPrinter.PrinterName, "gcode", newPrinter.GcodeFile, "owner", newPrinter.OwnerDiscordHandle())
 		}
 	}
 }
 
-// getLastNotifiedState retrieves the last notified state for a printer.
 func (m *Module) getLastNotifiedState(serial string) notifiedState {
 	if v, ok := m.lastNotifiedState.Load(serial); ok {
 		return v.(notifiedState)
@@ -324,39 +315,25 @@ func (m *Module) getLastNotifiedState(serial string) notifiedState {
 	return notifiedState{}
 }
 
-// updateLastNotifiedState updates the last notified state for a printer.
 func (m *Module) updateLastNotifiedState(serial string, state notifiedState) {
 	m.lastNotifiedState.Store(serial, state)
 }
 
-// sendCompletedNotificationFromState queues a Discord notification for a completed print using stored state.
-func (m *Module) sendCompletedNotificationFromState(ctx context.Context, state notifiedState) {
-	if m.notificationChannel == "" || m.messageQueuer == nil {
+func (m *Module) sendCompletedNotificationFromState(ctx context.Context, printer PrinterStatus) {
+	if m.notificationChannel == "" || m.messageQueuer == nil || printer.OwnerDiscordHandle() == "" {
 		return
 	}
 
-	owner := ""
-	if state.ownerDiscordUsername != "" {
-		owner = fmt.Sprintf("%s: ", state.ownerDiscordUsername)
-	}
-
-	payload := fmt.Sprintf(`{"content":"%sYour print on %s has completed successfully.","username":"Conway Print Bot"}`,
-		owner, state.printerName)
+	payload := fmt.Sprintf(`{"content":"%s - your print has completed successfully on %s.","username":"Conway Print Bot"}`, printer.OwnerDiscordHandle(), printer.PrinterName)
 
 	if err := m.messageQueuer.QueueMessage(ctx, m.notificationChannel, payload); err != nil {
-		slog.Error("failed to queue completion notification", "error", err, "printer", state.printerName)
+		slog.Error("failed to queue completion notification", "error", err, "printer", printer.PrinterName)
 	}
 }
 
-// sendFailedNotification queues a Discord notification for a failed print.
 func (m *Module) sendFailedNotification(ctx context.Context, printer PrinterStatus) {
 	if m.notificationChannel == "" || m.messageQueuer == nil {
 		return
-	}
-
-	owner := ""
-	if printer.OwnerDiscordUsername != "" {
-		owner = fmt.Sprintf("%s: ", printer.OwnerDiscordUsername)
 	}
 
 	errorCode := printer.ErrorCode
@@ -364,8 +341,12 @@ func (m *Module) sendFailedNotification(ctx context.Context, printer PrinterStat
 		errorCode = "unknown"
 	}
 
-	payload := fmt.Sprintf(`{"content":"%sYour print on %s has failed. Error code: %s","username":"Conway Print Bot"}`,
-		owner, printer.PrinterName, errorCode)
+	var payload string
+	if printer.OwnerDiscordHandle() == "" {
+		payload = fmt.Sprintf(`{"content":"A print on %s has failed with error code: %s","username":"Conway Print Bot"}`, printer.PrinterName, errorCode)
+	} else {
+		payload = fmt.Sprintf(`{"content":"%s - your print on %s has failed with error code: %s","username":"Conway Print Bot"}`, printer.OwnerDiscordHandle(), printer.PrinterName, errorCode)
+	}
 
 	if err := m.messageQueuer.QueueMessage(ctx, m.notificationChannel, payload); err != nil {
 		slog.Error("failed to queue failure notification", "error", err, "printer", printer.PrinterName)

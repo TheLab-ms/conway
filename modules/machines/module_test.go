@@ -53,7 +53,7 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
 	newState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@jordan"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "jordan"},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@jordan"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -63,10 +63,10 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 		t.Errorf("expected no notifications on job start, got %d", len(mock.getMessages()))
 	}
 
-	// Now simulate job completing
+	// Now simulate job completing (keep the gcode/subtask data from the running job)
 	oldState = newState
 	newState = []PrinterStatus{
-		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil, OwnerDiscordUsername: ""},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@jordan"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -83,8 +83,8 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 	if !contains(messages[0].payload, "completed successfully") {
 		t.Errorf("payload should contain 'completed successfully', got: %s", messages[0].payload)
 	}
-	if !contains(messages[0].payload, "jordan:") {
-		t.Errorf("payload should contain Discord username 'jordan:', got: %s", messages[0].payload)
+	if !contains(messages[0].payload, "jordan") {
+		t.Errorf("payload should contain Discord username 'jordan', got: %s", messages[0].payload)
 	}
 }
 
@@ -100,7 +100,7 @@ func TestStateTransition_JobFailed(t *testing.T) {
 
 	// Simulate job running then failing
 	oldState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "testuser", ErrorCode: ""},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, ErrorCode: ""},
 	}
 	// Set hadJob state with job metadata
 	m.updateLastNotifiedState("ABC123", notifiedState{
@@ -111,7 +111,7 @@ func TestStateTransition_JobFailed(t *testing.T) {
 	})
 
 	newState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, OwnerDiscordUsername: "testuser", ErrorCode: "E001"},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime, ErrorCode: "E001"},
 	}
 
 	m.detectStateChanges(ctx, oldState, newState)
@@ -128,8 +128,8 @@ func TestStateTransition_JobFailed(t *testing.T) {
 	if !contains(messages[0].payload, "E001") {
 		t.Errorf("payload should contain error code 'E001', got: %s", messages[0].payload)
 	}
-	if !contains(messages[0].payload, "testuser:") {
-		t.Errorf("payload should contain Discord username 'testuser:', got: %s", messages[0].payload)
+	if !contains(messages[0].payload, "testuser") {
+		t.Errorf("payload should contain Discord username 'testuser', got: %s", messages[0].payload)
 	}
 }
 
@@ -148,14 +148,14 @@ func TestStateTransition_NoDuplicateNotifications(t *testing.T) {
 		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
 	newState := []PrinterStatus{
-		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: &finishTime},
 	}
 	m.detectStateChanges(ctx, oldState, newState)
 
-	// Complete the job
+	// Complete the job (keep subtask data so owner can be notified)
 	oldState = newState
 	newState = []PrinterStatus{
-		{PrinterData: bambu.PrinterData{}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
+		{PrinterData: bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@testuser"}, SerialNumber: "ABC123", PrinterName: "Printer1", JobFinishedTimestamp: nil},
 	}
 	m.detectStateChanges(ctx, oldState, newState)
 
@@ -243,7 +243,7 @@ func containsHelper(s, substr string) bool {
 	return false
 }
 
-func TestExtractDiscordHandle(t *testing.T) {
+func TestOwnerDiscordHandle(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected string
@@ -261,9 +261,10 @@ func TestExtractDiscordHandle(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {
-			result := extractDiscordHandle(tc.input)
+			p := PrinterStatus{PrinterData: bambu.PrinterData{SubtaskName: tc.input}}
+			result := p.OwnerDiscordHandle()
 			if result != tc.expected {
-				t.Errorf("extractDiscordHandle(%q) = %q, want %q", tc.input, result, tc.expected)
+				t.Errorf("OwnerDiscordHandle() with SubtaskName=%q = %q, want %q", tc.input, result, tc.expected)
 			}
 		})
 	}
