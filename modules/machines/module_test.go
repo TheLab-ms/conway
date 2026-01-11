@@ -43,6 +43,7 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 	m := &Module{
 		notificationChannel: "test-channel",
 		messageQueuer:       mock,
+		db:                  createTestDB(t, "jordan", "123456789"),
 	}
 
 	ctx := context.Background()
@@ -83,8 +84,8 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 	if !contains(messages[0].payload, "completed successfully") {
 		t.Errorf("payload should contain 'completed successfully', got: %s", messages[0].payload)
 	}
-	if !contains(messages[0].payload, "jordan") {
-		t.Errorf("payload should contain Discord username 'jordan', got: %s", messages[0].payload)
+	if !contains(messages[0].payload, "123456789") {
+		t.Errorf("payload should contain Discord user ID '123456789', got: %s", messages[0].payload)
 	}
 }
 
@@ -93,6 +94,7 @@ func TestStateTransition_JobFailed(t *testing.T) {
 	m := &Module{
 		notificationChannel: "test-channel",
 		messageQueuer:       mock,
+		db:                  createTestDB(t, "testuser", "987654321"),
 	}
 
 	ctx := context.Background()
@@ -128,8 +130,8 @@ func TestStateTransition_JobFailed(t *testing.T) {
 	if !contains(messages[0].payload, "E001") {
 		t.Errorf("payload should contain error code 'E001', got: %s", messages[0].payload)
 	}
-	if !contains(messages[0].payload, "testuser") {
-		t.Errorf("payload should contain Discord username 'testuser', got: %s", messages[0].payload)
+	if !contains(messages[0].payload, "987654321") {
+		t.Errorf("payload should contain Discord user ID '987654321', got: %s", messages[0].payload)
 	}
 }
 
@@ -138,6 +140,7 @@ func TestStateTransition_NoDuplicateNotifications(t *testing.T) {
 	m := &Module{
 		notificationChannel: "test-channel",
 		messageQueuer:       mock,
+		db:                  createTestDB(t, "testuser", "555555555"),
 	}
 
 	ctx := context.Background()
