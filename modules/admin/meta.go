@@ -196,7 +196,7 @@ var listViews = []listView{
 		Rows: []*tableRowMeta{
 			{Title: "Timestamp", Width: 1},
 			{Title: "Member", Width: 2},
-			{Title: "Fob ID", Width: 1},
+			{Title: "Email", Width: 1},
 		},
 		BuildQuery: func(r *http.Request) (q, rowCountQuery string, args []any) {
 			q = `SELECT created, name, email FROM waivers WHERE name != '' ORDER BY created DESC LIMIT :limit OFFSET :offset`
