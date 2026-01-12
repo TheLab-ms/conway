@@ -89,74 +89,81 @@ templ renderAdminList(tabs []*navbarTab, typeName, searchURL string, showSearch 
 									hx-trigger="input changed delay:500ms, keyup[key=='Enter'], load, change"
 									hx-target="#results"
 									hx-include="[name='search'], [name='currentpage']"
+									hx-indicator="#loading-indicator"
 								/>
 							</div>
 						</div>
 					</div>
 				} else {
-					<input type="hidden" id="searchbox" hx-post={ searchURL } hx-trigger="load, change" hx-target="#results" hx-include="[name='currentpage']"/>
+					<input type="hidden" id="searchbox" hx-post={ searchURL } hx-trigger="load, change" hx-target="#results" hx-include="[name='currentpage']" hx-indicator="#loading-indicator"/>
 				}
-				<span id="results"></span>
+				<div id="results">
+					<div id="loading-indicator" class="htmx-indicator card-body text-center py-5">
+						<div class="spinner-border text-secondary" role="status">
+							<span class="visually-hidden">Loading...</span>
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
 	}
 }
 
-templ renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow, currentPage, totalPages int64) {
-	<div class="card-body p-0">
-		<div class="table-responsive">
-			<table class="table table-striped table-hover mb-0">
-				if len(rowMeta) > 1 {
-					<thead class="table-light">
-						<tr>
-							for _, meta := range rowMeta {
-								<th class={ fmt.Sprintf("col-%d", meta.Width) }>{ meta.Title }</th>
-							}
-						</tr>
-					</thead>
-				}
-				<tbody>
-					for _, row := range rows {
-						<tr onclick={ navigateToSelf(row.SelfLink) } style="cursor: pointer;">
-							for _, col := range row.Cells {
-								<td>
-									@col.Render(row)
-								</td>
-							}
-						</tr>
-					}
-				</tbody>
-			</table>
+templ renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow, moreURL string, hasMore bool, colCount int) {
+	if len(rows) == 0 {
+		<div class="card-body text-center text-muted py-5">
+			No results found
 		</div>
-	</div>
-	<div class="card-footer text-body-secondary text-center">
-		@renderListPagination(currentPage, totalPages)
-	</div>
+	} else {
+		<div class="card-body p-0">
+			<div class="table-responsive">
+				<table class="table table-hover mb-0">
+					if len(rowMeta) > 1 {
+						<thead class="table-light">
+							<tr>
+								for _, meta := range rowMeta {
+									<th class={ fmt.Sprintf("col-%d", meta.Width) }>{ meta.Title }</th>
+								}
+							</tr>
+						</thead>
+					}
+					<tbody id="table-body">
+						@renderAdminListRows(rows, moreURL, hasMore, colCount)
+					</tbody>
+				</table>
+			</div>
+		</div>
+	}
 }
 
-templ renderListPagination(currentPage, totalPages int64) {
-	<input type="hidden" id="currentpage" name="currentpage" value={ strconv.FormatInt(currentPage, 10) }/>
-	<script>
-		function updatePageCounter(offset) {
-			let el = document.getElementById('currentpage')
-			el.value = Number(el.value) + offset
-
-			document.getElementById('searchbox').dispatchEvent(new Event('change', { bubbles: true }))
-		}
-	</script>
-	<div class="btn-group">
-		if currentPage > 1 {
-			<a class="btn btn-primary" onclick="updatePageCounter(-1)">Previous</a>
+templ renderAdminListRows(rows []*tableRow, moreURL string, hasMore bool, colCount int) {
+	for _, row := range rows {
+		if row.SelfLink != "" {
+			<tr onclick={ navigateToSelf(row.SelfLink) } style="cursor: pointer;">
+				for _, col := range row.Cells {
+					<td>
+						@col.Render(row)
+					</td>
+				}
+			</tr>
 		} else {
-			<a class="btn btn-primary disabled">Previous</a>
+			<tr>
+				for _, col := range row.Cells {
+					<td>
+						@col.Render(row)
+					</td>
+				}
+			</tr>
 		}
-		<a class="btn btn-outline-primary disabled">{ fmt.Sprintf("Page %d of %d", currentPage, totalPages) }</a>
-		if currentPage < totalPages {
-			<a class="btn btn-primary" onclick="updatePageCounter(1)">Next</a>
-		} else {
-			<a class="btn btn-primary disabled">Next</a>
-		}
-	</div>
+	}
+	if hasMore {
+		<tr hx-get={ moreURL } hx-trigger="revealed" hx-swap="outerHTML" hx-target="this">
+			<td colspan={ strconv.Itoa(colCount) } class="text-center text-muted py-3">
+				<span class="spinner-border spinner-border-sm me-2" role="status"></span>
+				Loading...
+			</td>
+		</tr>
+	}
 }
 
 var intervalLabels = []string{"7 days", "30 days", "60 days", "90 days", "180 days", "365 days"}

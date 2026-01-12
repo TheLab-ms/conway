@@ -57,10 +57,9 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			if engine.HandleError(w, err) {
 				return
 			}
-			currentPage, _ := strconv.ParseInt(r.FormValue("currentpage"), 10, 0)
 
-			// Query
-			args = append(args, sql.Named("limit", limit), sql.Named("offset", max(currentPage-1, 0)*limit))
+			// Query first page
+			args = append(args, sql.Named("limit", limit), sql.Named("offset", 0))
 			results, err := txn.QueryContext(r.Context(), q, args...)
 			if engine.HandleError(w, err) {
 				return
@@ -72,8 +71,70 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 				return
 			}
 
+			hasMore := rowCount > limit
+			moreURL := ""
+			if hasMore {
+				search := r.PostFormValue("search")
+				moreURL = fmt.Sprintf("/admin/more%s?page=2&search=%s", view.RelPath, url.QueryEscape(search))
+			}
+			colCount := len(view.Rows)
+			if colCount == 0 {
+				colCount = 1
+			}
+
 			w.Header().Set("Content-Type", "text/html")
-			renderAdminListElements(view.Rows, rows, max(currentPage, 1), max(rowCount/limit, 1)).Render(r.Context(), w)
+			renderAdminListElements(view.Rows, rows, moreURL, hasMore, colCount).Render(r.Context(), w)
+		}))
+
+		router.HandleFunc("GET /admin/more"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
+			const limit = 20
+			txn, err := m.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+			if engine.HandleError(w, err) {
+				return
+			}
+			defer txn.Rollback()
+
+			q, rowCountQuery, args := view.BuildQuery(r)
+
+			// Get the row count
+			var rowCount int64
+			err = txn.QueryRowContext(r.Context(), rowCountQuery, args...).Scan(&rowCount)
+			if engine.HandleError(w, err) {
+				return
+			}
+
+			page, _ := strconv.ParseInt(r.URL.Query().Get("page"), 10, 0)
+			if page < 1 {
+				page = 1
+			}
+			offset := (page - 1) * limit
+
+			// Query
+			args = append(args, sql.Named("limit", limit), sql.Named("offset", offset))
+			results, err := txn.QueryContext(r.Context(), q, args...)
+			if engine.HandleError(w, err) {
+				return
+			}
+			defer results.Close()
+
+			rows, err := view.BuildRows(results)
+			if engine.HandleError(w, err) {
+				return
+			}
+
+			hasMore := rowCount > offset+limit
+			moreURL := ""
+			if hasMore {
+				search := r.URL.Query().Get("search")
+				moreURL = fmt.Sprintf("/admin/more%s?page=%d&search=%s", view.RelPath, page+1, url.QueryEscape(search))
+			}
+			colCount := len(view.Rows)
+			if colCount == 0 {
+				colCount = 1
+			}
+
+			w.Header().Set("Content-Type", "text/html")
+			renderAdminListRows(rows, moreURL, hasMore, colCount).Render(r.Context(), w)
 		}))
 	}
 
@@ -107,6 +168,33 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 		w.Header().Set("Content-Type", "image/png")
 		w.Write(p)
+	}))
+
+	router.HandleFunc("GET /admin/members/{id}/events", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
+		const limit = 10
+		memberID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if engine.HandleError(w, err) {
+			return
+		}
+
+		page, _ := strconv.ParseInt(r.URL.Query().Get("page"), 10, 0)
+		if page < 1 {
+			page = 1
+		}
+		offset := int((page - 1) * limit)
+
+		events, err := queryMemberEvents(r.Context(), m.db, memberID, limit+1, offset)
+		if engine.HandleError(w, err) {
+			return
+		}
+
+		hasMore := len(events) > limit
+		if hasMore {
+			events = events[:limit]
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		renderMemberEventRows(events, memberID, int(page), hasMore).Render(r.Context(), w)
 	}))
 
 	router.HandleFunc("GET /admin/export/{table}", router.WithLeadership(m.exportCSV))

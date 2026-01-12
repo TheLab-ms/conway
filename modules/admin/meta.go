@@ -31,7 +31,7 @@ var listViews = []listView{
 			q = "SELECT id, COALESCE(name_override, identifier) AS identifier, COALESCE(payment_status, 'Inactive') AS payment_status, access_status FROM members"
 			rowCountQuery = "SELECT COUNT(*) FROM members"
 
-			search := r.PostFormValue("search")
+			search := r.FormValue("search")
 			if search != "" {
 				logic := " WHERE name LIKE '%' || $1 || '%' OR name_override LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%' OR CAST(fob_id AS TEXT) LIKE '%' || $1 || '%' OR discount_type LIKE '%' || $1 || '%'"
 				q += logic

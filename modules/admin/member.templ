@@ -54,7 +54,15 @@ func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*
 		return nil, nil, err
 	}
 
-	var events []*memberEvent
+	events, err := queryMemberEvents(ctx, db, mem.ID, 10, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &mem, events, nil
+}
+
+func queryMemberEvents(ctx context.Context, db *sql.DB, memberID int64, limit, offset int) ([]*memberEvent, error) {
 	results, err := db.QueryContext(ctx, `
 		SELECT timestamp, event, details FROM (
 			SELECT created AS timestamp, event, details
@@ -68,12 +76,13 @@ func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*
 			WHERE member = $1
 		) AS unified_events
 		ORDER BY timestamp DESC
-		LIMIT 10`, mem.ID)
+		LIMIT $2 OFFSET $3`, memberID, limit, offset)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer results.Close()
 
+	var events []*memberEvent
 	for results.Next() {
 		var created int64
 		event := &memberEvent{}
@@ -83,7 +92,7 @@ func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*
 		}
 	}
 
-	return &mem, events, nil
+	return events, nil
 }
 
 var _ = handlePostForm(formHandler{
@@ -273,25 +282,16 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 			<div class="card mt-3">
 				<div class="card-body">
 					<h5 class="card-title mb-2">Events</h5>
-					if len(events) > 9 {
-						<h6 class="card-subtitle mb-2 text-muted">Only the 10 most recent events are shown</h6>
-					}
-					<table class="table">
-						<thead>
+					<table class="table table-hover">
+						<thead class="table-light">
 							<tr>
 								<th scope="col">Time</th>
 								<th scope="col">Event</th>
 								<th scope="col">Details</th>
 							</tr>
 						</thead>
-						<tbody>
-							for _, event := range events {
-								<tr>
-									<td>{ event.Created.Format(time.RFC3339) }</td>
-									<td><strong>{ event.Event }</strong></td>
-									<td>{ event.Details }</td>
-								</tr>
-							}
+						<tbody id="member-events-body">
+							@renderMemberEventRows(events, member.ID, 1, len(events) >= 10)
 						</tbody>
 					</table>
 				</div>
@@ -316,4 +316,55 @@ func formatLastFobSwipe(ts time.Time) string {
 
 func hasNameOverride(m *member) bool {
 	return m.NameOverride != nil && *m.NameOverride != ""
+}
+
+templ renderMemberEventRows(events []*memberEvent, memberID int64, page int, hasMore bool) {
+	for _, event := range events {
+		<tr>
+			<td>{ formatEventTime(event.Created) }</td>
+			<td><strong>{ event.Event }</strong></td>
+			<td>{ event.Details }</td>
+		</tr>
+	}
+	if hasMore {
+		<tr hx-get={ fmt.Sprintf("/admin/members/%d/events?page=%d", memberID, page+1) } hx-trigger="revealed" hx-swap="outerHTML" hx-target="this">
+			<td colspan="3" class="text-center text-muted py-3">
+				<span class="spinner-border spinner-border-sm me-2" role="status"></span>
+				Loading...
+			</td>
+		</tr>
+	}
+}
+
+func formatEventTime(ts time.Time) string {
+	dur := time.Since(ts)
+
+	const minute = time.Minute
+	const hour = time.Hour
+	const day = time.Hour * 24
+
+	switch {
+	case dur < minute:
+		return "just now"
+	case dur < hour:
+		mins := int(dur / minute)
+		if mins == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", mins)
+	case dur < day:
+		hours := int(dur / hour)
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	case dur < day*7:
+		days := int(dur / day)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	default:
+		return ts.Format("Jan 2, 2006 3:04 PM")
+	}
 }
