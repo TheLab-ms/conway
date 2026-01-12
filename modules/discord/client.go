@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 
@@ -25,13 +26,13 @@ func newDiscordAPIClient(botToken, guildID string, client *http.Client, authConf
 	}
 }
 
-func (c *discordAPIClient) EnsureRole(ctx context.Context, userID string, roleID string, inRole bool) (changed bool, displayName string, err error) {
-	info, err := c.GetGuildMember(ctx, userID, roleID)
+func (c *discordAPIClient) EnsureRole(ctx context.Context, userID string, roleID string, inRole bool) (changed bool, info GuildMemberInfo, err error) {
+	info, err = c.GetGuildMember(ctx, userID, roleID)
 	if err != nil {
-		return false, "", fmt.Errorf("checking current role status: %w", err)
+		return false, GuildMemberInfo{}, fmt.Errorf("checking current role status: %w", err)
 	}
 	if info.HasRole == inRole {
-		return false, info.DisplayName, nil
+		return false, info, nil
 	}
 
 	if inRole {
@@ -39,7 +40,7 @@ func (c *discordAPIClient) EnsureRole(ctx context.Context, userID string, roleID
 	} else {
 		err = c.RemoveRole(ctx, userID, roleID)
 	}
-	return true, info.DisplayName, err
+	return true, info, err
 }
 
 func (c *discordAPIClient) makeDiscordAPIRequest(ctx context.Context, method, endpoint string) (*http.Response, error) {
@@ -70,6 +71,26 @@ func (c *discordAPIClient) HasRole(ctx context.Context, userID string, roleID st
 type GuildMemberInfo struct {
 	HasRole     bool
 	DisplayName string // nick > global_name > username
+	Avatar      []byte
+}
+
+func (c *discordAPIClient) fetchAvatar(ctx context.Context, avatarURL string) ([]byte, error) {
+	if avatarURL == "" {
+		return nil, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", avatarURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating avatar request: %w", err)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching avatar: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("avatar fetch error: %d", resp.StatusCode)
+	}
+	return io.ReadAll(resp.Body)
 }
 
 func (c *discordAPIClient) GetGuildMember(ctx context.Context, userID string, roleID string) (GuildMemberInfo, error) {
@@ -88,11 +109,14 @@ func (c *discordAPIClient) GetGuildMember(ctx context.Context, userID string, ro
 	}
 
 	var member struct {
-		Nick  string   `json:"nick"`
-		Roles []string `json:"roles"`
-		User  struct {
+		Nick   string   `json:"nick"`
+		Avatar string   `json:"avatar"`
+		Roles  []string `json:"roles"`
+		User   struct {
+			ID         string `json:"id"`
 			Username   string `json:"username"`
 			GlobalName string `json:"global_name"`
+			Avatar     string `json:"avatar"`
 		} `json:"user"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&member); err != nil {
@@ -108,9 +132,23 @@ func (c *discordAPIClient) GetGuildMember(ctx context.Context, userID string, ro
 		displayName = member.User.Username
 	}
 
+	// Priority: guild-specific avatar > user avatar
+	var avatarURL string
+	if member.Avatar != "" {
+		avatarURL = fmt.Sprintf("https://cdn.discordapp.com/guilds/%s/users/%s/avatars/%s.png", c.guildID, member.User.ID, member.Avatar)
+	} else if member.User.Avatar != "" {
+		avatarURL = fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.png", member.User.ID, member.User.Avatar)
+	}
+
+	avatar, err := c.fetchAvatar(ctx, avatarURL)
+	if err != nil {
+		return GuildMemberInfo{}, fmt.Errorf("fetching avatar: %w", err)
+	}
+
 	return GuildMemberInfo{
 		HasRole:     slices.Contains(member.Roles, roleID),
 		DisplayName: displayName,
+		Avatar:      avatar,
 	}, nil
 }
 
@@ -142,20 +180,42 @@ func (c *discordAPIClient) RemoveRole(ctx context.Context, userID string, roleID
 	return nil
 }
 
-func (c *discordAPIClient) GetUserInfo(ctx context.Context, token *oauth2.Token) (string, error) {
+type DiscordUserInfo struct {
+	ID     string
+	Email  string
+	Avatar []byte
+}
+
+func (c *discordAPIClient) GetUserInfo(ctx context.Context, token *oauth2.Token) (DiscordUserInfo, error) {
 	client := c.authConf.Client(ctx, token)
 	resp, err := client.Get("https://discord.com/api/users/@me")
 	if err != nil {
-		return "", fmt.Errorf("fetching Discord user info: %w", err)
+		return DiscordUserInfo{}, fmt.Errorf("fetching Discord user info: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var user struct {
-		ID string `json:"id"`
+		ID     string `json:"id"`
+		Email  string `json:"email"`
+		Avatar string `json:"avatar"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
-		return "", fmt.Errorf("decoding Discord user response: %w", err)
+		return DiscordUserInfo{}, fmt.Errorf("decoding Discord user response: %w", err)
 	}
 
-	return user.ID, nil
+	var avatarURL string
+	if user.Avatar != "" {
+		avatarURL = fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.png", user.ID, user.Avatar)
+	}
+
+	avatar, err := c.fetchAvatar(ctx, avatarURL)
+	if err != nil {
+		return DiscordUserInfo{}, fmt.Errorf("fetching avatar: %w", err)
+	}
+
+	return DiscordUserInfo{
+		ID:     user.ID,
+		Email:  user.Email,
+		Avatar: avatar,
+	}, nil
 }

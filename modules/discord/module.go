@@ -40,7 +40,7 @@ type Module struct {
 func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, clientID, clientSecret, botToken, guildID, roleID string) *Module {
 	conf := &oauth2.Config{
 		Endpoint:     endpoint,
-		Scopes:       []string{"identify"},
+		Scopes:       []string{"identify", "email"},
 		RedirectURL:  fmt.Sprintf("%s/discord/callback", self.String()),
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
@@ -106,12 +106,12 @@ func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authC
 	if err != nil {
 		return err
 	}
-	discordUserID, err := m.client.GetUserInfo(ctx, token)
+	userInfo, err := m.client.GetUserInfo(ctx, token)
 	if err != nil {
 		return err
 	}
 
-	_, err = m.db.ExecContext(ctx, "UPDATE members SET discord_user_id = ? WHERE id = ?", discordUserID, userID)
+	_, err = m.db.ExecContext(ctx, "UPDATE members SET discord_user_id = ?, discord_email = ?, discord_avatar = ? WHERE id = ?", userInfo.ID, userInfo.Email, userInfo.Avatar, userID)
 	return err
 }
 
@@ -150,18 +150,19 @@ func (m *Module) GetItem(ctx context.Context) (item *syncItem, err error) {
 
 func (m *Module) ProcessItem(ctx context.Context, item *syncItem) error {
 	shouldHaveRole := item.PaymentStatus.Valid && item.PaymentStatus.String != ""
-	changed, displayName, err := m.client.EnsureRole(ctx, item.DiscordUserID, m.roleID, shouldHaveRole)
+	changed, memberInfo, err := m.client.EnsureRole(ctx, item.DiscordUserID, m.roleID, shouldHaveRole)
 	if err != nil {
 		return err
 	}
-	item.DisplayName = displayName
-	slog.Info("sync'd discord role", "memberID", item.MemberID, "discordUserID", item.DiscordUserID, "displayName", displayName, "shouldHaveRole", shouldHaveRole, "changed", changed)
+	item.DisplayName = memberInfo.DisplayName
+	item.Avatar = memberInfo.Avatar
+	slog.Info("sync'd discord role", "memberID", item.MemberID, "discordUserID", item.DiscordUserID, "displayName", memberInfo.DisplayName, "shouldHaveRole", shouldHaveRole, "changed", changed)
 	return nil
 }
 
 func (m *Module) UpdateItem(ctx context.Context, item *syncItem, success bool) error {
 	if success {
-		_, err := m.db.ExecContext(ctx, "UPDATE members SET discord_last_synced = unixepoch(), discord_username = ? WHERE id = ?", item.DisplayName, item.MemberID)
+		_, err := m.db.ExecContext(ctx, "UPDATE members SET discord_last_synced = unixepoch(), discord_username = ?, discord_avatar = ? WHERE id = ?", item.DisplayName, item.Avatar, item.MemberID)
 		return err
 	}
 
@@ -183,6 +184,7 @@ type syncItem struct {
 	DiscordUserID string
 	PaymentStatus sql.NullString
 	DisplayName   string // populated during ProcessItem
+	Avatar        []byte // populated during ProcessItem
 }
 
 func (s *syncItem) String() string {
