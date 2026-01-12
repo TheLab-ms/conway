@@ -512,10 +512,6 @@ func (p *AdminWaiverConfigPage) ExpectSaveSuccessMessage() {
 	expect(p.t).Locator(locator).ToBeVisible()
 }
 
-func (p *AdminWaiverConfigPage) ExpectPreviewLink() {
-	expect(p.t).Locator(p.page.Locator("a:has-text('Preview Waiver')")).ToBeVisible()
-}
-
 func (p *AdminWaiverConfigPage) ExpectSyntaxGuide() {
 	expect(p.t).Locator(p.page.GetByText("# Title")).ToBeVisible()
 	expect(p.t).Locator(p.page.GetByText("- [ ] Checkbox text")).ToBeVisible()

@@ -1375,7 +1375,6 @@ func TestAdmin_WaiverConfigPage(t *testing.T) {
 
 	// Verify page elements
 	expect(t).Locator(page.GetByText("Waiver Content")).ToBeVisible()
-	configPage.ExpectPreviewLink()
 	configPage.ExpectSyntaxGuide()
 
 	// Verify textarea is present and editable

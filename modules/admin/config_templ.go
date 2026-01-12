@@ -213,7 +213,7 @@ func renderWaiverConfigContent(data *waiverConfigData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</textarea><div class=\"form-text\"><strong>Syntax:</strong><ul class=\"mb-0 mt-1\"><li><code># Title</code> - Sets the page title (first one wins)</li><li>Regular text becomes paragraphs (separate with blank lines)</li><li><code>- [ ] Checkbox text</code> - Creates a required checkbox</li></ul></div></div><div class=\"d-flex justify-content-between align-items-center\"><button type=\"submit\" class=\"btn btn-primary\">Save Changes</button><div><a href=\"/waiver\" target=\"_blank\" class=\"btn btn-outline-secondary me-2\">Preview Waiver</a> <span class=\"text-muted small\">Saving creates a new version.</span></div></div></form></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</textarea><div class=\"form-text\"><strong>Syntax:</strong><ul class=\"mb-0 mt-1\"><li><code># Title</code> - Sets the page title (first one wins)</li><li>Regular text becomes paragraphs (separate with blank lines)</li><li><code>- [ ] Checkbox text</code> - Creates a required checkbox</li></ul></div></div><div class=\"d-flex justify-content-between align-items-center\"><button type=\"submit\" class=\"btn btn-primary\">Save Changes</button> <span class=\"text-muted small\">Saving creates a new version.</span></div></form></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
