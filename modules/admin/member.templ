@@ -55,7 +55,20 @@ func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*
 	}
 
 	var events []*memberEvent
-	results, err := db.QueryContext(ctx, "SELECT created, event, details FROM member_events WHERE member = $1 ORDER BY created DESC LIMIT 10", mem.ID)
+	results, err := db.QueryContext(ctx, `
+		SELECT timestamp, event, details FROM (
+			SELECT created AS timestamp, event, details
+			FROM member_events
+			WHERE member = $1
+
+			UNION ALL
+
+			SELECT timestamp, 'Fob Swipe' AS event, CAST(fob_id AS TEXT) AS details
+			FROM fob_swipes
+			WHERE member = $1
+		) AS unified_events
+		ORDER BY timestamp DESC
+		LIMIT 10`, mem.ID)
 	if err != nil {
 		return nil, nil, err
 	}
