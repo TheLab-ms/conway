@@ -38,7 +38,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	for _, view := range listViews {
 		router.HandleFunc("GET /admin"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
-			renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath, view.Searchable).Render(r.Context(), w)
+			renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath, view.ExportTable, view.Searchable).Render(r.Context(), w)
 		}))
 
 		router.HandleFunc("POST /admin/search"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {

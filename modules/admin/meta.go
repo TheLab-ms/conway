@@ -11,19 +11,21 @@ import (
 // TODO: Support search for pages other than members
 
 type listView struct {
-	Title      string
-	RelPath    string
-	Searchable bool
-	Rows       []*tableRowMeta
-	BuildQuery func(*http.Request) (query, rowCountQuery string, args []any)
-	BuildRows  func(*sql.Rows) ([]*tableRow, error)
+	Title       string
+	RelPath     string
+	Searchable  bool
+	ExportTable string // If set, shows a CSV export link for this table
+	Rows        []*tableRowMeta
+	BuildQuery  func(*http.Request) (query, rowCountQuery string, args []any)
+	BuildRows   func(*sql.Rows) ([]*tableRow, error)
 }
 
 var listViews = []listView{
 	{
-		Title:      "Members",
-		RelPath:    "/members",
-		Searchable: true,
+		Title:       "Members",
+		RelPath:     "/members",
+		Searchable:  true,
+		ExportTable: "members",
 		Rows: []*tableRowMeta{
 			{Title: "Member", Width: 5},
 		},

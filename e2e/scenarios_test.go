@@ -3,6 +3,7 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -752,6 +753,47 @@ func TestAdmin_Pagination(t *testing.T) {
 		prevButton := page.Locator("a.btn-primary:has-text('Previous'):not(.disabled)")
 		expect(t).Locator(prevButton).ToBeVisible()
 	}
+}
+
+// TestAdmin_MembersCSVDownloadLink verifies that the CSV download link is visible
+// on the admin members list page and clicking it downloads a valid CSV file.
+func TestAdmin_MembersCSVDownloadLink(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	// Create some test members to ensure CSV has data
+	seedMember(t, "csvtest1@example.com", WithConfirmed())
+	seedMember(t, "csvtest2@example.com", WithConfirmed(), WithFobID(55555))
+
+	adminPage := NewAdminMembersListPage(t, page)
+	adminPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Verify the CSV download link icon is visible next to the title
+	csvLink := page.Locator("a[href='/admin/export/members']")
+	expect(t).Locator(csvLink).ToBeVisible()
+
+	// Set up download handler before clicking
+	download, err := page.ExpectDownload(func() error {
+		return csvLink.Click()
+	})
+	require.NoError(t, err)
+
+	// Verify the download occurred and has expected properties
+	path, err := download.Path()
+	require.NoError(t, err)
+	assert.NotEmpty(t, path, "download path should not be empty")
+
+	// Read the downloaded content
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	// Verify CSV content contains expected headers and data
+	csvContent := string(content)
+	assert.Contains(t, csvContent, "email", "CSV should contain email column")
+	assert.Contains(t, csvContent, "csvtest1@example.com", "CSV should contain test member data")
+	assert.Contains(t, csvContent, "csvtest2@example.com", "CSV should contain test member data")
 }
 
 // TestJourney_AdminExportsAllData tests that an admin can export CSV data
