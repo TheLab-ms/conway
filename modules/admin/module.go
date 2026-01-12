@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -199,6 +200,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 	router.HandleFunc("GET /admin/export/{table}", router.WithLeadership(m.exportCSV))
 	router.HandleFunc("GET /admin/chart", router.WithLeadership(m.renderMetricsChart))
+	router.HandleFunc("GET /admin/discord-chart", router.WithLeadership(m.renderDiscordEventsChart))
 	router.HandleFunc("GET /admin/metrics", router.WithLeadership(m.renderMetricsPageHandler))
 
 	// Configuration routes
@@ -299,6 +301,60 @@ func (m *Module) renderMetricsChart(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data)
 }
 
+func (m *Module) renderDiscordEventsChart(w http.ResponseWriter, r *http.Request) {
+	series := r.URL.Query().Get("series")
+
+	windowDuration := time.Hour * 24
+	if window := r.URL.Query().Get("window"); window != "" {
+		if parsed, err := time.ParseDuration(window); err == nil && parsed <= 24*time.Hour {
+			windowDuration = parsed
+		}
+	}
+
+	var whereClause string
+	switch series {
+	case "sync-successes":
+		whereClause = "success = 1 AND event_type IN ('RoleSync', 'OAuthCallback', 'WebhookSent')"
+	case "sync-errors":
+		whereClause = "success = 0"
+	case "api-requests":
+		whereClause = "1=1"
+	default:
+		engine.ClientError(w, "Invalid Request", "Unknown series", 400)
+		return
+	}
+
+	query := fmt.Sprintf(`
+		SELECT (created / 900) * 900 AS bucket, COUNT(*)
+		FROM discord_events
+		WHERE created > unixepoch() - ? AND %s
+		GROUP BY bucket
+		ORDER BY bucket ASC`, whereClause)
+
+	rows, err := m.db.QueryContext(r.Context(), query, int64(windowDuration.Seconds()))
+	if engine.HandleError(w, err) {
+		return
+	}
+	defer rows.Close()
+
+	type dataPoint struct {
+		Timestamp int64   `json:"t"`
+		Value     float64 `json:"v"`
+	}
+	var data []dataPoint
+	for rows.Next() {
+		var ts int64
+		var count float64
+		if engine.HandleError(w, rows.Scan(&ts, &count)) {
+			return
+		}
+		data = append(data, dataPoint{Timestamp: ts, Value: count})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
 func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request) {
 	selected := r.URL.Query().Get("interval")
 	if selected == "" {
@@ -381,6 +437,14 @@ func (m *Module) handleDiscordConfigSave(w http.ResponseWriter, r *http.Request)
 	guildID := r.FormValue("guild_id")
 	roleID := r.FormValue("role_id")
 	printWebhookURL := r.FormValue("print_webhook_url")
+	syncIntervalStr := r.FormValue("sync_interval_hours")
+
+	syncIntervalHours := 24 // default
+	if syncIntervalStr != "" {
+		if parsed, err := strconv.Atoi(syncIntervalStr); err == nil && parsed >= 1 && parsed <= 168 {
+			syncIntervalHours = parsed
+		}
+	}
 
 	// Preserve existing secrets if the user didn't provide new values
 	var existingClientSecret, existingBotToken, existingPrintWebhookURL string
@@ -402,9 +466,9 @@ func (m *Module) handleDiscordConfigSave(w http.ResponseWriter, r *http.Request)
 	// Insert new version
 	_, err := m.db.ExecContext(r.Context(),
 		`INSERT INTO discord_config
-		 (client_id, client_secret, bot_token, guild_id, role_id, print_webhook_url)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		clientID, clientSecret, botToken, guildID, roleID, printWebhookURL)
+		 (client_id, client_secret, bot_token, guild_id, role_id, print_webhook_url, sync_interval_hours)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		clientID, clientSecret, botToken, guildID, roleID, printWebhookURL, syncIntervalHours)
 	if engine.HandleError(w, err) {
 		return
 	}
@@ -418,15 +482,52 @@ func (m *Module) handleDiscordConfigSave(w http.ResponseWriter, r *http.Request)
 func (m *Module) getDiscordConfigData(r *http.Request) *discordConfigData {
 	row := m.db.QueryRowContext(r.Context(),
 		`SELECT version, client_id, client_secret != '', bot_token != '',
-				guild_id, role_id, print_webhook_url != ''
+				guild_id, role_id, print_webhook_url != '', COALESCE(sync_interval_hours, 24)
 		 FROM discord_config ORDER BY version DESC LIMIT 1`)
 
-	data := &discordConfigData{}
+	data := &discordConfigData{SyncIntervalHours: 24}
 	err := row.Scan(&data.Version, &data.ClientID, &data.HasClientSecret,
 		&data.HasBotToken, &data.GuildID, &data.RoleID,
-		&data.HasPrintWebhookURL)
+		&data.HasPrintWebhookURL, &data.SyncIntervalHours)
 	if err != nil && err != sql.ErrNoRows {
 		data.Error = "Error loading configuration: " + err.Error()
 	}
+
+	// Fetch status counts
+	m.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM members WHERE discord_user_id IS NOT NULL").Scan(&data.TotalLinkedMembers)
+	m.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM members WHERE discord_user_id IS NOT NULL AND discord_last_synced IS NULL").Scan(&data.PendingSyncs)
+
+	// Fetch recent events
+	data.RecentEvents = m.getRecentDiscordEvents(r.Context())
+
 	return data
+}
+
+func (m *Module) getRecentDiscordEvents(ctx context.Context) []*discordEvent {
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT e.created, e.event_type, COALESCE(e.discord_user_id, ''), e.success, e.details,
+			   COALESCE(mem.name_override, mem.identifier, 'Unknown') AS member_name
+		FROM discord_events e
+		LEFT JOIN members mem ON e.member = mem.id
+		ORDER BY e.created DESC
+		LIMIT 20`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var events []*discordEvent
+	for rows.Next() {
+		var created int64
+		var successInt int
+		event := &discordEvent{}
+		if rows.Scan(&created, &event.EventType, &event.DiscordUserID, &successInt, &event.Details, &event.MemberName) == nil {
+			event.Created = time.Unix(created, 0)
+			event.Success = successInt == 1
+			events = append(events, event)
+		}
+	}
+	return events
 }

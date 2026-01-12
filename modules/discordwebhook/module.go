@@ -46,6 +46,21 @@ func New(d *sql.DB, sender Sender) *Module {
 	return m
 }
 
+// logEvent logs a Discord webhook event to the shared discord_events table.
+func (m *Module) logEvent(ctx context.Context, eventType string, success bool, details string) {
+	successInt := 0
+	if success {
+		successInt = 1
+	}
+	_, err := m.db.ExecContext(ctx,
+		`INSERT INTO discord_events (event_type, success, details)
+		 VALUES (?, ?, ?)`,
+		eventType, successInt, details)
+	if err != nil {
+		slog.Error("failed to log discord webhook event", "error", err, "eventType", eventType)
+	}
+}
+
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "stale discord webhooks",
 		"DELETE FROM discord_webhook_queue WHERE unixepoch() - created > 3600")))
@@ -60,11 +75,16 @@ func (m *Module) GetItem(ctx context.Context) (message, error) {
 
 func (m *Module) ProcessItem(ctx context.Context, item message) error {
 	slog.Info("sending discord webhook", "id", item.ID)
-	return m.sender(ctx, item.WebhookURL, item.Payload)
+	err := m.sender(ctx, item.WebhookURL, item.Payload)
+	if err != nil {
+		m.logEvent(ctx, "WebhookError", false, fmt.Sprintf("id=%d: %s", item.ID, err.Error()))
+	}
+	return err
 }
 
 func (m *Module) UpdateItem(ctx context.Context, item message, success bool) (err error) {
 	if success {
+		m.logEvent(ctx, "WebhookSent", true, fmt.Sprintf("id=%d", item.ID))
 		_, err = m.db.Exec("DELETE FROM discord_webhook_queue WHERE id = $1;", item.ID)
 	} else {
 		_, err = m.db.Exec("UPDATE discord_webhook_queue SET send_at = unixepoch() + ((send_at - created) * 2) WHERE id = $1;", item.ID)
