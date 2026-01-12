@@ -207,6 +207,8 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	}))
 	router.HandleFunc("GET /admin/config/waiver", router.WithLeadership(m.renderWaiverConfigPage))
 	router.HandleFunc("POST /admin/config/waiver", router.WithLeadership(m.handleWaiverConfigSave))
+	router.HandleFunc("GET /admin/config/discord", router.WithLeadership(m.renderDiscordConfigPage))
+	router.HandleFunc("POST /admin/config/discord", router.WithLeadership(m.handleDiscordConfigSave))
 
 	router.HandleFunc("POST /admin/members/{id}/delete", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", r.PathValue("id"))
@@ -362,6 +364,52 @@ func (m *Module) getWaiverConfigData(r *http.Request) *waiverConfigData {
 	err := row.Scan(&data.Version, &data.Content)
 	if err != nil {
 		return &waiverConfigData{Version: 1}
+	}
+	return data
+}
+
+func (m *Module) renderDiscordConfigPage(w http.ResponseWriter, r *http.Request) {
+	data := m.getDiscordConfigData(r)
+	w.Header().Set("Content-Type", "text/html")
+	renderConfigPage(m.nav, "Discord", renderDiscordConfigContent(data, m.self.String())).Render(r.Context(), w)
+}
+
+func (m *Module) handleDiscordConfigSave(w http.ResponseWriter, r *http.Request) {
+	clientID := r.FormValue("client_id")
+	clientSecret := r.FormValue("client_secret")
+	botToken := r.FormValue("bot_token")
+	guildID := r.FormValue("guild_id")
+	roleID := r.FormValue("role_id")
+	printWebhookURL := r.FormValue("print_webhook_url")
+
+	// Insert new version
+	_, err := m.db.ExecContext(r.Context(),
+		`INSERT INTO discord_config
+		 (client_id, client_secret, bot_token, guild_id, role_id, print_webhook_url)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		clientID, clientSecret, botToken, guildID, roleID, printWebhookURL)
+	if engine.HandleError(w, err) {
+		return
+	}
+
+	data := m.getDiscordConfigData(r)
+	data.Saved = true
+	w.Header().Set("Content-Type", "text/html")
+	renderConfigPage(m.nav, "Discord", renderDiscordConfigContent(data, m.self.String())).Render(r.Context(), w)
+}
+
+func (m *Module) getDiscordConfigData(r *http.Request) *discordConfigData {
+	row := m.db.QueryRowContext(r.Context(),
+		`SELECT version, client_id, client_secret, bot_token,
+				guild_id, role_id, print_webhook_url
+		 FROM discord_config ORDER BY version DESC LIMIT 1`)
+
+	data := &discordConfigData{}
+	err := row.Scan(&data.Version, &data.ClientID, &data.ClientSecret,
+		&data.BotToken, &data.GuildID, &data.RoleID,
+		&data.PrintWebhookURL)
+	if err != nil && err != sql.ErrNoRows {
+		data.Error = "Error loading configuration: " + err.Error()
 	}
 	return data
 }

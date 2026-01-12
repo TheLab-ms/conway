@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS discord_webhook_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     send_at INTEGER DEFAULT (strftime('%s', 'now')),
-    channel_id TEXT NOT NULL,
+    webhook_url TEXT NOT NULL,
     payload TEXT NOT NULL
 ) STRICT;
 
@@ -29,18 +29,17 @@ type Sender func(ctx context.Context, webhookURL, payload string) error
 // MessageQueuer allows modules to queue Discord webhook messages.
 // Implemented by *Module.
 type MessageQueuer interface {
-	QueueMessage(ctx context.Context, channelID, payload string) error
+	QueueMessage(ctx context.Context, webhookURL, payload string) error
 }
 
 type Module struct {
-	db          *sql.DB
-	sender      Sender
-	webhookURLs map[string]string // channel_id -> webhook URL
+	db     *sql.DB
+	sender Sender
 }
 
-func New(d *sql.DB, sender Sender, webhookURLs map[string]string) *Module {
+func New(d *sql.DB, sender Sender) *Module {
 	engine.MustMigrate(d, migration)
-	m := &Module{db: d, sender: sender, webhookURLs: webhookURLs}
+	m := &Module{db: d, sender: sender}
 	if m.sender == nil {
 		m.sender = newNoopSender()
 	}
@@ -50,27 +49,18 @@ func New(d *sql.DB, sender Sender, webhookURLs map[string]string) *Module {
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "stale discord webhooks",
 		"DELETE FROM discord_webhook_queue WHERE unixepoch() - created > 3600")))
-	if len(m.webhookURLs) == 0 {
-		slog.Warn("disabling discord webhook processing because no webhook URLs were configured")
-		return
-	}
 	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, maxRPS))))
 }
 
 func (m *Module) GetItem(ctx context.Context) (message, error) {
 	var item message
-	err := m.db.QueryRowContext(ctx, "SELECT id, channel_id, payload, created FROM discord_webhook_queue WHERE unixepoch() >= send_at AND unixepoch() - created < 3600 ORDER BY send_at ASC LIMIT 1;").Scan(&item.ID, &item.ChannelID, &item.Payload, &item.Created)
+	err := m.db.QueryRowContext(ctx, "SELECT id, webhook_url, payload, created FROM discord_webhook_queue WHERE unixepoch() >= send_at AND unixepoch() - created < 3600 ORDER BY send_at ASC LIMIT 1;").Scan(&item.ID, &item.WebhookURL, &item.Payload, &item.Created)
 	return item, err
 }
 
 func (m *Module) ProcessItem(ctx context.Context, item message) error {
-	webhookURL, ok := m.webhookURLs[item.ChannelID]
-	if !ok {
-		slog.Warn("no webhook URL configured for channel", "channel_id", item.ChannelID)
-		return fmt.Errorf("no webhook URL for channel %q", item.ChannelID)
-	}
-	slog.Info("sending discord webhook", "id", item.ID, "channel_id", item.ChannelID)
-	return m.sender(ctx, webhookURL, item.Payload)
+	slog.Info("sending discord webhook", "id", item.ID)
+	return m.sender(ctx, item.WebhookURL, item.Payload)
 }
 
 func (m *Module) UpdateItem(ctx context.Context, item message, success bool) (err error) {
@@ -83,16 +73,16 @@ func (m *Module) UpdateItem(ctx context.Context, item message, success bool) (er
 }
 
 // QueueMessage adds a message to the webhook queue for delivery.
-func (m *Module) QueueMessage(ctx context.Context, channelID, payload string) error {
-	_, err := m.db.ExecContext(ctx, "INSERT INTO discord_webhook_queue (channel_id, payload) VALUES ($1, $2);", channelID, payload)
+func (m *Module) QueueMessage(ctx context.Context, webhookURL, payload string) error {
+	_, err := m.db.ExecContext(ctx, "INSERT INTO discord_webhook_queue (webhook_url, payload) VALUES ($1, $2);", webhookURL, payload)
 	return err
 }
 
 type message struct {
-	ID        int64
-	ChannelID string
-	Payload   string
-	Created   int64
+	ID         int64
+	WebhookURL string
+	Payload    string
+	Created    int64
 }
 
 func (m *message) String() string { return fmt.Sprintf("id=%d", m.ID) }

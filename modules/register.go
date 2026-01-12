@@ -48,18 +48,8 @@ type Options struct {
 	// Machines config (nil disables the module)
 	MachinesModule *machines.Module
 
-	// Discord Webhook module (nil disables the module)
-	DiscordWebhookModule *discordwebhook.Module
-
 	// Generic Access Controller config (empty disables the module)
 	AccessControllerHost string
-
-	// Discord config (empty ClientID disables the module)
-	DiscordClientID     string
-	DiscordClientSecret string
-	DiscordBotToken     string
-	DiscordGuildID      string
-	DiscordRoleID       string
 }
 
 // Register adds all modules to the app and returns the auth module
@@ -90,25 +80,22 @@ func Register(a *engine.App, opts Options) *auth.Module {
 		a.Add(opts.MachinesModule)
 	}
 
-	if opts.DiscordWebhookModule != nil {
-		a.Add(opts.DiscordWebhookModule)
-	}
-
 	if opts.AccessControllerHost != "" {
 		a.Add(gac.New(opts.Database, opts.AccessControllerHost))
 	}
 
-	if opts.DiscordClientID != "" {
-		a.Add(discord.New(
-			opts.Database,
-			opts.Self,
-			opts.DiscordIssuer,
-			opts.DiscordClientID,
-			opts.DiscordClientSecret,
-			opts.DiscordBotToken,
-			opts.DiscordGuildID,
-			opts.DiscordRoleID,
-		))
+	// Discord modules - always register, they check config dynamically
+	// Discord webhook module for notifications
+	webhookSender := discordwebhook.NewHTTPSender()
+	discordWebhookMod := discordwebhook.New(opts.Database, webhookSender)
+	a.Add(discordWebhookMod)
+
+	// Discord OAuth/role sync module
+	a.Add(discord.New(opts.Database, opts.Self, opts.DiscordIssuer))
+
+	// If machines module exists, set the webhook queuer
+	if opts.MachinesModule != nil {
+		opts.MachinesModule.SetWebhookQueuer(discordWebhookMod)
 	}
 
 	return authModule

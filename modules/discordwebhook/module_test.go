@@ -11,86 +11,49 @@ import (
 func TestQueueMessage(t *testing.T) {
 	testDB := engine.OpenTestDB(t)
 
-	webhookURLs := map[string]string{
-		"3d-printing": "https://discord.com/api/webhooks/test",
-	}
-
-	// Create module with noop sender
-	m := New(testDB, nil, webhookURLs)
-
+	m := New(testDB, nil)
 	ctx := t.Context()
 
-	// Queue a message
-	err := m.QueueMessage(ctx, "3d-printing", `{"content":"test message"}`)
+	err := m.QueueMessage(ctx, "https://discord.com/api/webhooks/test", `{"content":"test message"}`)
 	require.NoError(t, err)
 
-	// Verify message is in queue
 	var count int
 	err = testDB.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 
-	// Verify message content
-	var channelID, payload string
-	err = testDB.QueryRow("SELECT channel_id, payload FROM discord_webhook_queue").Scan(&channelID, &payload)
+	var webhookURL, payload string
+	err = testDB.QueryRow("SELECT webhook_url, payload FROM discord_webhook_queue").Scan(&webhookURL, &payload)
 	require.NoError(t, err)
-	assert.Equal(t, "3d-printing", channelID)
+	assert.Equal(t, "https://discord.com/api/webhooks/test", webhookURL)
 	assert.Equal(t, `{"content":"test message"}`, payload)
 }
 
 func TestGetItem(t *testing.T) {
 	testDB := engine.OpenTestDB(t)
 
-	webhookURLs := map[string]string{
-		"test-channel": "https://discord.com/api/webhooks/test",
-	}
-
-	m := New(testDB, nil, webhookURLs)
+	m := New(testDB, nil)
 	ctx := t.Context()
 
-	// Queue a message
-	err := m.QueueMessage(ctx, "test-channel", `{"content":"hello"}`)
+	err := m.QueueMessage(ctx, "https://discord.com/api/webhooks/test", `{"content":"hello"}`)
 	require.NoError(t, err)
 
-	// Get the item
 	item, err := m.GetItem(ctx)
 	require.NoError(t, err)
 
-	assert.Equal(t, "test-channel", item.ChannelID)
+	assert.Equal(t, "https://discord.com/api/webhooks/test", item.WebhookURL)
 	assert.Equal(t, `{"content":"hello"}`, item.Payload)
-}
-
-func TestProcessItemNoWebhookURL(t *testing.T) {
-	testDB := engine.OpenTestDB(t)
-
-	// Empty webhook URLs
-	webhookURLs := map[string]string{}
-
-	m := New(testDB, nil, webhookURLs)
-	ctx := t.Context()
-
-	item := message{
-		ID:        1,
-		ChannelID: "unknown-channel",
-		Payload:   `{"content":"test"}`,
-		Created:   0,
-	}
-
-	err := m.ProcessItem(ctx, item)
-	assert.Error(t, err)
 }
 
 func TestUpdateItemSuccess(t *testing.T) {
 	testDB := engine.OpenTestDB(t)
 
-	m := New(testDB, nil, nil)
+	m := New(testDB, nil)
 	ctx := t.Context()
 
-	// Queue a message
-	err := m.QueueMessage(ctx, "test", `{"content":"test"}`)
+	err := m.QueueMessage(ctx, "https://discord.com/api/webhooks/test", `{"content":"test"}`)
 	require.NoError(t, err)
 
-	// Get the item
 	item, err := m.GetItem(ctx)
 	require.NoError(t, err)
 
@@ -103,4 +66,27 @@ func TestUpdateItemSuccess(t *testing.T) {
 	err = testDB.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)
+}
+
+func TestUpdateItemFailure(t *testing.T) {
+	testDB := engine.OpenTestDB(t)
+
+	m := New(testDB, nil)
+	ctx := t.Context()
+
+	err := m.QueueMessage(ctx, "https://discord.com/api/webhooks/test", `{"content":"test"}`)
+	require.NoError(t, err)
+
+	item, err := m.GetItem(ctx)
+	require.NoError(t, err)
+
+	// Update as failure - should reschedule with backoff
+	err = m.UpdateItem(ctx, item, false)
+	require.NoError(t, err)
+
+	// Verify message still exists
+	var count int
+	err = testDB.QueryRow("SELECT COUNT(*) FROM discord_webhook_queue").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
 }

@@ -49,9 +49,8 @@ func (p PrinterStatus) OwnerDiscordHandle() string {
 type Module struct {
 	state atomic.Pointer[[]PrinterStatus]
 
-	db                  *sql.DB
-	notificationChannel string
-	messageQueuer       discordwebhook.MessageQueuer
+	db            *sql.DB
+	messageQueuer discordwebhook.MessageQueuer
 
 	// lastNotifiedState tracks the last state that triggered a notification per printer.
 	// Key: serial number, Value: notifiedState
@@ -76,7 +75,7 @@ type notifiedState struct {
 	printerName          string
 }
 
-func New(db *sql.DB, config string, notificationChannel string, messageQueuer discordwebhook.MessageQueuer) *Module {
+func New(db *sql.DB, config string) *Module {
 	configs := []*printerConfig{}
 	err := json.Unmarshal([]byte(config), &configs)
 	if err != nil {
@@ -84,12 +83,10 @@ func New(db *sql.DB, config string, notificationChannel string, messageQueuer di
 	}
 
 	m := &Module{
-		db:                  db,
-		notificationChannel: notificationChannel,
-		messageQueuer:       messageQueuer,
-		configs:             configs,
-		serialToName:        map[string]string{},
-		streams:             map[string]*engine.StreamMux{},
+		db:           db,
+		configs:      configs,
+		serialToName: map[string]string{},
+		streams:      map[string]*engine.StreamMux{},
 	}
 	for _, cfg := range configs {
 		m.serialToName[cfg.SerialNumber] = cfg.Name
@@ -106,6 +103,26 @@ func New(db *sql.DB, config string, notificationChannel string, messageQueuer di
 	zero := []PrinterStatus{}
 	m.state.Store(&zero)
 	return m
+}
+
+// SetWebhookQueuer sets the Discord webhook queuer for notifications.
+// This is called after module creation to support wiring dependencies.
+func (m *Module) SetWebhookQueuer(queuer discordwebhook.MessageQueuer) {
+	m.messageQueuer = queuer
+}
+
+// loadPrintWebhookURL loads the print notification webhook URL from the database.
+func (m *Module) loadPrintWebhookURL(ctx context.Context) string {
+	if m.db == nil {
+		return ""
+	}
+	var webhookURL string
+	err := m.db.QueryRowContext(ctx,
+		`SELECT print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1`).Scan(&webhookURL)
+	if err != nil {
+		return ""
+	}
+	return webhookURL
 }
 
 // NewForTesting creates a Module with mock printer data for e2e tests.
@@ -323,7 +340,11 @@ func (m *Module) updateLastNotifiedState(serial string, state notifiedState) {
 }
 
 func (m *Module) sendCompletedNotificationFromState(ctx context.Context, printer PrinterStatus) {
-	if m.notificationChannel == "" || m.messageQueuer == nil || printer.OwnerDiscordHandle() == "" {
+	if m.messageQueuer == nil || printer.OwnerDiscordHandle() == "" {
+		return
+	}
+	webhookURL := m.loadPrintWebhookURL(ctx)
+	if webhookURL == "" {
 		return
 	}
 	userID := m.resolveDiscordUserID(ctx, printer.OwnerDiscordHandle())
@@ -333,13 +354,17 @@ func (m *Module) sendCompletedNotificationFromState(ctx context.Context, printer
 
 	payload := fmt.Sprintf(`{"content":"<@%s>: your print has completed successfully on %s.","username":"Conway Print Bot"}`, userID, printer.PrinterName)
 
-	if err := m.messageQueuer.QueueMessage(ctx, m.notificationChannel, payload); err != nil {
+	if err := m.messageQueuer.QueueMessage(ctx, webhookURL, payload); err != nil {
 		slog.Error("failed to queue completion notification", "error", err, "printer", printer.PrinterName)
 	}
 }
 
 func (m *Module) sendFailedNotification(ctx context.Context, printer PrinterStatus) {
-	if m.notificationChannel == "" || m.messageQueuer == nil {
+	if m.messageQueuer == nil {
+		return
+	}
+	webhookURL := m.loadPrintWebhookURL(ctx)
+	if webhookURL == "" {
 		return
 	}
 
@@ -355,7 +380,7 @@ func (m *Module) sendFailedNotification(ctx context.Context, printer PrinterStat
 		payload = fmt.Sprintf(`{"content":"<@%s>: your print on %s has failed with error code: %s","username":"Conway Print Bot"}`, userID, printer.PrinterName, errorCode)
 	}
 
-	if err := m.messageQueuer.QueueMessage(ctx, m.notificationChannel, payload); err != nil {
+	if err := m.messageQueuer.QueueMessage(ctx, webhookURL, payload); err != nil {
 		slog.Error("failed to queue failure notification", "error", err, "printer", printer.PrinterName)
 	}
 }

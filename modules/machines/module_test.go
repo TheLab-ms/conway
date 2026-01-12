@@ -17,14 +17,14 @@ type mockMessageQueuer struct {
 }
 
 type queuedMessage struct {
-	channelID string
-	payload   string
+	webhookURL string
+	payload    string
 }
 
-func (m *mockMessageQueuer) QueueMessage(ctx context.Context, channelID, payload string) error {
+func (m *mockMessageQueuer) QueueMessage(ctx context.Context, webhookURL, payload string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.messages = append(m.messages, queuedMessage{channelID: channelID, payload: payload})
+	m.messages = append(m.messages, queuedMessage{webhookURL: webhookURL, payload: payload})
 	return nil
 }
 
@@ -40,12 +40,40 @@ func (m *mockMessageQueuer) reset() {
 	m.messages = nil
 }
 
+// createTestDBWithPrintWebhook creates a test database with print webhook URL configured
+func createTestDBWithPrintWebhook(t *testing.T, webhookURL, discordUsername, discordUserID string) *sql.DB {
+	t.Helper()
+	db := members.NewTestDB(t)
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS discord_config (
+		version INTEGER PRIMARY KEY,
+		client_id TEXT NOT NULL DEFAULT '',
+		client_secret TEXT NOT NULL DEFAULT '',
+		bot_token TEXT NOT NULL DEFAULT '',
+		guild_id TEXT NOT NULL DEFAULT '',
+		role_id TEXT NOT NULL DEFAULT '',
+		print_webhook_url TEXT NOT NULL DEFAULT ''
+	)`)
+	if err != nil {
+		t.Fatalf("failed to create discord_config table: %v", err)
+	}
+	_, err = db.Exec(`INSERT INTO discord_config (version, print_webhook_url) VALUES (1, ?)`, webhookURL)
+	if err != nil {
+		t.Fatalf("failed to insert discord_config: %v", err)
+	}
+	_, err = db.Exec(`INSERT INTO members (email, discord_username, discord_user_id) VALUES (?, ?, ?)`,
+		discordUsername+"@example.com", discordUsername, discordUserID)
+	if err != nil {
+		t.Fatalf("failed to insert test member: %v", err)
+	}
+	return db
+}
+
 func TestStateTransition_JobCompleted(t *testing.T) {
 	mock := &mockMessageQueuer{}
+	db := createTestDBWithPrintWebhook(t, "https://discord.com/api/webhooks/test", "jordan", "123456789")
 	m := &Module{
-		notificationChannel: "test-channel",
-		messageQueuer:       mock,
-		db:                  createTestDB(t, "jordan", "123456789"),
+		messageQueuer: mock,
+		db:            db,
 	}
 
 	ctx := context.Background()
@@ -80,8 +108,8 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 		t.Fatalf("expected 1 notification on job completion, got %d", len(messages))
 	}
 
-	if messages[0].channelID != "test-channel" {
-		t.Errorf("expected channel_id 'test-channel', got %q", messages[0].channelID)
+	if messages[0].webhookURL != "https://discord.com/api/webhooks/test" {
+		t.Errorf("expected webhookURL 'https://discord.com/api/webhooks/test', got %q", messages[0].webhookURL)
 	}
 	if !contains(messages[0].payload, "completed successfully") {
 		t.Errorf("payload should contain 'completed successfully', got: %s", messages[0].payload)
@@ -93,10 +121,10 @@ func TestStateTransition_JobCompleted(t *testing.T) {
 
 func TestStateTransition_JobFailed(t *testing.T) {
 	mock := &mockMessageQueuer{}
+	db := createTestDBWithPrintWebhook(t, "https://discord.com/api/webhooks/test", "testuser", "987654321")
 	m := &Module{
-		notificationChannel: "test-channel",
-		messageQueuer:       mock,
-		db:                  createTestDB(t, "testuser", "987654321"),
+		messageQueuer: mock,
+		db:            db,
 	}
 
 	ctx := context.Background()
@@ -139,10 +167,10 @@ func TestStateTransition_JobFailed(t *testing.T) {
 
 func TestStateTransition_NoDuplicateNotifications(t *testing.T) {
 	mock := &mockMessageQueuer{}
+	db := createTestDBWithPrintWebhook(t, "https://discord.com/api/webhooks/test", "testuser", "555555555")
 	m := &Module{
-		notificationChannel: "test-channel",
-		messageQueuer:       mock,
-		db:                  createTestDB(t, "testuser", "555555555"),
+		messageQueuer: mock,
+		db:            db,
 	}
 
 	ctx := context.Background()
@@ -180,11 +208,12 @@ func TestStateTransition_NoDuplicateNotifications(t *testing.T) {
 	}
 }
 
-func TestStateTransition_NoNotificationWhenChannelEmpty(t *testing.T) {
+func TestStateTransition_NoNotificationWhenWebhookEmpty(t *testing.T) {
 	mock := &mockMessageQueuer{}
+	db := createTestDBWithPrintWebhook(t, "", "", "") // No webhook URL configured
 	m := &Module{
-		notificationChannel: "", // No channel configured
-		messageQueuer:       mock,
+		messageQueuer: mock,
+		db:            db,
 	}
 
 	ctx := context.Background()
@@ -204,16 +233,17 @@ func TestStateTransition_NoNotificationWhenChannelEmpty(t *testing.T) {
 	}
 	m.detectStateChanges(ctx, oldState, newState)
 
-	// Should have no notifications (channel not configured)
+	// Should have no notifications (webhook URL not configured)
 	if len(mock.getMessages()) != 0 {
-		t.Errorf("expected 0 notifications when channel is empty, got %d", len(mock.getMessages()))
+		t.Errorf("expected 0 notifications when webhook URL is empty, got %d", len(mock.getMessages()))
 	}
 }
 
 func TestStateTransition_NoNotificationWhenQueuerNil(t *testing.T) {
+	db := createTestDBWithPrintWebhook(t, "https://discord.com/api/webhooks/test", "", "")
 	m := &Module{
-		notificationChannel: "test-channel",
-		messageQueuer:       nil, // No queuer
+		messageQueuer: nil, // No queuer
+		db:            db,
 	}
 
 	ctx := context.Background()
@@ -246,18 +276,6 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
-}
-
-// createTestDB creates a test database with the members schema and a single member for testing.
-func createTestDB(t *testing.T, discordUsername, discordUserID string) *sql.DB {
-	t.Helper()
-	db := members.NewTestDB(t)
-	_, err := db.Exec(`INSERT INTO members (email, discord_username, discord_user_id) VALUES (?, ?, ?)`,
-		discordUsername+"@example.com", discordUsername, discordUserID)
-	if err != nil {
-		t.Fatalf("failed to insert test member: %v", err)
-	}
-	return db
 }
 
 func TestOwnerDiscordHandle(t *testing.T) {

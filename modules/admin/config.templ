@@ -12,6 +12,7 @@ type configSection struct {
 
 var configSections = []*configSection{
 	{Name: "Waiver", Path: "/admin/config/waiver"},
+	{Name: "Discord", Path: "/admin/config/discord"},
 }
 
 templ renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Component) {
@@ -81,4 +82,122 @@ templ renderWaiverConfigContent(data *waiverConfigData) {
 			</form>
 		</div>
 	</div>
+}
+
+type discordConfigData struct {
+	Version         int
+	ClientID        string
+	ClientSecret    string
+	BotToken        string
+	GuildID         string
+	RoleID          string
+	PrintWebhookURL string
+	Saved           bool
+	Error           string
+}
+
+templ renderDiscordConfigContent(data *discordConfigData, selfURL string) {
+	<div class="card mb-4">
+		<div class="card-header d-flex justify-content-between align-items-center">
+			<h5 class="mb-0">Discord Integration</h5>
+			if data.Version > 0 {
+				<span class="badge bg-secondary">{ fmt.Sprintf("Version %d", data.Version) }</span>
+			}
+		</div>
+		<div class="card-body">
+			if data.Saved {
+				<div class="alert alert-success" role="alert">
+					Discord configuration saved successfully.
+				</div>
+			}
+			if data.Error != "" {
+				<div class="alert alert-danger" role="alert">
+					{ data.Error }
+				</div>
+			}
+			<div class="alert alert-info" role="alert">
+				<strong>How Discord Integration Works</strong>
+				<ul class="mb-0 mt-2">
+					<li><strong>Account Linking:</strong> Members can link their Discord accounts via OAuth2. This stores their Discord user ID, email, and avatar.</li>
+					<li><strong>Role Sync:</strong> A background worker automatically assigns/removes a Discord role based on payment status. Paying members get the role; when payment lapses, it's removed.</li>
+					<li><strong>Notifications:</strong> Webhook messages (e.g., 3D printer completion) are sent to configured Discord channels.</li>
+				</ul>
+			</div>
+			<form method="post">
+				<h6 class="text-muted border-bottom pb-2 mb-3">OAuth2 Configuration</h6>
+				<p class="text-muted small mb-3">
+					These settings enable members to link their Discord accounts.
+					Create an OAuth2 application at the
+					<a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Discord Developer Portal</a>.
+					Set the redirect URL to: <code>{ selfURL }/discord/callback</code>
+				</p>
+				<div class="mb-3">
+					<label for="client_id" class="form-label">Client ID</label>
+					<input type="text" class="form-control font-monospace" id="client_id" name="client_id" value={ data.ClientID } placeholder="e.g., 123456789012345678"/>
+					<div class="form-text">The Application ID from Discord Developer Portal.</div>
+				</div>
+				<div class="mb-3">
+					<label for="client_secret" class="form-label">Client Secret</label>
+					<div class="input-group">
+						<input type="password" class="form-control font-monospace" id="client_secret" name="client_secret" value={ data.ClientSecret }/>
+						<button class="btn btn-outline-secondary" type="button" onclick="toggleVisibility('client_secret', this)">Show</button>
+					</div>
+					<div class="form-text">The OAuth2 Client Secret. Keep this confidential.</div>
+				</div>
+				<h6 class="text-muted border-bottom pb-2 mb-3 mt-4">Bot Configuration</h6>
+				<p class="text-muted small mb-3">
+					The bot enables Conway to manage Discord roles based on payment status.
+					Create a bot in your Discord application and invite it to your server with the <code>Manage Roles</code> permission.
+					The bot's role must be positioned <strong>above</strong> the member role in Discord's role hierarchy.
+				</p>
+				<div class="mb-3">
+					<label for="bot_token" class="form-label">Bot Token</label>
+					<div class="input-group">
+						<input type="password" class="form-control font-monospace" id="bot_token" name="bot_token" value={ data.BotToken }/>
+						<button class="btn btn-outline-secondary" type="button" onclick="toggleVisibility('bot_token', this)">Show</button>
+					</div>
+					<div class="form-text">The bot token from Discord Developer Portal. Required for role sync.</div>
+				</div>
+				<div class="mb-3">
+					<label for="guild_id" class="form-label">Server (Guild) ID</label>
+					<input type="text" class="form-control font-monospace" id="guild_id" name="guild_id" value={ data.GuildID } placeholder="e.g., 123456789012345678"/>
+					<div class="form-text">Right-click your server name in Discord (with Developer Mode enabled) and select "Copy Server ID".</div>
+				</div>
+				<div class="mb-3">
+					<label for="role_id" class="form-label">Member Role ID</label>
+					<input type="text" class="form-control font-monospace" id="role_id" name="role_id" value={ data.RoleID } placeholder="e.g., 123456789012345678"/>
+					<div class="form-text">The role to assign to paying members. Right-click the role in Server Settings &gt; Roles and select "Copy Role ID".</div>
+				</div>
+				<h6 class="text-muted border-bottom pb-2 mb-3 mt-4">Notifications</h6>
+				<p class="text-muted small mb-3">
+					Configure webhooks for Discord notifications.
+					Create a webhook in Discord: Channel Settings &gt; Integrations &gt; Webhooks.
+				</p>
+				<div class="mb-3">
+					<label for="print_webhook_url" class="form-label">3D Print Notification Webhook URL</label>
+					<div class="input-group">
+						<input type="password" class="form-control font-monospace" id="print_webhook_url" name="print_webhook_url" value={ data.PrintWebhookURL } placeholder="https://discord.com/api/webhooks/..."/>
+						<button class="btn btn-outline-secondary" type="button" onclick="toggleVisibility('print_webhook_url', this)">Show</button>
+					</div>
+					<div class="form-text">Webhook URL for 3D printer completion and failure notifications.</div>
+				</div>
+				<div class="d-flex justify-content-between align-items-center mt-4">
+					<button type="submit" class="btn btn-primary">Save Changes</button>
+					<span class="text-muted small">Saving creates a new version for audit purposes.</span>
+				</div>
+			</form>
+		</div>
+	</div>
+	<script>
+	function toggleVisibility(inputId, button) {
+		const input = document.getElementById(inputId);
+		if (input.type === 'password') {
+			input.type = 'text';
+			button.textContent = 'Hide';
+		} else {
+			input.type = 'password';
+			button.textContent = 'Show';
+		}
+	}
+	</script>
 }

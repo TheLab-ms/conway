@@ -16,10 +16,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// TODO:
-// - Use generic cronjob for resync
-// - Decouple from members table?
-
 const maxRPS = 3
 
 var endpoint = oauth2.Endpoint{
@@ -28,32 +24,90 @@ var endpoint = oauth2.Endpoint{
 	AuthStyle: oauth2.AuthStyleInParams,
 }
 
+// discordConfig holds Discord-related configuration from the database.
+type discordConfig struct {
+	clientID     string
+	clientSecret string
+	botToken     string
+	guildID      string
+	roleID       string
+}
+
 type Module struct {
 	db             *sql.DB
 	self           *url.URL
 	stateTokIssuer *engine.TokenIssuer
-	authConf       *oauth2.Config
-	roleID         string
-	client         *discordAPIClient
+	httpClient     *http.Client
 }
 
-func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, clientID, clientSecret, botToken, guildID, roleID string) *Module {
-	conf := &oauth2.Config{
-		Endpoint:     endpoint,
-		Scopes:       []string{"identify", "email"},
-		RedirectURL:  fmt.Sprintf("%s/discord/callback", self.String()),
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-	}
-	client := &http.Client{Timeout: time.Second * 10}
+func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer) *Module {
 	return &Module{
 		db:             db,
 		self:           self,
 		stateTokIssuer: iss,
-		authConf:       conf,
-		roleID:         roleID,
-		client:         newDiscordAPIClient(botToken, guildID, client, conf),
+		httpClient:     &http.Client{Timeout: time.Second * 10},
 	}
+}
+
+// loadConfig loads the latest Discord configuration from the database.
+func (m *Module) loadConfig(ctx context.Context) (*discordConfig, error) {
+	if m.db == nil {
+		return &discordConfig{}, nil
+	}
+
+	row := m.db.QueryRowContext(ctx,
+		`SELECT client_id, client_secret, bot_token, guild_id, role_id
+		 FROM discord_config ORDER BY version DESC LIMIT 1`)
+
+	cfg := &discordConfig{}
+	err := row.Scan(&cfg.clientID, &cfg.clientSecret, &cfg.botToken, &cfg.guildID, &cfg.roleID)
+	if err == sql.ErrNoRows {
+		return &discordConfig{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("loading discord config: %w", err)
+	}
+	return cfg, nil
+}
+
+// getOAuthConfig builds an OAuth2 config from the current configuration.
+func (m *Module) getOAuthConfig(ctx context.Context) (*oauth2.Config, error) {
+	cfg, err := m.loadConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.clientID == "" || cfg.clientSecret == "" {
+		return nil, fmt.Errorf("discord OAuth is not configured")
+	}
+	return &oauth2.Config{
+		Endpoint:     endpoint,
+		Scopes:       []string{"identify", "email"},
+		RedirectURL:  fmt.Sprintf("%s/discord/callback", m.self.String()),
+		ClientID:     cfg.clientID,
+		ClientSecret: cfg.clientSecret,
+	}, nil
+}
+
+// getAPIClient creates a Discord API client with current configuration.
+func (m *Module) getAPIClient(ctx context.Context) (*discordAPIClient, error) {
+	cfg, err := m.loadConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.botToken == "" || cfg.guildID == "" {
+		return nil, fmt.Errorf("discord bot is not configured")
+	}
+	authConf, _ := m.getOAuthConfig(ctx) // May be nil if OAuth not configured
+	return newDiscordAPIClient(cfg.botToken, cfg.guildID, m.httpClient, authConf), nil
+}
+
+// getRoleID gets the current role ID from configuration.
+func (m *Module) getRoleID(ctx context.Context) (string, error) {
+	cfg, err := m.loadConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+	return cfg.roleID, nil
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -62,6 +116,12 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 }
 
 func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {
+	authConf, err := m.getOAuthConfig(r.Context())
+	if err != nil {
+		engine.ClientError(w, "Discord Not Configured", "Discord integration is not configured. Please contact an administrator.", 503)
+		return
+	}
+
 	state, err := m.stateTokIssuer.Sign(&jwt.RegisteredClaims{
 		Subject:   strconv.FormatInt(auth.GetUserMeta(r.Context()).ID, 10),
 		Audience:  jwt.ClaimStrings{"discord-oauth"},
@@ -72,7 +132,7 @@ func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, m.authConf.AuthCodeURL(state), http.StatusTemporaryRedirect)
+	http.Redirect(w, r, authConf.AuthCodeURL(state), http.StatusTemporaryRedirect)
 }
 
 func (m *Module) handleCallback(w http.ResponseWriter, r *http.Request) {
@@ -102,11 +162,23 @@ func (m *Module) handleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authCode string) error {
-	token, err := m.authConf.Exchange(ctx, authCode)
+	authConf, err := m.getOAuthConfig(ctx)
 	if err != nil {
 		return err
 	}
-	userInfo, err := m.client.GetUserInfo(ctx, token)
+
+	token, err := authConf.Exchange(ctx, authCode)
+	if err != nil {
+		return err
+	}
+
+	client, err := m.getAPIClient(ctx)
+	if err != nil {
+		// Fall back to minimal client for user info if bot not configured
+		client = newDiscordAPIClient("", "", m.httpClient, authConf)
+	}
+
+	userInfo, err := client.GetUserInfo(ctx, token)
 	if err != nil {
 		return err
 	}
@@ -116,16 +188,18 @@ func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authC
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	if m.roleID == "" {
-		slog.Warn("disabling discord role sync because the role ID was configured")
-		return
-	}
-
+	// Always start workers - they'll check config dynamically
 	mgr.Add(engine.Poll(time.Minute, m.scheduleFullReconciliation))
 	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, maxRPS))))
 }
 
 func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
+	// Check if role sync is configured
+	cfg, err := m.loadConfig(ctx)
+	if err != nil || cfg.botToken == "" || cfg.guildID == "" || cfg.roleID == "" {
+		return false
+	}
+
 	result, err := m.db.ExecContext(ctx, `UPDATE members SET discord_last_synced = NULL WHERE discord_user_id IS NOT NULL AND (discord_last_synced IS NULL OR discord_last_synced < unixepoch() - 86400) AND id IN (SELECT id FROM members WHERE discord_user_id IS NOT NULL AND (discord_last_synced IS NULL OR discord_last_synced < unixepoch() - 86400) ORDER BY id ASC LIMIT 10)`)
 	if err != nil {
 		slog.Error("failed to schedule full Discord reconciliation", "error", err)
@@ -140,6 +214,12 @@ func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
 }
 
 func (m *Module) GetItem(ctx context.Context) (item *syncItem, err error) {
+	// Check if role sync is configured
+	cfg, err := m.loadConfig(ctx)
+	if err != nil || cfg.botToken == "" || cfg.guildID == "" || cfg.roleID == "" {
+		return nil, sql.ErrNoRows // No work to do
+	}
+
 	item = &syncItem{}
 	err = m.db.QueryRowContext(ctx, `UPDATE members SET discord_last_synced = unixepoch() WHERE id = ( SELECT id FROM members WHERE discord_user_id IS NOT NULL AND discord_last_synced IS NULL ORDER BY id ASC LIMIT 1) RETURNING id, discord_user_id, payment_status`).Scan(&item.MemberID, &item.DiscordUserID, &item.PaymentStatus)
 	if err != nil {
@@ -149,8 +229,18 @@ func (m *Module) GetItem(ctx context.Context) (item *syncItem, err error) {
 }
 
 func (m *Module) ProcessItem(ctx context.Context, item *syncItem) error {
+	client, err := m.getAPIClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	roleID, err := m.getRoleID(ctx)
+	if err != nil {
+		return err
+	}
+
 	shouldHaveRole := item.PaymentStatus.Valid && item.PaymentStatus.String != ""
-	changed, memberInfo, err := m.client.EnsureRole(ctx, item.DiscordUserID, m.roleID, shouldHaveRole)
+	changed, memberInfo, err := client.EnsureRole(ctx, item.DiscordUserID, roleID, shouldHaveRole)
 	if err != nil {
 		return err
 	}
@@ -167,14 +257,14 @@ func (m *Module) UpdateItem(ctx context.Context, item *syncItem, success bool) e
 	}
 
 	_, err := m.db.ExecContext(ctx, `
-		UPDATE members 
+		UPDATE members
 		SET discord_last_synced = unixepoch() + MIN(
-			CASE 
+			CASE
 				WHEN discord_last_synced IS NULL OR discord_last_synced <= unixepoch() THEN 300
 				ELSE (discord_last_synced - unixepoch()) * 2
-			END, 
+			END,
 			86400
-		) 
+		)
 		WHERE id = ?`, item.MemberID)
 	return err
 }

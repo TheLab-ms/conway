@@ -220,3 +220,14 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor i
 - [ ] By checking here, you are consenting to the use of your electronic signature in lieu of an original signature on paper.
 - [ ] By checking this box, I agree and acknowledge to be bound by this waiver and release.'
 );
+
+CREATE TABLE IF NOT EXISTS discord_config (
+    version INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    client_id TEXT NOT NULL DEFAULT '',
+    client_secret TEXT NOT NULL DEFAULT '',
+    bot_token TEXT NOT NULL DEFAULT '',
+    guild_id TEXT NOT NULL DEFAULT '',
+    role_id TEXT NOT NULL DEFAULT '',
+    print_webhook_url TEXT NOT NULL DEFAULT ''
+) STRICT;

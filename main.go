@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -16,7 +15,6 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules"
 	"github.com/TheLab-ms/conway/modules/auth"
-	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/caarlos0/env/v11"
@@ -31,18 +29,6 @@ type Config struct {
 
 	StripeKey        string
 	StripeWebhookKey string
-
-	DiscordClientID     string
-	DiscordClientSecret string
-	DiscordBotToken     string
-	DiscordGuildID      string
-	DiscordRoleID       string
-
-	// DiscordWebhooks is a JSON map of channel_id -> webhook_url for Discord notifications
-	DiscordWebhooks string
-
-	// DiscordPrintChannel is the channel_id to use for 3D print notifications
-	DiscordPrintChannel string
 
 	EmailFrom       string
 	EmailSenderName string
@@ -108,34 +94,15 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		sender = email.NewGoogleSmtpSender(conf.EmailFrom, conf.EmailSenderName)
 	}
 
-	// Parse Discord webhook configuration
-	var webhookURLs map[string]string
-	if conf.DiscordWebhooks != "" {
-		if err := json.Unmarshal([]byte(conf.DiscordWebhooks), &webhookURLs); err != nil {
-			slog.Error("failed to parse Discord webhook config", "error", err)
-		}
-	}
-
-	// Create Discord webhook module
-	var webhookSender discordwebhook.Sender
-	if len(webhookURLs) > 0 {
-		webhookSender = discordwebhook.NewHTTPSender()
-	}
-	discordWebhookMod := discordwebhook.New(database, webhookSender, webhookURLs)
-
 	var machinesMod *machines.Module
 	if conf.BambuPrinters != "" {
-		machinesMod = machines.New(database, conf.BambuPrinters, conf.DiscordPrintChannel, discordWebhookMod)
+		machinesMod = machines.New(database, conf.BambuPrinters)
 	} else {
 		slog.Info("machines module disabled because no devices were configured")
 	}
 
 	if conf.AccessControllerHost == "" {
 		slog.Info("generic access controller module disabled because a URL was not configured")
-	}
-
-	if conf.DiscordClientID == "" {
-		slog.Info("discord module disabled because a client ID was not configured")
 	}
 
 	a := engine.NewApp(conf.HttpAddr, router)
@@ -152,13 +119,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		StripeWebhookKey:     conf.StripeWebhookKey,
 		SpaceHost:            conf.SpaceHost,
 		MachinesModule:       machinesMod,
-		DiscordWebhookModule: discordWebhookMod,
 		AccessControllerHost: conf.AccessControllerHost,
-		DiscordClientID:      conf.DiscordClientID,
-		DiscordClientSecret:  conf.DiscordClientSecret,
-		DiscordBotToken:      conf.DiscordBotToken,
-		DiscordGuildID:       conf.DiscordGuildID,
-		DiscordRoleID:        conf.DiscordRoleID,
 	})
 
 	return a, nil
