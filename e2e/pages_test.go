@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"net/url"
 	"testing"
 
@@ -79,12 +80,12 @@ func (p *WaiverPage) FillEmail(email string) {
 }
 
 func (p *WaiverPage) CheckAgree1() {
-	err := p.page.Locator("#agree1").Check()
+	err := p.page.Locator("#agree0").Check()
 	require.NoError(p.t, err)
 }
 
 func (p *WaiverPage) CheckAgree2() {
-	err := p.page.Locator("#agree2").Check()
+	err := p.page.Locator("#agree1").Check()
 	require.NoError(p.t, err)
 }
 
@@ -468,4 +469,54 @@ func (p *MachinesPage) ExpectTimeRemaining(printerName string) {
 func (p *MachinesPage) ExpectErrorCode(printerName, errorCode string) {
 	locator := p.PrinterCard(printerName).Locator("small.text-muted", playwright.LocatorLocatorOptions{HasText: errorCode})
 	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+// AdminWaiverConfigPage represents the admin waiver configuration page.
+type AdminWaiverConfigPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewAdminWaiverConfigPage(t *testing.T, page playwright.Page) *AdminWaiverConfigPage {
+	return &AdminWaiverConfigPage{page: page, t: t}
+}
+
+func (p *AdminWaiverConfigPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/admin/config/waiver")
+	require.NoError(p.t, err)
+}
+
+func (p *AdminWaiverConfigPage) GetContent() string {
+	content, err := p.page.Locator("#content").InputValue()
+	require.NoError(p.t, err)
+	return content
+}
+
+func (p *AdminWaiverConfigPage) SetContent(content string) {
+	err := p.page.Locator("#content").Fill(content)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminWaiverConfigPage) Submit() {
+	err := p.page.Locator("button[type='submit']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminWaiverConfigPage) ExpectVersionBadge(version int) {
+	locator := p.page.Locator(".badge", playwright.PageLocatorOptions{HasText: fmt.Sprintf("Version %d", version)})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminWaiverConfigPage) ExpectSaveSuccessMessage() {
+	locator := p.page.Locator(".alert-success", playwright.PageLocatorOptions{HasText: "saved successfully"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminWaiverConfigPage) ExpectPreviewLink() {
+	expect(p.t).Locator(p.page.Locator("a:has-text('Preview Waiver')")).ToBeVisible()
+}
+
+func (p *AdminWaiverConfigPage) ExpectSyntaxGuide() {
+	expect(p.t).Locator(p.page.GetByText("# Title")).ToBeVisible()
+	expect(p.t).Locator(p.page.GetByText("- [ ] Checkbox text")).ToBeVisible()
 }

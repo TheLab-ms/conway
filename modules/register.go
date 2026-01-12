@@ -65,13 +65,17 @@ type Options struct {
 // Register adds all modules to the app and returns the auth module
 // (which must be set as the router's authenticator by the caller).
 func Register(a *engine.App, opts Options) *auth.Module {
-	// Members module must be registered first to apply base schema
+	// Auth module must be created and set as authenticator FIRST,
+	// before any modules that use WithAuthn are added.
+	authModule := auth.New(opts.Database, opts.Self, opts.Turnstile, opts.AuthIssuer)
+	a.Router.Authenticator = authModule
+
+	// Members module registered early to apply base schema
 	// before other modules attempt to use the members tables.
 	a.Add(members.New(opts.Database))
 
-	authModule := auth.New(opts.Database, opts.Self, opts.Turnstile, opts.AuthIssuer)
+	// Now add auth routes
 	a.Add(authModule)
-	a.Router.Authenticator = authModule // Must set before adding modules that use WithAuthn
 
 	a.Add(email.New(opts.Database, opts.EmailSender))
 	a.Add(oauth2.New(opts.Database, opts.Self, opts.OAuthIssuer))

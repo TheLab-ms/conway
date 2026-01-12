@@ -211,6 +211,25 @@ func seedWaiver(t *testing.T, email string) {
 	require.NoError(t, err, "could not insert waiver")
 }
 
+// seedWaiverContent creates waiver content in the database.
+func seedWaiverContent(t *testing.T, content string) int {
+	t.Helper()
+	result, err := testDB.Exec(`INSERT INTO waiver_content (content) VALUES (?)`, content)
+	require.NoError(t, err, "could not insert waiver content")
+	version, err := result.LastInsertId()
+	require.NoError(t, err, "could not get waiver content version")
+	return int(version)
+}
+
+// clearWaiverContent removes all waiver content from the database.
+func clearWaiverContent(t *testing.T) {
+	t.Helper()
+	_, err := testDB.Exec(`DELETE FROM waiver_content`)
+	if err != nil {
+		t.Logf("warning: could not clear waiver_content: %v", err)
+	}
+}
+
 // seedFobSwipes creates fob swipe history for a member.
 func seedFobSwipes(t *testing.T, fobID int64, count int) {
 	t.Helper()
@@ -313,7 +332,7 @@ func seedLoginCode(t *testing.T, code string, memberID int64, callback string, e
 // clearTestData removes all test data from the database between tests.
 func clearTestData(t *testing.T) {
 	t.Helper()
-	tables := []string{"members", "waivers", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes"}
+	tables := []string{"members", "waivers", "waiver_content", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes"}
 	for _, table := range tables {
 		_, err := testDB.Exec(fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {

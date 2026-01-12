@@ -252,8 +252,8 @@ func TestWaiver_Display(t *testing.T) {
 	waiverPage.ExpectWaiverText()
 
 	// Check that the form elements are present
+	expect(t).Locator(page.Locator("#agree0")).ToBeVisible()
 	expect(t).Locator(page.Locator("#agree1")).ToBeVisible()
-	expect(t).Locator(page.Locator("#agree2")).ToBeVisible()
 	expect(t).Locator(page.Locator("#name")).ToBeVisible()
 	expect(t).Locator(page.Locator("#email")).ToBeVisible()
 }
@@ -1206,4 +1206,427 @@ func TestStripe_SubscriptionLifecycle(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Log("Test completed: subscription created and cancellation initiated via Billing Portal")
+}
+
+// TestWaiver_SuccessfulSubmission verifies that a user can successfully sign
+// the waiver by filling all required fields and checking all checkboxes.
+func TestWaiver_SuccessfulSubmission(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+	waiverPage := NewWaiverPage(t, page)
+
+	waiverPage.Navigate()
+	waiverPage.CheckAgree1()
+	waiverPage.CheckAgree2()
+	waiverPage.FillName("Test Signer")
+	waiverPage.FillEmail("testsigner@example.com")
+	waiverPage.Submit()
+
+	waiverPage.ExpectSuccessMessage()
+
+	// Verify waiver was created in database
+	var name, email string
+	err := testDB.QueryRow("SELECT name, email FROM waivers WHERE email = ?", "testsigner@example.com").Scan(&name, &email)
+	require.NoError(t, err, "waiver should be created in database")
+	assert.Equal(t, "Test Signer", name)
+	assert.Equal(t, "testsigner@example.com", email)
+}
+
+// TestWaiver_PrefilledEmail verifies that the email field can be prefilled
+// via query parameter.
+func TestWaiver_PrefilledEmail(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+
+	_, err := page.Goto(baseURL + "/waiver?email=prefilled@example.com")
+	require.NoError(t, err)
+
+	emailValue, err := page.Locator("#email").InputValue()
+	require.NoError(t, err)
+	assert.Equal(t, "prefilled@example.com", emailValue)
+}
+
+// TestWaiver_CustomContent verifies that custom waiver content set by admin
+// is displayed correctly on the waiver page.
+func TestWaiver_CustomContent(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+	clearWaiverContent(t)
+
+	customContent := `# Custom Waiver Title
+
+This is a custom waiver paragraph with special content.
+
+Another paragraph here.
+
+- [ ] I agree to the first custom term
+- [ ] I agree to the second custom term
+- [ ] I agree to the third custom term`
+
+	seedWaiverContent(t, customContent)
+
+	waiverPage := NewWaiverPage(t, page)
+	waiverPage.Navigate()
+
+	// Verify custom title is displayed
+	expect(t).Locator(page.GetByText("Custom Waiver Title")).ToBeVisible()
+
+	// Verify custom paragraph is displayed
+	expect(t).Locator(page.GetByText("This is a custom waiver paragraph")).ToBeVisible()
+
+	// Verify three checkboxes are present (custom waiver has 3)
+	checkboxes := page.Locator("input[type='checkbox']")
+	count, err := checkboxes.Count()
+	require.NoError(t, err)
+	assert.Equal(t, 3, count, "should have 3 checkboxes for custom waiver")
+}
+
+// TestWaiver_DynamicCheckboxes verifies that waiver checkboxes are generated
+// dynamically from markdown content and all must be checked.
+func TestWaiver_DynamicCheckboxes(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+	clearWaiverContent(t)
+
+	customContent := `# Test Waiver
+
+Test paragraph.
+
+- [ ] First checkbox
+- [ ] Second checkbox
+- [ ] Third checkbox
+- [ ] Fourth checkbox`
+
+	seedWaiverContent(t, customContent)
+
+	waiverPage := NewWaiverPage(t, page)
+	waiverPage.Navigate()
+
+	// Verify 4 checkboxes are present
+	checkboxes := page.Locator("input[type='checkbox']")
+	count, err := checkboxes.Count()
+	require.NoError(t, err)
+	assert.Equal(t, 4, count, "should have 4 checkboxes")
+
+	// Fill form but only check 2 of 4 checkboxes
+	err = page.Locator("#agree0").Check()
+	require.NoError(t, err)
+	err = page.Locator("#agree1").Check()
+	require.NoError(t, err)
+	err = page.Locator("#name").Fill("Partial Signer")
+	require.NoError(t, err)
+	err = page.Locator("#email").Fill("partial@example.com")
+	require.NoError(t, err)
+
+	// Submit - should fail due to HTML5 validation
+	err = page.Locator("button[type='submit']").Click()
+	require.NoError(t, err)
+
+	// Verify no waiver was created
+	var count2 int
+	err = testDB.QueryRow("SELECT COUNT(*) FROM waivers WHERE email = ?", "partial@example.com").Scan(&count2)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count2, "waiver should not be created with unchecked boxes")
+}
+
+// TestWaiver_VersionTracking verifies that signed waivers record the version
+// of the waiver content that was signed.
+func TestWaiver_VersionTracking(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+	clearWaiverContent(t)
+
+	// Create version 1
+	content := `# Version Test
+
+Test content.
+
+- [ ] I agree`
+
+	version := seedWaiverContent(t, content)
+
+	waiverPage := NewWaiverPage(t, page)
+	waiverPage.Navigate()
+
+	// Sign the waiver
+	err := page.Locator("#agree0").Check()
+	require.NoError(t, err)
+	err = page.Locator("#name").Fill("Version Tester")
+	require.NoError(t, err)
+	err = page.Locator("#email").Fill("versiontest@example.com")
+	require.NoError(t, err)
+	err = page.Locator("button[type='submit']").Click()
+	require.NoError(t, err)
+
+	waiverPage.ExpectSuccessMessage()
+
+	// Verify the waiver was signed with correct version
+	var signedVersion int
+	err = testDB.QueryRow("SELECT version FROM waivers WHERE email = ?", "versiontest@example.com").Scan(&signedVersion)
+	require.NoError(t, err)
+	assert.Equal(t, version, signedVersion, "signed waiver should have correct version")
+}
+
+// TestAdmin_WaiverConfigPage verifies that leadership can access the waiver
+// configuration page and see all required elements.
+func TestAdmin_WaiverConfigPage(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	configPage := NewAdminWaiverConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Verify page elements
+	expect(t).Locator(page.GetByText("Waiver Content")).ToBeVisible()
+	configPage.ExpectPreviewLink()
+	configPage.ExpectSyntaxGuide()
+
+	// Verify textarea is present and editable
+	textarea := page.Locator("#content")
+	expect(t).Locator(textarea).ToBeVisible()
+	expect(t).Locator(textarea).ToBeEditable()
+}
+
+// TestAdmin_WaiverConfigSave verifies that saving waiver content creates a
+// new version and shows a success message.
+func TestAdmin_WaiverConfigSave(t *testing.T) {
+	_, page := setupAdminTest(t)
+	clearWaiverContent(t)
+
+	configPage := NewAdminWaiverConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	newContent := `# Updated Waiver
+
+This is the updated waiver content.
+
+- [ ] I agree to the updated terms`
+
+	configPage.SetContent(newContent)
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+	configPage.ExpectVersionBadge(1)
+
+	// Verify content was saved to database (normalize line endings for comparison)
+	var savedContent string
+	err = testDB.QueryRow("SELECT content FROM waiver_content ORDER BY version DESC LIMIT 1").Scan(&savedContent)
+	require.NoError(t, err)
+	assert.Equal(t, newContent, strings.ReplaceAll(savedContent, "\r\n", "\n"))
+}
+
+// TestAdmin_WaiverConfigVersionIncrement verifies that each save creates a
+// new version with incrementing version number.
+func TestAdmin_WaiverConfigVersionIncrement(t *testing.T) {
+	_, page := setupAdminTest(t)
+	clearWaiverContent(t)
+
+	configPage := NewAdminWaiverConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Save first version
+	firstContent := `# First Version
+
+- [ ] First agreement`
+
+	configPage.SetContent(firstContent)
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectVersionBadge(1)
+
+	// Save second version
+	secondContent := `# Second Version
+
+- [ ] Second agreement`
+
+	configPage.SetContent(secondContent)
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectVersionBadge(2)
+
+	// Verify both versions exist in database
+	var count int
+	err = testDB.QueryRow("SELECT COUNT(*) FROM waiver_content").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count, "should have 2 waiver versions")
+}
+
+// TestAdmin_WaiverConfigRequiresLeadership verifies that non-leadership
+// members cannot access the waiver configuration page.
+func TestAdmin_WaiverConfigRequiresLeadership(t *testing.T) {
+	_, page := setupMemberTest(t, "regular@example.com",
+		WithConfirmed(),
+		WithWaiver(),
+		WithActiveStripeSubscription(),
+		WithFobID(12345),
+	)
+
+	resp, err := page.Goto(baseURL + "/admin/config/waiver")
+	require.NoError(t, err)
+	assert.Equal(t, 403, resp.Status(), "non-leadership should get 403")
+}
+
+// TestAdmin_WaiverListPage verifies the admin waivers list page displays
+// signed waivers with correct information.
+func TestAdmin_WaiverListPage(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	// Seed some waivers
+	seedWaiver(t, "waiver1@example.com")
+	seedWaiver(t, "waiver2@example.com")
+
+	waiversPage := NewAdminWaiversPage(t, page)
+	waiversPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Verify waivers are displayed
+	expect(t).Locator(page.Locator("#results")).ToBeVisible()
+	waiversPage.ExpectRowWithText("waiver1@example.com")
+	waiversPage.ExpectRowWithText("waiver2@example.com")
+}
+
+// TestJourney_AdminEditsWaiverMemberSigns tests the complete flow of an admin
+// editing waiver content and a new member signing the updated waiver.
+func TestJourney_AdminEditsWaiverMemberSigns(t *testing.T) {
+	// Step 1: Admin edits the waiver
+	_, adminPage := setupAdminTest(t)
+	clearWaiverContent(t)
+
+	configPage := NewAdminWaiverConfigPage(t, adminPage)
+	configPage.Navigate()
+
+	err := adminPage.WaitForLoadState()
+	require.NoError(t, err)
+
+	customContent := `# Custom Liability Waiver
+
+By signing this waiver, you acknowledge our terms.
+
+- [ ] I understand and accept the risks
+- [ ] I agree to follow all safety rules`
+
+	configPage.SetContent(customContent)
+	configPage.Submit()
+
+	err = adminPage.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+
+	// Step 2: New user navigates to waiver page and sees custom content
+	memberPage := newPage(t)
+
+	_, err = memberPage.Goto(baseURL + "/waiver")
+	require.NoError(t, err)
+
+	// Verify custom title is displayed
+	expect(t).Locator(memberPage.GetByText("Custom Liability Waiver")).ToBeVisible()
+
+	// Verify custom checkboxes are displayed
+	expect(t).Locator(memberPage.GetByText("I understand and accept the risks")).ToBeVisible()
+	expect(t).Locator(memberPage.GetByText("I agree to follow all safety rules")).ToBeVisible()
+
+	// Step 3: Member signs the waiver
+	err = memberPage.Locator("#agree0").Check()
+	require.NoError(t, err)
+	err = memberPage.Locator("#agree1").Check()
+	require.NoError(t, err)
+	err = memberPage.Locator("#name").Fill("Journey Test User")
+	require.NoError(t, err)
+	err = memberPage.Locator("#email").Fill("journey@example.com")
+	require.NoError(t, err)
+	err = memberPage.Locator("button[type='submit']").Click()
+	require.NoError(t, err)
+
+	// Verify success
+	expect(t).Locator(memberPage.GetByText("Waiver has been submitted successfully")).ToBeVisible()
+
+	// Verify waiver saved with correct version (should be the latest version)
+	var signedVersion int
+	err = testDB.QueryRow("SELECT version FROM waivers WHERE email = ?", "journey@example.com").Scan(&signedVersion)
+	require.NoError(t, err)
+
+	var latestContentVersion int
+	err = testDB.QueryRow("SELECT MAX(version) FROM waiver_content").Scan(&latestContentVersion)
+	require.NoError(t, err)
+	assert.Equal(t, latestContentVersion, signedVersion, "waiver should be signed with the latest waiver content version")
+
+	// Step 4: Admin can see the signed waiver in the list
+	waiversPage := NewAdminWaiversPage(t, adminPage)
+	waiversPage.Navigate()
+
+	err = adminPage.WaitForLoadState()
+	require.NoError(t, err)
+
+	waiversPage.ExpectRowWithText("journey@example.com")
+}
+
+// TestWaiver_DefaultContent verifies that when no custom content exists in the
+// database, the default waiver content is displayed.
+func TestWaiver_DefaultContent(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+	clearWaiverContent(t)
+
+	waiverPage := NewWaiverPage(t, page)
+	waiverPage.Navigate()
+
+	// Default waiver should have "TheLab Liability Waiver" title
+	waiverPage.ExpectWaiverText()
+
+	// Default waiver has 2 checkboxes
+	expect(t).Locator(page.Locator("#agree0")).ToBeVisible()
+	expect(t).Locator(page.Locator("#agree1")).ToBeVisible()
+}
+
+// TestWaiver_DuplicateSubmission verifies that submitting a waiver with the
+// same email doesn't create duplicate records (ON CONFLICT DO NOTHING).
+func TestWaiver_DuplicateSubmission(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+
+	email := "duplicate@example.com"
+
+	// Submit first waiver
+	waiverPage := NewWaiverPage(t, page)
+	waiverPage.Navigate()
+	waiverPage.CheckAgree1()
+	waiverPage.CheckAgree2()
+	waiverPage.FillName("First Submission")
+	waiverPage.FillEmail(email)
+	waiverPage.Submit()
+	waiverPage.ExpectSuccessMessage()
+
+	// Submit second waiver with same email
+	waiverPage.Navigate()
+	waiverPage.CheckAgree1()
+	waiverPage.CheckAgree2()
+	waiverPage.FillName("Second Submission")
+	waiverPage.FillEmail(email)
+	waiverPage.Submit()
+	waiverPage.ExpectSuccessMessage()
+
+	// Verify only one waiver exists
+	var count int
+	err := testDB.QueryRow("SELECT COUNT(*) FROM waivers WHERE email = ?", email).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "should only have one waiver for the email")
+
+	// Verify the first name was kept (ON CONFLICT DO NOTHING)
+	var name string
+	err = testDB.QueryRow("SELECT name FROM waivers WHERE email = ?", email).Scan(&name)
+	require.NoError(t, err)
+	assert.Equal(t, "First Submission", name, "original waiver should be preserved")
 }
