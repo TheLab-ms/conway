@@ -505,9 +505,7 @@ func TestAdmin_RequiresLeadership(t *testing.T) {
 	endpoints := []string{
 		"/admin/members",
 		"/admin/metrics",
-		"/admin/fobs",
 		"/admin/events",
-		"/admin/waivers",
 	}
 
 	for _, endpoint := range endpoints {
@@ -687,35 +685,27 @@ func TestJourney_MultipleMembers(t *testing.T) {
 	assert.Equal(t, "Second member notes", notes2)
 }
 
-// TestAdmin_DataListPages verifies that all admin data list pages load
-// and display results correctly.
+// TestAdmin_DataListPages verifies that the admin events page loads
+// and displays results from all event types (fob swipes, member events, waivers).
 func TestAdmin_DataListPages(t *testing.T) {
 	_, page := setupAdminTest(t)
 
-	// Seed test data for all pages
+	// Seed test data for all event types
 	memberID := seedMember(t, "data@example.com", WithConfirmed(), WithFobID(11111))
 	seedFobSwipes(t, 11111, 3)
 	seedMemberEvents(t, memberID, 3)
 	seedWaiver(t, "waiver@example.com")
 
-	pages := []struct {
-		name   string
-		pageFn func(*testing.T, playwright.Page) *AdminDataListPage
-	}{
-		{"fobs", NewAdminFobsPage},
-		{"events", NewAdminEventsPage},
-		{"waivers", NewAdminWaiversPage},
-	}
+	eventsPage := NewAdminEventsPage(t, page)
+	eventsPage.Navigate()
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+	expect(t).Locator(page.Locator("#results")).ToBeVisible()
 
-	for _, tc := range pages {
-		t.Run(tc.name, func(t *testing.T) {
-			dataPage := tc.pageFn(t, page)
-			dataPage.Navigate()
-			err := page.WaitForLoadState()
-			require.NoError(t, err)
-			expect(t).Locator(page.Locator("#results")).ToBeVisible()
-		})
-	}
+	// Verify fob swipes appear (shown as fob ID in details)
+	eventsPage.ExpectRowWithText("11111")
+	// Verify waivers appear (shown as email in details)
+	eventsPage.ExpectRowWithText("waiver@example.com")
 }
 
 // TestAdmin_Pagination verifies that pagination controls work correctly
@@ -1477,7 +1467,7 @@ func TestAdmin_WaiverConfigRequiresLeadership(t *testing.T) {
 	assert.Equal(t, 403, resp.Status(), "non-leadership should get 403")
 }
 
-// TestAdmin_WaiverListPage verifies the admin waivers list page displays
+// TestAdmin_WaiverListPage verifies the admin events page displays
 // signed waivers with correct information.
 func TestAdmin_WaiverListPage(t *testing.T) {
 	_, page := setupAdminTest(t)
@@ -1486,16 +1476,16 @@ func TestAdmin_WaiverListPage(t *testing.T) {
 	seedWaiver(t, "waiver1@example.com")
 	seedWaiver(t, "waiver2@example.com")
 
-	waiversPage := NewAdminWaiversPage(t, page)
-	waiversPage.Navigate()
+	eventsPage := NewAdminEventsPage(t, page)
+	eventsPage.Navigate()
 
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
 
-	// Verify waivers are displayed
+	// Verify waivers are displayed (emails shown in details column)
 	expect(t).Locator(page.Locator("#results")).ToBeVisible()
-	waiversPage.ExpectRowWithText("waiver1@example.com")
-	waiversPage.ExpectRowWithText("waiver2@example.com")
+	eventsPage.ExpectRowWithText("waiver1@example.com")
+	eventsPage.ExpectRowWithText("waiver2@example.com")
 }
 
 // TestJourney_AdminEditsWaiverMemberSigns tests the complete flow of an admin
@@ -1565,13 +1555,13 @@ By signing this waiver, you acknowledge our terms.
 	assert.Equal(t, latestContentVersion, signedVersion, "waiver should be signed with the latest waiver content version")
 
 	// Step 4: Admin can see the signed waiver in the list
-	waiversPage := NewAdminWaiversPage(t, adminPage)
-	waiversPage.Navigate()
+	eventsPage := NewAdminEventsPage(t, adminPage)
+	eventsPage.Navigate()
 
 	err = adminPage.WaitForLoadState()
 	require.NoError(t, err)
 
-	waiversPage.ExpectRowWithText("journey@example.com")
+	eventsPage.ExpectRowWithText("journey@example.com")
 }
 
 // TestWaiver_MissingContent verifies that when no waiver content exists in the

@@ -323,16 +323,8 @@ type AdminDataListPage struct {
 	path string
 }
 
-func NewAdminFobsPage(t *testing.T, page playwright.Page) *AdminDataListPage {
-	return &AdminDataListPage{page: page, t: t, path: "/admin/fobs"}
-}
-
 func NewAdminEventsPage(t *testing.T, page playwright.Page) *AdminDataListPage {
 	return &AdminDataListPage{page: page, t: t, path: "/admin/events"}
-}
-
-func NewAdminWaiversPage(t *testing.T, page playwright.Page) *AdminDataListPage {
-	return &AdminDataListPage{page: page, t: t, path: "/admin/waivers"}
 }
 
 func (p *AdminDataListPage) Navigate() {
