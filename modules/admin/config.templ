@@ -5,6 +5,20 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
+func secretPlaceholder(hasValue bool) string {
+	if hasValue {
+		return "(secret is set - leave blank to keep)"
+	}
+	return "(not set)"
+}
+
+func secretHelpText(hasValue bool) string {
+	if hasValue {
+		return "Leave blank to keep the current value."
+	}
+	return ""
+}
+
 type configSection struct {
 	Name string
 	Path string
@@ -85,15 +99,15 @@ templ renderWaiverConfigContent(data *waiverConfigData) {
 }
 
 type discordConfigData struct {
-	Version         int
-	ClientID        string
-	ClientSecret    string
-	BotToken        string
-	GuildID         string
-	RoleID          string
-	PrintWebhookURL string
-	Saved           bool
-	Error           string
+	Version            int
+	ClientID           string
+	HasClientSecret    bool
+	HasBotToken        bool
+	GuildID            string
+	RoleID             string
+	HasPrintWebhookURL bool
+	Saved              bool
+	Error              string
 }
 
 templ renderDiscordConfigContent(data *discordConfigData, selfURL string) {
@@ -139,10 +153,9 @@ templ renderDiscordConfigContent(data *discordConfigData, selfURL string) {
 				<div class="mb-3">
 					<label for="client_secret" class="form-label">Client Secret</label>
 					<div class="input-group">
-						<input type="password" class="form-control font-monospace" id="client_secret" name="client_secret" value={ data.ClientSecret }/>
-						<button class="btn btn-outline-secondary" type="button" onclick="toggleVisibility('client_secret', this)">Show</button>
+						<input type="password" class="form-control font-monospace" id="client_secret" name="client_secret" placeholder={ secretPlaceholder(data.HasClientSecret) }/>
 					</div>
-					<div class="form-text">The OAuth2 Client Secret. Keep this confidential.</div>
+					<div class="form-text">The OAuth2 Client Secret. Keep this confidential. { secretHelpText(data.HasClientSecret) }</div>
 				</div>
 				<h6 class="text-muted border-bottom pb-2 mb-3 mt-4">Bot Configuration</h6>
 				<p class="text-muted small mb-3">
@@ -153,10 +166,9 @@ templ renderDiscordConfigContent(data *discordConfigData, selfURL string) {
 				<div class="mb-3">
 					<label for="bot_token" class="form-label">Bot Token</label>
 					<div class="input-group">
-						<input type="password" class="form-control font-monospace" id="bot_token" name="bot_token" value={ data.BotToken }/>
-						<button class="btn btn-outline-secondary" type="button" onclick="toggleVisibility('bot_token', this)">Show</button>
+						<input type="password" class="form-control font-monospace" id="bot_token" name="bot_token" placeholder={ secretPlaceholder(data.HasBotToken) }/>
 					</div>
-					<div class="form-text">The bot token from Discord Developer Portal. Required for role sync.</div>
+					<div class="form-text">The bot token from Discord Developer Portal. Required for role sync. { secretHelpText(data.HasBotToken) }</div>
 				</div>
 				<div class="mb-3">
 					<label for="guild_id" class="form-label">Server (Guild) ID</label>
@@ -176,10 +188,9 @@ templ renderDiscordConfigContent(data *discordConfigData, selfURL string) {
 				<div class="mb-3">
 					<label for="print_webhook_url" class="form-label">3D Print Notification Webhook URL</label>
 					<div class="input-group">
-						<input type="password" class="form-control font-monospace" id="print_webhook_url" name="print_webhook_url" value={ data.PrintWebhookURL } placeholder="https://discord.com/api/webhooks/..."/>
-						<button class="btn btn-outline-secondary" type="button" onclick="toggleVisibility('print_webhook_url', this)">Show</button>
+						<input type="password" class="form-control font-monospace" id="print_webhook_url" name="print_webhook_url" placeholder={ secretPlaceholder(data.HasPrintWebhookURL) }/>
 					</div>
-					<div class="form-text">Webhook URL for 3D printer completion and failure notifications.</div>
+					<div class="form-text">Webhook URL for 3D printer completion and failure notifications. { secretHelpText(data.HasPrintWebhookURL) }</div>
 				</div>
 				<div class="d-flex justify-content-between align-items-center mt-4">
 					<button type="submit" class="btn btn-primary">Save Changes</button>
@@ -188,16 +199,4 @@ templ renderDiscordConfigContent(data *discordConfigData, selfURL string) {
 			</form>
 		</div>
 	</div>
-	<script>
-	function toggleVisibility(inputId, button) {
-		const input = document.getElementById(inputId);
-		if (input.type === 'password') {
-			input.type = 'text';
-			button.textContent = 'Hide';
-		} else {
-			input.type = 'password';
-			button.textContent = 'Show';
-		}
-	}
-	</script>
 }

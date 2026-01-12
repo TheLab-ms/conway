@@ -382,6 +382,23 @@ func (m *Module) handleDiscordConfigSave(w http.ResponseWriter, r *http.Request)
 	roleID := r.FormValue("role_id")
 	printWebhookURL := r.FormValue("print_webhook_url")
 
+	// Preserve existing secrets if the user didn't provide new values
+	var existingClientSecret, existingBotToken, existingPrintWebhookURL string
+	m.db.QueryRowContext(r.Context(),
+		`SELECT client_secret, bot_token, print_webhook_url
+		 FROM discord_config ORDER BY version DESC LIMIT 1`).
+		Scan(&existingClientSecret, &existingBotToken, &existingPrintWebhookURL)
+
+	if clientSecret == "" {
+		clientSecret = existingClientSecret
+	}
+	if botToken == "" {
+		botToken = existingBotToken
+	}
+	if printWebhookURL == "" {
+		printWebhookURL = existingPrintWebhookURL
+	}
+
 	// Insert new version
 	_, err := m.db.ExecContext(r.Context(),
 		`INSERT INTO discord_config
@@ -400,14 +417,14 @@ func (m *Module) handleDiscordConfigSave(w http.ResponseWriter, r *http.Request)
 
 func (m *Module) getDiscordConfigData(r *http.Request) *discordConfigData {
 	row := m.db.QueryRowContext(r.Context(),
-		`SELECT version, client_id, client_secret, bot_token,
-				guild_id, role_id, print_webhook_url
+		`SELECT version, client_id, client_secret != '', bot_token != '',
+				guild_id, role_id, print_webhook_url != ''
 		 FROM discord_config ORDER BY version DESC LIMIT 1`)
 
 	data := &discordConfigData{}
-	err := row.Scan(&data.Version, &data.ClientID, &data.ClientSecret,
-		&data.BotToken, &data.GuildID, &data.RoleID,
-		&data.PrintWebhookURL)
+	err := row.Scan(&data.Version, &data.ClientID, &data.HasClientSecret,
+		&data.HasBotToken, &data.GuildID, &data.RoleID,
+		&data.HasPrintWebhookURL)
 	if err != nil && err != sql.ErrNoRows {
 		data.Error = "Error loading configuration: " + err.Error()
 	}

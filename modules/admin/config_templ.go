@@ -13,6 +13,20 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
+func secretPlaceholder(hasValue bool) string {
+	if hasValue {
+		return "(secret is set - leave blank to keep)"
+	}
+	return "(not set)"
+}
+
+func secretHelpText(hasValue bool) string {
+	if hasValue {
+		return "Leave blank to keep the current value."
+	}
+	return ""
+}
+
 type configSection struct {
 	Name string
 	Path string
@@ -73,7 +87,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var3 templ.SafeURL
 					templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(section.Path))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 31, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 45, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 					if templ_7745c5c3_Err != nil {
@@ -86,7 +100,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(section.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 31, Col: 117}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 45, Col: 117}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {
@@ -104,7 +118,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var5 templ.SafeURL
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(section.Path))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 33, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 47, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
@@ -117,7 +131,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(section.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 33, Col: 110}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 47, Col: 110}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -185,7 +199,7 @@ func renderWaiverConfigContent(data *waiverConfigData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 57, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 71, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -208,7 +222,7 @@ func renderWaiverConfigContent(data *waiverConfigData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(data.Content)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 68, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 82, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -223,15 +237,15 @@ func renderWaiverConfigContent(data *waiverConfigData) templ.Component {
 }
 
 type discordConfigData struct {
-	Version         int
-	ClientID        string
-	ClientSecret    string
-	BotToken        string
-	GuildID         string
-	RoleID          string
-	PrintWebhookURL string
-	Saved           bool
-	Error           string
+	Version            int
+	ClientID           string
+	HasClientSecret    bool
+	HasBotToken        bool
+	GuildID            string
+	RoleID             string
+	HasPrintWebhookURL bool
+	Saved              bool
+	Error              string
 }
 
 func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.Component {
@@ -267,7 +281,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 104, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 118, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -296,7 +310,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(data.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 115, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 129, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -314,7 +328,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 132, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 146, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -327,78 +341,117 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(data.ClientID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 136, Col: 113}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 150, Col: 113}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" placeholder=\"e.g., 123456789012345678\"><div class=\"form-text\">The Application ID from Discord Developer Portal.</div></div><div class=\"mb-3\"><label for=\"client_secret\" class=\"form-label\">Client Secret</label><div class=\"input-group\"><input type=\"password\" class=\"form-control font-monospace\" id=\"client_secret\" name=\"client_secret\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" placeholder=\"e.g., 123456789012345678\"><div class=\"form-text\">The Application ID from Discord Developer Portal.</div></div><div class=\"mb-3\"><label for=\"client_secret\" class=\"form-label\">Client Secret</label><div class=\"input-group\"><input type=\"password\" class=\"form-control font-monospace\" id=\"client_secret\" name=\"client_secret\" placeholder=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var15 string
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(data.ClientSecret)
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasClientSecret))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 142, Col: 130}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 156, Col: 158}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\"> <button class=\"btn btn-outline-secondary\" type=\"button\" onclick=\"toggleVisibility('client_secret', this)\">Show</button></div><div class=\"form-text\">The OAuth2 Client Secret. Keep this confidential.</div></div><h6 class=\"text-muted border-bottom pb-2 mb-3 mt-4\">Bot Configuration</h6><p class=\"text-muted small mb-3\">The bot enables Conway to manage Discord roles based on payment status. Create a bot in your Discord application and invite it to your server with the <code>Manage Roles</code> permission. The bot's role must be positioned <strong>above</strong> the member role in Discord's role hierarchy.</p><div class=\"mb-3\"><label for=\"bot_token\" class=\"form-label\">Bot Token</label><div class=\"input-group\"><input type=\"password\" class=\"form-control font-monospace\" id=\"bot_token\" name=\"bot_token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\"></div><div class=\"form-text\">The OAuth2 Client Secret. Keep this confidential. ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var16 string
-		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(data.BotToken)
+		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasClientSecret))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 156, Col: 118}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 158, Col: 116}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"> <button class=\"btn btn-outline-secondary\" type=\"button\" onclick=\"toggleVisibility('bot_token', this)\">Show</button></div><div class=\"form-text\">The bot token from Discord Developer Portal. Required for role sync.</div></div><div class=\"mb-3\"><label for=\"guild_id\" class=\"form-label\">Server (Guild) ID</label> <input type=\"text\" class=\"form-control font-monospace\" id=\"guild_id\" name=\"guild_id\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div></div><h6 class=\"text-muted border-bottom pb-2 mb-3 mt-4\">Bot Configuration</h6><p class=\"text-muted small mb-3\">The bot enables Conway to manage Discord roles based on payment status. Create a bot in your Discord application and invite it to your server with the <code>Manage Roles</code> permission. The bot's role must be positioned <strong>above</strong> the member role in Discord's role hierarchy.</p><div class=\"mb-3\"><label for=\"bot_token\" class=\"form-label\">Bot Token</label><div class=\"input-group\"><input type=\"password\" class=\"form-control font-monospace\" id=\"bot_token\" name=\"bot_token\" placeholder=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var17 string
-		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(data.GuildID)
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasBotToken))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 163, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 169, Col: 146}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" placeholder=\"e.g., 123456789012345678\"><div class=\"form-text\">Right-click your server name in Discord (with Developer Mode enabled) and select \"Copy Server ID\".</div></div><div class=\"mb-3\"><label for=\"role_id\" class=\"form-label\">Member Role ID</label> <input type=\"text\" class=\"form-control font-monospace\" id=\"role_id\" name=\"role_id\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\"></div><div class=\"form-text\">The bot token from Discord Developer Portal. Required for role sync. ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var18 string
-		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(data.RoleID)
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasBotToken))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 168, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 171, Col: 131}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" placeholder=\"e.g., 123456789012345678\"><div class=\"form-text\">The role to assign to paying members. Right-click the role in Server Settings &gt; Roles and select \"Copy Role ID\".</div></div><h6 class=\"text-muted border-bottom pb-2 mb-3 mt-4\">Notifications</h6><p class=\"text-muted small mb-3\">Configure webhooks for Discord notifications. Create a webhook in Discord: Channel Settings &gt; Integrations &gt; Webhooks.</p><div class=\"mb-3\"><label for=\"print_webhook_url\" class=\"form-label\">3D Print Notification Webhook URL</label><div class=\"input-group\"><input type=\"password\" class=\"form-control font-monospace\" id=\"print_webhook_url\" name=\"print_webhook_url\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></div><div class=\"mb-3\"><label for=\"guild_id\" class=\"form-label\">Server (Guild) ID</label> <input type=\"text\" class=\"form-control font-monospace\" id=\"guild_id\" name=\"guild_id\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var19 string
-		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(data.PrintWebhookURL)
+		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(data.GuildID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 179, Col: 141}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 175, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" placeholder=\"https://discord.com/api/webhooks/...\"> <button class=\"btn btn-outline-secondary\" type=\"button\" onclick=\"toggleVisibility('print_webhook_url', this)\">Show</button></div><div class=\"form-text\">Webhook URL for 3D printer completion and failure notifications.</div></div><div class=\"d-flex justify-content-between align-items-center mt-4\"><button type=\"submit\" class=\"btn btn-primary\">Save Changes</button> <span class=\"text-muted small\">Saving creates a new version for audit purposes.</span></div></form></div></div><script>\n\tfunction toggleVisibility(inputId, button) {\n\t\tconst input = document.getElementById(inputId);\n\t\tif (input.type === 'password') {\n\t\t\tinput.type = 'text';\n\t\t\tbutton.textContent = 'Hide';\n\t\t} else {\n\t\t\tinput.type = 'password';\n\t\t\tbutton.textContent = 'Show';\n\t\t}\n\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" placeholder=\"e.g., 123456789012345678\"><div class=\"form-text\">Right-click your server name in Discord (with Developer Mode enabled) and select \"Copy Server ID\".</div></div><div class=\"mb-3\"><label for=\"role_id\" class=\"form-label\">Member Role ID</label> <input type=\"text\" class=\"form-control font-monospace\" id=\"role_id\" name=\"role_id\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var20 string
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(data.RoleID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 180, Col: 107}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" placeholder=\"e.g., 123456789012345678\"><div class=\"form-text\">The role to assign to paying members. Right-click the role in Server Settings &gt; Roles and select \"Copy Role ID\".</div></div><h6 class=\"text-muted border-bottom pb-2 mb-3 mt-4\">Notifications</h6><p class=\"text-muted small mb-3\">Configure webhooks for Discord notifications. Create a webhook in Discord: Channel Settings &gt; Integrations &gt; Webhooks.</p><div class=\"mb-3\"><label for=\"print_webhook_url\" class=\"form-label\">3D Print Notification Webhook URL</label><div class=\"input-group\"><input type=\"password\" class=\"form-control font-monospace\" id=\"print_webhook_url\" name=\"print_webhook_url\" placeholder=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var21 string
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasPrintWebhookURL))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 191, Col: 169}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\"></div><div class=\"form-text\">Webhook URL for 3D printer completion and failure notifications. ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var22 string
+		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasPrintWebhookURL))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 193, Col: 134}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</div></div><div class=\"d-flex justify-content-between align-items-center mt-4\"><button type=\"submit\" class=\"btn btn-primary\">Save Changes</button> <span class=\"text-muted small\">Saving creates a new version for audit purposes.</span></div></form></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
