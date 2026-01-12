@@ -100,7 +100,7 @@ func (p *WaiverPage) ExpectSuccessMessage() {
 }
 
 func (p *WaiverPage) ExpectWaiverText() {
-	locator := p.page.GetByText("TheLab Liability Waiver")
+	locator := p.page.GetByText("Liability Waiver")
 	expect(p.t).Locator(locator).ToBeVisible()
 }
 

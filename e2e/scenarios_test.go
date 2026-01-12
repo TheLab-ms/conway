@@ -1574,21 +1574,17 @@ By signing this waiver, you acknowledge our terms.
 	waiversPage.ExpectRowWithText("journey@example.com")
 }
 
-// TestWaiver_DefaultContent verifies that when no custom content exists in the
-// database, the default waiver content is displayed.
-func TestWaiver_DefaultContent(t *testing.T) {
+// TestWaiver_MissingContent verifies that when no waiver content exists in the
+// database, an error is displayed.
+func TestWaiver_MissingContent(t *testing.T) {
 	page := setupUnauthenticatedTest(t)
 	clearWaiverContent(t)
 
-	waiverPage := NewWaiverPage(t, page)
-	waiverPage.Navigate()
+	_, err := page.Goto(baseURL + "/waiver")
+	require.NoError(t, err)
 
-	// Default waiver should have "TheLab Liability Waiver" title
-	waiverPage.ExpectWaiverText()
-
-	// Default waiver has 2 checkboxes
-	expect(t).Locator(page.Locator("#agree0")).ToBeVisible()
-	expect(t).Locator(page.Locator("#agree1")).ToBeVisible()
+	// Should show system error when no waiver content is configured
+	expect(t).Locator(page.GetByText("no waiver content configured")).ToBeVisible()
 }
 
 // TestWaiver_DuplicateSubmission verifies that submitting a waiver with the

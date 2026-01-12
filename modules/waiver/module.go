@@ -29,44 +29,35 @@ type WaiverContent struct {
 	Content string
 }
 
-var defaultContent = &WaiverContent{
-	Version: 1,
-	Content: `# TheLab Liability Waiver
-
-I agree and acknowledge as follows:
-
-1. I WAIVE ANY AND ALL RIGHTS OF RECOVERY, CLAIM, ACTION OR CAUSE OF ACTION AGAINST THELAB.MS FOR ANY INJURY OR DAMAGE THAT MAY OCCUR, REGARDLESS OF CAUSE OR ORIGIN, INCLUDING NEGLIGENCE AND GROSS NEGLIGENCE.
-
-2. I also understand that I am personally responsible for my safety and actions and that I will follow all safety instructions and signage while at TheLab.ms.
-
-3. I affirm that I am at least 18 years of age and mentally competent to sign this liability waiver.
-
-- [ ] By checking here, you are consenting to the use of your electronic signature in lieu of an original signature on paper.
-- [ ] By checking this box, I agree and acknowledge to be bound by this waiver and release and further agree and acknowledge that this waiver and release shall also apply to all of my future participation in TheLab.
-`,
-}
-
-func (m *Module) getLatestWaiverContent(ctx context.Context) *WaiverContent {
+func (m *Module) getLatestWaiverContent(ctx context.Context) (*WaiverContent, error) {
 	row := m.db.QueryRowContext(ctx,
 		"SELECT version, content FROM waiver_content ORDER BY version DESC LIMIT 1")
 
 	content := &WaiverContent{}
 	err := row.Scan(&content.Version, &content.Content)
 	if err != nil {
-		return defaultContent
+		return nil, fmt.Errorf("no waiver content configured: %w", err)
 	}
-	return content
+	return content, nil
 }
 
 func (m *Module) renderWaiverView(w http.ResponseWriter, r *http.Request) {
-	content := m.getLatestWaiverContent(r.Context())
+	content, err := m.getLatestWaiverContent(r.Context())
+	if err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
 	parsed := ParseWaiverMarkdown(content.Content)
 	w.Header().Set("Content-Type", "text/html")
 	renderWaiver(false, "", r.URL.Query().Get("email"), r.URL.Query().Get("r"), content.Version, parsed).Render(r.Context(), w)
 }
 
 func (m *Module) handleSubmitWaiver(w http.ResponseWriter, r *http.Request) {
-	content := m.getLatestWaiverContent(r.Context())
+	content, err := m.getLatestWaiverContent(r.Context())
+	if err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
 	parsed := ParseWaiverMarkdown(content.Content)
 
 	// Validate all checkboxes are checked
@@ -79,7 +70,7 @@ func (m *Module) handleSubmitWaiver(w http.ResponseWriter, r *http.Request) {
 
 	name := r.FormValue("name")
 	email := r.FormValue("email")
-	_, err := m.db.ExecContext(r.Context(), "INSERT INTO waivers (name, email, version) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", name, email, content.Version)
+	_, err = m.db.ExecContext(r.Context(), "INSERT INTO waivers (name, email, version) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", name, email, content.Version)
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return

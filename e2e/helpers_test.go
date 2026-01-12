@@ -339,6 +339,28 @@ func clearTestData(t *testing.T) {
 			t.Logf("warning: could not clear table %s: %v", table, err)
 		}
 	}
+	// Re-seed default waiver content
+	seedDefaultWaiverContent(t)
+}
+
+// seedDefaultWaiverContent inserts the default waiver content for tests.
+func seedDefaultWaiverContent(t *testing.T) {
+	t.Helper()
+	_, err := testDB.Exec(`INSERT INTO waiver_content (content) VALUES ('# Liability Waiver
+
+This is a sample liability waiver for testing.
+
+1. I acknowledge that participation in activities may involve inherent risks.
+
+2. I understand that I am personally responsible for my safety and actions.
+
+3. I affirm that I am at least 18 years of age.
+
+- [ ] I consent to the use of my electronic signature.
+- [ ] I agree to be bound by this waiver.')`)
+	if err != nil {
+		t.Logf("warning: could not seed default waiver content: %v", err)
+	}
 }
 
 // expect returns a new PlaywrightAssertions instance for making assertions.

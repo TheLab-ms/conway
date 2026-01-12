@@ -203,16 +203,18 @@ CREATE TABLE IF NOT EXISTS waiver_content (
 
 INSERT OR IGNORE INTO waiver_content (version, content) VALUES (
     1,
-    '# TheLab Liability Waiver
+    '# Liability Waiver
 
-I agree and acknowledge as follows:
+This is a sample liability waiver. Please customize this content to match your organization''s requirements.
 
-1. I WAIVE ANY AND ALL RIGHTS OF RECOVERY, CLAIM, ACTION OR CAUSE OF ACTION AGAINST THELAB.MS FOR ANY INJURY OR DAMAGE THAT MAY OCCUR, REGARDLESS OF CAUSE OR ORIGIN, INCLUDING NEGLIGENCE AND GROSS NEGLIGENCE.
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.
 
-2. I also understand that I am personally responsible for my safety and actions and that I will follow all safety instructions and signage while at TheLab.ms.
+1. I acknowledge that participation in activities may involve inherent risks and I voluntarily assume all such risks.
+
+2. I understand that I am personally responsible for my safety and actions while on the premises.
 
 3. I affirm that I am at least 18 years of age and mentally competent to sign this liability waiver.
 
 - [ ] By checking here, you are consenting to the use of your electronic signature in lieu of an original signature on paper.
-- [ ] By checking this box, I agree and acknowledge to be bound by this waiver and release and further agree and acknowledge that this waiver and release shall also apply to all of my future participation in TheLab.'
+- [ ] By checking this box, I agree and acknowledge to be bound by this waiver and release.'
 );
