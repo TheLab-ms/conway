@@ -211,6 +211,9 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("POST /admin/config/waiver", router.WithLeadership(m.handleWaiverConfigSave))
 	router.HandleFunc("GET /admin/config/discord", router.WithLeadership(m.renderDiscordConfigPage))
 	router.HandleFunc("POST /admin/config/discord", router.WithLeadership(m.handleDiscordConfigSave))
+	router.HandleFunc("GET /admin/config/stripe", router.WithLeadership(m.renderStripeConfigPage))
+	router.HandleFunc("POST /admin/config/stripe", router.WithLeadership(m.handleStripeConfigSave))
+	router.HandleFunc("GET /admin/stripe-chart", router.WithLeadership(m.renderStripeEventsChart))
 
 	router.HandleFunc("POST /admin/members/{id}/delete", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", r.PathValue("id"))
@@ -530,4 +533,145 @@ func (m *Module) getRecentDiscordEvents(ctx context.Context) []*discordEvent {
 		}
 	}
 	return events
+}
+
+func (m *Module) renderStripeConfigPage(w http.ResponseWriter, r *http.Request) {
+	data := m.getStripeConfigData(r)
+	w.Header().Set("Content-Type", "text/html")
+	renderConfigPage(m.nav, "Stripe", renderStripeConfigContent(data, m.self.String())).Render(r.Context(), w)
+}
+
+func (m *Module) handleStripeConfigSave(w http.ResponseWriter, r *http.Request) {
+	apiKey := r.FormValue("api_key")
+	webhookKey := r.FormValue("webhook_key")
+
+	// Preserve existing secrets if the user didn't provide new values
+	var existingAPIKey, existingWebhookKey string
+	m.db.QueryRowContext(r.Context(),
+		`SELECT api_key, webhook_key FROM stripe_config ORDER BY version DESC LIMIT 1`).
+		Scan(&existingAPIKey, &existingWebhookKey)
+
+	if apiKey == "" {
+		apiKey = existingAPIKey
+	}
+	if webhookKey == "" {
+		webhookKey = existingWebhookKey
+	}
+
+	// Insert new version
+	_, err := m.db.ExecContext(r.Context(),
+		`INSERT INTO stripe_config (api_key, webhook_key) VALUES ($1, $2)`,
+		apiKey, webhookKey)
+	if engine.HandleError(w, err) {
+		return
+	}
+
+	data := m.getStripeConfigData(r)
+	data.Saved = true
+	w.Header().Set("Content-Type", "text/html")
+	renderConfigPage(m.nav, "Stripe", renderStripeConfigContent(data, m.self.String())).Render(r.Context(), w)
+}
+
+func (m *Module) getStripeConfigData(r *http.Request) *stripeConfigData {
+	row := m.db.QueryRowContext(r.Context(),
+		`SELECT version, api_key != '', webhook_key != ''
+		 FROM stripe_config ORDER BY version DESC LIMIT 1`)
+
+	data := &stripeConfigData{}
+	err := row.Scan(&data.Version, &data.HasAPIKey, &data.HasWebhookKey)
+	if err != nil && err != sql.ErrNoRows {
+		data.Error = "Error loading configuration: " + err.Error()
+	}
+
+	// Fetch status counts
+	m.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM members WHERE stripe_subscription_state = 'active'").Scan(&data.ActiveSubscriptions)
+	m.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM members WHERE stripe_customer_id IS NOT NULL").Scan(&data.TotalCustomers)
+
+	// Fetch recent events
+	data.RecentEvents = m.getRecentStripeEvents(r.Context())
+
+	return data
+}
+
+func (m *Module) getRecentStripeEvents(ctx context.Context) []*stripeEvent {
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT e.created, e.event_type, COALESCE(e.stripe_customer_id, ''), e.success, e.details,
+			   COALESCE(mem.name_override, mem.identifier, 'Unknown') AS member_name
+		FROM stripe_events e
+		LEFT JOIN members mem ON e.member = mem.id
+		ORDER BY e.created DESC
+		LIMIT 20`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var events []*stripeEvent
+	for rows.Next() {
+		var created int64
+		var successInt int
+		event := &stripeEvent{}
+		if rows.Scan(&created, &event.EventType, &event.StripeCustomerID, &successInt, &event.Details, &event.MemberName) == nil {
+			event.Created = time.Unix(created, 0)
+			event.Success = successInt == 1
+			events = append(events, event)
+		}
+	}
+	return events
+}
+
+func (m *Module) renderStripeEventsChart(w http.ResponseWriter, r *http.Request) {
+	series := r.URL.Query().Get("series")
+
+	windowDuration := time.Hour * 24
+	if window := r.URL.Query().Get("window"); window != "" {
+		if parsed, err := time.ParseDuration(window); err == nil && parsed <= 24*time.Hour {
+			windowDuration = parsed
+		}
+	}
+
+	var whereClause string
+	switch series {
+	case "successes":
+		whereClause = "success = 1"
+	case "errors":
+		whereClause = "success = 0"
+	case "api-requests":
+		whereClause = "1=1"
+	default:
+		engine.ClientError(w, "Invalid Request", "Unknown series", 400)
+		return
+	}
+
+	query := fmt.Sprintf(`
+		SELECT (created / 900) * 900 AS bucket, COUNT(*)
+		FROM stripe_events
+		WHERE created > unixepoch() - ? AND %s
+		GROUP BY bucket
+		ORDER BY bucket ASC`, whereClause)
+
+	rows, err := m.db.QueryContext(r.Context(), query, int64(windowDuration.Seconds()))
+	if engine.HandleError(w, err) {
+		return
+	}
+	defer rows.Close()
+
+	type dataPoint struct {
+		Timestamp int64   `json:"t"`
+		Value     float64 `json:"v"`
+	}
+	var data []dataPoint
+	for rows.Next() {
+		var ts int64
+		var count float64
+		if engine.HandleError(w, rows.Scan(&ts, &count)) {
+			return
+		}
+		data = append(data, dataPoint{Timestamp: ts, Value: count})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
 }

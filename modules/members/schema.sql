@@ -231,3 +231,10 @@ CREATE TABLE IF NOT EXISTS discord_config (
     role_id TEXT NOT NULL DEFAULT '',
     print_webhook_url TEXT NOT NULL DEFAULT ''
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS stripe_config (
+    version INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    api_key TEXT NOT NULL DEFAULT '',
+    webhook_key TEXT NOT NULL DEFAULT ''
+) STRICT;
