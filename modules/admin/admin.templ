@@ -47,13 +47,18 @@ type tableRow struct {
 }
 
 type tableCell struct {
-	Text           string
-	BadgeType      string
-	SelfLinkButton string
+	Text            string
+	BadgeType       string
+	SelfLinkButton  string
+	InlineBadge     string
+	InlineBadgeType string
 }
 
 templ (t tableCell) Render(row *tableRow) {
 	switch  {
+		case t.InlineBadge != "":
+			<span>{ t.Text }</span>
+			<span class={ fmt.Sprintf("badge text-bg-%s ms-2", t.InlineBadgeType) }>{ t.InlineBadge }</span>
 		case t.BadgeType != "":
 			<span class={ fmt.Sprintf("badge text-bg-%s", t.BadgeType) }>{ t.Text }</span>
 		case t.SelfLinkButton != "":
@@ -101,13 +106,15 @@ templ renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow, current
 	<div class="card-body p-0">
 		<div class="table-responsive">
 			<table class="table table-striped table-hover mb-0">
-				<thead class="table-light">
-					<tr>
-						for _, meta := range rowMeta {
-							<th class={ fmt.Sprintf("col-%d", meta.Width) }>{ meta.Title }</th>
-						}
-					</tr>
-				</thead>
+				if len(rowMeta) > 1 {
+					<thead class="table-light">
+						<tr>
+							for _, meta := range rowMeta {
+								<th class={ fmt.Sprintf("col-%d", meta.Width) }>{ meta.Title }</th>
+							}
+						</tr>
+					</thead>
+				}
 				<tbody>
 					for _, row := range rows {
 						<tr onclick={ navigateToSelf(row.SelfLink) } style="cursor: pointer;">

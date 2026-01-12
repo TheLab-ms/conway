@@ -26,10 +26,7 @@ var listViews = []listView{
 		RelPath:    "/members",
 		Searchable: true,
 		Rows: []*tableRowMeta{
-			{Title: "Name", Width: 2},
-			{Title: "Fob Status", Width: 1},
-			{Title: "Payment Status", Width: 1},
-			{Title: "Actions", Width: 1},
+			{Title: "Member", Width: 5},
 		},
 		BuildQuery: func(r *http.Request) (q, rowCountQuery string, args []any) {
 			q = "SELECT id, COALESCE(name_override, identifier) AS identifier, COALESCE(payment_status, 'Inactive') AS payment_status, access_status FROM members"
@@ -63,23 +60,19 @@ var listViews = []listView{
 					return nil, err
 				}
 
-				accessCell := &tableCell{Text: accessStatus, BadgeType: "secondary"}
-				if accessCell.Text != "Ready" {
-					accessCell.BadgeType = "warning"
-				}
-
-				paymentCell := &tableCell{Text: paymentStatus, BadgeType: "secondary"}
-				if paymentCell.Text == "Inactive" {
-					paymentCell.BadgeType = "warning"
+				accessBadgeType := "secondary"
+				if accessStatus != "Ready" {
+					accessBadgeType = "warning"
 				}
 
 				rows = append(rows, &tableRow{
 					SelfLink: fmt.Sprintf("/admin/members/%d", id),
 					Cells: []*tableCell{
-						{Text: name},
-						accessCell,
-						paymentCell,
-						{SelfLinkButton: "Edit"},
+						{
+							Text:            name,
+							InlineBadge:     accessStatus,
+							InlineBadgeType: accessBadgeType,
+						},
 					},
 				})
 			}
