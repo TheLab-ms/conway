@@ -2,10 +2,12 @@ package machines
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"testing"
 
 	"github.com/TheLab-ms/conway/modules/machines/bambu"
+	"github.com/TheLab-ms/conway/modules/members"
 )
 
 // mockMessageQueuer is a test implementation of discordwebhook.MessageQueuer
@@ -244,6 +246,18 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// createTestDB creates a test database with the members schema and a single member for testing.
+func createTestDB(t *testing.T, discordUsername, discordUserID string) *sql.DB {
+	t.Helper()
+	db := members.NewTestDB(t)
+	_, err := db.Exec(`INSERT INTO members (email, discord_username, discord_user_id) VALUES (?, ?, ?)`,
+		discordUsername+"@example.com", discordUsername, discordUserID)
+	if err != nil {
+		t.Fatalf("failed to insert test member: %v", err)
+	}
+	return db
 }
 
 func TestOwnerDiscordHandle(t *testing.T) {

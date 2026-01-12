@@ -14,6 +14,7 @@ import (
 type listView struct {
 	Title      string
 	RelPath    string
+	Searchable bool
 	Rows       []*tableRowMeta
 	BuildQuery func(*http.Request) (query, rowCountQuery string, args []any)
 	BuildRows  func(*sql.Rows) ([]*tableRow, error)
@@ -21,8 +22,9 @@ type listView struct {
 
 var listViews = []listView{
 	{
-		Title:   "Members",
-		RelPath: "/members",
+		Title:      "Members",
+		RelPath:    "/members",
+		Searchable: true,
 		Rows: []*tableRowMeta{
 			{Title: "Name", Width: 2},
 			{Title: "Fob Status", Width: 1},

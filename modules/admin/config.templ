@@ -1,0 +1,87 @@
+package admin
+
+import (
+	"fmt"
+	"github.com/TheLab-ms/conway/modules/bootstrap"
+)
+
+type configSection struct {
+	Name string
+	Path string
+}
+
+var configSections = []*configSection{
+	{Name: "Waiver", Path: "/admin/config/waiver"},
+}
+
+templ renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Component) {
+	@bootstrap.View() {
+		@adminNav(tabs)
+		<div class="container my-5">
+			<div class="row">
+				<div class="col-md-3">
+					<div class="card">
+						<div class="card-header">
+							<h5 class="mb-0">Configuration</h5>
+						</div>
+						<div class="list-group list-group-flush">
+							for _, section := range configSections {
+								if section.Name == activeSection {
+									<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
+								} else {
+									<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
+								}
+							}
+						</div>
+					</div>
+				</div>
+				<div class="col-md-9">
+					@content
+				</div>
+			</div>
+		</div>
+	}
+}
+
+type waiverConfigData struct {
+	Version int
+	Content string
+	Saved   bool
+}
+
+templ renderWaiverConfigContent(data *waiverConfigData) {
+	<div class="card">
+		<div class="card-header d-flex justify-content-between align-items-center">
+			<h5 class="mb-0">Waiver Content</h5>
+			<span class="badge bg-secondary">{ fmt.Sprintf("Version %d", data.Version) }</span>
+		</div>
+		<div class="card-body">
+			if data.Saved {
+				<div class="alert alert-success" role="alert">
+					Waiver content saved successfully. A new version has been created.
+				</div>
+			}
+			<form method="post">
+				<div class="mb-3">
+					<label for="content" class="form-label">Waiver Content (Markdown)</label>
+					<textarea class="form-control font-monospace" id="content" name="content" rows="20" required>{ data.Content }</textarea>
+					<div class="form-text">
+						<strong>Syntax:</strong>
+						<ul class="mb-0 mt-1">
+							<li><code># Title</code> - Sets the page title (first one wins)</li>
+							<li>Regular text becomes paragraphs (separate with blank lines)</li>
+							<li><code>- [ ] Checkbox text</code> - Creates a required checkbox</li>
+						</ul>
+					</div>
+				</div>
+				<div class="d-flex justify-content-between align-items-center">
+					<button type="submit" class="btn btn-primary">Save Changes</button>
+					<div>
+						<a href="/waiver" target="_blank" class="btn btn-outline-secondary me-2">Preview Waiver</a>
+						<span class="text-muted small">Saving creates a new version.</span>
+					</div>
+				</div>
+			</form>
+		</div>
+	</div>
+}

@@ -38,7 +38,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	for _, view := range listViews {
 		router.HandleFunc("GET /admin"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
-			renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath).Render(r.Context(), w)
+			renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath, view.Searchable).Render(r.Context(), w)
 		}))
 
 		router.HandleFunc("POST /admin/search"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +112,13 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /admin/export/{table}", router.WithLeadership(m.exportCSV))
 	router.HandleFunc("GET /admin/chart", router.WithLeadership(m.renderMetricsChart))
 	router.HandleFunc("GET /admin/metrics", router.WithLeadership(m.renderMetricsPageHandler))
+
+	// Configuration routes
+	router.HandleFunc("GET /admin/config", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin/config/waiver", http.StatusSeeOther)
+	}))
+	router.HandleFunc("GET /admin/config/waiver", router.WithLeadership(m.renderWaiverConfigPage))
+	router.HandleFunc("POST /admin/config/waiver", router.WithLeadership(m.handleWaiverConfigSave))
 
 	router.HandleFunc("POST /admin/members/{id}/delete", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", r.PathValue("id"))
@@ -230,4 +237,59 @@ func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "text/html")
 	renderMetricsAdminPage(m.nav, metrics, selected).Render(r.Context(), w)
+}
+
+func (m *Module) renderWaiverConfigPage(w http.ResponseWriter, r *http.Request) {
+	data := m.getWaiverConfigData(r)
+	w.Header().Set("Content-Type", "text/html")
+	renderConfigPage(m.nav, "Waiver", renderWaiverConfigContent(data)).Render(r.Context(), w)
+}
+
+func (m *Module) handleWaiverConfigSave(w http.ResponseWriter, r *http.Request) {
+	content := r.FormValue("content")
+
+	if content == "" {
+		engine.ClientError(w, "Invalid Input", "Content is required", 400)
+		return
+	}
+
+	_, err := m.db.ExecContext(r.Context(),
+		"INSERT INTO waiver_content (content) VALUES ($1)",
+		content)
+	if engine.HandleError(w, err) {
+		return
+	}
+
+	data := m.getWaiverConfigData(r)
+	data.Saved = true
+	w.Header().Set("Content-Type", "text/html")
+	renderConfigPage(m.nav, "Waiver", renderWaiverConfigContent(data)).Render(r.Context(), w)
+}
+
+func (m *Module) getWaiverConfigData(r *http.Request) *waiverConfigData {
+	row := m.db.QueryRowContext(r.Context(),
+		"SELECT version, content FROM waiver_content ORDER BY version DESC LIMIT 1")
+
+	data := &waiverConfigData{}
+	err := row.Scan(&data.Version, &data.Content)
+	if err != nil {
+		// Return defaults if no content exists
+		return &waiverConfigData{
+			Version: 1,
+			Content: `# TheLab Liability Waiver
+
+I agree and acknowledge as follows:
+
+1. I WAIVE ANY AND ALL RIGHTS OF RECOVERY, CLAIM, ACTION OR CAUSE OF ACTION AGAINST THELAB.MS FOR ANY INJURY OR DAMAGE THAT MAY OCCUR, REGARDLESS OF CAUSE OR ORIGIN, INCLUDING NEGLIGENCE AND GROSS NEGLIGENCE.
+
+2. I also understand that I am personally responsible for my safety and actions and that I will follow all safety instructions and signage while at TheLab.ms.
+
+3. I affirm that I am at least 18 years of age and mentally competent to sign this liability waiver.
+
+- [ ] By checking here, you are consenting to the use of your electronic signature in lieu of an original signature on paper.
+- [ ] By checking this box, I agree and acknowledge to be bound by this waiver and release and further agree and acknowledge that this waiver and release shall also apply to all of my future participation in TheLab.
+`,
+		}
+	}
+	return data
 }
