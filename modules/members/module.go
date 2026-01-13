@@ -53,6 +53,10 @@ func (m *Module) renderMemberView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get passkey count
+	m.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM passkey_credentials WHERE member_id = ?", authdUser).Scan(&mem.PasskeyCount)
+
 	w.Header().Set("Content-Type", "text/html")
 	renderMember(&mem).Render(r.Context(), w)
 }
