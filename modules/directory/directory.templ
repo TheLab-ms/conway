@@ -5,7 +5,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
-templ renderDirectory(members []DirectoryMember) {
+templ renderDirectory(members []DirectoryMember, currentUserID int64) {
 	@bootstrap.View() {
 		<div class="container my-5">
 			<h2>Member Directory</h2>
@@ -13,8 +13,9 @@ templ renderDirectory(members []DirectoryMember) {
 				for _, member := range members {
 					<div class="col-6 col-md-4 col-lg-3">
 						<div class="card h-100 text-center p-3">
+							// Main avatar section - profile picture or Discord avatar
 							<div class="d-flex justify-content-center mb-3">
-								if member.HasAvatar {
+								if member.HasProfilePicture || member.HasDiscordAvatar {
 									<img
 										src={ fmt.Sprintf("/directory/avatar/%d", member.ID) }
 										alt={ member.DisplayName }
@@ -25,14 +26,50 @@ templ renderDirectory(members []DirectoryMember) {
 									@placeholderAvatar()
 								}
 							</div>
-							if member.DiscordUsername != "" {
-								<p class="mb-1" style="color: #5865F2; font-size: 0.9rem;">
-									{ "@" + member.DiscordUsername }
-								</p>
-							}
+							// Display name
 							<h6 class="card-title mb-1">{ member.DisplayName }</h6>
+							// Leadership badge
 							if member.Leadership {
-								<span class="badge bg-primary">Leadership</span>
+								<span class="badge bg-primary mb-2">Leadership</span>
+							}
+							// Upload button for current user
+							if member.ID == currentUserID {
+								<form method="post" action="/directory/picture" enctype="multipart/form-data" class="mt-2">
+									<input
+										type="file"
+										id="picture-upload"
+										name="picture"
+										accept="image/png,image/jpeg"
+										style="display: none;"
+										onchange="this.form.submit()"
+									/>
+									<button
+										type="button"
+										class="btn btn-sm btn-outline-primary"
+										onclick="document.getElementById('picture-upload').click()"
+									>
+										Upload Image
+									</button>
+								</form>
+							}
+							// Discord section - visually separated
+							if member.DiscordUsername != "" {
+								<div class="mt-2 pt-2 border-top">
+									<div class="d-flex align-items-center justify-content-center gap-2">
+										if member.HasProfilePicture && member.HasDiscordAvatar {
+											// Show small Discord avatar alongside handle when member has custom profile picture
+											<img
+												src={ fmt.Sprintf("/directory/avatar/%d?type=discord", member.ID) }
+												alt="Discord avatar"
+												class="rounded-circle"
+												style="width: 24px; height: 24px; object-fit: cover;"
+											/>
+										}
+										<span style="color: #5865F2; font-size: 0.85rem;">
+											{ "@" + member.DiscordUsername }
+										</span>
+									</div>
+								</div>
 							}
 						</div>
 					</div>
@@ -40,7 +77,7 @@ templ renderDirectory(members []DirectoryMember) {
 			</div>
 			if len(members) == 0 {
 				<div class="text-center text-muted mt-5">
-					<p>No members with building access found.</p>
+					<p>No members with profile pictures found.</p>
 				</div>
 			}
 		</div>

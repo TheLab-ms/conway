@@ -5,22 +5,25 @@ package directory
 import (
 	"context"
 	"database/sql"
+	"io"
 	"math/rand"
 	"net/http"
 	"slices"
 	"strconv"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/modules/auth"
 )
 
 // DirectoryMember represents a member in the directory listing.
 type DirectoryMember struct {
-	ID              int64
-	DisplayName     string
-	DiscordUsername string
-	HasAvatar       bool
-	Leadership      bool
-	FobLastSeen     int64
+	ID                int64
+	DisplayName       string
+	DiscordUsername   string
+	HasProfilePicture bool
+	HasDiscordAvatar  bool
+	Leadership        bool
+	FobLastSeen       int64
 }
 
 type Module struct {
@@ -28,15 +31,20 @@ type Module struct {
 }
 
 func New(db *sql.DB) *Module {
+	// Add profile_picture column if it doesn't exist (ignore error if already exists)
+	db.Exec(`ALTER TABLE members ADD COLUMN profile_picture BLOB`)
 	return &Module{db: db}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /directory", router.WithAuthn(m.renderDirectoryView))
 	router.HandleFunc("GET /directory/avatar/{id}", router.WithAuthn(m.serveAvatar))
+	router.HandleFunc("POST /directory/picture", router.WithAuthn(m.handleProfilePictureUpload))
 }
 
 func (m *Module) renderDirectoryView(w http.ResponseWriter, r *http.Request) {
+	userID := auth.GetUserMeta(r.Context()).ID
+
 	members, err := m.queryMembers(r.Context())
 	if engine.HandleError(w, err) {
 		return
@@ -45,8 +53,17 @@ func (m *Module) renderDirectoryView(w http.ResponseWriter, r *http.Request) {
 	// Randomize within weekly buckets to prevent leaking who's currently there
 	members = shuffleWithinBuckets(members)
 
+	// Move current user to front of list
+	for i, member := range members {
+		if member.ID == userID {
+			members = slices.Delete(members, i, i+1)
+			members = slices.Insert(members, 0, member)
+			break
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/html")
-	renderDirectory(members).Render(r.Context(), w)
+	renderDirectory(members, userID).Render(r.Context(), w)
 }
 
 func (m *Module) queryMembers(ctx context.Context) ([]DirectoryMember, error) {
@@ -55,12 +72,17 @@ func (m *Module) queryMembers(ctx context.Context) ([]DirectoryMember, error) {
 			id,
 			name as display_name,
 			COALESCE(discord_username, '') as discord_username,
-			discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0 as has_avatar,
+			profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0 as has_profile_picture,
+			discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0 as has_discord_avatar,
 			leadership,
 			COALESCE(fob_last_seen, 0) as fob_last_seen
 		FROM members
 		WHERE access_status = 'Ready'
 			AND name IS NOT NULL AND name != ''
+			AND (
+				(profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0)
+				OR (discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0)
+			)
 		ORDER BY fob_last_seen DESC
 	`)
 	if err != nil {
@@ -71,7 +93,7 @@ func (m *Module) queryMembers(ctx context.Context) ([]DirectoryMember, error) {
 	var members []DirectoryMember
 	for rows.Next() {
 		var m DirectoryMember
-		if err := rows.Scan(&m.ID, &m.DisplayName, &m.DiscordUsername, &m.HasAvatar, &m.Leadership, &m.FobLastSeen); err != nil {
+		if err := rows.Scan(&m.ID, &m.DisplayName, &m.DiscordUsername, &m.HasProfilePicture, &m.HasDiscordAvatar, &m.Leadership, &m.FobLastSeen); err != nil {
 			return nil, err
 		}
 		members = append(members, m)
@@ -131,10 +153,26 @@ func (m *Module) serveAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if a specific type is requested
+	avatarType := r.URL.Query().Get("type")
+
 	var avatar []byte
-	err = m.db.QueryRowContext(r.Context(),
-		`SELECT discord_avatar FROM members WHERE id = ? AND discord_avatar IS NOT NULL`,
-		id).Scan(&avatar)
+	if avatarType == "discord" {
+		// Specifically request Discord avatar
+		err = m.db.QueryRowContext(r.Context(),
+			`SELECT discord_avatar FROM members WHERE id = ? AND discord_avatar IS NOT NULL`,
+			id).Scan(&avatar)
+	} else {
+		// Default: prioritize profile_picture, fall back to discord_avatar
+		err = m.db.QueryRowContext(r.Context(),
+			`SELECT COALESCE(
+				CASE WHEN profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0
+					 THEN profile_picture ELSE NULL END,
+				CASE WHEN discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0
+					 THEN discord_avatar ELSE NULL END
+			) FROM members WHERE id = ?`,
+			id).Scan(&avatar)
+	}
 
 	if err == sql.ErrNoRows || len(avatar) == 0 {
 		http.NotFound(w, r)
@@ -148,4 +186,49 @@ func (m *Module) serveAvatar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Write(avatar)
+}
+
+func (m *Module) handleProfilePictureUpload(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadSize)
+
+	if err := r.ParseMultipartForm(MaxUploadSize); err != nil {
+		engine.ClientError(w, "Upload Error", "File too large. Maximum size is 20MB.", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("picture")
+	if err != nil {
+		engine.ClientError(w, "Upload Error", "No file provided.", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	contentType := header.Header.Get("Content-Type")
+	if !ValidImageContentType(contentType) {
+		engine.ClientError(w, "Invalid File", "Only JPEG and PNG images are allowed.", http.StatusBadRequest)
+		return
+	}
+
+	imgBytes, err := io.ReadAll(file)
+	if err != nil {
+		engine.HandleError(w, err)
+		return
+	}
+
+	processedImage, err := ProcessProfileImage(imgBytes)
+	if err != nil {
+		engine.ClientError(w, "Processing Error", "Could not process image. Please try a different file.", http.StatusBadRequest)
+		return
+	}
+
+	userID := auth.GetUserMeta(r.Context()).ID
+
+	_, err = m.db.ExecContext(r.Context(),
+		"UPDATE members SET profile_picture = $1 WHERE id = $2",
+		processedImage, userID)
+	if engine.HandleError(w, err) {
+		return
+	}
+
+	http.Redirect(w, r, "/directory", http.StatusSeeOther)
 }

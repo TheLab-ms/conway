@@ -97,8 +97,5 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	// Discord OAuth/role sync module
 	a.Add(discord.New(opts.Database, opts.Self, opts.DiscordIssuer, engine.NewEventLogger(opts.Database, "discord")))
 
-	// Set the webhook queuer for machines module
-	machinesMod.SetWebhookQueuer(discordWebhookMod)
-
 	return authModule
 }

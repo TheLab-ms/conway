@@ -11,12 +11,9 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/machines/bambu"
 )
 
@@ -27,6 +24,94 @@ CREATE TABLE IF NOT EXISTS bambu_config (
     printers_json TEXT NOT NULL DEFAULT '[]',
     poll_interval_seconds INTEGER NOT NULL DEFAULT 5
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS bambu_printer_state (
+    serial_number TEXT PRIMARY KEY,
+    printer_name TEXT NOT NULL,
+    gcode_file TEXT NOT NULL DEFAULT '',
+    subtask_name TEXT NOT NULL DEFAULT '',
+    gcode_state TEXT NOT NULL DEFAULT '',
+    error_code TEXT NOT NULL DEFAULT '',
+    remaining_print_time INTEGER NOT NULL DEFAULT 0,
+    print_percent_done INTEGER NOT NULL DEFAULT 0,
+    job_finished_timestamp INTEGER,
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS bambu_printer_state_updated_idx ON bambu_printer_state (updated_at);
+
+/* Trigger: Send Discord notification when a print job completes successfully */
+CREATE TRIGGER IF NOT EXISTS bambu_print_completed
+AFTER UPDATE ON bambu_printer_state
+WHEN OLD.job_finished_timestamp IS NOT NULL
+     AND NEW.job_finished_timestamp IS NULL
+     AND (NEW.error_code = '' OR NEW.error_code IS NULL)
+BEGIN
+    INSERT INTO discord_webhook_queue (webhook_url, payload)
+    SELECT
+        (SELECT print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1),
+        json_object(
+            'content', '<@' || m.discord_user_id || '>: your print has completed successfully on ' || NEW.printer_name || '.',
+            'username', 'Conway Print Bot'
+        )
+    FROM members m
+    WHERE m.discord_username = (
+        CASE
+            WHEN INSTR(OLD.subtask_name, '@') > 0
+            THEN SUBSTR(
+                OLD.subtask_name,
+                INSTR(OLD.subtask_name, '@') + 1,
+                COALESCE(
+                    NULLIF(INSTR(SUBSTR(OLD.subtask_name, INSTR(OLD.subtask_name, '@') + 1), ' '), 0) - 1,
+                    LENGTH(OLD.subtask_name) - INSTR(OLD.subtask_name, '@')
+                )
+            )
+            ELSE NULL
+        END
+    )
+    AND m.discord_user_id IS NOT NULL
+    AND (SELECT print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1) != '';
+END;
+
+/* Trigger: Send Discord notification when a print job fails */
+CREATE TRIGGER IF NOT EXISTS bambu_print_failed
+AFTER UPDATE ON bambu_printer_state
+WHEN (OLD.error_code = '' OR OLD.error_code IS NULL)
+     AND NEW.error_code != ''
+     AND NEW.error_code IS NOT NULL
+BEGIN
+    INSERT INTO discord_webhook_queue (webhook_url, payload)
+    SELECT
+        (SELECT print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1),
+        CASE
+            WHEN m.discord_user_id IS NOT NULL THEN
+                json_object(
+                    'content', '<@' || m.discord_user_id || '>: your print on ' || NEW.printer_name || ' has failed with error code: ' || NEW.error_code || '.',
+                    'username', 'Conway Print Bot'
+                )
+            ELSE
+                json_object(
+                    'content', 'A print on ' || NEW.printer_name || ' has failed with error code: ' || NEW.error_code,
+                    'username', 'Conway Print Bot'
+                )
+        END
+    FROM (SELECT 1) dummy
+    LEFT JOIN members m ON m.discord_username = (
+        CASE
+            WHEN INSTR(NEW.subtask_name, '@') > 0
+            THEN SUBSTR(
+                NEW.subtask_name,
+                INSTR(NEW.subtask_name, '@') + 1,
+                COALESCE(
+                    NULLIF(INSTR(SUBSTR(NEW.subtask_name, INSTR(NEW.subtask_name, '@') + 1), ' '), 0) - 1,
+                    LENGTH(NEW.subtask_name) - INSTR(NEW.subtask_name, '@')
+                )
+            )
+            ELSE NULL
+        END
+    )
+    WHERE (SELECT print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1) != '';
+END;
 `
 
 var discordHandleRegex = regexp.MustCompile(`@([a-zA-Z0-9_.]+)`)
@@ -56,15 +141,8 @@ func (p PrinterStatus) OwnerDiscordHandle() string {
 }
 
 type Module struct {
-	state atomic.Pointer[[]PrinterStatus]
-
-	db            *sql.DB
-	eventLogger   *engine.EventLogger
-	messageQueuer discordwebhook.MessageQueuer
-
-	// lastNotifiedState tracks the last state that triggered a notification per printer.
-	// Key: serial number, Value: notifiedState
-	lastNotifiedState sync.Map
+	db          *sql.DB
+	eventLogger *engine.EventLogger
 
 	printers     []*bambu.Printer
 	configs      []*printerConfig
@@ -79,16 +157,6 @@ type Module struct {
 	configVersion int64
 
 	testMode bool // When true, skip polling and use injected state
-}
-
-// notifiedState tracks what state we last notified about for a printer.
-type notifiedState struct {
-	hadJob               bool
-	errorCode            string
-	gcodeFile            string
-	subtaskName          string // User-editable plate name from Bambu Studio (contains Discord username)
-	ownerDiscordUsername string
-	printerName          string
 }
 
 func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
@@ -107,45 +175,91 @@ func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
 	// Load and apply config from database
 	m.reloadConfig(context.Background())
 
-	zero := []PrinterStatus{}
-	m.state.Store(&zero)
 	return m
 }
 
-// SetWebhookQueuer sets the Discord webhook queuer for notifications.
-// This is called after module creation to support wiring dependencies.
-func (m *Module) SetWebhookQueuer(queuer discordwebhook.MessageQueuer) {
-	m.messageQueuer = queuer
+// savePrinterState upserts a printer's state to the database.
+func (m *Module) savePrinterState(ctx context.Context, status PrinterStatus) error {
+	if m.db == nil {
+		return nil
+	}
+	_, err := m.db.ExecContext(ctx, `
+		INSERT INTO bambu_printer_state (
+			serial_number, printer_name, gcode_file, subtask_name, gcode_state,
+			error_code, remaining_print_time, print_percent_done, job_finished_timestamp, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, strftime('%s', 'now'))
+		ON CONFLICT (serial_number) DO UPDATE SET
+			printer_name = excluded.printer_name,
+			gcode_file = excluded.gcode_file,
+			subtask_name = excluded.subtask_name,
+			gcode_state = excluded.gcode_state,
+			error_code = excluded.error_code,
+			remaining_print_time = excluded.remaining_print_time,
+			print_percent_done = excluded.print_percent_done,
+			job_finished_timestamp = excluded.job_finished_timestamp,
+			updated_at = strftime('%s', 'now')`,
+		status.SerialNumber, status.PrinterName, status.GcodeFile, status.SubtaskName, status.GcodeState,
+		status.ErrorCode, status.RemainingPrintTime, status.PrintPercentDone, status.JobFinishedTimestamp)
+	return err
 }
 
-// loadPrintWebhookURL loads the print notification webhook URL from the database.
-func (m *Module) loadPrintWebhookURL(ctx context.Context) string {
+// loadPrinterStates loads all non-stale printer states from the database.
+// States older than 3x the poll interval are considered stale and excluded.
+func (m *Module) loadPrinterStates(ctx context.Context) ([]PrinterStatus, error) {
 	if m.db == nil {
-		return ""
+		return nil, nil
 	}
-	var webhookURL string
-	err := m.db.QueryRowContext(ctx,
-		`SELECT print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1`).Scan(&webhookURL)
+	ttlSeconds := int64(m.pollInterval.Seconds()) * 3
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT serial_number, printer_name, gcode_file, subtask_name, gcode_state,
+		       error_code, remaining_print_time, print_percent_done, job_finished_timestamp
+		FROM bambu_printer_state
+		WHERE updated_at > unixepoch() - $1
+		ORDER BY printer_name`, ttlSeconds)
 	if err != nil {
-		return ""
+		return nil, err
 	}
-	return webhookURL
+	defer rows.Close()
+
+	var states []PrinterStatus
+	for rows.Next() {
+		var s PrinterStatus
+		err := rows.Scan(
+			&s.SerialNumber, &s.PrinterName, &s.GcodeFile, &s.SubtaskName, &s.GcodeState,
+			&s.ErrorCode, &s.RemainingPrintTime, &s.PrintPercentDone, &s.JobFinishedTimestamp)
+		if err != nil {
+			return nil, err
+		}
+		states = append(states, s)
+	}
+	return states, rows.Err()
 }
 
 // NewForTesting creates a Module with mock printer data for e2e tests.
 // The printers slice defines what the UI will render - no real connections are made.
-func NewForTesting(printers []PrinterStatus) *Module {
-	m := &Module{
-		streams:  map[string]*engine.StreamMux{},
-		testMode: true,
+// Requires a test database to store the state.
+func NewForTesting(db *sql.DB, printers []PrinterStatus) *Module {
+	if db != nil {
+		engine.MustMigrate(db, migration)
 	}
-	m.state.Store(&printers)
+	m := &Module{
+		db:           db,
+		streams:      map[string]*engine.StreamMux{},
+		pollInterval: time.Second * 5,
+		testMode:     true,
+	}
+	// Store initial state in DB
+	for _, p := range printers {
+		m.savePrinterState(context.Background(), p)
+	}
 	return m
 }
 
-// SetTestState updates the printer state (for testing only).
-func (m *Module) SetTestState(printers []PrinterStatus) {
-	m.state.Store(&printers)
+// SetTestState updates the printer state in the database (for testing only).
+func (m *Module) SetTestState(ctx context.Context, printers []PrinterStatus) {
+	for _, p := range printers {
+		m.savePrinterState(ctx, p)
+	}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -183,8 +297,13 @@ func (m *Module) stopPrint(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {
+	states, err := m.loadPrinterStates(r.Context())
+	if err != nil {
+		slog.Error("failed to load printer states", "error", err)
+		states = []PrinterStatus{}
+	}
 	w.Header().Set("Content-Type", "text/html")
-	renderMachines(*m.state.Load()).Render(r.Context(), w)
+	renderMachines(states).Render(r.Context(), w)
 }
 
 func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
@@ -227,6 +346,9 @@ func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
 		return // Skip polling in test mode - use injected state
 	}
 	procs.Add(engine.Poll(m.pollInterval, m.poll))
+	// Cleanup old printer states hourly (24 hour TTL for printers removed from config)
+	procs.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "old printer states",
+		"DELETE FROM bambu_printer_state WHERE updated_at < unixepoch() - 86400")))
 }
 
 func (m *Module) poll(ctx context.Context) bool {
@@ -239,9 +361,6 @@ func (m *Module) poll(ctx context.Context) bool {
 	slog.Info("starting to get Bambu printer status")
 	start := time.Now()
 
-	oldState := m.state.Load()
-
-	var state []PrinterStatus
 	for _, printer := range m.printers {
 		name := m.serialToName[printer.GetSerial()]
 		serial := printer.GetSerial()
@@ -271,151 +390,14 @@ func (m *Module) poll(ctx context.Context) bool {
 			s.JobFinishedTimestamp = &finishedTimestamp
 		}
 
-		state = append(state, s)
-	}
-
-	m.state.Store(&state)
-
-	// Detect state changes and send notifications
-	if oldState != nil {
-		m.detectStateChanges(ctx, *oldState, state)
+		// Save state to DB - triggers will handle notifications on state transitions
+		if err := m.savePrinterState(ctx, s); err != nil {
+			slog.Error("failed to save printer state", "error", err, "printer", name)
+		}
 	}
 
 	slog.Info("finished getting Bambu printer status", "seconds", time.Since(start).Seconds())
 	return false
-}
-
-// findPrinterBySerial finds a printer in a state slice by serial number.
-func findPrinterBySerial(state []PrinterStatus, serial string) *PrinterStatus {
-	for i := range state {
-		if state[i].SerialNumber == serial {
-			return &state[i]
-		}
-	}
-	return nil
-}
-
-// detectStateChanges compares old and new printer states to detect job transitions and send notifications.
-func (m *Module) detectStateChanges(ctx context.Context, oldState, newState []PrinterStatus) {
-	for _, newPrinter := range newState {
-		oldPrinter := findPrinterBySerial(oldState, newPrinter.SerialNumber)
-
-		// Get last notified state for this printer
-		lastNotified := m.getLastNotifiedState(newPrinter.SerialNumber)
-
-		// Determine current state
-		hasJob := newPrinter.JobFinishedTimestamp != nil
-		hasError := newPrinter.ErrorCode != ""
-
-		// Job completed: had job before, no job now, no error
-		if lastNotified.hadJob && !hasJob && !hasError {
-			// Use the stored job metadata from when the job was running
-			m.sendCompletedNotificationFromState(ctx, newPrinter)
-			m.updateLastNotifiedState(newPrinter.SerialNumber, notifiedState{hadJob: false})
-			slog.Info("print job completed", "printer", newPrinter.PrinterName)
-			continue
-		}
-
-		// Job failed: error appeared (compare with previous poll, not last notified)
-		if oldPrinter != nil && oldPrinter.ErrorCode == "" && hasError {
-			m.sendFailedNotification(ctx, newPrinter)
-			m.updateLastNotifiedState(newPrinter.SerialNumber, notifiedState{
-				hadJob:               hasJob,
-				errorCode:            newPrinter.ErrorCode,
-				gcodeFile:            newPrinter.GcodeFile,
-				subtaskName:          newPrinter.SubtaskName,
-				ownerDiscordUsername: newPrinter.OwnerDiscordHandle(),
-				printerName:          newPrinter.PrinterName,
-			})
-			slog.Info("print job failed", "printer", newPrinter.PrinterName, "error_code", newPrinter.ErrorCode)
-			continue
-		}
-
-		// Job started: update tracking with job metadata (no notification needed for start)
-		if (oldPrinter == nil || oldPrinter.JobFinishedTimestamp == nil) && hasJob && newPrinter.GcodeFile != "" {
-			m.updateLastNotifiedState(newPrinter.SerialNumber, notifiedState{
-				hadJob:               true,
-				gcodeFile:            newPrinter.GcodeFile,
-				subtaskName:          newPrinter.SubtaskName,
-				ownerDiscordUsername: newPrinter.OwnerDiscordHandle(),
-				printerName:          newPrinter.PrinterName,
-			})
-			slog.Info("print job started", "printer", newPrinter.PrinterName, "gcode", newPrinter.GcodeFile, "owner", newPrinter.OwnerDiscordHandle())
-		}
-	}
-}
-
-func (m *Module) getLastNotifiedState(serial string) notifiedState {
-	if v, ok := m.lastNotifiedState.Load(serial); ok {
-		return v.(notifiedState)
-	}
-	return notifiedState{}
-}
-
-func (m *Module) updateLastNotifiedState(serial string, state notifiedState) {
-	m.lastNotifiedState.Store(serial, state)
-}
-
-func (m *Module) sendCompletedNotificationFromState(ctx context.Context, printer PrinterStatus) {
-	if m.messageQueuer == nil || printer.OwnerDiscordHandle() == "" {
-		return
-	}
-	webhookURL := m.loadPrintWebhookURL(ctx)
-	if webhookURL == "" {
-		return
-	}
-	userID := m.resolveDiscordUserID(ctx, printer.OwnerDiscordHandle())
-	if userID == "" {
-		return
-	}
-
-	payload := fmt.Sprintf(`{"content":"<@%s>: your print has completed successfully on %s.","username":"Conway Print Bot"}`, userID, printer.PrinterName)
-
-	if err := m.messageQueuer.QueueMessage(ctx, webhookURL, payload); err != nil {
-		slog.Error("failed to queue completion notification", "error", err, "printer", printer.PrinterName)
-	}
-}
-
-func (m *Module) sendFailedNotification(ctx context.Context, printer PrinterStatus) {
-	if m.messageQueuer == nil {
-		return
-	}
-	webhookURL := m.loadPrintWebhookURL(ctx)
-	if webhookURL == "" {
-		return
-	}
-
-	errorCode := printer.ErrorCode
-	if errorCode == "" {
-		errorCode = "unknown"
-	}
-
-	var payload string
-	if userID := m.resolveDiscordUserID(ctx, printer.OwnerDiscordHandle()); userID == "" {
-		payload = fmt.Sprintf(`{"content":"A print on %s has failed with error code: %s","username":"Conway Print Bot"}`, printer.PrinterName, errorCode)
-	} else {
-		payload = fmt.Sprintf(`{"content":"<@%s>: your print on %s has failed with error code: %s","username":"Conway Print Bot"}`, userID, printer.PrinterName, errorCode)
-	}
-
-	if err := m.messageQueuer.QueueMessage(ctx, webhookURL, payload); err != nil {
-		slog.Error("failed to queue failure notification", "error", err, "printer", printer.PrinterName)
-	}
-}
-
-func (m *Module) resolveDiscordUserID(ctx context.Context, username string) string {
-	if m.db == nil || username == "" {
-		return ""
-	}
-
-	var userID string
-	err := m.db.QueryRowContext(ctx, `SELECT discord_user_id FROM members WHERE discord_username = ? AND discord_user_id IS NOT NULL`, username).Scan(&userID)
-	if err == nil {
-		return userID
-	}
-	if err != sql.ErrNoRows {
-		slog.Warn("failed to look up Discord user ID", "error", err, "username", username)
-	}
-	return ""
 }
 
 // configChanged checks if the database config version differs from the loaded version.

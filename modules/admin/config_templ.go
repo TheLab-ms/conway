@@ -523,14 +523,14 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "h</h3><p class=\"text-muted mb-0\">Sync Interval</p></div></div></div></div><!-- Metrics Chart --><div class=\"card mb-4\"><div class=\"card-header\"><h5 class=\"mb-0\">Request Metrics (Last 24 Hours)</h5></div><div class=\"card-body\"><div style=\"position: relative; height: 280px;\"><canvas id=\"discord-metrics-chart\"></canvas></div><p class=\"text-muted small mt-2 mb-0\">Events are aggregated in 15-minute intervals. Data retained for 24 hours.</p></div></div><!-- Recent Events --><div class=\"card mb-4\"><div class=\"card-header d-flex justify-content-between align-items-center\"><h5 class=\"mb-0\">Recent Events</h5><span class=\"badge bg-secondary\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "h</h3><p class=\"text-muted mb-0\">Sync Interval</p></div></div></div></div><!-- Recent Events --><div class=\"card mb-4\"><div class=\"card-header d-flex justify-content-between align-items-center\"><h5 class=\"mb-0\">Recent Events</h5><span class=\"badge bg-secondary\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.RecentEvents)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 266, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 254, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
@@ -553,7 +553,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var28 string
 				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 284, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 272, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 				if templ_7745c5c3_Err != nil {
@@ -566,7 +566,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var29 string
 				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(event.EventType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 285, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 273, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
@@ -594,7 +594,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var30 string
 				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(event.MemberName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 293, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 281, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
@@ -607,7 +607,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var31 string
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 294, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 282, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {
@@ -620,7 +620,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var32 string
 				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 294, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 282, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 				if templ_7745c5c3_Err != nil {
@@ -641,7 +641,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</div><!-- Chart.js initialization --><script src=\"/static/chartjs/chart.umd.min.js\"></script><script src=\"/static/chartjs/chartjs-adapter-date-fns.bundle.min.js\"></script><script>\n\t\tdocument.addEventListener('DOMContentLoaded', async function() {\n\t\t\tconst canvas = document.getElementById('discord-metrics-chart');\n\t\t\tif (!canvas) return;\n\n\t\t\tconst seriesConfig = [\n\t\t\t\t{ name: 'sync-successes', label: 'Sync Successes', color: 'rgb(25, 135, 84)' },\n\t\t\t\t{ name: 'sync-errors', label: 'Sync Errors', color: 'rgb(220, 53, 69)' },\n\t\t\t\t{ name: 'api-requests', label: 'Total Requests', color: 'rgb(13, 110, 253)' }\n\t\t\t];\n\n\t\t\tconst datasets = [];\n\t\t\tfor (const cfg of seriesConfig) {\n\t\t\t\ttry {\n\t\t\t\t\tconst resp = await fetch('/admin/module-chart?module=discord&series=' + encodeURIComponent(cfg.name) + '&window=24h');\n\t\t\t\t\tconst data = await resp.json();\n\t\t\t\t\tif (data && data.length > 0) {\n\t\t\t\t\t\tdatasets.push({\n\t\t\t\t\t\t\tlabel: cfg.label,\n\t\t\t\t\t\t\tdata: data.map(p => ({ x: p.t * 1000, y: p.v })),\n\t\t\t\t\t\t\tborderColor: cfg.color,\n\t\t\t\t\t\t\tbackgroundColor: cfg.color.replace('rgb', 'rgba').replace(')', ', 0.1)'),\n\t\t\t\t\t\t\tborderWidth: 2,\n\t\t\t\t\t\t\ttension: 0.3,\n\t\t\t\t\t\t\tfill: false,\n\t\t\t\t\t\t\tpointRadius: 2\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t} catch (e) {\n\t\t\t\t\tconsole.error('Failed to fetch', cfg.name, e);\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tif (datasets.length === 0) {\n\t\t\t\tcanvas.parentElement.innerHTML = '<p class=\"text-muted text-center\">No metrics data available yet.</p>';\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\tnew Chart(canvas, {\n\t\t\t\ttype: 'line',\n\t\t\t\tdata: { datasets },\n\t\t\t\toptions: {\n\t\t\t\t\tresponsive: true,\n\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\tscales: {\n\t\t\t\t\t\tx: { type: 'time', time: { unit: 'hour' } },\n\t\t\t\t\t\ty: { beginAtZero: true }\n\t\t\t\t\t},\n\t\t\t\t\tplugins: {\n\t\t\t\t\t\tlegend: { display: true, position: 'top' }\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\t\t});\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -704,7 +704,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 394, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 324, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -733,7 +733,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(data.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 405, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 335, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -751,7 +751,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasAPIKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 426, Col: 140}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 356, Col: 140}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -764,7 +764,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasAPIKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 428, Col: 141}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 358, Col: 141}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -777,7 +777,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 434, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 364, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -790,7 +790,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasWebhookKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 440, Col: 152}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 370, Col: 152}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -803,7 +803,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasWebhookKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 442, Col: 163}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 372, Col: 163}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {
@@ -816,7 +816,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.ActiveSubscriptions))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 459, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 389, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -829,20 +829,20 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.TotalCustomers))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 463, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 393, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</h3><p class=\"text-muted mb-0\">Total Customers</p></div></div></div></div><!-- Metrics Chart --><div class=\"card mb-4\"><div class=\"card-header\"><h5 class=\"mb-0\">API Metrics (Last 24 Hours)</h5></div><div class=\"card-body\"><div style=\"position: relative; height: 280px;\"><canvas id=\"stripe-metrics-chart\"></canvas></div><p class=\"text-muted small mt-2 mb-0\">Events are aggregated in 15-minute intervals. Data retained for 24 hours.</p></div></div><!-- Recent Events --><div class=\"card mb-4\"><div class=\"card-header d-flex justify-content-between align-items-center\"><h5 class=\"mb-0\">Recent Events</h5><span class=\"badge bg-secondary\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</h3><p class=\"text-muted mb-0\">Total Customers</p></div></div></div></div><!-- Recent Events --><div class=\"card mb-4\"><div class=\"card-header d-flex justify-content-between align-items-center\"><h5 class=\"mb-0\">Recent Events</h5><span class=\"badge bg-secondary\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.RecentEvents)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 485, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 403, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -865,7 +865,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 503, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 421, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 				if templ_7745c5c3_Err != nil {
@@ -878,7 +878,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var45 string
 				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(event.EventType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 504, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 422, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 				if templ_7745c5c3_Err != nil {
@@ -906,7 +906,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var46 string
 				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(event.MemberName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 512, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 430, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 				if templ_7745c5c3_Err != nil {
@@ -919,7 +919,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var47 string
 				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 513, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 431, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 				if templ_7745c5c3_Err != nil {
@@ -932,7 +932,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var48 string
 				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 513, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 431, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 				if templ_7745c5c3_Err != nil {
@@ -953,7 +953,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</div><!-- Chart.js initialization --><script src=\"/static/chartjs/chart.umd.min.js\"></script><script src=\"/static/chartjs/chartjs-adapter-date-fns.bundle.min.js\"></script><script>\n\t\tdocument.addEventListener('DOMContentLoaded', async function() {\n\t\t\tconst canvas = document.getElementById('stripe-metrics-chart');\n\t\t\tif (!canvas) return;\n\n\t\t\tconst seriesConfig = [\n\t\t\t\t{ name: 'successes', label: 'Successes', color: 'rgb(25, 135, 84)' },\n\t\t\t\t{ name: 'errors', label: 'Errors', color: 'rgb(220, 53, 69)' },\n\t\t\t\t{ name: 'api-requests', label: 'Total Requests', color: 'rgb(13, 110, 253)' }\n\t\t\t];\n\n\t\t\tconst datasets = [];\n\t\t\tfor (const cfg of seriesConfig) {\n\t\t\t\ttry {\n\t\t\t\t\tconst resp = await fetch('/admin/module-chart?module=stripe&series=' + encodeURIComponent(cfg.name) + '&window=24h');\n\t\t\t\t\tconst data = await resp.json();\n\t\t\t\t\tif (data && data.length > 0) {\n\t\t\t\t\t\tdatasets.push({\n\t\t\t\t\t\t\tlabel: cfg.label,\n\t\t\t\t\t\t\tdata: data.map(p => ({ x: p.t * 1000, y: p.v })),\n\t\t\t\t\t\t\tborderColor: cfg.color,\n\t\t\t\t\t\t\tbackgroundColor: cfg.color.replace('rgb', 'rgba').replace(')', ', 0.1)'),\n\t\t\t\t\t\t\tborderWidth: 2,\n\t\t\t\t\t\t\ttension: 0.3,\n\t\t\t\t\t\t\tfill: false,\n\t\t\t\t\t\t\tpointRadius: 2\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t} catch (e) {\n\t\t\t\t\tconsole.error('Failed to fetch', cfg.name, e);\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tif (datasets.length === 0) {\n\t\t\t\tcanvas.parentElement.innerHTML = '<p class=\"text-muted text-center\">No metrics data available yet.</p>';\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\tnew Chart(canvas, {\n\t\t\t\ttype: 'line',\n\t\t\t\tdata: { datasets },\n\t\t\t\toptions: {\n\t\t\t\t\tresponsive: true,\n\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\tscales: {\n\t\t\t\t\t\tx: { type: 'time', time: { unit: 'hour' } },\n\t\t\t\t\t\ty: { beginAtZero: true }\n\t\t\t\t\t},\n\t\t\t\t\tplugins: {\n\t\t\t\t\t\tlegend: { display: true, position: 'top' }\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\t\t});\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1018,7 +1018,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 616, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 476, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 		if templ_7745c5c3_Err != nil {
@@ -1032,7 +1032,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(printer.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 620, Col: 19}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 480, Col: 19}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -1051,7 +1051,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var52 string
 		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][name]", index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 633, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 493, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 		if templ_7745c5c3_Err != nil {
@@ -1064,7 +1064,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var53 string
 		templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(printer.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 633, Col: 133}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 493, Col: 133}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 		if templ_7745c5c3_Err != nil {
@@ -1077,7 +1077,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var54 string
 		templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][host]", index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 637, Col: 91}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 497, Col: 91}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 		if templ_7745c5c3_Err != nil {
@@ -1090,7 +1090,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var55 string
 		templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(printer.Host)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 637, Col: 114}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 497, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 		if templ_7745c5c3_Err != nil {
@@ -1103,7 +1103,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var56 string
 		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][access_code]", index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 641, Col: 117}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 501, Col: 117}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 		if templ_7745c5c3_Err != nil {
@@ -1116,7 +1116,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var57 string
 		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(printer.HasAccessCode))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 641, Col: 174}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 501, Col: 174}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 		if templ_7745c5c3_Err != nil {
@@ -1129,7 +1129,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(printer.HasAccessCode))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 642, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 502, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -1142,7 +1142,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var59 string
 		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][serial_number]", index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 646, Col: 115}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 506, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 		if templ_7745c5c3_Err != nil {
@@ -1155,7 +1155,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var60 string
 		templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(printer.SerialNumber)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 646, Col: 146}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 506, Col: 146}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 		if templ_7745c5c3_Err != nil {
@@ -1202,7 +1202,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 			var templ_7745c5c3_Var62 string
 			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 668, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 528, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 			if templ_7745c5c3_Err != nil {
@@ -1231,7 +1231,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(data.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 679, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 539, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 			if templ_7745c5c3_Err != nil {
@@ -1249,7 +1249,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var64 string
 		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs("@username")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 687, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 547, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 		if templ_7745c5c3_Err != nil {
@@ -1262,7 +1262,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var65 string
 		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.Printers)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 697, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 557, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 		if templ_7745c5c3_Err != nil {
@@ -1293,7 +1293,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var66 string
 		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.PollIntervalSecs))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 713, Col: 146}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 573, Col: 146}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 		if templ_7745c5c3_Err != nil {
@@ -1306,7 +1306,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var67 string
 		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.ConfiguredPrinters))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 807, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 667, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 		if templ_7745c5c3_Err != nil {
@@ -1319,20 +1319,20 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var68 string
 		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.PollIntervalSecs))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 811, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 671, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "s</h3><p class=\"text-muted mb-0\">Poll Interval</p></div></div></div></div><!-- Metrics Chart --><div class=\"card mb-4\"><div class=\"card-header\"><h5 class=\"mb-0\">API Metrics (Last 24 Hours)</h5></div><div class=\"card-body\"><div style=\"position: relative; height: 280px;\"><canvas id=\"bambu-metrics-chart\"></canvas></div><p class=\"text-muted small mt-2 mb-0\">Events are aggregated in 15-minute intervals. Data retained for 24 hours.</p></div></div><!-- Recent Events --><div class=\"card mb-4\"><div class=\"card-header d-flex justify-content-between align-items-center\"><h5 class=\"mb-0\">Recent Events</h5><span class=\"badge bg-secondary\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "s</h3><p class=\"text-muted mb-0\">Poll Interval</p></div></div></div></div><!-- Recent Events --><div class=\"card mb-4\"><div class=\"card-header d-flex justify-content-between align-items-center\"><h5 class=\"mb-0\">Recent Events</h5><span class=\"badge bg-secondary\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var69 string
 		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.RecentEvents)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 833, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 681, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 		if templ_7745c5c3_Err != nil {
@@ -1355,7 +1355,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				var templ_7745c5c3_Var70 string
 				templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 851, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 699, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 				if templ_7745c5c3_Err != nil {
@@ -1368,7 +1368,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				var templ_7745c5c3_Var71 string
 				templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(event.EventType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 852, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 700, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 				if templ_7745c5c3_Err != nil {
@@ -1396,7 +1396,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				var templ_7745c5c3_Var72 string
 				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(event.PrinterName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 860, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 708, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 				if templ_7745c5c3_Err != nil {
@@ -1409,7 +1409,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				var templ_7745c5c3_Var73 string
 				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 861, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 709, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 				if templ_7745c5c3_Err != nil {
@@ -1422,7 +1422,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				var templ_7745c5c3_Var74 string
 				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 861, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 709, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 				if templ_7745c5c3_Err != nil {
@@ -1443,7 +1443,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "</div><!-- Chart.js initialization --><script src=\"/static/chartjs/chart.umd.min.js\"></script><script src=\"/static/chartjs/chartjs-adapter-date-fns.bundle.min.js\"></script><script>\n\t\tdocument.addEventListener('DOMContentLoaded', async function() {\n\t\t\tconst canvas = document.getElementById('bambu-metrics-chart');\n\t\t\tif (!canvas) return;\n\n\t\t\tconst seriesConfig = [\n\t\t\t\t{ name: 'successes', label: 'Successful Polls', color: 'rgb(25, 135, 84)' },\n\t\t\t\t{ name: 'errors', label: 'Errors', color: 'rgb(220, 53, 69)' },\n\t\t\t\t{ name: 'api-requests', label: 'Total Requests', color: 'rgb(13, 110, 253)' }\n\t\t\t];\n\n\t\t\tconst datasets = [];\n\t\t\tfor (const cfg of seriesConfig) {\n\t\t\t\ttry {\n\t\t\t\t\tconst resp = await fetch('/admin/module-chart?module=bambu&series=' + encodeURIComponent(cfg.name) + '&window=24h');\n\t\t\t\t\tconst data = await resp.json();\n\t\t\t\t\tif (data && data.length > 0) {\n\t\t\t\t\t\tdatasets.push({\n\t\t\t\t\t\t\tlabel: cfg.label,\n\t\t\t\t\t\t\tdata: data.map(p => ({ x: p.t * 1000, y: p.v })),\n\t\t\t\t\t\t\tborderColor: cfg.color,\n\t\t\t\t\t\t\tbackgroundColor: cfg.color.replace('rgb', 'rgba').replace(')', ', 0.1)'),\n\t\t\t\t\t\t\tborderWidth: 2,\n\t\t\t\t\t\t\ttension: 0.3,\n\t\t\t\t\t\t\tfill: false,\n\t\t\t\t\t\t\tpointRadius: 2\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t} catch (e) {\n\t\t\t\t\tconsole.error('Failed to fetch', cfg.name, e);\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tif (datasets.length === 0) {\n\t\t\t\tcanvas.parentElement.innerHTML = '<p class=\"text-muted text-center\">No metrics data available yet.</p>';\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\tnew Chart(canvas, {\n\t\t\t\ttype: 'line',\n\t\t\t\tdata: { datasets },\n\t\t\t\toptions: {\n\t\t\t\t\tresponsive: true,\n\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\tscales: {\n\t\t\t\t\t\tx: { type: 'time', time: { unit: 'hour' } },\n\t\t\t\t\t\ty: { beginAtZero: true }\n\t\t\t\t\t},\n\t\t\t\t\tplugins: {\n\t\t\t\t\t\tlegend: { display: true, position: 'top' }\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\t\t});\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1479,13 +1479,13 @@ func renderFobAPIConfigContent(selfURL string) templ.Component {
 		var templ_7745c5c3_Var76 string
 		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 950, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 740, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "/api/fobs</code></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Authentication</h6><p class=\"text-muted small mb-3\">No API key is required. Instead, the endpoint uses network-level authentication:</p><ul class=\"mb-4\"><li>Requests must originate from the <strong>local network</strong></li><li>Requests from the internet are automatically blocked (HTTP 403)</li><li>This is enforced by checking for the <code>CF-Connecting-IP</code> header set by Cloudflare</li></ul><h6 class=\"text-muted border-bottom pb-2 mb-3\">Request Format</h6><p class=\"text-muted small mb-3\">Send a JSON array of fob swipe events. This can be an empty array if you just want to fetch the authorized fob list.</p><pre class=\"bg-light p-3 rounded\"><code>POST /api/fobs Content-Type: application/json If-None-Match: &lt;etag&gt;  (optional, for caching) [ &#123; \"fob\": 12345678, \"allowed\": true &#125;, &#123; \"fob\": 87654321, \"allowed\": false &#125; ]</code></pre><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead> <tbody><tr><td><code>fob</code></td><td>integer</td><td>The fob ID that was scanned</td></tr><tr><td><code>allowed</code></td><td>boolean</td><td>Whether access was granted (based on controller's cached list)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Response Format</h6><p class=\"text-muted small mb-3\">Returns a JSON array of all currently authorized fob IDs, sorted numerically.</p><pre class=\"bg-light p-3 rounded\"><code>HTTP/1.1 200 OK Content-Type: application/json ETag: a1b2c3d4e5f6... [12345678, 23456789, 34567890]</code></pre><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Response</th><th>Description</th></tr></thead> <tbody><tr><td><code>200 OK</code></td><td>Returns JSON array of authorized fob IDs</td></tr><tr><td><code>304 Not Modified</code></td><td>ETag matches; client should use cached list</td></tr><tr><td><code>403 Forbidden</code></td><td>Request originated from the internet (blocked)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">ETag Caching</h6><p class=\"text-muted small mb-3\">The API uses HTTP ETag caching to minimize bandwidth. Controllers should:</p><ol class=\"mb-4\"><li>Store the <code>ETag</code> header from the response</li><li>Send <code>If-None-Match: &lt;etag&gt;</code> on subsequent requests</li><li>If response is <code>304</code>, continue using the cached fob list</li><li>If response is <code>200</code>, update the cached list and ETag</li></ol><h6 class=\"text-muted border-bottom pb-2 mb-3\">Client Implementation</h6><p class=\"text-muted small mb-0\">Reference implementation for ESP32 MicroPython controllers is available in the <code>access-controller/</code> directory of the Conway repository.</p></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "/api/fobs</code></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Authentication</h6><p class=\"text-muted small mb-3\">No API key is required. Instead, the endpoint uses network-level authentication:</p><ul class=\"mb-4\"><li>Requests must originate from the <strong>local network</strong></li><li>Requests from the internet are automatically blocked (HTTP 403)</li><li>This is enforced by checking for the <code>CF-Connecting-IP</code> header set by Cloudflare</li></ul><h6 class=\"text-muted border-bottom pb-2 mb-3\">Request Format</h6><p class=\"text-muted small mb-3\">Send a JSON array of fob swipe events. This can be an empty array if you just want to fetch the authorized fob list.</p><div class=\"bg-light p-3 rounded mb-3\"><div class=\"mb-2\"><strong class=\"text-primary\">POST</strong> <code>/api/fobs</code></div><div class=\"mb-2 ps-3 border-start border-2\"><small class=\"text-muted d-block\">Headers:</small> <code>Content-Type: application/json</code><br><code>If-None-Match: &lt;etag&gt;</code> <span class=\"text-muted small\">(optional, for caching)</span></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Body:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>[ &#123; \"fob\": 12345678, \"allowed\": true &#125;, &#123; \"fob\": 87654321, \"allowed\": false &#125; ]</code></pre></div></div><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead> <tbody><tr><td><code>fob</code></td><td>integer</td><td>The fob ID that was scanned</td></tr><tr><td><code>allowed</code></td><td>boolean</td><td>Whether access was granted (based on controller's cached list)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Response Format</h6><p class=\"text-muted small mb-3\">Returns a JSON array of all currently authorized fob IDs, sorted numerically.</p><div class=\"bg-light p-3 rounded mb-3\"><div class=\"mb-2\"><strong class=\"text-success\">HTTP/1.1 200 OK</strong></div><div class=\"mb-2 ps-3 border-start border-2\"><small class=\"text-muted d-block\">Headers:</small> <code>Content-Type: application/json</code><br><code>ETag: a1b2c3d4e5f6...</code></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Body:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>[12345678, 23456789, 34567890]</code></pre></div></div><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Response</th><th>Description</th></tr></thead> <tbody><tr><td><code>200 OK</code></td><td>Returns JSON array of authorized fob IDs</td></tr><tr><td><code>304 Not Modified</code></td><td>ETag matches; client should use cached list</td></tr><tr><td><code>403 Forbidden</code></td><td>Request originated from the internet (blocked)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">ETag Caching</h6><p class=\"text-muted small mb-3\">The API uses HTTP ETag caching to minimize bandwidth. Controllers should:</p><ol class=\"mb-4\"><li>Store the <code>ETag</code> header from the response</li><li>Send <code>If-None-Match: &lt;etag&gt;</code> on subsequent requests</li><li>If response is <code>304</code>, continue using the cached fob list</li><li>If response is <code>200</code>, update the cached list and ETag</li></ol><h6 class=\"text-muted border-bottom pb-2 mb-3\">Client Implementation</h6><p class=\"text-muted small mb-0\">Reference implementation for ESP32 MicroPython controllers is available in the <code>access-controller/</code> directory of the Conway repository.</p></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

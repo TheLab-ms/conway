@@ -216,7 +216,6 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 	router.HandleFunc("GET /admin/export/{table}", router.WithLeadership(m.exportCSV))
 	router.HandleFunc("GET /admin/chart", router.WithLeadership(m.renderMetricsChart))
-	router.HandleFunc("GET /admin/module-chart", router.WithLeadership(m.renderModuleEventsChart))
 	router.HandleFunc("GET /admin/metrics", router.WithLeadership(m.renderMetricsPageHandler))
 
 	// Configuration routes
@@ -247,10 +246,15 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	// Cleanup old module events after 24 hours
-	const eventTTL = 24 * 60 * 60 // 24 hours in seconds
+	// Cleanup old module events, keeping only the 100 most recent per module (FIFO)
+	const maxEventsPerModule = 100
 	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "old module events",
-		"DELETE FROM module_events WHERE created < unixepoch() - ?", eventTTL)))
+		`DELETE FROM module_events WHERE id IN (
+			SELECT id FROM (
+				SELECT id, ROW_NUMBER() OVER (PARTITION BY module ORDER BY created DESC) as rn
+				FROM module_events
+			) WHERE rn > ?
+		)`, maxEventsPerModule)))
 }
 
 func (m *Module) exportCSV(w http.ResponseWriter, r *http.Request) {
@@ -323,74 +327,6 @@ func (m *Module) renderMetricsChart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data = append(data, dataPoint{Timestamp: int64(ts), Value: val})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
-}
-
-func (m *Module) renderModuleEventsChart(w http.ResponseWriter, r *http.Request) {
-	module := r.URL.Query().Get("module")
-	series := r.URL.Query().Get("series")
-
-	// Validate module
-	switch module {
-	case "discord", "stripe", "bambu":
-		// Valid
-	default:
-		engine.ClientError(w, "Invalid Request", "Unknown module", 400)
-		return
-	}
-
-	windowDuration := time.Hour * 24
-	if window := r.URL.Query().Get("window"); window != "" {
-		if parsed, err := time.ParseDuration(window); err == nil && parsed <= 24*time.Hour {
-			windowDuration = parsed
-		}
-	}
-
-	var whereClause string
-	switch series {
-	case "sync-successes", "successes":
-		if module == "discord" {
-			whereClause = "success = 1 AND event_type IN ('RoleSync', 'OAuthCallback', 'WebhookSent')"
-		} else {
-			whereClause = "success = 1"
-		}
-	case "sync-errors", "errors":
-		whereClause = "success = 0"
-	case "api-requests":
-		whereClause = "1=1"
-	default:
-		engine.ClientError(w, "Invalid Request", "Unknown series", 400)
-		return
-	}
-
-	query := fmt.Sprintf(`
-		SELECT (created / 900) * 900 AS bucket, COUNT(*)
-		FROM module_events
-		WHERE module = ? AND created > unixepoch() - ? AND %s
-		GROUP BY bucket
-		ORDER BY bucket ASC`, whereClause)
-
-	rows, err := m.db.QueryContext(r.Context(), query, module, int64(windowDuration.Seconds()))
-	if engine.HandleError(w, err) {
-		return
-	}
-	defer rows.Close()
-
-	type dataPoint struct {
-		Timestamp int64   `json:"t"`
-		Value     float64 `json:"v"`
-	}
-	var data []dataPoint
-	for rows.Next() {
-		var ts int64
-		var count float64
-		if engine.HandleError(w, rows.Scan(&ts, &count)) {
-			return
-		}
-		data = append(data, dataPoint{Timestamp: ts, Value: count})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
