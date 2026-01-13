@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
@@ -24,21 +23,6 @@ import (
 	"github.com/stripe/stripe-go/v78/webhook"
 )
 
-const migration = `
-CREATE TABLE IF NOT EXISTS stripe_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    member INTEGER REFERENCES members(id) ON DELETE SET NULL,
-    event_type TEXT NOT NULL,
-    stripe_customer_id TEXT,
-    success INTEGER NOT NULL DEFAULT 1,
-    details TEXT NOT NULL DEFAULT ''
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS stripe_events_created_idx ON stripe_events (created);
-CREATE INDEX IF NOT EXISTS stripe_events_type_idx ON stripe_events (event_type, success);
-`
-
 // stripeConfig holds Stripe-related configuration.
 type stripeConfig struct {
 	apiKey     string
@@ -46,13 +30,13 @@ type stripeConfig struct {
 }
 
 type Module struct {
-	db   *sql.DB
-	self *url.URL
+	db          *sql.DB
+	self        *url.URL
+	eventLogger *engine.EventLogger
 }
 
-func New(db *sql.DB, self *url.URL) *Module {
-	engine.MustMigrate(db, migration)
-	return &Module{db: db, self: self}
+func New(db *sql.DB, self *url.URL, eventLogger *engine.EventLogger) *Module {
+	return &Module{db: db, self: self, eventLogger: eventLogger}
 }
 
 // loadConfig loads Stripe configuration from the database.
@@ -71,52 +55,22 @@ func (m *Module) loadConfig(ctx context.Context) (*stripeConfig, error) {
 	return cfg, nil
 }
 
-// logEvent logs a Stripe operation event to the database.
-func (m *Module) logEvent(ctx context.Context, memberID int64, stripeCustomerID, eventType string, success bool, details string) {
-	successInt := 0
-	if success {
-		successInt = 1
-	}
-	var memberPtr interface{} = nil
-	if memberID > 0 {
-		memberPtr = memberID
-	}
-	var custPtr interface{} = nil
-	if stripeCustomerID != "" {
-		custPtr = stripeCustomerID
-	}
-	_, err := m.db.ExecContext(ctx,
-		`INSERT INTO stripe_events (member, stripe_customer_id, event_type, success, details)
-		 VALUES (?, ?, ?, ?, ?)`,
-		memberPtr, custPtr, eventType, successInt, details)
-	if err != nil {
-		slog.Error("failed to log stripe event", "error", err, "eventType", eventType)
-	}
-}
-
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("POST /webhooks/stripe", m.handleStripeWebhook)
 	router.HandleFunc("GET /payment/checkout", router.WithAuthn(m.handleCheckoutForm))
 }
 
-func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	// Cleanup old stripe events after 24 hours
-	const eventTTL = 24 * 60 * 60 // 24 hours in seconds
-	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "old stripe events",
-		"DELETE FROM stripe_events WHERE created < unixepoch() - ?", eventTTL)))
-}
-
 func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	cfg, err := m.loadConfig(r.Context())
 	if err != nil {
-		m.logEvent(r.Context(), 0, "", "WebhookError", false, "config load: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), "stripe", 0, "WebhookError", "", "", false, "config load: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
 
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
-		m.logEvent(r.Context(), 0, "", "WebhookError", false, "body read: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), "stripe", 0, "WebhookError", "", "", false, "body read: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -124,7 +78,7 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	// Verify the signature of the request and parse it
 	event, err := webhook.ConstructEvent(payload, r.Header.Get("Stripe-Signature"), cfg.webhookKey)
 	if err != nil {
-		m.logEvent(r.Context(), 0, "", "WebhookError", false, "signature verification: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), "stripe", 0, "WebhookError", "", "", false, "signature verification: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -149,13 +103,13 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	subID := event.Data.Object["id"].(string)
 	sub, err := subscription.Get(subID, &stripe.SubscriptionParams{})
 	if err != nil {
-		m.logEvent(r.Context(), 0, "", "APIError", false, "subscription.Get: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), "stripe", 0, "APIError", "", "", false, "subscription.Get: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
 	cust, err := customer.Get(sub.Customer.ID, &stripe.CustomerParams{})
 	if err != nil {
-		m.logEvent(r.Context(), 0, sub.Customer.ID, "APIError", false, "customer.Get: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), "stripe", 0, "APIError", sub.Customer.ID, "", false, "customer.Get: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -167,12 +121,12 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	// Update our representation of the member to reflect Stripe
 	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET stripe_customer_id = $2, stripe_subscription_id = $3, stripe_subscription_state = $4, name = $5 WHERE email = $1", strings.ToLower(cust.Email), cust.ID, sub.ID, sub.Status, cust.Name)
 	if err != nil {
-		m.logEvent(r.Context(), memberID, cust.ID, "WebhookError", false, "db update: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "WebhookError", cust.ID, "", false, "db update: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
 
-	m.logEvent(r.Context(), memberID, cust.ID, "WebhookReceived", true, fmt.Sprintf("event=%s status=%s", event.Type, sub.Status))
+	m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "WebhookReceived", cust.ID, "", true, fmt.Sprintf("event=%s status=%s", event.Type, sub.Status))
 	slog.Info("updated member's stripe subscription metadata", "member", cust.Email, "status", sub.Status)
 	w.WriteHeader(204)
 }
@@ -181,7 +135,7 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 	cfg, err := m.loadConfig(r.Context())
 	if err != nil {
-		m.logEvent(r.Context(), auth.GetUserMeta(r.Context()).ID, "", "APIError", false, "config load: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), "stripe", auth.GetUserMeta(r.Context()).ID, "APIError", "", "", false, "config load: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -200,7 +154,7 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 	var annual bool
 	err = m.db.QueryRowContext(r.Context(), "SELECT email, discount_type, stripe_customer_id, stripe_subscription_id, bill_annually, (stripe_subscription_state IS NOT NULL AND stripe_subscription_state != 'canceled') FROM members WHERE id = ?", memberID).Scan(&email, &discountType, &existingCustomerID, &existingSubID, &annual, &active)
 	if err != nil {
-		m.logEvent(r.Context(), memberID, "", "APIError", false, "db query: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "APIError", "", "", false, "db query: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -220,12 +174,12 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 
 		s, err := billingsession.New(sessionParams)
 		if err != nil {
-			m.logEvent(r.Context(), memberID, custID, "APIError", false, "billingportal.session.New: "+err.Error())
+			m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "APIError", custID, "", false, "billingportal.session.New: "+err.Error())
 			engine.SystemError(w, err.Error())
 			return
 		}
 
-		m.logEvent(r.Context(), memberID, custID, "BillingPortal", true, "redirected to billing portal")
+		m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "BillingPortal", custID, "", true, "redirected to billing portal")
 		http.Redirect(w, r, s.URL, http.StatusSeeOther)
 		return
 	}
@@ -252,7 +206,7 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if !pricesIter.Next() {
-		m.logEvent(r.Context(), memberID, custID, "APIError", false, "price.Search: price not found for "+freq)
+		m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "APIError", custID, "", false, "price.Search: price not found for "+freq)
 		engine.SystemError(w, "price was not found in Stripe")
 		return
 	}
@@ -285,11 +239,11 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 
 	s, err := session.New(checkoutParams)
 	if err != nil {
-		m.logEvent(r.Context(), memberID, custID, "APIError", false, "checkout.session.New: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "APIError", custID, "", false, "checkout.session.New: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
 
-	m.logEvent(r.Context(), memberID, custID, "CheckoutCreated", true, fmt.Sprintf("freq=%s", freq))
+	m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "CheckoutCreated", custID, "", true, fmt.Sprintf("freq=%s", freq))
 	http.Redirect(w, r, s.URL, http.StatusSeeOther)
 }

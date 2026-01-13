@@ -320,7 +320,7 @@ templ renderDiscordConfigContent(data *discordConfigData, selfURL string) {
 			const datasets = [];
 			for (const cfg of seriesConfig) {
 				try {
-					const resp = await fetch('/admin/discord-chart?series=' + encodeURIComponent(cfg.name) + '&window=24h');
+					const resp = await fetch('/admin/module-chart?module=discord&series=' + encodeURIComponent(cfg.name) + '&window=24h');
 					const data = await resp.json();
 					if (data && data.length > 0) {
 						datasets.push({
@@ -539,7 +539,7 @@ templ renderStripeConfigContent(data *stripeConfigData, selfURL string) {
 			const datasets = [];
 			for (const cfg of seriesConfig) {
 				try {
-					const resp = await fetch('/admin/stripe-chart?series=' + encodeURIComponent(cfg.name) + '&window=24h');
+					const resp = await fetch('/admin/module-chart?module=stripe&series=' + encodeURIComponent(cfg.name) + '&window=24h');
 					const data = await resp.json();
 					if (data && data.length > 0) {
 						datasets.push({
@@ -887,7 +887,7 @@ templ renderBambuConfigContent(data *bambuConfigData) {
 			const datasets = [];
 			for (const cfg of seriesConfig) {
 				try {
-					const resp = await fetch('/admin/bambu-chart?series=' + encodeURIComponent(cfg.name) + '&window=24h');
+					const resp = await fetch('/admin/module-chart?module=bambu&series=' + encodeURIComponent(cfg.name) + '&window=24h');
 					const data = await resp.json();
 					if (data && data.length > 0) {
 						datasets.push({

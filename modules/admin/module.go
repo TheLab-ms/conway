@@ -29,29 +29,17 @@ CREATE TABLE IF NOT EXISTS bambu_config (
     printers_json TEXT NOT NULL DEFAULT '[]',
     poll_interval_seconds INTEGER NOT NULL DEFAULT 5
 ) STRICT;
-
-CREATE TABLE IF NOT EXISTS bambu_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    event_type TEXT NOT NULL,
-    printer_name TEXT,
-    printer_serial TEXT,
-    success INTEGER NOT NULL DEFAULT 1,
-    details TEXT NOT NULL DEFAULT ''
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS bambu_events_created_idx ON bambu_events (created);
-CREATE INDEX IF NOT EXISTS bambu_events_type_idx ON bambu_events (event_type, success);
 `
 
 type Module struct {
-	db    *sql.DB
-	self  *url.URL
-	links *engine.TokenIssuer
-	nav   []*navbarTab
+	db          *sql.DB
+	self        *url.URL
+	links       *engine.TokenIssuer
+	eventLogger *engine.EventLogger
+	nav         []*navbarTab
 }
 
-func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer) *Module {
+func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer, eventLogger *engine.EventLogger) *Module {
 	engine.MustMigrate(db, migration)
 
 	nav := []*navbarTab{}
@@ -60,7 +48,7 @@ func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer) *Module {
 	}
 	nav = append(nav, &navbarTab{Title: "Metrics", Path: "/admin/metrics"})
 
-	return &Module{db: db, self: self, links: linksIss, nav: nav}
+	return &Module{db: db, self: self, links: linksIss, eventLogger: eventLogger, nav: nav}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -228,7 +216,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 	router.HandleFunc("GET /admin/export/{table}", router.WithLeadership(m.exportCSV))
 	router.HandleFunc("GET /admin/chart", router.WithLeadership(m.renderMetricsChart))
-	router.HandleFunc("GET /admin/discord-chart", router.WithLeadership(m.renderDiscordEventsChart))
+	router.HandleFunc("GET /admin/module-chart", router.WithLeadership(m.renderModuleEventsChart))
 	router.HandleFunc("GET /admin/metrics", router.WithLeadership(m.renderMetricsPageHandler))
 
 	// Configuration routes
@@ -241,10 +229,8 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("POST /admin/config/discord", router.WithLeadership(m.handleDiscordConfigSave))
 	router.HandleFunc("GET /admin/config/stripe", router.WithLeadership(m.renderStripeConfigPage))
 	router.HandleFunc("POST /admin/config/stripe", router.WithLeadership(m.handleStripeConfigSave))
-	router.HandleFunc("GET /admin/stripe-chart", router.WithLeadership(m.renderStripeEventsChart))
 	router.HandleFunc("GET /admin/config/bambu", router.WithLeadership(m.renderBambuConfigPage))
 	router.HandleFunc("POST /admin/config/bambu", router.WithLeadership(m.handleBambuConfigSave))
-	router.HandleFunc("GET /admin/bambu-chart", router.WithLeadership(m.renderBambuEventsChart))
 
 	router.HandleFunc("POST /admin/members/{id}/delete", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", r.PathValue("id"))
@@ -257,6 +243,13 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	for _, handle := range formHandlers {
 		router.HandleFunc("POST "+handle.Path, router.WithLeadership(handle.BuildHandler(m.db)))
 	}
+}
+
+func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
+	// Cleanup old module events after 24 hours
+	const eventTTL = 24 * 60 * 60 // 24 hours in seconds
+	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "old module events",
+		"DELETE FROM module_events WHERE created < unixepoch() - ?", eventTTL)))
 }
 
 func (m *Module) exportCSV(w http.ResponseWriter, r *http.Request) {
@@ -335,8 +328,18 @@ func (m *Module) renderMetricsChart(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data)
 }
 
-func (m *Module) renderDiscordEventsChart(w http.ResponseWriter, r *http.Request) {
+func (m *Module) renderModuleEventsChart(w http.ResponseWriter, r *http.Request) {
+	module := r.URL.Query().Get("module")
 	series := r.URL.Query().Get("series")
+
+	// Validate module
+	switch module {
+	case "discord", "stripe", "bambu":
+		// Valid
+	default:
+		engine.ClientError(w, "Invalid Request", "Unknown module", 400)
+		return
+	}
 
 	windowDuration := time.Hour * 24
 	if window := r.URL.Query().Get("window"); window != "" {
@@ -347,9 +350,13 @@ func (m *Module) renderDiscordEventsChart(w http.ResponseWriter, r *http.Request
 
 	var whereClause string
 	switch series {
-	case "sync-successes":
-		whereClause = "success = 1 AND event_type IN ('RoleSync', 'OAuthCallback', 'WebhookSent')"
-	case "sync-errors":
+	case "sync-successes", "successes":
+		if module == "discord" {
+			whereClause = "success = 1 AND event_type IN ('RoleSync', 'OAuthCallback', 'WebhookSent')"
+		} else {
+			whereClause = "success = 1"
+		}
+	case "sync-errors", "errors":
 		whereClause = "success = 0"
 	case "api-requests":
 		whereClause = "1=1"
@@ -360,12 +367,12 @@ func (m *Module) renderDiscordEventsChart(w http.ResponseWriter, r *http.Request
 
 	query := fmt.Sprintf(`
 		SELECT (created / 900) * 900 AS bucket, COUNT(*)
-		FROM discord_events
-		WHERE created > unixepoch() - ? AND %s
+		FROM module_events
+		WHERE module = ? AND created > unixepoch() - ? AND %s
 		GROUP BY bucket
 		ORDER BY bucket ASC`, whereClause)
 
-	rows, err := m.db.QueryContext(r.Context(), query, int64(windowDuration.Seconds()))
+	rows, err := m.db.QueryContext(r.Context(), query, module, int64(windowDuration.Seconds()))
 	if engine.HandleError(w, err) {
 		return
 	}
@@ -541,10 +548,11 @@ func (m *Module) getDiscordConfigData(r *http.Request) *discordConfigData {
 
 func (m *Module) getRecentDiscordEvents(ctx context.Context) []*discordEvent {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT e.created, e.event_type, COALESCE(e.discord_user_id, ''), e.success, e.details,
+		SELECT e.created, e.event_type, COALESCE(e.entity_id, ''), e.success, e.details,
 			   COALESCE(mem.name_override, mem.identifier, 'Unknown') AS member_name
-		FROM discord_events e
+		FROM module_events e
 		LEFT JOIN members mem ON e.member = mem.id
+		WHERE e.module = 'discord'
 		ORDER BY e.created DESC
 		LIMIT 20`)
 	if err != nil {
@@ -628,10 +636,11 @@ func (m *Module) getStripeConfigData(r *http.Request) *stripeConfigData {
 
 func (m *Module) getRecentStripeEvents(ctx context.Context) []*stripeEvent {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT e.created, e.event_type, COALESCE(e.stripe_customer_id, ''), e.success, e.details,
+		SELECT e.created, e.event_type, COALESCE(e.entity_id, ''), e.success, e.details,
 			   COALESCE(mem.name_override, mem.identifier, 'Unknown') AS member_name
-		FROM stripe_events e
+		FROM module_events e
 		LEFT JOIN members mem ON e.member = mem.id
+		WHERE e.module = 'stripe'
 		ORDER BY e.created DESC
 		LIMIT 20`)
 	if err != nil {
@@ -651,60 +660,6 @@ func (m *Module) getRecentStripeEvents(ctx context.Context) []*stripeEvent {
 		}
 	}
 	return events
-}
-
-func (m *Module) renderStripeEventsChart(w http.ResponseWriter, r *http.Request) {
-	series := r.URL.Query().Get("series")
-
-	windowDuration := time.Hour * 24
-	if window := r.URL.Query().Get("window"); window != "" {
-		if parsed, err := time.ParseDuration(window); err == nil && parsed <= 24*time.Hour {
-			windowDuration = parsed
-		}
-	}
-
-	var whereClause string
-	switch series {
-	case "successes":
-		whereClause = "success = 1"
-	case "errors":
-		whereClause = "success = 0"
-	case "api-requests":
-		whereClause = "1=1"
-	default:
-		engine.ClientError(w, "Invalid Request", "Unknown series", 400)
-		return
-	}
-
-	query := fmt.Sprintf(`
-		SELECT (created / 900) * 900 AS bucket, COUNT(*)
-		FROM stripe_events
-		WHERE created > unixepoch() - ? AND %s
-		GROUP BY bucket
-		ORDER BY bucket ASC`, whereClause)
-
-	rows, err := m.db.QueryContext(r.Context(), query, int64(windowDuration.Seconds()))
-	if engine.HandleError(w, err) {
-		return
-	}
-	defer rows.Close()
-
-	type dataPoint struct {
-		Timestamp int64   `json:"t"`
-		Value     float64 `json:"v"`
-	}
-	var data []dataPoint
-	for rows.Next() {
-		var ts int64
-		var count float64
-		if engine.HandleError(w, rows.Scan(&ts, &count)) {
-			return
-		}
-		data = append(data, dataPoint{Timestamp: ts, Value: count})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
 }
 
 func (m *Module) renderBambuConfigPage(w http.ResponseWriter, r *http.Request) {
@@ -887,8 +842,9 @@ func (m *Module) getBambuConfigData(r *http.Request) *bambuConfigData {
 
 func (m *Module) getRecentBambuEvents(ctx context.Context) []*bambuEvent {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT created, event_type, COALESCE(printer_name, ''), COALESCE(printer_serial, ''), success, details
-		FROM bambu_events
+		SELECT created, event_type, COALESCE(entity_name, ''), COALESCE(entity_id, ''), success, details
+		FROM module_events
+		WHERE module = 'bambu'
 		ORDER BY created DESC
 		LIMIT 20`)
 	if err != nil {
@@ -908,58 +864,4 @@ func (m *Module) getRecentBambuEvents(ctx context.Context) []*bambuEvent {
 		}
 	}
 	return events
-}
-
-func (m *Module) renderBambuEventsChart(w http.ResponseWriter, r *http.Request) {
-	series := r.URL.Query().Get("series")
-
-	windowDuration := time.Hour * 24
-	if window := r.URL.Query().Get("window"); window != "" {
-		if parsed, err := time.ParseDuration(window); err == nil && parsed <= 24*time.Hour {
-			windowDuration = parsed
-		}
-	}
-
-	var whereClause string
-	switch series {
-	case "successes":
-		whereClause = "success = 1"
-	case "errors":
-		whereClause = "success = 0"
-	case "api-requests":
-		whereClause = "1=1"
-	default:
-		engine.ClientError(w, "Invalid Request", "Unknown series", 400)
-		return
-	}
-
-	query := fmt.Sprintf(`
-		SELECT (created / 900) * 900 AS bucket, COUNT(*)
-		FROM bambu_events
-		WHERE created > unixepoch() - ? AND %s
-		GROUP BY bucket
-		ORDER BY bucket ASC`, whereClause)
-
-	rows, err := m.db.QueryContext(r.Context(), query, int64(windowDuration.Seconds()))
-	if engine.HandleError(w, err) {
-		return
-	}
-	defer rows.Close()
-
-	type dataPoint struct {
-		Timestamp int64   `json:"t"`
-		Value     float64 `json:"v"`
-	}
-	var data []dataPoint
-	for rows.Next() {
-		var ts int64
-		var count float64
-		if engine.HandleError(w, rows.Scan(&ts, &count)) {
-			return
-		}
-		data = append(data, dataPoint{Timestamp: ts, Value: count})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
 }

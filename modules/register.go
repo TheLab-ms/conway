@@ -54,6 +54,9 @@ type Options struct {
 // Register adds all modules to the app and returns the auth module
 // (which must be set as the router's authenticator by the caller).
 func Register(a *engine.App, opts Options) *auth.Module {
+	// Create shared event logger for all modules
+	eventLogger := engine.NewEventLogger(opts.Database)
+
 	// Auth module must be created and set as authenticator FIRST,
 	// before any modules that use WithAuthn are added.
 	authModule := auth.New(opts.Database, opts.Self, opts.Turnstile, opts.AuthIssuer)
@@ -68,8 +71,8 @@ func Register(a *engine.App, opts Options) *auth.Module {
 
 	a.Add(email.New(opts.Database, opts.EmailSender))
 	a.Add(oauth2.New(opts.Database, opts.Self, opts.OAuthIssuer))
-	a.Add(payment.New(opts.Database, opts.Self))
-	a.Add(admin.New(opts.Database, opts.Self, opts.AuthIssuer))
+	a.Add(payment.New(opts.Database, opts.Self, eventLogger))
+	a.Add(admin.New(opts.Database, opts.Self, opts.AuthIssuer, eventLogger))
 	a.Add(waiver.New(opts.Database))
 	a.Add(kiosk.New(opts.Database, opts.Self, opts.FobIssuer, opts.SpaceHost))
 	a.Add(metrics.New(opts.Database))
@@ -80,7 +83,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	if opts.TestMachinesModule != nil {
 		machinesMod = opts.TestMachinesModule
 	} else {
-		machinesMod = machines.New(opts.Database)
+		machinesMod = machines.New(opts.Database, eventLogger)
 	}
 	a.Add(machinesMod)
 
@@ -95,7 +98,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(discordWebhookMod)
 
 	// Discord OAuth/role sync module
-	a.Add(discord.New(opts.Database, opts.Self, opts.DiscordIssuer))
+	a.Add(discord.New(opts.Database, opts.Self, opts.DiscordIssuer, eventLogger))
 
 	// Set the webhook queuer for machines module
 	machinesMod.SetWebhookQueuer(discordWebhookMod)
