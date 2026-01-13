@@ -23,28 +23,28 @@ CREATE INDEX IF NOT EXISTS module_events_module_created_idx ON module_events (mo
 CREATE INDEX IF NOT EXISTS module_events_module_type_success_idx ON module_events (module, event_type, success);
 `
 
-// EventLogger provides centralized event logging for all modules.
+// EventLogger provides centralized event logging for a specific module.
 type EventLogger struct {
-	db *sql.DB
+	db     *sql.DB
+	module string
 }
 
-// NewEventLogger creates a new EventLogger and applies the required migration.
-func NewEventLogger(db *sql.DB) *EventLogger {
+// NewEventLogger creates a new EventLogger for the specified module and applies the required migration.
+func NewEventLogger(db *sql.DB, module string) *EventLogger {
 	MustMigrate(db, moduleEventsMigration)
-	return &EventLogger{db: db}
+	return &EventLogger{db: db, module: module}
 }
 
 // LogEvent records an event to the module_events table.
 //
 // Parameters:
-//   - module: the module name (e.g., "stripe", "discord", "bambu")
 //   - memberID: the member ID if applicable, 0 for no member association
 //   - eventType: the type of event (e.g., "WebhookReceived", "RoleSync")
 //   - entityID: module-specific external ID (e.g., stripe_customer_id, discord_user_id, printer_serial)
 //   - entityName: optional display name (e.g., printer_name)
 //   - success: whether the operation succeeded
 //   - details: additional details about the event
-func (e *EventLogger) LogEvent(ctx context.Context, module string, memberID int64, eventType, entityID, entityName string, success bool, details string) {
+func (e *EventLogger) LogEvent(ctx context.Context, memberID int64, eventType, entityID, entityName string, success bool, details string) {
 	successInt := 0
 	if success {
 		successInt = 1
@@ -68,8 +68,8 @@ func (e *EventLogger) LogEvent(ctx context.Context, module string, memberID int6
 	_, err := e.db.ExecContext(ctx,
 		`INSERT INTO module_events (module, member, event_type, entity_id, entity_name, success, details)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		module, memberPtr, eventType, entityIDPtr, entityNamePtr, successInt, details)
+		e.module, memberPtr, eventType, entityIDPtr, entityNamePtr, successInt, details)
 	if err != nil {
-		slog.Error("failed to log module event", "error", err, "module", module, "eventType", eventType)
+		slog.Error("failed to log module event", "error", err, "module", e.module, "eventType", eventType)
 	}
 }

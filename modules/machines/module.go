@@ -248,11 +248,11 @@ func (m *Module) poll(ctx context.Context) bool {
 		data, err := printer.GetState()
 		if err != nil {
 			slog.Warn("unable to get status from Bambu printer", "error", err, "printer", name)
-			m.eventLogger.LogEvent(ctx, "bambu", 0, "PollError", serial, name, false, err.Error())
+			m.eventLogger.LogEvent(ctx, 0, "PollError", serial, name, false, err.Error())
 			continue
 		}
 
-		m.eventLogger.LogEvent(ctx, "bambu", 0, "Poll", serial, name, true, fmt.Sprintf("state=%s", data.GcodeState))
+		m.eventLogger.LogEvent(ctx, 0, "Poll", serial, name, true, fmt.Sprintf("state=%s", data.GcodeState))
 
 		s := PrinterStatus{
 			PrinterData:  data,

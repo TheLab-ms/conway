@@ -231,6 +231,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("POST /admin/config/stripe", router.WithLeadership(m.handleStripeConfigSave))
 	router.HandleFunc("GET /admin/config/bambu", router.WithLeadership(m.renderBambuConfigPage))
 	router.HandleFunc("POST /admin/config/bambu", router.WithLeadership(m.handleBambuConfigSave))
+	router.HandleFunc("GET /admin/config/fobapi", router.WithLeadership(m.renderFobAPIConfigPage))
 
 	router.HandleFunc("POST /admin/members/{id}/delete", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", r.PathValue("id"))
@@ -864,4 +865,9 @@ func (m *Module) getRecentBambuEvents(ctx context.Context) []*bambuEvent {
 		}
 	}
 	return events
+}
+
+func (m *Module) renderFobAPIConfigPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	renderConfigPage(m.nav, "Fob API", renderFobAPIConfigContent(m.self.String())).Render(r.Context(), w)
 }

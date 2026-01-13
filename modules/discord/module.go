@@ -183,13 +183,13 @@ func (m *Module) handleCallback(w http.ResponseWriter, r *http.Request) {
 func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authCode string) error {
 	authConf, err := m.getOAuthConfig(ctx)
 	if err != nil {
-		m.eventLogger.LogEvent(ctx, "discord", userID, "OAuthError", "", "", false, "config error: "+err.Error())
+		m.eventLogger.LogEvent(ctx, userID, "OAuthError", "", "", false, "config error: "+err.Error())
 		return err
 	}
 
 	token, err := authConf.Exchange(ctx, authCode)
 	if err != nil {
-		m.eventLogger.LogEvent(ctx, "discord", userID, "OAuthError", "", "", false, "token exchange: "+err.Error())
+		m.eventLogger.LogEvent(ctx, userID, "OAuthError", "", "", false, "token exchange: "+err.Error())
 		return err
 	}
 
@@ -201,17 +201,17 @@ func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authC
 
 	userInfo, err := client.GetUserInfo(ctx, token)
 	if err != nil {
-		m.eventLogger.LogEvent(ctx, "discord", userID, "OAuthError", "", "", false, "get user info: "+err.Error())
+		m.eventLogger.LogEvent(ctx, userID, "OAuthError", "", "", false, "get user info: "+err.Error())
 		return err
 	}
 
 	_, err = m.db.ExecContext(ctx, "UPDATE members SET discord_user_id = ?, discord_email = ?, discord_avatar = ? WHERE id = ?", userInfo.ID, userInfo.Email, userInfo.Avatar, userID)
 	if err != nil {
-		m.eventLogger.LogEvent(ctx, "discord", userID, "OAuthError", userInfo.ID, "", false, "update member: "+err.Error())
+		m.eventLogger.LogEvent(ctx, userID, "OAuthError", userInfo.ID, "", false, "update member: "+err.Error())
 		return err
 	}
 
-	m.eventLogger.LogEvent(ctx, "discord", userID, "OAuthCallback", userInfo.ID, "", true, fmt.Sprintf("linked Discord account: %s", userInfo.Email))
+	m.eventLogger.LogEvent(ctx, userID, "OAuthCallback", userInfo.ID, "", true, fmt.Sprintf("linked Discord account: %s", userInfo.Email))
 	return nil
 }
 
@@ -263,27 +263,27 @@ func (m *Module) ProcessItem(ctx context.Context, item *syncItem) error {
 
 	client, err := m.getAPIClient(ctx)
 	if err != nil {
-		m.eventLogger.LogEvent(ctx, "discord", memberID, "RoleSyncError", item.DiscordUserID, "", false, "config error: "+err.Error())
+		m.eventLogger.LogEvent(ctx, memberID, "RoleSyncError", item.DiscordUserID, "", false, "config error: "+err.Error())
 		return err
 	}
 
 	roleID, err := m.getRoleID(ctx)
 	if err != nil {
-		m.eventLogger.LogEvent(ctx, "discord", memberID, "RoleSyncError", item.DiscordUserID, "", false, "config error: "+err.Error())
+		m.eventLogger.LogEvent(ctx, memberID, "RoleSyncError", item.DiscordUserID, "", false, "config error: "+err.Error())
 		return err
 	}
 
 	shouldHaveRole := item.PaymentStatus.Valid && item.PaymentStatus.String != ""
 	changed, memberInfo, err := client.EnsureRole(ctx, item.DiscordUserID, roleID, shouldHaveRole)
 	if err != nil {
-		m.eventLogger.LogEvent(ctx, "discord", memberID, "RoleSyncError", item.DiscordUserID, "", false, err.Error())
+		m.eventLogger.LogEvent(ctx, memberID, "RoleSyncError", item.DiscordUserID, "", false, err.Error())
 		return err
 	}
 	item.DisplayName = memberInfo.DisplayName
 	item.Avatar = memberInfo.Avatar
 
 	details := fmt.Sprintf("shouldHaveRole=%v, changed=%v, displayName=%s", shouldHaveRole, changed, memberInfo.DisplayName)
-	m.eventLogger.LogEvent(ctx, "discord", memberID, "RoleSync", item.DiscordUserID, "", true, details)
+	m.eventLogger.LogEvent(ctx, memberID, "RoleSync", item.DiscordUserID, "", true, details)
 	slog.Info("sync'd discord role", "memberID", item.MemberID, "discordUserID", item.DiscordUserID, "displayName", memberInfo.DisplayName, "shouldHaveRole", shouldHaveRole, "changed", changed)
 	return nil
 }

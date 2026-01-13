@@ -63,14 +63,14 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	cfg, err := m.loadConfig(r.Context())
 	if err != nil {
-		m.eventLogger.LogEvent(r.Context(), "stripe", 0, "WebhookError", "", "", false, "config load: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), 0, "WebhookError", "", "", false, "config load: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
 
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
-		m.eventLogger.LogEvent(r.Context(), "stripe", 0, "WebhookError", "", "", false, "body read: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), 0, "WebhookError", "", "", false, "body read: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -78,7 +78,7 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	// Verify the signature of the request and parse it
 	event, err := webhook.ConstructEvent(payload, r.Header.Get("Stripe-Signature"), cfg.webhookKey)
 	if err != nil {
-		m.eventLogger.LogEvent(r.Context(), "stripe", 0, "WebhookError", "", "", false, "signature verification: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), 0, "WebhookError", "", "", false, "signature verification: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -103,13 +103,13 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	subID := event.Data.Object["id"].(string)
 	sub, err := subscription.Get(subID, &stripe.SubscriptionParams{})
 	if err != nil {
-		m.eventLogger.LogEvent(r.Context(), "stripe", 0, "APIError", "", "", false, "subscription.Get: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), 0, "APIError", "", "", false, "subscription.Get: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
 	cust, err := customer.Get(sub.Customer.ID, &stripe.CustomerParams{})
 	if err != nil {
-		m.eventLogger.LogEvent(r.Context(), "stripe", 0, "APIError", sub.Customer.ID, "", false, "customer.Get: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), 0, "APIError", sub.Customer.ID, "", false, "customer.Get: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -121,12 +121,12 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	// Update our representation of the member to reflect Stripe
 	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET stripe_customer_id = $2, stripe_subscription_id = $3, stripe_subscription_state = $4, name = $5 WHERE email = $1", strings.ToLower(cust.Email), cust.ID, sub.ID, sub.Status, cust.Name)
 	if err != nil {
-		m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "WebhookError", cust.ID, "", false, "db update: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), memberID, "WebhookError", cust.ID, "", false, "db update: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
 
-	m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "WebhookReceived", cust.ID, "", true, fmt.Sprintf("event=%s status=%s", event.Type, sub.Status))
+	m.eventLogger.LogEvent(r.Context(), memberID, "WebhookReceived", cust.ID, "", true, fmt.Sprintf("event=%s status=%s", event.Type, sub.Status))
 	slog.Info("updated member's stripe subscription metadata", "member", cust.Email, "status", sub.Status)
 	w.WriteHeader(204)
 }
@@ -135,7 +135,7 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 	cfg, err := m.loadConfig(r.Context())
 	if err != nil {
-		m.eventLogger.LogEvent(r.Context(), "stripe", auth.GetUserMeta(r.Context()).ID, "APIError", "", "", false, "config load: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), auth.GetUserMeta(r.Context()).ID, "APIError", "", "", false, "config load: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -154,7 +154,7 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 	var annual bool
 	err = m.db.QueryRowContext(r.Context(), "SELECT email, discount_type, stripe_customer_id, stripe_subscription_id, bill_annually, (stripe_subscription_state IS NOT NULL AND stripe_subscription_state != 'canceled') FROM members WHERE id = ?", memberID).Scan(&email, &discountType, &existingCustomerID, &existingSubID, &annual, &active)
 	if err != nil {
-		m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "APIError", "", "", false, "db query: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", "", "", false, "db query: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -174,12 +174,12 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 
 		s, err := billingsession.New(sessionParams)
 		if err != nil {
-			m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "APIError", custID, "", false, "billingportal.session.New: "+err.Error())
+			m.eventLogger.LogEvent(r.Context(), memberID, "APIError", custID, "", false, "billingportal.session.New: "+err.Error())
 			engine.SystemError(w, err.Error())
 			return
 		}
 
-		m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "BillingPortal", custID, "", true, "redirected to billing portal")
+		m.eventLogger.LogEvent(r.Context(), memberID, "BillingPortal", custID, "", true, "redirected to billing portal")
 		http.Redirect(w, r, s.URL, http.StatusSeeOther)
 		return
 	}
@@ -206,7 +206,7 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if !pricesIter.Next() {
-		m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "APIError", custID, "", false, "price.Search: price not found for "+freq)
+		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", custID, "", false, "price.Search: price not found for "+freq)
 		engine.SystemError(w, "price was not found in Stripe")
 		return
 	}
@@ -239,11 +239,11 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 
 	s, err := session.New(checkoutParams)
 	if err != nil {
-		m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "APIError", custID, "", false, "checkout.session.New: "+err.Error())
+		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", custID, "", false, "checkout.session.New: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
 
-	m.eventLogger.LogEvent(r.Context(), "stripe", memberID, "CheckoutCreated", custID, "", true, fmt.Sprintf("freq=%s", freq))
+	m.eventLogger.LogEvent(r.Context(), memberID, "CheckoutCreated", custID, "", true, fmt.Sprintf("freq=%s", freq))
 	http.Redirect(w, r, s.URL, http.StatusSeeOther)
 }
