@@ -20,7 +20,7 @@ import (
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
-// migration ensures the bambu_config table exists for the admin config pages,
+// migration ensures the bambu tables exist for the admin config pages,
 // even if the machines module is not enabled.
 const migration = `
 CREATE TABLE IF NOT EXISTS bambu_config (
@@ -29,6 +29,19 @@ CREATE TABLE IF NOT EXISTS bambu_config (
     printers_json TEXT NOT NULL DEFAULT '[]',
     poll_interval_seconds INTEGER NOT NULL DEFAULT 5
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS bambu_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    event_type TEXT NOT NULL,
+    printer_name TEXT,
+    printer_serial TEXT,
+    success INTEGER NOT NULL DEFAULT 1,
+    details TEXT NOT NULL DEFAULT ''
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS bambu_events_created_idx ON bambu_events (created);
+CREATE INDEX IF NOT EXISTS bambu_events_type_idx ON bambu_events (event_type, success);
 `
 
 type Module struct {
@@ -215,7 +228,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 	router.HandleFunc("GET /admin/export/{table}", router.WithLeadership(m.exportCSV))
 	router.HandleFunc("GET /admin/chart", router.WithLeadership(m.renderMetricsChart))
-	router.HandleFunc("GET /admin/integration-chart", router.WithLeadership(m.renderIntegrationEventsChart))
+	router.HandleFunc("GET /admin/discord-chart", router.WithLeadership(m.renderDiscordEventsChart))
 	router.HandleFunc("GET /admin/metrics", router.WithLeadership(m.renderMetricsPageHandler))
 
 	// Configuration routes
@@ -228,8 +241,10 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("POST /admin/config/discord", router.WithLeadership(m.handleDiscordConfigSave))
 	router.HandleFunc("GET /admin/config/stripe", router.WithLeadership(m.renderStripeConfigPage))
 	router.HandleFunc("POST /admin/config/stripe", router.WithLeadership(m.handleStripeConfigSave))
+	router.HandleFunc("GET /admin/stripe-chart", router.WithLeadership(m.renderStripeEventsChart))
 	router.HandleFunc("GET /admin/config/bambu", router.WithLeadership(m.renderBambuConfigPage))
 	router.HandleFunc("POST /admin/config/bambu", router.WithLeadership(m.handleBambuConfigSave))
+	router.HandleFunc("GET /admin/bambu-chart", router.WithLeadership(m.renderBambuEventsChart))
 
 	router.HandleFunc("POST /admin/members/{id}/delete", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", r.PathValue("id"))
@@ -242,13 +257,6 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	for _, handle := range formHandlers {
 		router.HandleFunc("POST "+handle.Path, router.WithLeadership(handle.BuildHandler(m.db)))
 	}
-}
-
-func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
-	// Cleanup old integration events after 24 hours
-	const eventTTL = 24 * 60 * 60 // 24 hours in seconds
-	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "old integration events",
-		"DELETE FROM integration_events WHERE created < unixepoch() - ?", eventTTL)))
 }
 
 func (m *Module) exportCSV(w http.ResponseWriter, r *http.Request) {
@@ -352,75 +360,12 @@ func (m *Module) renderDiscordEventsChart(w http.ResponseWriter, r *http.Request
 
 	query := fmt.Sprintf(`
 		SELECT (created / 900) * 900 AS bucket, COUNT(*)
-		FROM integration_events
-		WHERE source = 'discord' AND created > unixepoch() - ? AND %s
+		FROM discord_events
+		WHERE created > unixepoch() - ? AND %s
 		GROUP BY bucket
 		ORDER BY bucket ASC`, whereClause)
 
 	rows, err := m.db.QueryContext(r.Context(), query, int64(windowDuration.Seconds()))
-	if engine.HandleError(w, err) {
-		return
-	}
-	defer rows.Close()
-
-	type dataPoint struct {
-		Timestamp int64   `json:"t"`
-		Value     float64 `json:"v"`
-	}
-	var data []dataPoint
-	for rows.Next() {
-		var ts int64
-		var count float64
-		if engine.HandleError(w, rows.Scan(&ts, &count)) {
-			return
-		}
-		data = append(data, dataPoint{Timestamp: ts, Value: count})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
-}
-
-// renderIntegrationEventsChart handles chart data requests for all integration sources.
-// Query params: source (discord, stripe, bambu), series (successes, errors, all), window (duration)
-func (m *Module) renderIntegrationEventsChart(w http.ResponseWriter, r *http.Request) {
-	source := r.URL.Query().Get("source")
-	series := r.URL.Query().Get("series")
-
-	// Validate source
-	if source != "discord" && source != "stripe" && source != "bambu" {
-		engine.ClientError(w, "Invalid Request", "Unknown source", 400)
-		return
-	}
-
-	windowDuration := time.Hour * 24
-	if window := r.URL.Query().Get("window"); window != "" {
-		if parsed, err := time.ParseDuration(window); err == nil && parsed <= 24*time.Hour {
-			windowDuration = parsed
-		}
-	}
-
-	var whereClause string
-	switch series {
-	case "successes", "sync-successes":
-		whereClause = "success = 1"
-	case "errors", "sync-errors":
-		whereClause = "success = 0"
-	case "all", "api-requests":
-		whereClause = "1=1"
-	default:
-		engine.ClientError(w, "Invalid Request", "Unknown series", 400)
-		return
-	}
-
-	query := fmt.Sprintf(`
-		SELECT (created / 900) * 900 AS bucket, COUNT(*)
-		FROM integration_events
-		WHERE source = ? AND created > unixepoch() - ? AND %s
-		GROUP BY bucket
-		ORDER BY bucket ASC`, whereClause)
-
-	rows, err := m.db.QueryContext(r.Context(), query, source, int64(windowDuration.Seconds()))
 	if engine.HandleError(w, err) {
 		return
 	}
@@ -596,11 +541,10 @@ func (m *Module) getDiscordConfigData(r *http.Request) *discordConfigData {
 
 func (m *Module) getRecentDiscordEvents(ctx context.Context) []*discordEvent {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT e.created, e.event_type, COALESCE(e.external_id, ''), e.success, e.details,
+		SELECT e.created, e.event_type, COALESCE(e.discord_user_id, ''), e.success, e.details,
 			   COALESCE(mem.name_override, mem.identifier, 'Unknown') AS member_name
-		FROM integration_events e
+		FROM discord_events e
 		LEFT JOIN members mem ON e.member = mem.id
-		WHERE e.source = 'discord'
 		ORDER BY e.created DESC
 		LIMIT 20`)
 	if err != nil {
@@ -684,11 +628,10 @@ func (m *Module) getStripeConfigData(r *http.Request) *stripeConfigData {
 
 func (m *Module) getRecentStripeEvents(ctx context.Context) []*stripeEvent {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT e.created, e.event_type, COALESCE(e.external_id, ''), e.success, e.details,
+		SELECT e.created, e.event_type, COALESCE(e.stripe_customer_id, ''), e.success, e.details,
 			   COALESCE(mem.name_override, mem.identifier, 'Unknown') AS member_name
-		FROM integration_events e
+		FROM stripe_events e
 		LEFT JOIN members mem ON e.member = mem.id
-		WHERE e.source = 'stripe'
 		ORDER BY e.created DESC
 		LIMIT 20`)
 	if err != nil {
@@ -944,9 +887,8 @@ func (m *Module) getBambuConfigData(r *http.Request) *bambuConfigData {
 
 func (m *Module) getRecentBambuEvents(ctx context.Context) []*bambuEvent {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT created, event_type, COALESCE(external_name, ''), COALESCE(external_id, ''), success, details
-		FROM integration_events
-		WHERE source = 'bambu'
+		SELECT created, event_type, COALESCE(printer_name, ''), COALESCE(printer_serial, ''), success, details
+		FROM bambu_events
 		ORDER BY created DESC
 		LIMIT 20`)
 	if err != nil {

@@ -373,7 +373,7 @@ func seedLoginCode(t *testing.T, code string, memberID int64, callback string, e
 // clearTestData removes all test data from the database between tests.
 func clearTestData(t *testing.T) {
 	t.Helper()
-	tables := []string{"members", "waivers", "waiver_content", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes", "stripe_config", "bambu_config", "integration_events"}
+	tables := []string{"members", "waivers", "waiver_content", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes", "stripe_config", "stripe_events", "bambu_config", "bambu_events"}
 	for _, table := range tables {
 		_, err := testDB.Exec(fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
