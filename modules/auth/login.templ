@@ -10,28 +10,11 @@ templ renderLoginPage(callbackURI string, tso *TurnstileOptions) {
 	if tso != nil {
 		<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 	}
-	<script src="/assets/webauthn.js"></script>
 	@bootstrap.View() {
 		<body class="d-flex align-items-center justify-content-center vh-100 bg-light p-3">
-			<div class="card shadow p-4" style="max-width: 400px; width: 100%;">
+			<div class="card shadow p-4">
 				<div id="login-email" class="text-center">
 					<h5 class="mb-3">Login or Signup</h5>
-					<!-- Passkey login button (shown if WebAuthn available) -->
-					<div id="passkey-login" style="display: none;">
-						<button type="button" class="btn btn-primary w-100 mb-3" onclick="loginWithPasskey()">
-							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-2" viewBox="0 0 16 16">
-								<path d="M0 8a4 4 0 0 1 7.465-2H14a.5.5 0 0 1 .354.146l1.5 1.5a.5.5 0 0 1 0 .708l-1.5 1.5a.5.5 0 0 1-.708 0L13 9.207l-.646.647a.5.5 0 0 1-.708 0L11 9.207l-.646.647a.5.5 0 0 1-.708 0L9 9.207l-.646.647A.5.5 0 0 1 8 10h-.535A4 4 0 0 1 0 8m4-3a3 3 0 1 0 2.712 4.285A.5.5 0 0 1 7.163 9h.63l.853-.854a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.793-.793-1-1h-6.63a.5.5 0 0 1-.451-.285A3 3 0 0 0 4 5"></path>
-								<path d="M4 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0"></path>
-							</svg>
-							Sign in with Passkey
-						</button>
-						<div id="passkey-error" class="alert alert-danger mb-3" style="display: none;"></div>
-						<div class="d-flex align-items-center mb-3">
-							<hr class="flex-grow-1"/>
-							<span class="px-3 text-muted small">or continue with email</span>
-							<hr class="flex-grow-1"/>
-						</div>
-					</div>
 					<form action="/login" method="post">
 						<div class="mb-3">
 							<input type="email" class="form-control" id="email" name="email" placeholder="Email" required/>
@@ -40,36 +23,10 @@ templ renderLoginPage(callbackURI string, tso *TurnstileOptions) {
 						if tso != nil {
 							<div class="cf-turnstile mb-3" data-sitekey={ tso.SiteKey }></div>
 						}
-						<button type="submit" class="btn btn-outline-primary w-100">Continue with Email</button>
+						<button type="submit" class="btn btn-primary w-100">Submit</button>
 					</form>
 				</div>
 			</div>
-			<script>
-				(async function() {
-					if (ConwayWebAuthn.isAvailable()) {
-						document.getElementById('passkey-login').style.display = 'block';
-					}
-				})();
-
-				async function loginWithPasskey() {
-					const errorDiv = document.getElementById('passkey-error');
-					errorDiv.style.display = 'none';
-					try {
-						const callbackUri = document.getElementById('callback_uri').value;
-						await ConwayWebAuthn.login(callbackUri);
-					} catch (err) {
-						console.error('Passkey login failed:', err);
-						if (err.name === 'NotAllowedError') {
-							errorDiv.textContent = 'Passkey authentication was cancelled or timed out.';
-						} else if (err.name === 'InvalidStateError') {
-							errorDiv.textContent = 'No passkeys found. Please use email to sign in.';
-						} else {
-							errorDiv.textContent = 'Passkey login failed. Please try email instead.';
-						}
-						errorDiv.style.display = 'block';
-					}
-				}
-			</script>
 		</body>
 	}
 }
@@ -190,86 +147,4 @@ templ renderLoginEmail(self *url.URL, code string) {
 			If you did not request this login code, please ignore this message.
 		</p>
 	</div>
-}
-
-templ renderPasskeyPrompt(callbackURI string) {
-	<script src="/assets/webauthn.js"></script>
-	@bootstrap.View() {
-		<body class="d-flex align-items-center justify-content-center vh-100 bg-light p-3">
-			<div class="card shadow p-4" style="max-width: 450px; width: 100%;">
-				<div class="text-center">
-					<div class="mb-4">
-						<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" class="text-primary" viewBox="0 0 16 16">
-							<path d="M0 8a4 4 0 0 1 7.465-2H14a.5.5 0 0 1 .354.146l1.5 1.5a.5.5 0 0 1 0 .708l-1.5 1.5a.5.5 0 0 1-.708 0L13 9.207l-.646.647a.5.5 0 0 1-.708 0L11 9.207l-.646.647a.5.5 0 0 1-.708 0L9 9.207l-.646.647A.5.5 0 0 1 8 10h-.535A4 4 0 0 1 0 8m4-3a3 3 0 1 0 2.712 4.285A.5.5 0 0 1 7.163 9h.63l.853-.854a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.793-.793-1-1h-6.63a.5.5 0 0 1-.451-.285A3 3 0 0 0 4 5"></path>
-							<path d="M4 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0"></path>
-						</svg>
-					</div>
-					<h5 class="mb-2">Sign in faster next time</h5>
-					<p class="text-muted mb-4">
-						Set up a passkey to sign in instantly with Touch ID, Face ID, or your device PIN. No more waiting for email codes.
-					</p>
-					<div id="passkey-support">
-						<button type="button" class="btn btn-primary w-100 mb-2" onclick="setupPasskey()">
-							Set up Passkey
-						</button>
-						<div id="passkey-error" class="alert alert-danger mb-2" style="display: none;"></div>
-						<div id="passkey-success" class="alert alert-success mb-2" style="display: none;">
-							Passkey created successfully!
-						</div>
-					</div>
-					<a href={ templ.SafeURL(getCallbackOrDefault(callbackURI)) } class="btn btn-link text-muted" id="skip-link" onclick="dismissPrompt()">
-						Not now
-					</a>
-				</div>
-			</div>
-			<script>
-				async function setupPasskey() {
-					const errorDiv = document.getElementById('passkey-error');
-					const successDiv = document.getElementById('passkey-success');
-					errorDiv.style.display = 'none';
-					successDiv.style.display = 'none';
-
-					try {
-						await ConwayWebAuthn.register();
-						successDiv.style.display = 'block';
-						// Redirect after short delay
-						setTimeout(() => {
-							window.location.href = document.getElementById('skip-link').href;
-						}, 1500);
-					} catch (err) {
-						console.error('Passkey setup failed:', err);
-						if (err.name === 'NotAllowedError') {
-							errorDiv.textContent = 'Setup was cancelled. You can try again or skip for now.';
-						} else {
-							errorDiv.textContent = 'Failed to set up passkey. You can try again later from your profile.';
-						}
-						errorDiv.style.display = 'block';
-					}
-				}
-
-				async function dismissPrompt() {
-					try {
-						await ConwayWebAuthn.dismissPrompt();
-					} catch (e) {
-						// Ignore errors - user is navigating away anyway
-					}
-				}
-
-				// Hide setup if WebAuthn not available
-				(function() {
-					if (!ConwayWebAuthn.isAvailable()) {
-						document.getElementById('passkey-support').innerHTML =
-							'<p class="text-muted small">Your browser doesn\'t support passkeys.</p>';
-					}
-				})();
-			</script>
-		</body>
-	}
-}
-
-func getCallbackOrDefault(callback string) string {
-	if callback == "" {
-		return "/"
-	}
-	return callback
 }

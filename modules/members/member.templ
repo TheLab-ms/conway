@@ -1,7 +1,6 @@
 package members
 
 import (
-	"fmt"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
@@ -13,12 +12,10 @@ type member struct {
 	WaiverSigned  bool
 	PaymentActive bool
 	HasKeyFob     bool
-	PasskeyCount  int
 }
 
 templ renderMember(member *member) {
 	@bootstrap.View() {
-		<script src="/assets/webauthn.js"></script>
 		<div class="container my-5" style="max-width: 600px;">
 			if member.AccessStatus == "Ready" {
 				@renderActiveStatus()
@@ -30,7 +27,6 @@ templ renderMember(member *member) {
 				@renderWelcome(member)
 				@renderOnboardingChecklist(member)
 			}
-			@renderPasskeySection(member.PasskeyCount)
 			@renderActions(member)
 		</div>
 	}
@@ -152,123 +148,6 @@ templ renderStep(number string, title string, description string, complete bool,
 			</div>
 		</div>
 	</li>
-}
-
-templ renderPasskeySection(passkeyCount int) {
-	<div class="card mb-4">
-		<div class="card-header d-flex justify-content-between align-items-center">
-			<strong>Passkeys</strong>
-			if passkeyCount > 0 {
-				<span class="badge bg-success">{ fmt.Sprintf("%d registered", passkeyCount) }</span>
-			}
-		</div>
-		<div class="card-body">
-			<p class="text-muted small mb-3">
-				Passkeys let you sign in quickly with Touch ID, Face ID, or a security key instead of email codes.
-			</p>
-			<div id="passkey-section">
-				<div id="passkey-support">
-					<button type="button" class="btn btn-outline-primary btn-sm" onclick="addPasskey()">
-						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="me-1" viewBox="0 0 16 16">
-							<path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"></path>
-						</svg>
-						Add Passkey
-					</button>
-				</div>
-				<div id="passkey-not-supported" class="text-muted small" style="display: none;">
-					Your browser doesn't support passkeys.
-				</div>
-				<div id="passkey-message" class="mt-2" style="display: none;"></div>
-				<div id="passkey-list" class="mt-3"></div>
-			</div>
-		</div>
-	</div>
-	<script>
-		(function() {
-			if (!ConwayWebAuthn.isAvailable()) {
-				document.getElementById('passkey-support').style.display = 'none';
-				document.getElementById('passkey-not-supported').style.display = 'block';
-			} else {
-				loadPasskeys();
-			}
-		})();
-
-		async function addPasskey() {
-			const msgDiv = document.getElementById('passkey-message');
-			msgDiv.style.display = 'none';
-			try {
-				await ConwayWebAuthn.register();
-				msgDiv.className = 'mt-2 alert alert-success';
-				msgDiv.textContent = 'Passkey added successfully!';
-				msgDiv.style.display = 'block';
-				loadPasskeys();
-			} catch (err) {
-				console.error('Passkey registration failed:', err);
-				msgDiv.className = 'mt-2 alert alert-danger';
-				if (err.name === 'NotAllowedError') {
-					msgDiv.textContent = 'Passkey setup was cancelled.';
-				} else if (err.name === 'InvalidStateError') {
-					msgDiv.textContent = 'This passkey is already registered.';
-				} else {
-					msgDiv.textContent = 'Failed to add passkey. Please try again.';
-				}
-				msgDiv.style.display = 'block';
-			}
-		}
-
-		async function loadPasskeys() {
-			const listDiv = document.getElementById('passkey-list');
-			try {
-				const passkeys = await ConwayWebAuthn.listPasskeys();
-				if (passkeys.length === 0) {
-					listDiv.innerHTML = '';
-					return;
-				}
-				let html = '<ul class="list-group list-group-flush">';
-				for (const pk of passkeys) {
-					const created = new Date(pk.created * 1000).toLocaleDateString();
-					const lastUsed = pk.last_used ? new Date(pk.last_used * 1000).toLocaleDateString() : 'Never';
-					html += `
-						<li class="list-group-item d-flex justify-content-between align-items-center px-0">
-							<div>
-								<strong>${escapeHtml(pk.name)}</strong>
-								<br><small class="text-muted">Created: ${created} · Last used: ${lastUsed}</small>
-							</div>
-							<button class="btn btn-outline-danger btn-sm" onclick="deletePasskey(${pk.id})">Remove</button>
-						</li>
-					`;
-				}
-				html += '</ul>';
-				listDiv.innerHTML = html;
-			} catch (err) {
-				console.error('Failed to load passkeys:', err);
-			}
-		}
-
-		async function deletePasskey(id) {
-			if (!confirm('Are you sure you want to remove this passkey?')) return;
-			const msgDiv = document.getElementById('passkey-message');
-			try {
-				await ConwayWebAuthn.deletePasskey(id);
-				msgDiv.className = 'mt-2 alert alert-success';
-				msgDiv.textContent = 'Passkey removed.';
-				msgDiv.style.display = 'block';
-				loadPasskeys();
-				// Reload page to update count in header
-				setTimeout(() => location.reload(), 1000);
-			} catch (err) {
-				msgDiv.className = 'mt-2 alert alert-danger';
-				msgDiv.textContent = 'Failed to remove passkey.';
-				msgDiv.style.display = 'block';
-			}
-		}
-
-		function escapeHtml(text) {
-			const div = document.createElement('div');
-			div.textContent = text;
-			return div.innerHTML;
-		}
-	</script>
 }
 
 templ renderActions(member *member) {

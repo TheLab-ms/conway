@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 )
@@ -35,34 +34,6 @@ CREATE TABLE IF NOT EXISTS login_codes (
 
 CREATE INDEX IF NOT EXISTS login_codes_expires_at_idx ON login_codes (expires_at);
 CREATE INDEX IF NOT EXISTS login_codes_email_idx ON login_codes (email);
-
-/* Passkey Credentials - WebAuthn/FIDO2 credentials for passwordless login */
-CREATE TABLE IF NOT EXISTS passkey_credentials (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
-    credential_id BLOB NOT NULL UNIQUE,
-    public_key BLOB NOT NULL,
-    attestation_type TEXT NOT NULL DEFAULT '',
-    transport TEXT NOT NULL DEFAULT '',
-    aaguid BLOB,
-    sign_count INTEGER NOT NULL DEFAULT 0,
-    clone_warning INTEGER NOT NULL DEFAULT 0,
-    name TEXT NOT NULL DEFAULT '',
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    last_used INTEGER
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS passkey_credentials_member_idx ON passkey_credentials(member_id);
-
-/* WebAuthn Sessions - Temporary storage for ceremony challenges */
-CREATE TABLE IF NOT EXISTS webauthn_sessions (
-    id TEXT PRIMARY KEY,
-    session_data BLOB NOT NULL,
-    expires_at INTEGER NOT NULL,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS webauthn_sessions_expires_idx ON webauthn_sessions(expires_at);
 `
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
@@ -79,25 +50,11 @@ type Module struct {
 	turnstile   *TurnstileOptions
 	authLimiter *rate.Limiter
 	tokens      *engine.TokenIssuer
-	webauthn    *webauthn.WebAuthn
 }
 
 func New(d *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIssuer) *Module {
 	engine.MustMigrate(d, migration)
-
-	wa, err := newWebAuthn(self)
-	if err != nil {
-		panic(fmt.Errorf("failed to initialize webauthn: %w", err))
-	}
-
-	return &Module{
-		db:          d,
-		self:        self,
-		turnstile:   tso,
-		authLimiter: rate.NewLimiter(rate.Every(time.Second), 5),
-		tokens:      tokens,
-		webauthn:    wa,
-	}
+	return &Module{db: d, self: self, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), tokens: tokens}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -112,12 +69,6 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 		w.Header().Set("Content-Type", "text/html")
 		renderLoginSentPage(email).Render(r.Context(), w)
 	})
-
-	router.HandleFunc("GET /login/passkey-prompt", m.WithAuthn(func(w http.ResponseWriter, r *http.Request) {
-		callback := r.URL.Query().Get("callback_uri")
-		w.Header().Set("Content-Type", "text/html")
-		renderPasskeyPrompt(callback).Render(r.Context(), w)
-	}))
 
 	router.HandleFunc("POST /login/code", m.handleLoginCodeSubmit)
 	router.HandleFunc("GET /login/code", m.handleLoginCodeLink)
@@ -135,9 +86,6 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	})
 
 	router.HandleFunc("POST /login", m.handleLoginFormPost)
-
-	// Passkey routes
-	m.attachPasskeyRoutes(router)
 }
 
 // WithAuthn authenticates incoming requests, or redirects them to the login page.
@@ -376,8 +324,6 @@ func (s *Module) completeLogin(w http.ResponseWriter, r *http.Request, token, ca
 		return
 	}
 
-	memberID, _ := strconv.ParseInt(claims.Subject, 10, 64)
-
 	_, err = s.db.ExecContext(r.Context(), "UPDATE members SET confirmed = true WHERE id = CAST($1 AS INTEGER) AND confirmed = false;", claims.Subject)
 	if err != nil {
 		engine.SystemError(w, err.Error())
@@ -406,16 +352,6 @@ func (s *Module) completeLogin(w http.ResponseWriter, r *http.Request, token, ca
 	}
 	http.SetCookie(w, cook)
 
-	// Check if we should show passkey prompt
-	if shouldPrompt, _ := s.ShouldShowPasskeyPrompt(r.Context(), memberID); shouldPrompt {
-		q := url.Values{}
-		if callback != "" {
-			q.Set("callback_uri", callback)
-		}
-		http.Redirect(w, r, "/login/passkey-prompt?"+q.Encode(), http.StatusFound)
-		return
-	}
-
 	if callback == "" {
 		callback = "/"
 	}
@@ -436,6 +372,4 @@ func OnlyLAN(next http.HandlerFunc) http.HandlerFunc {
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "expired login codes",
 		"DELETE FROM login_codes WHERE expires_at < unixepoch()")))
-	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "expired webauthn sessions",
-		"DELETE FROM webauthn_sessions WHERE expires_at < unixepoch()")))
 }
