@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
@@ -18,6 +20,30 @@ import (
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
+// migration ensures the bambu tables exist for the admin config pages,
+// even if the machines module is not enabled.
+const migration = `
+CREATE TABLE IF NOT EXISTS bambu_config (
+    version INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    printers_json TEXT NOT NULL DEFAULT '[]',
+    poll_interval_seconds INTEGER NOT NULL DEFAULT 5
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS bambu_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    event_type TEXT NOT NULL,
+    printer_name TEXT,
+    printer_serial TEXT,
+    success INTEGER NOT NULL DEFAULT 1,
+    details TEXT NOT NULL DEFAULT ''
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS bambu_events_created_idx ON bambu_events (created);
+CREATE INDEX IF NOT EXISTS bambu_events_type_idx ON bambu_events (event_type, success);
+`
+
 type Module struct {
 	db    *sql.DB
 	self  *url.URL
@@ -26,6 +52,8 @@ type Module struct {
 }
 
 func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer) *Module {
+	engine.MustMigrate(db, migration)
+
 	nav := []*navbarTab{}
 	for _, view := range listViews {
 		nav = append(nav, &navbarTab{Title: view.Title, Path: "/admin" + view.RelPath})
@@ -214,6 +242,9 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /admin/config/stripe", router.WithLeadership(m.renderStripeConfigPage))
 	router.HandleFunc("POST /admin/config/stripe", router.WithLeadership(m.handleStripeConfigSave))
 	router.HandleFunc("GET /admin/stripe-chart", router.WithLeadership(m.renderStripeEventsChart))
+	router.HandleFunc("GET /admin/config/bambu", router.WithLeadership(m.renderBambuConfigPage))
+	router.HandleFunc("POST /admin/config/bambu", router.WithLeadership(m.handleBambuConfigSave))
+	router.HandleFunc("GET /admin/bambu-chart", router.WithLeadership(m.renderBambuEventsChart))
 
 	router.HandleFunc("POST /admin/members/{id}/delete", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", r.PathValue("id"))
@@ -648,6 +679,263 @@ func (m *Module) renderStripeEventsChart(w http.ResponseWriter, r *http.Request)
 	query := fmt.Sprintf(`
 		SELECT (created / 900) * 900 AS bucket, COUNT(*)
 		FROM stripe_events
+		WHERE created > unixepoch() - ? AND %s
+		GROUP BY bucket
+		ORDER BY bucket ASC`, whereClause)
+
+	rows, err := m.db.QueryContext(r.Context(), query, int64(windowDuration.Seconds()))
+	if engine.HandleError(w, err) {
+		return
+	}
+	defer rows.Close()
+
+	type dataPoint struct {
+		Timestamp int64   `json:"t"`
+		Value     float64 `json:"v"`
+	}
+	var data []dataPoint
+	for rows.Next() {
+		var ts int64
+		var count float64
+		if engine.HandleError(w, rows.Scan(&ts, &count)) {
+			return
+		}
+		data = append(data, dataPoint{Timestamp: ts, Value: count})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+func (m *Module) renderBambuConfigPage(w http.ResponseWriter, r *http.Request) {
+	data := m.getBambuConfigData(r)
+	w.Header().Set("Content-Type", "text/html")
+	renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
+}
+
+func (m *Module) handleBambuConfigSave(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		data := m.getBambuConfigData(r)
+		data.Error = "Failed to parse form: " + err.Error()
+		w.Header().Set("Content-Type", "text/html")
+		renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
+		return
+	}
+
+	// Parse poll interval
+	pollIntervalSecs := 5
+	if pollIntervalStr := r.FormValue("poll_interval_seconds"); pollIntervalStr != "" {
+		if parsed, err := strconv.Atoi(pollIntervalStr); err == nil && parsed >= 1 && parsed <= 60 {
+			pollIntervalSecs = parsed
+		}
+	}
+
+	// Load existing config to get current access codes
+	existingPrinters := m.getExistingPrinters(r.Context())
+
+	// Find all printer indices submitted
+	seenIndices := make(map[int]bool)
+	for key := range r.Form {
+		// Match printer[N][field] pattern
+		if strings.HasPrefix(key, "printer[") {
+			// Extract index
+			idxEnd := strings.Index(key[8:], "]")
+			if idxEnd > 0 {
+				if idx, err := strconv.Atoi(key[8 : 8+idxEnd]); err == nil {
+					seenIndices[idx] = true
+				}
+			}
+		}
+	}
+
+	// Sort indices to maintain order
+	indices := make([]int, 0, len(seenIndices))
+	for idx := range seenIndices {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+
+	// Build printer list
+	type printerJSON struct {
+		Name         string `json:"name"`
+		Host         string `json:"host"`
+		AccessCode   string `json:"access_code"`
+		SerialNumber string `json:"serial_number"`
+	}
+	printers := []printerJSON{}
+
+	for _, idx := range indices {
+		prefix := fmt.Sprintf("printer[%d]", idx)
+		name := r.FormValue(prefix + "[name]")
+		host := r.FormValue(prefix + "[host]")
+		accessCode := r.FormValue(prefix + "[access_code]")
+		serialNumber := r.FormValue(prefix + "[serial_number]")
+
+		// Skip if required fields are empty
+		if name == "" || host == "" || serialNumber == "" {
+			continue
+		}
+
+		// Preserve existing access code if not provided
+		if accessCode == "" {
+			if existing, ok := existingPrinters[serialNumber]; ok {
+				accessCode = existing
+			}
+		}
+
+		// Skip new printers without access code
+		if accessCode == "" {
+			continue
+		}
+
+		printers = append(printers, printerJSON{
+			Name:         name,
+			Host:         host,
+			AccessCode:   accessCode,
+			SerialNumber: serialNumber,
+		})
+	}
+
+	// Convert to JSON
+	printersJSONBytes, err := json.Marshal(printers)
+	if err != nil {
+		data := m.getBambuConfigData(r)
+		data.Error = "Failed to encode printers: " + err.Error()
+		w.Header().Set("Content-Type", "text/html")
+		renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
+		return
+	}
+
+	// Insert new version
+	_, err = m.db.ExecContext(r.Context(),
+		`INSERT INTO bambu_config (printers_json, poll_interval_seconds) VALUES ($1, $2)`,
+		string(printersJSONBytes), pollIntervalSecs)
+	if engine.HandleError(w, err) {
+		return
+	}
+
+	data := m.getBambuConfigData(r)
+	data.Saved = true
+	w.Header().Set("Content-Type", "text/html")
+	renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
+}
+
+// getExistingPrinters returns existing printer access codes keyed by serial number
+func (m *Module) getExistingPrinters(ctx context.Context) map[string]string {
+	result := make(map[string]string)
+
+	row := m.db.QueryRowContext(ctx,
+		`SELECT printers_json FROM bambu_config ORDER BY version DESC LIMIT 1`)
+
+	var printersJSON string
+	if row.Scan(&printersJSON) != nil {
+		return result
+	}
+
+	var printers []struct {
+		AccessCode   string `json:"access_code"`
+		SerialNumber string `json:"serial_number"`
+	}
+	if json.Unmarshal([]byte(printersJSON), &printers) == nil {
+		for _, p := range printers {
+			result[p.SerialNumber] = p.AccessCode
+		}
+	}
+
+	return result
+}
+
+func (m *Module) getBambuConfigData(r *http.Request) *bambuConfigData {
+	row := m.db.QueryRowContext(r.Context(),
+		`SELECT version, printers_json, COALESCE(poll_interval_seconds, 5)
+		 FROM bambu_config ORDER BY version DESC LIMIT 1`)
+
+	var printersJSON string
+	data := &bambuConfigData{PollIntervalSecs: 5, Printers: []*bambuPrinterFormData{}}
+	err := row.Scan(&data.Version, &printersJSON, &data.PollIntervalSecs)
+	if err != nil && err != sql.ErrNoRows {
+		data.Error = "Error loading configuration: " + err.Error()
+		return data
+	}
+
+	// Parse printers JSON into structured form data
+	if printersJSON != "" && printersJSON != "[]" {
+		var printers []struct {
+			Name         string `json:"name"`
+			Host         string `json:"host"`
+			AccessCode   string `json:"access_code"`
+			SerialNumber string `json:"serial_number"`
+		}
+		if json.Unmarshal([]byte(printersJSON), &printers) == nil {
+			for i, p := range printers {
+				data.Printers = append(data.Printers, &bambuPrinterFormData{
+					Index:         i,
+					Name:          p.Name,
+					Host:          p.Host,
+					HasAccessCode: p.AccessCode != "",
+					SerialNumber:  p.SerialNumber,
+				})
+			}
+		}
+	}
+
+	data.ConfiguredPrinters = len(data.Printers)
+	data.RecentEvents = m.getRecentBambuEvents(r.Context())
+
+	return data
+}
+
+func (m *Module) getRecentBambuEvents(ctx context.Context) []*bambuEvent {
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT created, event_type, COALESCE(printer_name, ''), COALESCE(printer_serial, ''), success, details
+		FROM bambu_events
+		ORDER BY created DESC
+		LIMIT 20`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var events []*bambuEvent
+	for rows.Next() {
+		var created int64
+		var successInt int
+		event := &bambuEvent{}
+		if rows.Scan(&created, &event.EventType, &event.PrinterName, &event.PrinterSerial, &successInt, &event.Details) == nil {
+			event.Created = time.Unix(created, 0)
+			event.Success = successInt == 1
+			events = append(events, event)
+		}
+	}
+	return events
+}
+
+func (m *Module) renderBambuEventsChart(w http.ResponseWriter, r *http.Request) {
+	series := r.URL.Query().Get("series")
+
+	windowDuration := time.Hour * 24
+	if window := r.URL.Query().Get("window"); window != "" {
+		if parsed, err := time.ParseDuration(window); err == nil && parsed <= 24*time.Hour {
+			windowDuration = parsed
+		}
+	}
+
+	var whereClause string
+	switch series {
+	case "successes":
+		whereClause = "success = 1"
+	case "errors":
+		whereClause = "success = 0"
+	case "api-requests":
+		whereClause = "1=1"
+	default:
+		engine.ClientError(w, "Invalid Request", "Unknown series", 400)
+		return
+	}
+
+	query := fmt.Sprintf(`
+		SELECT (created / 900) * 900 AS bucket, COUNT(*)
+		FROM bambu_events
 		WHERE created > unixepoch() - ? AND %s
 		GROUP BY bucket
 		ORDER BY bucket ASC`, whereClause)

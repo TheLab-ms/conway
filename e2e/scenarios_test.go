@@ -1108,6 +1108,13 @@ func TestStripe_SubscriptionLifecycle(t *testing.T) {
 
 	clearTestData(t)
 
+	// Configure Stripe via the database (simulating admin configuration)
+	// The payment module reads these values dynamically from stripe_config table
+	apiKey := os.Getenv("STRIPE_TEST_KEY")
+	webhookKey := getEnvWithFallback("STRIPE_TEST_WEBHOOK_KEY", "CONWAY_STRIPE_WEBHOOK_KEY")
+	seedStripeConfig(t, apiKey, webhookKey)
+	t.Log("Configured Stripe via dynamic config (stripe_config table)")
+
 	// Use unique email to avoid conflicts between test runs
 	email := fmt.Sprintf("stripe-test-%d@example.com", time.Now().UnixNano())
 	memberID := seedMember(t, email, WithConfirmed(), WithWaiver())
@@ -1238,6 +1245,134 @@ func TestStripe_SubscriptionLifecycle(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Log("Test completed: subscription created and cancellation initiated via Billing Portal")
+}
+
+// TestStripe_SubscriptionWithAdminUIConfig tests the Stripe subscription workflow
+// where an admin first configures Stripe via the admin UI, then a member subscribes.
+// This is the complete journey test for dynamic Stripe configuration.
+func TestStripe_SubscriptionWithAdminUIConfig(t *testing.T) {
+	if !stripeTestEnabled() {
+		t.Skip("Skipping Stripe test: STRIPE_TEST_KEY not set")
+	}
+
+	// Start Stripe CLI for webhook forwarding
+	startStripeCLI(t, "localhost:18080/webhooks/stripe")
+
+	clearTestData(t)
+
+	// Step 1: Admin configures Stripe via the admin UI
+	t.Log("Step 1: Admin configuring Stripe via admin settings page")
+
+	adminID := seedMember(t, "admin@example.com", WithConfirmed(), WithLeadership())
+	adminCtx := newContext(t)
+	loginAs(t, adminCtx, adminID)
+	adminPage := newPageInContext(t, adminCtx)
+
+	configPage := NewAdminStripeConfigPage(t, adminPage)
+	configPage.Navigate()
+
+	err := adminPage.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Fill Stripe configuration with real test credentials
+	apiKey := os.Getenv("STRIPE_TEST_KEY")
+	webhookKey := getEnvWithFallback("STRIPE_TEST_WEBHOOK_KEY", "CONWAY_STRIPE_WEBHOOK_KEY")
+
+	configPage.FillAPIKey(apiKey)
+	configPage.FillWebhookKey(webhookKey)
+	configPage.Submit()
+
+	err = adminPage.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+	t.Log("Stripe configuration saved via admin UI")
+
+	// Step 2: Member subscribes using the dynamically configured Stripe
+	t.Log("Step 2: Member subscribing via Stripe Checkout")
+
+	email := fmt.Sprintf("stripe-admin-ui-test-%d@example.com", time.Now().UnixNano())
+	memberID := seedMember(t, email, WithConfirmed(), WithWaiver())
+
+	memberCtx := newContext(t)
+	loginAs(t, memberCtx, memberID)
+	memberPage := newPageInContext(t, memberCtx)
+
+	dashboard := NewMemberDashboardPage(t, memberPage)
+	dashboard.Navigate()
+	dashboard.ExpectMissingPaymentAlert()
+
+	// Click "Set Up Payment" button
+	setupPaymentBtn := memberPage.Locator("a.btn-primary:has-text('Set Up Payment')")
+	expect(t).Locator(setupPaymentBtn).ToBeVisible()
+	err = setupPaymentBtn.Click()
+	require.NoError(t, err)
+
+	// Wait for redirect to Stripe Checkout
+	err = memberPage.WaitForURL("**/checkout.stripe.com/**", playwright.PageWaitForURLOptions{
+		Timeout: playwright.Float(30000),
+	})
+	require.NoError(t, err, "should redirect to Stripe Checkout")
+
+	// Fill Stripe Checkout form
+	cardNumberField := memberPage.Locator("#cardNumber")
+	err = cardNumberField.WaitFor(playwright.LocatorWaitForOptions{
+		State:   playwright.WaitForSelectorStateVisible,
+		Timeout: playwright.Float(30000),
+	})
+	require.NoError(t, err)
+
+	err = cardNumberField.Fill("4242424242424242")
+	require.NoError(t, err)
+	err = memberPage.Locator("#cardExpiry").Fill("12/30")
+	require.NoError(t, err)
+	err = memberPage.Locator("#cardCvc").Fill("123")
+	require.NoError(t, err)
+	err = memberPage.Locator("#billingName").Fill("Admin UI Test User")
+	require.NoError(t, err)
+
+	postalCodeField := memberPage.Locator("#billingPostalCode")
+	if visible, _ := postalCodeField.IsVisible(); visible {
+		err = postalCodeField.Fill("12345")
+		require.NoError(t, err)
+	}
+
+	// Submit payment
+	t.Log("Step 3: Submitting payment")
+	submitBtn := memberPage.Locator("button[type='submit']:has-text('Subscribe')")
+	err = submitBtn.Click()
+	require.NoError(t, err)
+
+	// Wait for redirect back to our app
+	err = memberPage.WaitForURL("**/localhost:18080/**", playwright.PageWaitForURLOptions{
+		Timeout: playwright.Float(60000),
+	})
+	require.NoError(t, err, "should redirect back to app after payment")
+
+	// Wait for webhook to process
+	t.Log("Step 4: Waiting for subscription webhook")
+	waitForMemberState(t, email, 30*time.Second, func(subState, name string) bool {
+		return subState == "active"
+	})
+
+	// Verify dashboard shows active subscription
+	dashboard.Navigate()
+	dashboard.ExpectStepComplete("Set Up Payment")
+
+	// Step 5: Verify admin can see updated subscription counts
+	t.Log("Step 5: Verifying admin sees updated subscription count")
+
+	configPage.Navigate()
+	err = adminPage.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Should now show 1 active subscription
+	activeSubsLocator := adminPage.Locator(".card-body .row .col-md-6").First().Locator("h3")
+	activeSubsText, err := activeSubsLocator.TextContent()
+	require.NoError(t, err)
+	assert.Equal(t, "1", activeSubsText, "should show 1 active subscription after member subscribed")
+
+	t.Log("Test completed: admin configured Stripe, member subscribed, admin verified subscription count")
 }
 
 // TestWaiver_SuccessfulSubmission verifies that a user can successfully sign
@@ -1656,4 +1791,754 @@ func TestWaiver_DuplicateSubmission(t *testing.T) {
 	err = testDB.QueryRow("SELECT name FROM waivers WHERE email = ?", email).Scan(&name)
 	require.NoError(t, err)
 	assert.Equal(t, "First Submission", name, "original waiver should be preserved")
+}
+
+// TestAdmin_StripeConfigPage verifies that administrators can view and update
+// Stripe configuration via the admin settings page.
+func TestAdmin_StripeConfigPage(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	configPage := NewAdminStripeConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Verify the page displays Stripe configuration instructions
+	configPage.ExpectWebhookURLInstruction()
+
+	// Initially no version badge since no config exists
+	initialVersion := getStripeConfigVersion(t)
+	assert.Equal(t, 0, initialVersion, "should have no initial stripe config")
+
+	// Fill in API key and webhook key
+	configPage.FillAPIKey("sk_test_example_api_key")
+	configPage.FillWebhookKey("whsec_example_webhook_secret")
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Verify success message is shown
+	configPage.ExpectSaveSuccessMessage()
+
+	// Verify version was incremented
+	newVersion := getStripeConfigVersion(t)
+	assert.Equal(t, 1, newVersion, "should have version 1 after first save")
+
+	// Verify placeholders indicate secrets are set
+	configPage.Navigate()
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectHasAPIKey()
+	configPage.ExpectHasWebhookKey()
+	configPage.ExpectVersionBadge(1)
+}
+
+// TestAdmin_StripeConfigVersioning verifies that saving Stripe config
+// creates new versions without overwriting old ones.
+func TestAdmin_StripeConfigVersioning(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	configPage := NewAdminStripeConfigPage(t, page)
+
+	// Save first version
+	configPage.Navigate()
+	configPage.FillAPIKey("sk_test_first")
+	configPage.FillWebhookKey("whsec_first")
+	configPage.Submit()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+	configPage.ExpectVersionBadge(1)
+
+	// Save second version (just updating the webhook key)
+	configPage.Navigate()
+	configPage.FillWebhookKey("whsec_second")
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+	configPage.ExpectVersionBadge(2)
+
+	// Verify both versions exist in database
+	var count int
+	err = testDB.QueryRow("SELECT COUNT(*) FROM stripe_config").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count, "should have two versions of config")
+
+	// Verify the latest version is used (API key should be preserved from first save)
+	var apiKey, webhookKey string
+	err = testDB.QueryRow("SELECT api_key, webhook_key FROM stripe_config ORDER BY version DESC LIMIT 1").Scan(&apiKey, &webhookKey)
+	require.NoError(t, err)
+	assert.Equal(t, "sk_test_first", apiKey, "API key should be preserved when not updated")
+	assert.Equal(t, "whsec_second", webhookKey, "webhook key should be updated")
+}
+
+// TestAdmin_StripeConfigStatusCounts verifies that the Stripe config page
+// displays correct subscription and customer counts.
+func TestAdmin_StripeConfigStatusCounts(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	// Seed some members with Stripe data
+	seedMember(t, "active1@example.com", WithConfirmed(), WithActiveStripeSubscription())
+	seedMember(t, "active2@example.com", WithConfirmed(), WithActiveStripeSubscription())
+	seedMember(t, "customer-only@example.com", WithConfirmed(), WithStripeCustomerID("cus_test_no_sub"))
+
+	configPage := NewAdminStripeConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Should show 2 active subscriptions (admin doesn't have one)
+	activeSubsLocator := page.Locator(".card-body .row .col-md-6").First().Locator("h3")
+	activeSubsText, err := activeSubsLocator.TextContent()
+	require.NoError(t, err)
+	assert.Equal(t, "2", activeSubsText, "should show 2 active subscriptions")
+
+	// Should show 3 total customers (2 with active subs + 1 customer-only)
+	totalCustLocator := page.Locator(".card-body .row .col-md-6").Last().Locator("h3")
+	totalCustText, err := totalCustLocator.TextContent()
+	require.NoError(t, err)
+	assert.Equal(t, "3", totalCustText, "should show 3 total customers")
+}
+
+// TestDirectory_RequiresAuth verifies that unauthenticated access to the
+// directory page redirects to login.
+func TestDirectory_RequiresAuth(t *testing.T) {
+	page := setupUnauthenticatedTest(t)
+
+	_, err := page.Goto(baseURL + "/directory")
+	require.NoError(t, err)
+
+	err = page.WaitForURL("**/login**")
+	require.NoError(t, err)
+}
+
+// TestDirectory_DisplaysReadyMembers verifies that the directory page only
+// shows members with access_status = 'Ready'.
+func TestDirectory_DisplaysReadyMembers(t *testing.T) {
+	_, page := setupMemberTest(t, "viewer@example.com", WithConfirmed())
+
+	// Seed members with different access statuses
+	seedMember(t, "ready@example.com", WithConfirmed(), WithReadyAccess(), WithName("Ready Member"))
+	seedMember(t, "notready@example.com", WithConfirmed(), WithName("Not Ready Member"))
+
+	directoryPage := NewDirectoryPage(t, page)
+	directoryPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	directoryPage.ExpectHeading()
+	directoryPage.ExpectMemberCard("Ready Member")
+	directoryPage.ExpectMemberCardNotVisible("Not Ready Member")
+}
+
+// TestDirectory_ShowsLeadershipBadge verifies that leadership members have
+// a leadership badge displayed on their card.
+func TestDirectory_ShowsLeadershipBadge(t *testing.T) {
+	_, page := setupMemberTest(t, "viewer@example.com", WithConfirmed())
+
+	// Seed a leadership member and a regular member
+	seedMember(t, "leader@example.com", WithConfirmed(), WithReadyAccess(), WithName("Leader Person"), WithLeadership())
+	seedMember(t, "regular@example.com", WithConfirmed(), WithReadyAccess(), WithName("Regular Person"))
+
+	directoryPage := NewDirectoryPage(t, page)
+	directoryPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	directoryPage.ExpectMemberCard("Leader Person")
+	directoryPage.ExpectLeadershipBadge("Leader Person")
+	directoryPage.ExpectMemberCard("Regular Person")
+	directoryPage.ExpectNoLeadershipBadge("Regular Person")
+}
+
+// TestDirectory_ShowsDiscordUsername verifies that members with a Discord
+// username have it displayed on their card.
+func TestDirectory_ShowsDiscordUsername(t *testing.T) {
+	_, page := setupMemberTest(t, "viewer@example.com", WithConfirmed())
+
+	seedMember(t, "discord@example.com", WithConfirmed(), WithReadyAccess(), WithName("Discord User"), WithDiscordUsername("discorduser123"))
+
+	directoryPage := NewDirectoryPage(t, page)
+	directoryPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	directoryPage.ExpectMemberCard("Discord User")
+	directoryPage.ExpectDiscordUsername("Discord User", "discorduser123")
+}
+
+// TestDirectory_ShowsPlaceholderAvatar verifies that members without a
+// Discord avatar show a placeholder avatar.
+func TestDirectory_ShowsPlaceholderAvatar(t *testing.T) {
+	_, page := setupMemberTest(t, "viewer@example.com", WithConfirmed())
+
+	seedMember(t, "noavatar@example.com", WithConfirmed(), WithReadyAccess(), WithName("No Avatar User"))
+
+	directoryPage := NewDirectoryPage(t, page)
+	directoryPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	directoryPage.ExpectMemberCard("No Avatar User")
+	directoryPage.ExpectPlaceholderAvatar("No Avatar User")
+}
+
+// TestDirectory_ShowsRealAvatar verifies that members with a Discord avatar
+// display an img element pointing to the avatar endpoint.
+func TestDirectory_ShowsRealAvatar(t *testing.T) {
+	_, page := setupMemberTest(t, "viewer@example.com", WithConfirmed())
+
+	// Create a simple PNG image (1x1 red pixel)
+	pngData := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+		0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00,
+		0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+		0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xFE, 0xD4, 0xEF, 0x00, 0x00,
+		0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+	}
+	seedMember(t, "hasavatar@example.com", WithConfirmed(), WithReadyAccess(), WithName("Has Avatar User"), WithDiscordAvatar(pngData))
+
+	directoryPage := NewDirectoryPage(t, page)
+	directoryPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	directoryPage.ExpectMemberCard("Has Avatar User")
+	directoryPage.ExpectAvatar("Has Avatar User")
+}
+
+// TestDirectory_EmptyDirectory verifies that when no members have Ready
+// access, an empty message is displayed.
+func TestDirectory_EmptyDirectory(t *testing.T) {
+	_, page := setupMemberTest(t, "viewer@example.com", WithConfirmed())
+
+	// Don't seed any members with Ready access
+
+	directoryPage := NewDirectoryPage(t, page)
+	directoryPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	directoryPage.ExpectHeading()
+	directoryPage.ExpectEmptyMessage()
+}
+
+// TestDirectory_AvatarEndpoint verifies the avatar endpoint returns the
+// correct image data for members with avatars.
+func TestDirectory_AvatarEndpoint(t *testing.T) {
+	_, page := setupMemberTest(t, "viewer@example.com", WithConfirmed())
+
+	// Create a simple PNG image (1x1 red pixel)
+	pngData := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+		0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00,
+		0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+		0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xFE, 0xD4, 0xEF, 0x00, 0x00,
+		0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+	}
+	memberID := seedMember(t, "avatar@example.com", WithConfirmed(), WithReadyAccess(), WithDiscordAvatar(pngData))
+
+	resp, err := page.Goto(fmt.Sprintf("%s/directory/avatar/%d", baseURL, memberID))
+	require.NoError(t, err)
+
+	assert.Equal(t, 200, resp.Status())
+	headers := resp.Headers()
+	assert.Contains(t, headers["content-type"], "image/png")
+}
+
+// TestDirectory_AvatarEndpointNotFound verifies the avatar endpoint returns
+// 404 for members without avatars or non-existent members.
+func TestDirectory_AvatarEndpointNotFound(t *testing.T) {
+	_, page := setupMemberTest(t, "viewer@example.com", WithConfirmed())
+
+	// Member without avatar
+	memberID := seedMember(t, "noavatar@example.com", WithConfirmed(), WithReadyAccess())
+
+	t.Run("member_without_avatar", func(t *testing.T) {
+		resp, err := page.Goto(fmt.Sprintf("%s/directory/avatar/%d", baseURL, memberID))
+		require.NoError(t, err)
+		assert.Equal(t, 404, resp.Status())
+	})
+
+	t.Run("non_existent_member", func(t *testing.T) {
+		resp, err := page.Goto(baseURL + "/directory/avatar/999999")
+		require.NoError(t, err)
+		assert.Equal(t, 404, resp.Status())
+	})
+
+	t.Run("invalid_id", func(t *testing.T) {
+		resp, err := page.Goto(baseURL + "/directory/avatar/invalid")
+		require.NoError(t, err)
+		assert.Equal(t, 404, resp.Status())
+	})
+}
+
+// TestDirectory_ExcludesMembersWithoutName verifies that members without
+// a name set are not displayed in the directory.
+func TestDirectory_ExcludesMembersWithoutName(t *testing.T) {
+	_, page := setupMemberTest(t, "viewer@example.com", WithConfirmed())
+
+	seedMember(t, "noname@example.com", WithConfirmed(), WithReadyAccess())
+	seedMember(t, "hasname@example.com", WithConfirmed(), WithReadyAccess(), WithName("Has Name"))
+
+	directoryPage := NewDirectoryPage(t, page)
+	directoryPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Member with name should be visible
+	directoryPage.ExpectMemberCard("Has Name")
+
+	// Member without name should not be visible (email should not appear)
+	directoryPage.ExpectMemberCardNotVisible("noname@example.com")
+}
+
+// TestAdmin_BambuConfigPage verifies that administrators can view the
+// Bambu configuration page and see all required elements.
+func TestAdmin_BambuConfigPage(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Verify page structure
+	configPage.ExpectPageTitle()
+	configPage.ExpectAddPrinterButton()
+
+	// Initially no printers configured
+	assert.Equal(t, 0, configPage.PrinterCardCount(), "should have no printers initially")
+
+	// Verify poll interval is shown with default value
+	pollInterval := configPage.GetPollInterval()
+	assert.Equal(t, "5", pollInterval, "default poll interval should be 5")
+}
+
+// TestAdmin_BambuConfigAddPrinter verifies the JavaScript "Add Printer" button
+// correctly creates new printer form fields with proper indexing.
+func TestAdmin_BambuConfigAddPrinter(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Initially no printers
+	assert.Equal(t, 0, configPage.PrinterCardCount())
+
+	// Add first printer
+	configPage.ClickAddPrinter()
+	assert.Equal(t, 1, configPage.PrinterCardCount())
+	configPage.ExpectPrinterCardHeaderText(0, "New Printer")
+
+	// Verify the form fields exist with correct names for index 0
+	name := configPage.GetPrinterName(0)
+	assert.Equal(t, "", name, "new printer should have empty name")
+
+	host := configPage.GetPrinterHost(0)
+	assert.Equal(t, "", host, "new printer should have empty host")
+
+	serial := configPage.GetPrinterSerial(0)
+	assert.Equal(t, "", serial, "new printer should have empty serial")
+
+	// Add second printer
+	configPage.ClickAddPrinter()
+	assert.Equal(t, 2, configPage.PrinterCardCount())
+
+	// Verify second printer has correct index (1)
+	configPage.ExpectPrinterCardHeaderText(1, "New Printer")
+}
+
+// TestAdmin_BambuConfigAddPrinterNameUpdate verifies that updating the name
+// field updates the card header in real-time.
+func TestAdmin_BambuConfigAddPrinterNameUpdate(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ClickAddPrinter()
+	configPage.ExpectPrinterCardHeaderText(0, "New Printer")
+
+	// Fill in name and verify header updates
+	configPage.FillPrinterName(0, "Lab Printer 1")
+	configPage.ExpectPrinterCardHeaderText(0, "Lab Printer 1")
+}
+
+// TestAdmin_BambuConfigSaveNewPrinter verifies that a new printer can be
+// added and saved to the database.
+func TestAdmin_BambuConfigSaveNewPrinter(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Add a new printer
+	configPage.ClickAddPrinter()
+	configPage.FillPrinterName(0, "Test Printer")
+	configPage.FillPrinterHost(0, "192.168.1.100")
+	configPage.FillPrinterAccessCode(0, "12345678")
+	configPage.FillPrinterSerial(0, "01P00A123456789")
+	configPage.FillPollInterval(10)
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Verify success message
+	configPage.ExpectSaveSuccessMessage()
+	configPage.ExpectVersionBadge(1)
+
+	// Verify printer was saved in database
+	printersJSON := getBambuPrintersJSON(t)
+	assert.Contains(t, printersJSON, "Test Printer")
+	assert.Contains(t, printersJSON, "192.168.1.100")
+	assert.Contains(t, printersJSON, "01P00A123456789")
+
+	// Verify poll interval was saved
+	pollInterval := getBambuPollInterval(t)
+	assert.Equal(t, 10, pollInterval)
+
+	// Verify status dashboard shows correct counts
+	configPage.ExpectConfiguredPrintersCount(1)
+	configPage.ExpectPollIntervalDisplay(10)
+}
+
+// TestAdmin_BambuConfigSaveMultiplePrinters verifies that multiple printers
+// can be added in one save operation.
+func TestAdmin_BambuConfigSaveMultiplePrinters(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Add first printer
+	configPage.ClickAddPrinter()
+	configPage.FillPrinterName(0, "Printer A")
+	configPage.FillPrinterHost(0, "192.168.1.101")
+	configPage.FillPrinterAccessCode(0, "access123")
+	configPage.FillPrinterSerial(0, "SERIAL001")
+
+	// Add second printer
+	configPage.ClickAddPrinter()
+	configPage.FillPrinterName(1, "Printer B")
+	configPage.FillPrinterHost(1, "192.168.1.102")
+	configPage.FillPrinterAccessCode(1, "access456")
+	configPage.FillPrinterSerial(1, "SERIAL002")
+
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+
+	// Verify both printers are in database
+	printersJSON := getBambuPrintersJSON(t)
+	assert.Contains(t, printersJSON, "Printer A")
+	assert.Contains(t, printersJSON, "Printer B")
+	assert.Contains(t, printersJSON, "SERIAL001")
+	assert.Contains(t, printersJSON, "SERIAL002")
+
+	// Verify status count
+	configPage.ExpectConfiguredPrintersCount(2)
+}
+
+// TestAdmin_BambuConfigDeletePrinterUI verifies the delete confirmation
+// flow works correctly without actually deleting.
+func TestAdmin_BambuConfigDeletePrinterUI(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	// Seed a printer first
+	seedBambuConfig(t, `[{"name":"Test Printer","host":"192.168.1.100","access_code":"12345678","serial_number":"SERIAL001"}]`, 5)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Should have one printer
+	assert.Equal(t, 1, configPage.PrinterCardCount())
+	configPage.ExpectDeleteConfirmHidden(0)
+
+	// Click delete - should show confirmation
+	configPage.ClickDeletePrinter(0)
+	configPage.ExpectDeleteConfirmVisible(0)
+
+	// Cancel delete
+	configPage.CancelDeletePrinter(0)
+	configPage.ExpectDeleteConfirmHidden(0)
+	assert.Equal(t, 1, configPage.PrinterCardCount(), "printer should still be present")
+}
+
+// TestAdmin_BambuConfigDeletePrinterAndSave verifies that deleting a printer
+// and saving actually removes it from the database.
+func TestAdmin_BambuConfigDeletePrinterAndSave(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	// Seed two printers
+	seedBambuConfig(t, `[{"name":"Printer 1","host":"192.168.1.101","access_code":"access1","serial_number":"SERIAL001"},{"name":"Printer 2","host":"192.168.1.102","access_code":"access2","serial_number":"SERIAL002"}]`, 5)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Should have two printers
+	assert.Equal(t, 2, configPage.PrinterCardCount())
+
+	// Delete first printer
+	configPage.ClickDeletePrinter(0)
+	configPage.ConfirmDeletePrinter(0)
+	assert.Equal(t, 1, configPage.PrinterCardCount())
+
+	// Save changes
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+
+	// Verify database only has second printer
+	printersJSON := getBambuPrintersJSON(t)
+	assert.NotContains(t, printersJSON, "Printer 1")
+	assert.Contains(t, printersJSON, "Printer 2")
+}
+
+// TestAdmin_BambuConfigEditExistingPrinter verifies that editing an existing
+// printer preserves access code when not changed.
+func TestAdmin_BambuConfigEditExistingPrinter(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	// Seed a printer with access code
+	seedBambuConfig(t, `[{"name":"Original Name","host":"192.168.1.100","access_code":"secret123","serial_number":"SERIAL001"}]`, 5)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Verify existing printer is displayed
+	assert.Equal(t, 1, configPage.PrinterCardCount())
+	assert.Equal(t, "Original Name", configPage.GetPrinterName(0))
+	configPage.ExpectPrinterAccessCodePlaceholder(0, "secret is set")
+
+	// Update name only (leave access code empty to preserve)
+	configPage.FillPrinterName(0, "Updated Name")
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+
+	// Verify name was updated but access code preserved
+	printersJSON := getBambuPrintersJSON(t)
+	assert.Contains(t, printersJSON, "Updated Name")
+	assert.Contains(t, printersJSON, "secret123", "access code should be preserved")
+}
+
+// TestAdmin_BambuConfigVersioning verifies that saving config creates new
+// versions without overwriting old ones.
+func TestAdmin_BambuConfigVersioning(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Save first version
+	configPage.ClickAddPrinter()
+	configPage.FillPrinterName(0, "Printer V1")
+	configPage.FillPrinterHost(0, "192.168.1.101")
+	configPage.FillPrinterAccessCode(0, "access1")
+	configPage.FillPrinterSerial(0, "SERIAL001")
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+	firstVersion := getBambuConfigVersion(t)
+
+	// Save second version
+	configPage.Navigate()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.FillPrinterName(0, "Printer V2")
+	configPage.FillPrinterAccessCode(0, "access2")
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+	secondVersion := getBambuConfigVersion(t)
+
+	// Verify version incremented by 1 after the second save
+	assert.Equal(t, firstVersion+1, secondVersion, "second save should increment version by 1")
+}
+
+// TestAdmin_BambuConfigRequiresLeadership verifies that non-leadership
+// members cannot access the Bambu configuration page.
+func TestAdmin_BambuConfigRequiresLeadership(t *testing.T) {
+	_, page := setupMemberTest(t, "regular@example.com",
+		WithConfirmed(),
+		WithWaiver(),
+		WithActiveStripeSubscription(),
+		WithFobID(12345),
+	)
+
+	resp, err := page.Goto(baseURL + "/admin/config/bambu")
+	require.NoError(t, err)
+	assert.Equal(t, 403, resp.Status(), "non-leadership should get 403")
+}
+
+// TestAdmin_BambuConfigNewPrinterWithoutAccessCodeSkipped verifies that
+// new printers without access code are not saved (they're skipped).
+func TestAdmin_BambuConfigNewPrinterWithoutAccessCodeSkipped(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Add printer without access code
+	configPage.ClickAddPrinter()
+	configPage.FillPrinterName(0, "No Access Code Printer")
+	configPage.FillPrinterHost(0, "192.168.1.100")
+	configPage.FillPrinterSerial(0, "SERIAL001")
+	// Don't fill access code
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Printer should not be saved (new printers require access code)
+	printersJSON := getBambuPrintersJSON(t)
+	assert.NotContains(t, printersJSON, "No Access Code Printer")
+}
+
+// TestAdmin_BambuConfigPollIntervalValidation verifies that poll interval
+// is bounded within valid range (1-60).
+func TestAdmin_BambuConfigPollIntervalValidation(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	// Seed a printer so we have something to save
+	seedBambuConfig(t, `[{"name":"Test","host":"192.168.1.100","access_code":"secret","serial_number":"SERIAL001"}]`, 5)
+
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Set poll interval to 30
+	configPage.FillPollInterval(30)
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	pollInterval := getBambuPollInterval(t)
+	assert.Equal(t, 30, pollInterval)
+}
+
+// TestJourney_AdminConfiguresBambuPrinter tests the complete flow of an admin
+// configuring a new Bambu printer.
+func TestJourney_AdminConfiguresBambuPrinter(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	// Step 1: Navigate to Bambu config page
+	configPage := NewAdminBambuConfigPage(t, page)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectPageTitle()
+	configPage.ExpectConfiguredPrintersCount(0)
+
+	// Step 2: Add a printer
+	configPage.ClickAddPrinter()
+	configPage.ExpectPrinterCardHeaderText(0, "New Printer")
+
+	// Step 3: Fill in printer details
+	configPage.FillPrinterName(0, "Lab Bambu X1C")
+	configPage.ExpectPrinterCardHeaderText(0, "Lab Bambu X1C")
+	configPage.FillPrinterHost(0, "192.168.10.50")
+	configPage.FillPrinterAccessCode(0, "X1C-ACCESS-CODE")
+	configPage.FillPrinterSerial(0, "01P00A350100001")
+	configPage.FillPollInterval(10)
+
+	// Step 4: Save the configuration
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Step 5: Verify success
+	configPage.ExpectSaveSuccessMessage()
+	configPage.ExpectVersionBadge(1)
+	configPage.ExpectConfiguredPrintersCount(1)
+	configPage.ExpectPollIntervalDisplay(10)
+
+	// Step 6: Verify database state
+	printersJSON := getBambuPrintersJSON(t)
+	assert.Contains(t, printersJSON, "Lab Bambu X1C")
+	assert.Contains(t, printersJSON, "192.168.10.50")
+	assert.Contains(t, printersJSON, "01P00A350100001")
+
+	// Step 7: Reload page and verify data persisted
+	configPage.Navigate()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, configPage.PrinterCardCount())
+	assert.Equal(t, "Lab Bambu X1C", configPage.GetPrinterName(0))
+	assert.Equal(t, "192.168.10.50", configPage.GetPrinterHost(0))
+	assert.Equal(t, "01P00A350100001", configPage.GetPrinterSerial(0))
+	configPage.ExpectPrinterAccessCodePlaceholder(0, "secret is set")
 }

@@ -508,3 +508,316 @@ func (p *AdminWaiverConfigPage) ExpectSyntaxGuide() {
 	expect(p.t).Locator(p.page.GetByText("# Title")).ToBeVisible()
 	expect(p.t).Locator(p.page.GetByText("- [ ] Checkbox text")).ToBeVisible()
 }
+
+// DirectoryPage represents the member directory page.
+type DirectoryPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewDirectoryPage(t *testing.T, page playwright.Page) *DirectoryPage {
+	return &DirectoryPage{page: page, t: t}
+}
+
+func (p *DirectoryPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/directory")
+	require.NoError(p.t, err)
+}
+
+func (p *DirectoryPage) ExpectHeading() {
+	locator := p.page.Locator("h2", playwright.PageLocatorOptions{HasText: "Member Directory"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *DirectoryPage) ExpectMemberCard(displayName string) {
+	locator := p.page.Locator(".card", playwright.PageLocatorOptions{
+		Has: p.page.Locator(".card-title", playwright.PageLocatorOptions{HasText: displayName}),
+	})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *DirectoryPage) ExpectMemberCardNotVisible(displayName string) {
+	locator := p.page.Locator(".card", playwright.PageLocatorOptions{
+		Has: p.page.Locator(".card-title", playwright.PageLocatorOptions{HasText: displayName}),
+	})
+	expect(p.t).Locator(locator).ToBeHidden()
+}
+
+func (p *DirectoryPage) MemberCard(displayName string) playwright.Locator {
+	return p.page.Locator(".card", playwright.PageLocatorOptions{
+		Has: p.page.Locator(".card-title", playwright.PageLocatorOptions{HasText: displayName}),
+	})
+}
+
+func (p *DirectoryPage) ExpectLeadershipBadge(displayName string) {
+	card := p.MemberCard(displayName)
+	expect(p.t).Locator(card.Locator(".badge", playwright.LocatorLocatorOptions{HasText: "Leadership"})).ToBeVisible()
+}
+
+func (p *DirectoryPage) ExpectNoLeadershipBadge(displayName string) {
+	card := p.MemberCard(displayName)
+	expect(p.t).Locator(card.Locator(".badge", playwright.LocatorLocatorOptions{HasText: "Leadership"})).ToBeHidden()
+}
+
+func (p *DirectoryPage) ExpectDiscordUsername(displayName, discordUsername string) {
+	card := p.MemberCard(displayName)
+	expect(p.t).Locator(card.GetByText("@" + discordUsername)).ToBeVisible()
+}
+
+func (p *DirectoryPage) ExpectAvatar(displayName string) {
+	card := p.MemberCard(displayName)
+	expect(p.t).Locator(card.Locator("img.rounded-circle")).ToBeVisible()
+}
+
+func (p *DirectoryPage) ExpectPlaceholderAvatar(displayName string) {
+	card := p.MemberCard(displayName)
+	// Placeholder avatar is a div with an SVG, not an img
+	expect(p.t).Locator(card.Locator("div.rounded-circle svg")).ToBeVisible()
+}
+
+func (p *DirectoryPage) ExpectEmptyMessage() {
+	locator := p.page.GetByText("No members with building access found.")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *DirectoryPage) GetMemberCardCount() int {
+	count, err := p.page.Locator(".card").Count()
+	require.NoError(p.t, err)
+	return count
+}
+
+// AdminStripeConfigPage represents the admin Stripe configuration page.
+type AdminStripeConfigPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewAdminStripeConfigPage(t *testing.T, page playwright.Page) *AdminStripeConfigPage {
+	return &AdminStripeConfigPage{page: page, t: t}
+}
+
+func (p *AdminStripeConfigPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/admin/config/stripe")
+	require.NoError(p.t, err)
+}
+
+func (p *AdminStripeConfigPage) FillAPIKey(key string) {
+	err := p.page.Locator("#api_key").Fill(key)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminStripeConfigPage) FillWebhookKey(key string) {
+	err := p.page.Locator("#webhook_key").Fill(key)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminStripeConfigPage) Submit() {
+	err := p.page.Locator("button[type='submit']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminStripeConfigPage) ExpectVersionBadge(version int) {
+	locator := p.page.Locator(".badge", playwright.PageLocatorOptions{HasText: fmt.Sprintf("Version %d", version)})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminStripeConfigPage) ExpectSaveSuccessMessage() {
+	locator := p.page.Locator(".alert-success", playwright.PageLocatorOptions{HasText: "saved successfully"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminStripeConfigPage) ExpectHasAPIKey() {
+	locator := p.page.Locator("#api_key")
+	placeholder, err := locator.GetAttribute("placeholder")
+	require.NoError(p.t, err)
+	require.Contains(p.t, placeholder, "secret is set", "API key should show as set")
+}
+
+func (p *AdminStripeConfigPage) ExpectHasWebhookKey() {
+	locator := p.page.Locator("#webhook_key")
+	placeholder, err := locator.GetAttribute("placeholder")
+	require.NoError(p.t, err)
+	require.Contains(p.t, placeholder, "secret is set", "Webhook key should show as set")
+}
+
+func (p *AdminStripeConfigPage) ExpectActiveSubscriptions(count int) {
+	locator := p.page.Locator(".card-body h3:has-text('" + fmt.Sprintf("%d", count) + "')")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminStripeConfigPage) ExpectWebhookURLInstruction() {
+	locator := p.page.Locator("code:has-text('/webhooks/stripe')")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+// AdminBambuConfigPage represents the admin Bambu configuration page.
+type AdminBambuConfigPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewAdminBambuConfigPage(t *testing.T, page playwright.Page) *AdminBambuConfigPage {
+	return &AdminBambuConfigPage{page: page, t: t}
+}
+
+func (p *AdminBambuConfigPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/admin/config/bambu")
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) ExpectPageTitle() {
+	locator := p.page.GetByText("Bambu 3D Printer Integration")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminBambuConfigPage) ExpectAddPrinterButton() {
+	locator := p.page.Locator("button:has-text('Add Printer')")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminBambuConfigPage) ClickAddPrinter() {
+	err := p.page.Locator("button:has-text('Add Printer')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) PrinterCardCount() int {
+	count, err := p.page.Locator("#printers-container .printer-card").Count()
+	require.NoError(p.t, err)
+	return count
+}
+
+func (p *AdminBambuConfigPage) PrinterCard(index int) playwright.Locator {
+	return p.page.Locator(fmt.Sprintf("#printers-container .printer-card[data-printer-index='%d']", index))
+}
+
+func (p *AdminBambuConfigPage) FillPrinterName(index int, name string) {
+	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][name]']", index))
+	err := locator.Fill(name)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) FillPrinterHost(index int, host string) {
+	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][host]']", index))
+	err := locator.Fill(host)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) FillPrinterAccessCode(index int, code string) {
+	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][access_code]']", index))
+	err := locator.Fill(code)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) FillPrinterSerial(index int, serial string) {
+	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][serial_number]']", index))
+	err := locator.Fill(serial)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) GetPrinterName(index int) string {
+	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][name]']", index))
+	value, err := locator.InputValue()
+	require.NoError(p.t, err)
+	return value
+}
+
+func (p *AdminBambuConfigPage) GetPrinterHost(index int) string {
+	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][host]']", index))
+	value, err := locator.InputValue()
+	require.NoError(p.t, err)
+	return value
+}
+
+func (p *AdminBambuConfigPage) GetPrinterSerial(index int) string {
+	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][serial_number]']", index))
+	value, err := locator.InputValue()
+	require.NoError(p.t, err)
+	return value
+}
+
+func (p *AdminBambuConfigPage) ExpectPrinterAccessCodePlaceholder(index int, expectedPlaceholder string) {
+	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][access_code]']", index))
+	placeholder, err := locator.GetAttribute("placeholder")
+	require.NoError(p.t, err)
+	require.Contains(p.t, placeholder, expectedPlaceholder)
+}
+
+func (p *AdminBambuConfigPage) ClickDeletePrinter(index int) {
+	card := p.PrinterCard(index)
+	err := card.Locator("button.delete-printer-btn").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) ConfirmDeletePrinter(index int) {
+	card := p.PrinterCard(index)
+	err := card.Locator(".delete-confirm button.btn-danger").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) CancelDeletePrinter(index int) {
+	card := p.PrinterCard(index)
+	err := card.Locator(".delete-confirm button.btn-secondary").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) ExpectDeleteConfirmVisible(index int) {
+	card := p.PrinterCard(index)
+	expect(p.t).Locator(card.Locator(".delete-confirm")).ToBeVisible()
+}
+
+func (p *AdminBambuConfigPage) ExpectDeleteConfirmHidden(index int) {
+	card := p.PrinterCard(index)
+	expect(p.t).Locator(card.Locator(".delete-confirm")).ToBeHidden()
+}
+
+func (p *AdminBambuConfigPage) FillPollInterval(seconds int) {
+	err := p.page.Locator("#poll_interval_seconds").Fill(fmt.Sprintf("%d", seconds))
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) GetPollInterval() string {
+	value, err := p.page.Locator("#poll_interval_seconds").InputValue()
+	require.NoError(p.t, err)
+	return value
+}
+
+func (p *AdminBambuConfigPage) Submit() {
+	err := p.page.Locator("button[type='submit']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminBambuConfigPage) ExpectVersionBadge(version int) {
+	locator := p.page.Locator(".badge", playwright.PageLocatorOptions{HasText: fmt.Sprintf("Version %d", version)})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminBambuConfigPage) ExpectSaveSuccessMessage() {
+	locator := p.page.Locator(".alert-success", playwright.PageLocatorOptions{HasText: "saved successfully"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminBambuConfigPage) ExpectConfiguredPrintersCount(count int) {
+	// Target the Status card specifically (contains "Configured Printers" text)
+	statusCard := p.page.Locator(".card:has-text('Configured Printers')")
+	locator := statusCard.Locator(".col-md-6").First().Locator("h3")
+	text, err := locator.TextContent()
+	require.NoError(p.t, err)
+	require.Equal(p.t, fmt.Sprintf("%d", count), text)
+}
+
+func (p *AdminBambuConfigPage) ExpectPollIntervalDisplay(seconds int) {
+	// Target the Status card specifically (contains "Poll Interval" text)
+	statusCard := p.page.Locator(".card:has-text('Poll Interval')")
+	locator := statusCard.Locator(".col-md-6").Last().Locator("h3")
+	text, err := locator.TextContent()
+	require.NoError(p.t, err)
+	require.Equal(p.t, fmt.Sprintf("%ds", seconds), text)
+}
+
+func (p *AdminBambuConfigPage) ExpectPrinterCardHeaderText(index int, expectedText string) {
+	card := p.PrinterCard(index)
+	header := card.Locator(".printer-name-display")
+	text, err := header.TextContent()
+	require.NoError(p.t, err)
+	require.Equal(p.t, expectedText, text)
+}

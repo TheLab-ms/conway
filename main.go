@@ -16,9 +16,7 @@ import (
 	"github.com/TheLab-ms/conway/modules"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/email"
-	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/caarlos0/env/v11"
-	"github.com/stripe/stripe-go/v78"
 )
 
 type Config struct {
@@ -27,9 +25,6 @@ type Config struct {
 	// SpaceHost is a hostname that resolves to the public IP used to egress the makerspace LAN.
 	SpaceHost string `envDefault:"localhost"`
 
-	StripeKey        string
-	StripeWebhookKey string
-
 	EmailFrom       string
 	EmailSenderName string
 
@@ -37,8 +32,6 @@ type Config struct {
 	TurnstileSecret  string
 
 	AccessControllerHost string
-
-	BambuPrinters string
 }
 
 func main() {
@@ -54,7 +47,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	stripe.Key = conf.StripeKey
 
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		err := engine.CheckHealthProbe("http://localhost:8080/healthz") // assume server is running on the default port
@@ -94,13 +86,6 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		sender = email.NewGoogleSmtpSender(conf.EmailFrom, conf.EmailSenderName)
 	}
 
-	var machinesMod *machines.Module
-	if conf.BambuPrinters != "" {
-		machinesMod = machines.New(database, conf.BambuPrinters)
-	} else {
-		slog.Info("machines module disabled because no devices were configured")
-	}
-
 	if conf.AccessControllerHost == "" {
 		slog.Info("generic access controller module disabled because a URL was not configured")
 	}
@@ -116,9 +101,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		DiscordIssuer:        engine.NewTokenIssuer("discord-oauth.pem"),
 		Turnstile:            tso,
 		EmailSender:          sender,
-		StripeWebhookKey:     conf.StripeWebhookKey,
 		SpaceHost:            conf.SpaceHost,
-		MachinesModule:       machinesMod,
 		AccessControllerHost: conf.AccessControllerHost,
 	})
 

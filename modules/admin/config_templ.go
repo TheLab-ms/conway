@@ -38,6 +38,7 @@ var configSections = []*configSection{
 	{Name: "Waiver", Path: "/admin/config/waiver"},
 	{Name: "Discord", Path: "/admin/config/discord"},
 	{Name: "Stripe", Path: "/admin/config/stripe"},
+	{Name: "Bambu", Path: "/admin/config/bambu"},
 }
 
 func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Component) templ.Component {
@@ -90,7 +91,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var3 templ.SafeURL
 					templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(section.Path))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 48, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 49, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 					if templ_7745c5c3_Err != nil {
@@ -103,7 +104,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(section.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 48, Col: 117}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 49, Col: 117}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {
@@ -121,7 +122,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var5 templ.SafeURL
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(section.Path))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 50, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 51, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
@@ -134,7 +135,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(section.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 50, Col: 110}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 51, Col: 110}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -202,7 +203,7 @@ func renderWaiverConfigContent(data *waiverConfigData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 74, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 75, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -225,7 +226,7 @@ func renderWaiverConfigContent(data *waiverConfigData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(data.Content)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 85, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 86, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -299,7 +300,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 136, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 137, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -328,7 +329,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(data.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 147, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 148, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -346,7 +347,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 164, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 165, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -359,7 +360,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(data.ClientID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 168, Col: 113}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 169, Col: 113}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -372,7 +373,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasClientSecret))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 174, Col: 158}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 175, Col: 158}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -385,7 +386,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasClientSecret))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 176, Col: 116}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 177, Col: 116}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -398,7 +399,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasBotToken))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 187, Col: 146}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 188, Col: 146}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -411,7 +412,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasBotToken))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 189, Col: 131}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 190, Col: 131}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -424,7 +425,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(data.GuildID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 193, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 194, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -437,7 +438,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(data.RoleID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 198, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 199, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -450,7 +451,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasPrintWebhookURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 209, Col: 169}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 210, Col: 169}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
@@ -463,7 +464,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasPrintWebhookURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 211, Col: 134}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 212, Col: 134}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -476,7 +477,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.SyncIntervalHours))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 216, Col: 143}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 217, Col: 143}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -489,7 +490,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.TotalLinkedMembers))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 234, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 235, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -502,7 +503,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.PendingSyncs))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 238, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 239, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
@@ -515,7 +516,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.SyncIntervalHours))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 242, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 243, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
@@ -528,7 +529,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.RecentEvents)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 264, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 265, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
@@ -551,7 +552,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var28 string
 				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 282, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 283, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 				if templ_7745c5c3_Err != nil {
@@ -564,7 +565,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var29 string
 				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(event.EventType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 283, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 284, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
@@ -592,7 +593,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var30 string
 				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(event.MemberName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 291, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 292, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
@@ -605,7 +606,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var31 string
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 292, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 293, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {
@@ -618,7 +619,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var32 string
 				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 292, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 293, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 				if templ_7745c5c3_Err != nil {
@@ -702,7 +703,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 392, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 393, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -731,7 +732,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(data.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 403, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 404, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -749,7 +750,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasAPIKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 424, Col: 140}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 425, Col: 140}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -762,7 +763,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasAPIKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 426, Col: 141}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 427, Col: 141}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -775,7 +776,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 432, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 433, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -788,7 +789,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasWebhookKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 438, Col: 152}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 439, Col: 152}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -801,7 +802,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasWebhookKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 440, Col: 163}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 441, Col: 163}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {
@@ -814,7 +815,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.ActiveSubscriptions))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 457, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 458, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -827,7 +828,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.TotalCustomers))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 461, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 462, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -840,7 +841,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.RecentEvents)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 483, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 484, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -863,7 +864,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 501, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 502, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 				if templ_7745c5c3_Err != nil {
@@ -876,7 +877,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var45 string
 				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(event.EventType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 502, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 503, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 				if templ_7745c5c3_Err != nil {
@@ -904,7 +905,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var46 string
 				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(event.MemberName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 510, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 511, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 				if templ_7745c5c3_Err != nil {
@@ -917,7 +918,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var47 string
 				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 511, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 512, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 				if templ_7745c5c3_Err != nil {
@@ -930,7 +931,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var48 string
 				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 511, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 512, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 				if templ_7745c5c3_Err != nil {
@@ -952,6 +953,496 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 			}
 		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</div><!-- Chart.js initialization --><script src=\"/static/chartjs/chart.umd.min.js\"></script><script src=\"/static/chartjs/chartjs-adapter-date-fns.bundle.min.js\"></script><script>\n\t\tdocument.addEventListener('DOMContentLoaded', async function() {\n\t\t\tconst canvas = document.getElementById('stripe-metrics-chart');\n\t\t\tif (!canvas) return;\n\n\t\t\tconst seriesConfig = [\n\t\t\t\t{ name: 'successes', label: 'Successes', color: 'rgb(25, 135, 84)' },\n\t\t\t\t{ name: 'errors', label: 'Errors', color: 'rgb(220, 53, 69)' },\n\t\t\t\t{ name: 'api-requests', label: 'Total Requests', color: 'rgb(13, 110, 253)' }\n\t\t\t];\n\n\t\t\tconst datasets = [];\n\t\t\tfor (const cfg of seriesConfig) {\n\t\t\t\ttry {\n\t\t\t\t\tconst resp = await fetch('/admin/stripe-chart?series=' + encodeURIComponent(cfg.name) + '&window=24h');\n\t\t\t\t\tconst data = await resp.json();\n\t\t\t\t\tif (data && data.length > 0) {\n\t\t\t\t\t\tdatasets.push({\n\t\t\t\t\t\t\tlabel: cfg.label,\n\t\t\t\t\t\t\tdata: data.map(p => ({ x: p.t * 1000, y: p.v })),\n\t\t\t\t\t\t\tborderColor: cfg.color,\n\t\t\t\t\t\t\tbackgroundColor: cfg.color.replace('rgb', 'rgba').replace(')', ', 0.1)'),\n\t\t\t\t\t\t\tborderWidth: 2,\n\t\t\t\t\t\t\ttension: 0.3,\n\t\t\t\t\t\t\tfill: false,\n\t\t\t\t\t\t\tpointRadius: 2\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t} catch (e) {\n\t\t\t\t\tconsole.error('Failed to fetch', cfg.name, e);\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tif (datasets.length === 0) {\n\t\t\t\tcanvas.parentElement.innerHTML = '<p class=\"text-muted text-center\">No metrics data available yet.</p>';\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\tnew Chart(canvas, {\n\t\t\t\ttype: 'line',\n\t\t\t\tdata: { datasets },\n\t\t\t\toptions: {\n\t\t\t\t\tresponsive: true,\n\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\tscales: {\n\t\t\t\t\t\tx: { type: 'time', time: { unit: 'hour' } },\n\t\t\t\t\t\ty: { beginAtZero: true }\n\t\t\t\t\t},\n\t\t\t\t\tplugins: {\n\t\t\t\t\t\tlegend: { display: true, position: 'top' }\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\t\t});\n\t</script>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+type bambuPrinterFormData struct {
+	Index         int
+	Name          string
+	Host          string
+	HasAccessCode bool
+	SerialNumber  string
+}
+
+type bambuConfigData struct {
+	Version          int
+	Printers         []*bambuPrinterFormData
+	PollIntervalSecs int
+	Saved            bool
+	Error            string
+
+	// Status fields
+	ConfiguredPrinters int
+	RecentEvents       []*bambuEvent
+}
+
+type bambuEvent struct {
+	Created       time.Time
+	EventType     string
+	PrinterName   string
+	PrinterSerial string
+	Success       bool
+	Details       string
+}
+
+func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var49 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var49 == nil {
+			templ_7745c5c3_Var49 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "<div class=\"card mb-3 printer-card\" data-printer-index=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var50 string
+		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(index))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 615, Col: 77}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "\"><div class=\"card-header d-flex justify-content-between align-items-center py-2\"><span class=\"fw-semibold printer-name-display\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if printer.Name != "" {
+			var templ_7745c5c3_Var51 string
+			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(printer.Name)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 619, Col: 19}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "New Printer")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "</span> <button type=\"button\" class=\"btn btn-sm btn-outline-danger delete-printer-btn\" onclick=\"confirmDeletePrinter(this)\">Delete</button></div><div class=\"card-body\"><div class=\"row g-3\"><div class=\"col-md-6\"><label class=\"form-label\">Name</label> <input type=\"text\" class=\"form-control printer-name-input\" name=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var52 string
+		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][name]", index))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 632, Col: 110}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var53 string
+		templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(printer.Name)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 632, Col: 133}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\" placeholder=\"e.g., Lab Printer 1\" required></div><div class=\"col-md-6\"><label class=\"form-label\">Host/IP Address</label> <input type=\"text\" class=\"form-control\" name=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var54 string
+		templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][host]", index))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 636, Col: 91}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var55 string
+		templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(printer.Host)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 636, Col: 114}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "\" placeholder=\"e.g., 192.168.1.100\" required></div><div class=\"col-md-6\"><label class=\"form-label\">Access Code</label> <input type=\"password\" class=\"form-control font-monospace\" name=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var56 string
+		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][access_code]", index))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 640, Col: 117}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "\" placeholder=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var57 string
+		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(printer.HasAccessCode))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 640, Col: 174}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\"><div class=\"form-text\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var58 string
+		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(printer.HasAccessCode))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 641, Col: 67}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "</div></div><div class=\"col-md-6\"><label class=\"form-label\">Serial Number</label> <input type=\"text\" class=\"form-control font-monospace\" name=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var59 string
+		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][serial_number]", index))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 645, Col: 115}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var60 string
+		templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(printer.SerialNumber)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 645, Col: 146}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "\" placeholder=\"e.g., 01P00A123456789\" required></div></div></div><!-- Delete confirmation (hidden by default) --><div class=\"card-footer bg-danger-subtle text-danger d-none delete-confirm\"><span>Are you sure you want to remove this printer?</span> <button type=\"button\" class=\"btn btn-sm btn-danger ms-2\" onclick=\"deletePrinter(this)\">Confirm Delete</button> <button type=\"button\" class=\"btn btn-sm btn-secondary ms-1\" onclick=\"cancelDeletePrinter(this)\">Cancel</button></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func renderBambuConfigContent(data *bambuConfigData) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var61 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var61 == nil {
+			templ_7745c5c3_Var61 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "<div class=\"card mb-4\"><div class=\"card-header d-flex justify-content-between align-items-center\"><h5 class=\"mb-0\">Bambu 3D Printer Integration</h5>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if data.Version > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "<span class=\"badge bg-secondary\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var62 string
+			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 667, Col: 78}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "</div><div class=\"card-body\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if data.Saved {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "<div class=\"alert alert-success\" role=\"alert\">Bambu configuration saved successfully. Printer connections will be reloaded on next poll.</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if data.Error != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "<div class=\"alert alert-danger\" role=\"alert\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var63 string
+			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(data.Error)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 678, Col: 17}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "<div class=\"alert alert-info\" role=\"alert\"><strong>How Bambu Integration Works</strong><ul class=\"mb-0 mt-2\"><li><strong>Status Monitoring:</strong> Conway polls each Bambu printer via MQTT to display real-time status, progress, and camera feeds.</li><li><strong>Notifications:</strong> Print completion and failure notifications are sent to Discord (configure the webhook URL in Discord settings).</li><li><strong>User Mentions:</strong> Include <code>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var64 string
+		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs("@username")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 686, Col: 68}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "</code> in your plate name in Bambu Studio to get mentioned in Discord notifications.</li></ul></div><form method=\"post\" id=\"bambu-config-form\"><h6 class=\"text-muted border-bottom pb-2 mb-3\">Printers</h6><p class=\"text-muted small mb-3\">Configure your Bambu printers. Each printer needs a name, host (IP address), access code, and serial number. Find the access code in Bambu Studio: Printer &gt; Device &gt; Local Connection.</p><!-- Printer Cards Container --><div id=\"printers-container\" data-next-index=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var65 string
+		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.Printers)))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 696, Col: 83}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for i, printer := range data.Printers {
+			templ_7745c5c3_Err = renderPrinterCard(printer, i).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "</div><!-- Add Printer Button --><button type=\"button\" class=\"btn btn-outline-primary mb-4\" onclick=\"addPrinter()\">+ Add Printer</button><!-- Hidden template for new printers (JavaScript will clone this) --><template id=\"printer-card-template\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = renderPrinterCard(&bambuPrinterFormData{Index: -1}, -1).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</template><h6 class=\"text-muted border-bottom pb-2 mb-3 mt-4\">Polling Settings</h6><div class=\"mb-3\"><label for=\"poll_interval_seconds\" class=\"form-label\">Poll Interval (seconds)</label> <input type=\"number\" class=\"form-control\" id=\"poll_interval_seconds\" name=\"poll_interval_seconds\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var66 string
+		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.PollIntervalSecs))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 712, Col: 146}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "\" min=\"1\" max=\"60\"><div class=\"form-text\">How often to poll printers for status updates. Default: 5 seconds.</div></div><div class=\"d-flex justify-content-between align-items-center mt-4\"><button type=\"submit\" class=\"btn btn-primary\">Save Changes</button> <span class=\"text-muted small\">Saving creates a new version for audit purposes.</span></div></form><!-- JavaScript for dynamic printer management --><script>\n\t\t\t\tvar printerIndex = parseInt(document.getElementById('printers-container').getAttribute('data-next-index')) || 0;\n\n\t\t\t\tfunction addPrinter() {\n\t\t\t\t\tvar template = document.getElementById('printer-card-template');\n\t\t\t\t\tvar clone = template.content.cloneNode(true);\n\t\t\t\t\tvar card = clone.querySelector('.printer-card');\n\n\t\t\t\t\t// Update the index in data attribute and all input names\n\t\t\t\t\tcard.setAttribute('data-printer-index', printerIndex);\n\t\t\t\t\tcard.querySelectorAll('input').forEach(function(input) {\n\t\t\t\t\t\tvar name = input.getAttribute('name');\n\t\t\t\t\t\tif (name) {\n\t\t\t\t\t\t\tinput.setAttribute('name', name.replace('[-1]', '[' + printerIndex + ']'));\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Clear placeholder for access code on new printers\n\t\t\t\t\t\tif (name && name.includes('access_code')) {\n\t\t\t\t\t\t\tinput.setAttribute('placeholder', '(required for new printers)');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\t// Add name change listener\n\t\t\t\t\tvar nameInput = card.querySelector('.printer-name-input');\n\t\t\t\t\tif (nameInput) {\n\t\t\t\t\t\tnameInput.addEventListener('input', function() {\n\t\t\t\t\t\t\tvar header = card.querySelector('.card-header .printer-name-display');\n\t\t\t\t\t\t\tif (header) {\n\t\t\t\t\t\t\t\theader.textContent = this.value || 'New Printer';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\n\t\t\t\t\tdocument.getElementById('printers-container').appendChild(clone);\n\t\t\t\t\tprinterIndex++;\n\n\t\t\t\t\t// Focus the first input\n\t\t\t\t\tvar firstInput = document.getElementById('printers-container').lastElementChild.querySelector('input');\n\t\t\t\t\tif (firstInput) {\n\t\t\t\t\t\tfirstInput.focus();\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction confirmDeletePrinter(btn) {\n\t\t\t\t\tvar card = btn.closest('.printer-card');\n\t\t\t\t\tvar confirmDiv = card.querySelector('.delete-confirm');\n\t\t\t\t\tconfirmDiv.classList.remove('d-none');\n\t\t\t\t\tbtn.classList.add('d-none');\n\t\t\t\t}\n\n\t\t\t\tfunction cancelDeletePrinter(btn) {\n\t\t\t\t\tvar card = btn.closest('.printer-card');\n\t\t\t\t\tvar confirmDiv = card.querySelector('.delete-confirm');\n\t\t\t\t\tvar deleteBtn = card.querySelector('.delete-printer-btn');\n\t\t\t\t\tconfirmDiv.classList.add('d-none');\n\t\t\t\t\tdeleteBtn.classList.remove('d-none');\n\t\t\t\t}\n\n\t\t\t\tfunction deletePrinter(btn) {\n\t\t\t\t\tvar card = btn.closest('.printer-card');\n\t\t\t\t\tcard.remove();\n\t\t\t\t}\n\n\t\t\t\t// Update card headers when name changes (for existing printers)\n\t\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\t\tdocument.querySelectorAll('.printer-name-input').forEach(function(input) {\n\t\t\t\t\t\tinput.addEventListener('input', function() {\n\t\t\t\t\t\t\tvar card = this.closest('.printer-card');\n\t\t\t\t\t\t\tvar header = card.querySelector('.card-header .printer-name-display');\n\t\t\t\t\t\t\tif (header) {\n\t\t\t\t\t\t\t\theader.textContent = this.value || 'New Printer';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t</script></div></div><!-- Status Dashboard --><div class=\"card mb-4\"><div class=\"card-header\"><h5 class=\"mb-0\">Status</h5></div><div class=\"card-body\"><div class=\"row text-center\"><div class=\"col-md-6\"><h3 class=\"mb-0\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var67 string
+		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.ConfiguredPrinters))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 806, Col: 61}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "</h3><p class=\"text-muted mb-0\">Configured Printers</p></div><div class=\"col-md-6\"><h3 class=\"mb-0\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var68 string
+		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.PollIntervalSecs))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 810, Col: 59}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "s</h3><p class=\"text-muted mb-0\">Poll Interval</p></div></div></div></div><!-- Metrics Chart --><div class=\"card mb-4\"><div class=\"card-header\"><h5 class=\"mb-0\">API Metrics (Last 24 Hours)</h5></div><div class=\"card-body\"><div style=\"position: relative; height: 280px;\"><canvas id=\"bambu-metrics-chart\"></canvas></div><p class=\"text-muted small mt-2 mb-0\">Events are aggregated in 15-minute intervals. Data retained for 24 hours.</p></div></div><!-- Recent Events --><div class=\"card mb-4\"><div class=\"card-header d-flex justify-content-between align-items-center\"><h5 class=\"mb-0\">Recent Events</h5><span class=\"badge bg-secondary\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var69 string
+		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.RecentEvents)))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 832, Col: 74}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "</span></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(data.RecentEvents) > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "<div class=\"card-body p-0\"><div class=\"table-responsive\"><table class=\"table table-hover table-sm mb-0\"><thead class=\"table-light\"><tr><th>Time</th><th>Type</th><th>Status</th><th>Printer</th><th>Details</th></tr></thead> <tbody>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, event := range data.RecentEvents {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "<tr><td class=\"text-nowrap\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var70 string
+				templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 850, Col: 65}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "</td><td><span class=\"badge bg-secondary\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var71 string
+				templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(event.EventType)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 851, Col: 63}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "</span></td><td>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if event.Success {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "<span class=\"text-success\">&#10003;</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "<span class=\"text-danger\">&#10007;</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "</td><td>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var72 string
+				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(event.PrinterName)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 859, Col: 32}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</td><td class=\"text-truncate\" style=\"max-width: 300px;\" title=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var73 string
+				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 860, Col: 82}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var74 string
+				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 860, Col: 100}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "</td></tr>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "</tbody></table></div></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "<div class=\"card-body\"><p class=\"text-muted mb-0\">No events recorded yet. Events will appear as Bambu operations occur.</p></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "</div><!-- Chart.js initialization --><script src=\"/static/chartjs/chart.umd.min.js\"></script><script src=\"/static/chartjs/chartjs-adapter-date-fns.bundle.min.js\"></script><script>\n\t\tdocument.addEventListener('DOMContentLoaded', async function() {\n\t\t\tconst canvas = document.getElementById('bambu-metrics-chart');\n\t\t\tif (!canvas) return;\n\n\t\t\tconst seriesConfig = [\n\t\t\t\t{ name: 'successes', label: 'Successful Polls', color: 'rgb(25, 135, 84)' },\n\t\t\t\t{ name: 'errors', label: 'Errors', color: 'rgb(220, 53, 69)' },\n\t\t\t\t{ name: 'api-requests', label: 'Total Requests', color: 'rgb(13, 110, 253)' }\n\t\t\t];\n\n\t\t\tconst datasets = [];\n\t\t\tfor (const cfg of seriesConfig) {\n\t\t\t\ttry {\n\t\t\t\t\tconst resp = await fetch('/admin/bambu-chart?series=' + encodeURIComponent(cfg.name) + '&window=24h');\n\t\t\t\t\tconst data = await resp.json();\n\t\t\t\t\tif (data && data.length > 0) {\n\t\t\t\t\t\tdatasets.push({\n\t\t\t\t\t\t\tlabel: cfg.label,\n\t\t\t\t\t\t\tdata: data.map(p => ({ x: p.t * 1000, y: p.v })),\n\t\t\t\t\t\t\tborderColor: cfg.color,\n\t\t\t\t\t\t\tbackgroundColor: cfg.color.replace('rgb', 'rgba').replace(')', ', 0.1)'),\n\t\t\t\t\t\t\tborderWidth: 2,\n\t\t\t\t\t\t\ttension: 0.3,\n\t\t\t\t\t\t\tfill: false,\n\t\t\t\t\t\t\tpointRadius: 2\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t} catch (e) {\n\t\t\t\t\tconsole.error('Failed to fetch', cfg.name, e);\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tif (datasets.length === 0) {\n\t\t\t\tcanvas.parentElement.innerHTML = '<p class=\"text-muted text-center\">No metrics data available yet.</p>';\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\tnew Chart(canvas, {\n\t\t\t\ttype: 'line',\n\t\t\t\tdata: { datasets },\n\t\t\t\toptions: {\n\t\t\t\t\tresponsive: true,\n\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\tscales: {\n\t\t\t\t\t\tx: { type: 'time', time: { unit: 'hour' } },\n\t\t\t\t\t\ty: { beginAtZero: true }\n\t\t\t\t\t},\n\t\t\t\t\tplugins: {\n\t\t\t\t\t\tlegend: { display: true, position: 'top' }\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\t\t});\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

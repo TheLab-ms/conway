@@ -8,6 +8,7 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/directory"
 	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/email"
@@ -39,17 +40,15 @@ type Options struct {
 	// Email sender (nil to disable sending)
 	EmailSender email.Sender
 
-	// Payment config
-	StripeWebhookKey string
-
 	// Kiosk config
 	SpaceHost string
 
-	// Machines config (nil disables the module)
-	MachinesModule *machines.Module
-
 	// Generic Access Controller config (empty disables the module)
 	AccessControllerHost string
+
+	// TestMachinesModule allows injecting a mock machines module for testing.
+	// If nil, the real machines module is constructed.
+	TestMachinesModule *machines.Module
 }
 
 // Register adds all modules to the app and returns the auth module
@@ -69,16 +68,21 @@ func Register(a *engine.App, opts Options) *auth.Module {
 
 	a.Add(email.New(opts.Database, opts.EmailSender))
 	a.Add(oauth2.New(opts.Database, opts.Self, opts.OAuthIssuer))
-	a.Add(payment.New(opts.Database, opts.StripeWebhookKey, opts.Self))
+	a.Add(payment.New(opts.Database, opts.Self))
 	a.Add(admin.New(opts.Database, opts.Self, opts.AuthIssuer))
 	a.Add(waiver.New(opts.Database))
 	a.Add(kiosk.New(opts.Database, opts.Self, opts.FobIssuer, opts.SpaceHost))
 	a.Add(metrics.New(opts.Database))
 	a.Add(fobapi.New(opts.Database))
+	a.Add(directory.New(opts.Database))
 
-	if opts.MachinesModule != nil {
-		a.Add(opts.MachinesModule)
+	var machinesMod *machines.Module
+	if opts.TestMachinesModule != nil {
+		machinesMod = opts.TestMachinesModule
+	} else {
+		machinesMod = machines.New(opts.Database)
 	}
+	a.Add(machinesMod)
 
 	if opts.AccessControllerHost != "" {
 		a.Add(gac.New(opts.Database, opts.AccessControllerHost))
@@ -93,10 +97,8 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	// Discord OAuth/role sync module
 	a.Add(discord.New(opts.Database, opts.Self, opts.DiscordIssuer))
 
-	// If machines module exists, set the webhook queuer
-	if opts.MachinesModule != nil {
-		opts.MachinesModule.SetWebhookQueuer(discordWebhookMod)
-	}
+	// Set the webhook queuer for machines module
+	machinesMod.SetWebhookQueuer(discordWebhookMod)
 
 	return authModule
 }

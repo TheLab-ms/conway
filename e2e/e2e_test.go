@@ -98,8 +98,6 @@ func setupTestServer() error {
 	// Configure Stripe test mode
 	if key := os.Getenv("STRIPE_TEST_KEY"); key != "" {
 		stripe.Key = key
-	} else if key := os.Getenv("CONWAY_STRIPE_KEY"); key != "" {
-		stripe.Key = key
 	}
 
 	// Create app with test config
@@ -147,16 +145,15 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 	a.Router.Authenticator = authModule
 
 	modules.Register(a, modules.Options{
-		Database:         database,
-		Self:             self,
-		AuthIssuer:       authIssuer,
-		OAuthIssuer:      oauthIssuer,
-		FobIssuer:        fobIssuer,
-		Turnstile:        nil, // No Turnstile for tests
-		EmailSender:      nil, // Emails stored in outbound_mail table
-		StripeWebhookKey: getEnvWithFallback("STRIPE_TEST_WEBHOOK_KEY", "CONWAY_STRIPE_WEBHOOK_KEY"),
-		SpaceHost:        "localhost",
-		MachinesModule:   testMachinesModule,
+		Database:       database,
+		Self:           self,
+		AuthIssuer:     authIssuer,
+		OAuthIssuer:    oauthIssuer,
+		FobIssuer:      fobIssuer,
+		Turnstile:          nil, // No Turnstile for tests
+		EmailSender:        nil, // Emails stored in outbound_mail table
+		SpaceHost:          "localhost",
+		TestMachinesModule: testMachinesModule,
 	})
 
 	return a, nil

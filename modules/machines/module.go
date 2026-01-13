@@ -20,6 +20,28 @@ import (
 	"github.com/TheLab-ms/conway/modules/machines/bambu"
 )
 
+const migration = `
+CREATE TABLE IF NOT EXISTS bambu_config (
+    version INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    printers_json TEXT NOT NULL DEFAULT '[]',
+    poll_interval_seconds INTEGER NOT NULL DEFAULT 5
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS bambu_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    event_type TEXT NOT NULL,
+    printer_name TEXT,
+    printer_serial TEXT,
+    success INTEGER NOT NULL DEFAULT 1,
+    details TEXT NOT NULL DEFAULT ''
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS bambu_events_created_idx ON bambu_events (created);
+CREATE INDEX IF NOT EXISTS bambu_events_type_idx ON bambu_events (event_type, success);
+`
+
 var discordHandleRegex = regexp.MustCompile(`@([a-zA-Z0-9_.]+)`)
 
 type printerConfig struct {
@@ -62,6 +84,12 @@ type Module struct {
 
 	streams map[string]*engine.StreamMux
 
+	// pollInterval is the interval between printer status polls (from config or default)
+	pollInterval time.Duration
+
+	// configVersion tracks the current loaded config version to detect changes
+	configVersion int64
+
 	testMode bool // When true, skip polling and use injected state
 }
 
@@ -75,31 +103,21 @@ type notifiedState struct {
 	printerName          string
 }
 
-func New(db *sql.DB, config string) *Module {
-	configs := []*printerConfig{}
-	err := json.Unmarshal([]byte(config), &configs)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse Bambu printer config: %v", err))
+func New(db *sql.DB) *Module {
+	if db != nil {
+		engine.MustMigrate(db, migration)
 	}
 
 	m := &Module{
 		db:           db,
-		configs:      configs,
 		serialToName: map[string]string{},
 		streams:      map[string]*engine.StreamMux{},
+		pollInterval: time.Second * 5, // default
 	}
-	for _, cfg := range configs {
-		m.serialToName[cfg.SerialNumber] = cfg.Name
-		printer := bambu.NewPrinter(&bambu.PrinterConfig{
-			Host:         cfg.Host,
-			AccessCode:   cfg.AccessCode,
-			SerialNumber: cfg.SerialNumber,
-		})
-		m.printers = append(m.printers, printer)
-		m.streams[cfg.SerialNumber] = engine.NewStreamMux(func(ctx context.Context) (io.ReadCloser, error) {
-			return printer.CameraStream(ctx)
-		})
-	}
+
+	// Load and apply config from database
+	m.reloadConfig(context.Background())
+
 	zero := []PrinterStatus{}
 	m.state.Store(&zero)
 	return m
@@ -219,10 +237,21 @@ func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
 	if m.testMode {
 		return // Skip polling in test mode - use injected state
 	}
-	procs.Add(engine.Poll(time.Second*5, m.poll))
+	procs.Add(engine.Poll(m.pollInterval, m.poll))
+
+	// Cleanup old Bambu events after 24 hours (same as Discord)
+	const eventTTL = 24 * 60 * 60 // 24 hours in seconds
+	procs.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "old Bambu events",
+		"DELETE FROM bambu_events WHERE created < unixepoch() - ?", eventTTL)))
 }
 
 func (m *Module) poll(ctx context.Context) bool {
+	// Check if config has changed and reload if needed
+	if m.configChanged(ctx) {
+		slog.Info("Bambu config changed, reloading")
+		m.reloadConfig(ctx)
+	}
+
 	slog.Info("starting to get Bambu printer status")
 	start := time.Now()
 
@@ -231,16 +260,20 @@ func (m *Module) poll(ctx context.Context) bool {
 	var state []PrinterStatus
 	for _, printer := range m.printers {
 		name := m.serialToName[printer.GetSerial()]
+		serial := printer.GetSerial()
 		data, err := printer.GetState()
 		if err != nil {
 			slog.Warn("unable to get status from Bambu printer", "error", err, "printer", name)
+			m.logEvent(ctx, "PollError", name, serial, false, err.Error())
 			continue
 		}
+
+		m.logEvent(ctx, "Poll", name, serial, true, fmt.Sprintf("state=%s", data.GcodeState))
 
 		s := PrinterStatus{
 			PrinterData:  data,
 			PrinterName:  name,
-			SerialNumber: printer.GetSerial(),
+			SerialNumber: serial,
 			ErrorCode:    data.PrintErrorCode,
 		}
 		if s.ErrorCode == "0" {
@@ -399,4 +432,100 @@ func (m *Module) resolveDiscordUserID(ctx context.Context, username string) stri
 		slog.Warn("failed to look up Discord user ID", "error", err, "username", username)
 	}
 	return ""
+}
+
+// configChanged checks if the database config version differs from the loaded version.
+func (m *Module) configChanged(ctx context.Context) bool {
+	if m.db == nil {
+		return false
+	}
+	var version int64
+	err := m.db.QueryRowContext(ctx,
+		`SELECT version FROM bambu_config ORDER BY version DESC LIMIT 1`).Scan(&version)
+	if err != nil {
+		return false
+	}
+	return version != m.configVersion
+}
+
+// reloadConfig loads the configuration from database and rebuilds printer connections.
+func (m *Module) reloadConfig(ctx context.Context) {
+	if m.db == nil {
+		return
+	}
+
+	row := m.db.QueryRowContext(ctx,
+		`SELECT version, printers_json, COALESCE(poll_interval_seconds, 5)
+		 FROM bambu_config ORDER BY version DESC LIMIT 1`)
+
+	var version int64
+	var printersJSON string
+	var pollIntervalSec int
+	err := row.Scan(&version, &printersJSON, &pollIntervalSec)
+	if err == sql.ErrNoRows {
+		return // No config
+	}
+	if err != nil {
+		slog.Error("failed to load Bambu config", "error", err)
+		return
+	}
+
+	m.configVersion = version
+
+	var configs []*printerConfig
+	if err := json.Unmarshal([]byte(printersJSON), &configs); err != nil {
+		slog.Error("failed to parse Bambu printers JSON", "error", err)
+		return
+	}
+
+	// Apply poll interval
+	if pollIntervalSec >= 1 {
+		m.pollInterval = time.Duration(pollIntervalSec) * time.Second
+	}
+
+	// Rebuild printer connections
+	m.configs = configs
+	m.serialToName = make(map[string]string)
+	m.printers = nil
+
+	for _, cfg := range configs {
+		m.serialToName[cfg.SerialNumber] = cfg.Name
+		printer := bambu.NewPrinter(&bambu.PrinterConfig{
+			Host:         cfg.Host,
+			AccessCode:   cfg.AccessCode,
+			SerialNumber: cfg.SerialNumber,
+		})
+		m.printers = append(m.printers, printer)
+		// Only create stream mux if it doesn't exist
+		if _, exists := m.streams[cfg.SerialNumber]; !exists {
+			m.streams[cfg.SerialNumber] = engine.NewStreamMux(func(ctx context.Context) (io.ReadCloser, error) {
+				return printer.CameraStream(ctx)
+			})
+		}
+	}
+
+	slog.Info("loaded Bambu config", "printers", len(configs), "pollInterval", m.pollInterval)
+}
+
+// logEvent logs a Bambu operation event to the database.
+func (m *Module) logEvent(ctx context.Context, eventType, printerName, printerSerial string, success bool, details string) {
+	if m.db == nil {
+		return
+	}
+	successInt := 0
+	if success {
+		successInt = 1
+	}
+	_, err := m.db.ExecContext(ctx,
+		`INSERT INTO bambu_events (event_type, printer_name, printer_serial, success, details)
+		 VALUES (?, ?, ?, ?, ?)`,
+		eventType, printerName, printerSerial, successInt, details)
+	if err != nil {
+		slog.Error("failed to log Bambu event", "error", err, "eventType", eventType)
+	}
+}
+
+// GetConfiguredPrinterCount returns the number of configured printers.
+func (m *Module) GetConfiguredPrinterCount() int {
+	return len(m.configs)
 }

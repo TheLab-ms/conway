@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -47,17 +46,16 @@ type stripeConfig struct {
 }
 
 type Module struct {
-	db            *sql.DB
-	envWebhookKey string // fallback from environment
-	self          *url.URL
+	db   *sql.DB
+	self *url.URL
 }
 
-func New(db *sql.DB, webhookKey string, self *url.URL) *Module {
+func New(db *sql.DB, self *url.URL) *Module {
 	engine.MustMigrate(db, migration)
-	return &Module{db: db, envWebhookKey: webhookKey, self: self}
+	return &Module{db: db, self: self}
 }
 
-// loadConfig loads Stripe configuration from DB, falling back to environment variables.
+// loadConfig loads Stripe configuration from the database.
 func (m *Module) loadConfig(ctx context.Context) (*stripeConfig, error) {
 	row := m.db.QueryRowContext(ctx,
 		`SELECT api_key, webhook_key FROM stripe_config ORDER BY version DESC LIMIT 1`)
@@ -65,21 +63,10 @@ func (m *Module) loadConfig(ctx context.Context) (*stripeConfig, error) {
 	cfg := &stripeConfig{}
 	err := row.Scan(&cfg.apiKey, &cfg.webhookKey)
 	if err == sql.ErrNoRows {
-		// Fall back to environment variables for backward compatibility
-		return &stripeConfig{
-			apiKey:     os.Getenv("CONWAY_STRIPE_KEY"),
-			webhookKey: m.envWebhookKey,
-		}, nil
+		return &stripeConfig{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("loading stripe config: %w", err)
-	}
-	// If DB values are empty, fall back to env vars
-	if cfg.apiKey == "" {
-		cfg.apiKey = os.Getenv("CONWAY_STRIPE_KEY")
-	}
-	if cfg.webhookKey == "" {
-		cfg.webhookKey = m.envWebhookKey
 	}
 	return cfg, nil
 }

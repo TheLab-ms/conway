@@ -112,15 +112,19 @@ type MemberOption func(*memberConfig)
 
 type memberConfig struct {
 	email            string
+	name             string
 	confirmed        bool
 	leadership       bool
 	nonBillable      bool
 	hasWaiver        bool
 	fobID            int64
+	fobLastSeen      int64
 	stripeSubState   string
 	stripeCustomerID string
 	discountType     string
 	discordUserID    string
+	discordUsername  string
+	discordAvatar    []byte
 }
 
 // WithConfirmed marks the member as email-confirmed.
@@ -171,6 +175,38 @@ func WithDiscord(userID string) MemberOption {
 	return func(c *memberConfig) { c.discordUserID = userID }
 }
 
+// WithName sets the member's display name.
+func WithName(name string) MemberOption {
+	return func(c *memberConfig) { c.name = name }
+}
+
+// WithDiscordUsername sets the member's Discord username.
+func WithDiscordUsername(username string) MemberOption {
+	return func(c *memberConfig) { c.discordUsername = username }
+}
+
+// WithDiscordAvatar sets the member's Discord avatar (raw bytes).
+func WithDiscordAvatar(avatar []byte) MemberOption {
+	return func(c *memberConfig) { c.discordAvatar = avatar }
+}
+
+// WithFobLastSeen sets the member's fob last seen timestamp.
+func WithFobLastSeen(timestamp int64) MemberOption {
+	return func(c *memberConfig) { c.fobLastSeen = timestamp }
+}
+
+// WithReadyAccess marks the member as having ready building access.
+// This sets non_billable=true and assigns a random fob_id, which makes
+// the generated access_status column evaluate to 'Ready'.
+func WithReadyAccess() MemberOption {
+	return func(c *memberConfig) {
+		c.nonBillable = true
+		if c.fobID == 0 {
+			c.fobID = time.Now().UnixNano() % 1000000
+		}
+	}
+}
+
 // seedMember creates a test member and returns their ID.
 func seedMember(t *testing.T, email string, opts ...MemberOption) int64 {
 	t.Helper()
@@ -182,14 +218,19 @@ func seedMember(t *testing.T, email string, opts ...MemberOption) int64 {
 
 	// Insert member
 	result, err := testDB.Exec(`
-		INSERT INTO members (email, confirmed, leadership, non_billable, fob_id, stripe_subscription_state, stripe_customer_id, discount_type, discord_user_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		cfg.email, cfg.confirmed, cfg.leadership, cfg.nonBillable,
+		INSERT INTO members (email, name, confirmed, leadership, non_billable, fob_id, fob_last_seen, stripe_subscription_state, stripe_customer_id, discount_type, discord_user_id, discord_username, discord_avatar)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		cfg.email,
+		cfg.name, // Empty string is fine, column has NOT NULL DEFAULT ''
+		cfg.confirmed, cfg.leadership, cfg.nonBillable,
 		sql.NullInt64{Int64: cfg.fobID, Valid: cfg.fobID != 0},
+		sql.NullInt64{Int64: cfg.fobLastSeen, Valid: cfg.fobLastSeen != 0},
 		sql.NullString{String: cfg.stripeSubState, Valid: cfg.stripeSubState != ""},
 		sql.NullString{String: cfg.stripeCustomerID, Valid: cfg.stripeCustomerID != ""},
 		sql.NullString{String: cfg.discountType, Valid: cfg.discountType != ""},
 		sql.NullString{String: cfg.discordUserID, Valid: cfg.discordUserID != ""},
+		sql.NullString{String: cfg.discordUsername, Valid: cfg.discordUsername != ""},
+		cfg.discordAvatar,
 	)
 	require.NoError(t, err, "could not insert member")
 
@@ -332,7 +373,7 @@ func seedLoginCode(t *testing.T, code string, memberID int64, callback string, e
 // clearTestData removes all test data from the database between tests.
 func clearTestData(t *testing.T) {
 	t.Helper()
-	tables := []string{"members", "waivers", "waiver_content", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes"}
+	tables := []string{"members", "waivers", "waiver_content", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes", "stripe_config", "stripe_events", "bambu_config", "bambu_events"}
 	for _, table := range tables {
 		_, err := testDB.Exec(fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
@@ -371,8 +412,23 @@ func expect(t *testing.T) playwright.PlaywrightAssertions {
 
 // stripeTestEnabled returns true if Stripe test credentials are configured.
 func stripeTestEnabled() bool {
-	// Check both possible env var names
-	return os.Getenv("STRIPE_TEST_KEY") != "" || os.Getenv("CONWAY_STRIPE_KEY") != ""
+	return os.Getenv("STRIPE_TEST_KEY") != ""
+}
+
+// seedStripeConfig inserts Stripe configuration into the database for testing.
+func seedStripeConfig(t *testing.T, apiKey, webhookKey string) {
+	t.Helper()
+	_, err := testDB.Exec(`INSERT INTO stripe_config (api_key, webhook_key) VALUES (?, ?)`, apiKey, webhookKey)
+	require.NoError(t, err, "could not insert stripe config")
+}
+
+// getStripeConfigVersion returns the current version of the stripe config.
+func getStripeConfigVersion(t *testing.T) int {
+	t.Helper()
+	var version int
+	err := testDB.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM stripe_config`).Scan(&version)
+	require.NoError(t, err, "could not get stripe config version")
+	return version
 }
 
 // startStripeCLI spawns the Stripe CLI for webhook forwarding and returns when ready.
@@ -383,10 +439,7 @@ func startStripeCLI(t *testing.T, forwardURL string) {
 
 	apiKey := os.Getenv("STRIPE_TEST_KEY")
 	if apiKey == "" {
-		apiKey = os.Getenv("CONWAY_STRIPE_KEY")
-	}
-	if apiKey == "" {
-		t.Fatal("stripe API key not configured - set STRIPE_TEST_KEY or CONWAY_STRIPE_KEY")
+		t.Fatal("stripe API key not configured - set STRIPE_TEST_KEY")
 	}
 
 	cmd := exec.Command("stripe", "listen", "--forward-to", forwardURL, "--api-key", apiKey)
@@ -505,4 +558,53 @@ func setupUnauthenticatedTest(t *testing.T) playwright.Page {
 	t.Helper()
 	clearTestData(t)
 	return newPage(t)
+}
+
+// seedBambuConfig inserts Bambu printer configuration into the database for testing.
+func seedBambuConfig(t *testing.T, printersJSON string, pollIntervalSecs int) {
+	t.Helper()
+	_, err := testDB.Exec(`INSERT INTO bambu_config (printers_json, poll_interval_seconds) VALUES (?, ?)`, printersJSON, pollIntervalSecs)
+	require.NoError(t, err, "could not insert bambu config")
+}
+
+// clearBambuConfig removes all Bambu configuration from the database.
+func clearBambuConfig(t *testing.T) {
+	t.Helper()
+	_, err := testDB.Exec(`DELETE FROM bambu_config`)
+	if err != nil {
+		t.Logf("warning: could not clear bambu_config: %v", err)
+	}
+}
+
+// getBambuConfigVersion returns the current version of the bambu config.
+func getBambuConfigVersion(t *testing.T) int {
+	t.Helper()
+	var version int
+	err := testDB.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM bambu_config`).Scan(&version)
+	require.NoError(t, err, "could not get bambu config version")
+	return version
+}
+
+// getBambuPrintersJSON returns the printers_json from the latest bambu config.
+func getBambuPrintersJSON(t *testing.T) string {
+	t.Helper()
+	var printersJSON string
+	err := testDB.QueryRow(`SELECT printers_json FROM bambu_config ORDER BY version DESC LIMIT 1`).Scan(&printersJSON)
+	if err == sql.ErrNoRows {
+		return "[]"
+	}
+	require.NoError(t, err, "could not get bambu printers json")
+	return printersJSON
+}
+
+// getBambuPollInterval returns the poll_interval_seconds from the latest bambu config.
+func getBambuPollInterval(t *testing.T) int {
+	t.Helper()
+	var pollInterval int
+	err := testDB.QueryRow(`SELECT poll_interval_seconds FROM bambu_config ORDER BY version DESC LIMIT 1`).Scan(&pollInterval)
+	if err == sql.ErrNoRows {
+		return 5 // default
+	}
+	require.NoError(t, err, "could not get bambu poll interval")
+	return pollInterval
 }
