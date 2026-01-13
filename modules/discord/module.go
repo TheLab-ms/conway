@@ -19,19 +19,6 @@ import (
 const maxRPS = 3
 
 const migration = `
-CREATE TABLE IF NOT EXISTS discord_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    member INTEGER REFERENCES members(id) ON DELETE SET NULL,
-    event_type TEXT NOT NULL,
-    discord_user_id TEXT,
-    success INTEGER NOT NULL DEFAULT 1,
-    details TEXT NOT NULL DEFAULT ''
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS discord_events_created_idx ON discord_events (created);
-CREATE INDEX IF NOT EXISTS discord_events_type_idx ON discord_events (event_type, success);
-
 -- Add sync_interval_hours column to discord_config if it doesn't exist
 -- SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we use a workaround
 CREATE TABLE IF NOT EXISTS _discord_migration_check (id INTEGER PRIMARY KEY);
@@ -62,9 +49,10 @@ type Module struct {
 	self           *url.URL
 	stateTokIssuer *engine.TokenIssuer
 	httpClient     *http.Client
+	eventLogger    *engine.EventLogger
 }
 
-func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer) *Module {
+func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine.EventLogger) *Module {
 	engine.MustMigrate(db, migration)
 	// Add sync_interval_hours column if it doesn't exist (ALTER TABLE can't use IF NOT EXISTS)
 	db.Exec("ALTER TABLE discord_config ADD COLUMN sync_interval_hours INTEGER NOT NULL DEFAULT 24")
@@ -73,6 +61,7 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer) *Module {
 		self:           self,
 		stateTokIssuer: iss,
 		httpClient:     &http.Client{Timeout: time.Second * 10},
+		eventLogger:    eventLogger,
 	}
 }
 
@@ -140,25 +129,6 @@ func (m *Module) getRoleID(ctx context.Context) (string, error) {
 	return cfg.roleID, nil
 }
 
-// logEvent logs a Discord operation event to the database.
-func (m *Module) logEvent(ctx context.Context, memberID int64, discordUserID, eventType string, success bool, details string) {
-	successInt := 0
-	if success {
-		successInt = 1
-	}
-	var memberPtr interface{} = nil
-	if memberID > 0 {
-		memberPtr = memberID
-	}
-	_, err := m.db.ExecContext(ctx,
-		`INSERT INTO discord_events (member, discord_user_id, event_type, success, details)
-		 VALUES (?, ?, ?, ?, ?)`,
-		memberPtr, discordUserID, eventType, successInt, details)
-	if err != nil {
-		slog.Error("failed to log discord event", "error", err, "eventType", eventType)
-	}
-}
-
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /discord/login", router.WithAuthn(m.handleLogin))
 	router.HandleFunc("GET /discord/callback", router.WithAuthn(m.handleCallback))
@@ -213,13 +183,13 @@ func (m *Module) handleCallback(w http.ResponseWriter, r *http.Request) {
 func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authCode string) error {
 	authConf, err := m.getOAuthConfig(ctx)
 	if err != nil {
-		m.logEvent(ctx, userID, "", "OAuthError", false, "config error: "+err.Error())
+		m.eventLogger.LogEvent(ctx, "discord", userID, "OAuthError", "", "", false, "config error: "+err.Error())
 		return err
 	}
 
 	token, err := authConf.Exchange(ctx, authCode)
 	if err != nil {
-		m.logEvent(ctx, userID, "", "OAuthError", false, "token exchange: "+err.Error())
+		m.eventLogger.LogEvent(ctx, "discord", userID, "OAuthError", "", "", false, "token exchange: "+err.Error())
 		return err
 	}
 
@@ -231,17 +201,17 @@ func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authC
 
 	userInfo, err := client.GetUserInfo(ctx, token)
 	if err != nil {
-		m.logEvent(ctx, userID, "", "OAuthError", false, "get user info: "+err.Error())
+		m.eventLogger.LogEvent(ctx, "discord", userID, "OAuthError", "", "", false, "get user info: "+err.Error())
 		return err
 	}
 
 	_, err = m.db.ExecContext(ctx, "UPDATE members SET discord_user_id = ?, discord_email = ?, discord_avatar = ? WHERE id = ?", userInfo.ID, userInfo.Email, userInfo.Avatar, userID)
 	if err != nil {
-		m.logEvent(ctx, userID, userInfo.ID, "OAuthError", false, "update member: "+err.Error())
+		m.eventLogger.LogEvent(ctx, "discord", userID, "OAuthError", userInfo.ID, "", false, "update member: "+err.Error())
 		return err
 	}
 
-	m.logEvent(ctx, userID, userInfo.ID, "OAuthCallback", true, fmt.Sprintf("linked Discord account: %s", userInfo.Email))
+	m.eventLogger.LogEvent(ctx, "discord", userID, "OAuthCallback", userInfo.ID, "", true, fmt.Sprintf("linked Discord account: %s", userInfo.Email))
 	return nil
 }
 
@@ -249,11 +219,6 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	// Always start workers - they'll check config dynamically
 	mgr.Add(engine.Poll(time.Minute, m.scheduleFullReconciliation))
 	mgr.Add(engine.Poll(time.Second, engine.PollWorkqueue(engine.WithRateLimiting(m, maxRPS))))
-
-	// Cleanup old discord events after 24 hours
-	const eventTTL = 24 * 60 * 60 // 24 hours in seconds
-	mgr.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "old discord events",
-		"DELETE FROM discord_events WHERE created < unixepoch() - ?", eventTTL)))
 }
 
 func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
@@ -298,27 +263,27 @@ func (m *Module) ProcessItem(ctx context.Context, item *syncItem) error {
 
 	client, err := m.getAPIClient(ctx)
 	if err != nil {
-		m.logEvent(ctx, memberID, item.DiscordUserID, "RoleSyncError", false, "config error: "+err.Error())
+		m.eventLogger.LogEvent(ctx, "discord", memberID, "RoleSyncError", item.DiscordUserID, "", false, "config error: "+err.Error())
 		return err
 	}
 
 	roleID, err := m.getRoleID(ctx)
 	if err != nil {
-		m.logEvent(ctx, memberID, item.DiscordUserID, "RoleSyncError", false, "config error: "+err.Error())
+		m.eventLogger.LogEvent(ctx, "discord", memberID, "RoleSyncError", item.DiscordUserID, "", false, "config error: "+err.Error())
 		return err
 	}
 
 	shouldHaveRole := item.PaymentStatus.Valid && item.PaymentStatus.String != ""
 	changed, memberInfo, err := client.EnsureRole(ctx, item.DiscordUserID, roleID, shouldHaveRole)
 	if err != nil {
-		m.logEvent(ctx, memberID, item.DiscordUserID, "RoleSyncError", false, err.Error())
+		m.eventLogger.LogEvent(ctx, "discord", memberID, "RoleSyncError", item.DiscordUserID, "", false, err.Error())
 		return err
 	}
 	item.DisplayName = memberInfo.DisplayName
 	item.Avatar = memberInfo.Avatar
 
 	details := fmt.Sprintf("shouldHaveRole=%v, changed=%v, displayName=%s", shouldHaveRole, changed, memberInfo.DisplayName)
-	m.logEvent(ctx, memberID, item.DiscordUserID, "RoleSync", true, details)
+	m.eventLogger.LogEvent(ctx, "discord", memberID, "RoleSync", item.DiscordUserID, "", true, details)
 	slog.Info("sync'd discord role", "memberID", item.MemberID, "discordUserID", item.DiscordUserID, "displayName", memberInfo.DisplayName, "shouldHaveRole", shouldHaveRole, "changed", changed)
 	return nil
 }

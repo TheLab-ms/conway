@@ -27,19 +27,6 @@ CREATE TABLE IF NOT EXISTS bambu_config (
     printers_json TEXT NOT NULL DEFAULT '[]',
     poll_interval_seconds INTEGER NOT NULL DEFAULT 5
 ) STRICT;
-
-CREATE TABLE IF NOT EXISTS bambu_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    event_type TEXT NOT NULL,
-    printer_name TEXT,
-    printer_serial TEXT,
-    success INTEGER NOT NULL DEFAULT 1,
-    details TEXT NOT NULL DEFAULT ''
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS bambu_events_created_idx ON bambu_events (created);
-CREATE INDEX IF NOT EXISTS bambu_events_type_idx ON bambu_events (event_type, success);
 `
 
 var discordHandleRegex = regexp.MustCompile(`@([a-zA-Z0-9_.]+)`)
@@ -72,6 +59,7 @@ type Module struct {
 	state atomic.Pointer[[]PrinterStatus]
 
 	db            *sql.DB
+	eventLogger   *engine.EventLogger
 	messageQueuer discordwebhook.MessageQueuer
 
 	// lastNotifiedState tracks the last state that triggered a notification per printer.
@@ -103,13 +91,14 @@ type notifiedState struct {
 	printerName          string
 }
 
-func New(db *sql.DB) *Module {
+func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
 	if db != nil {
 		engine.MustMigrate(db, migration)
 	}
 
 	m := &Module{
 		db:           db,
+		eventLogger:  eventLogger,
 		serialToName: map[string]string{},
 		streams:      map[string]*engine.StreamMux{},
 		pollInterval: time.Second * 5, // default
@@ -238,11 +227,6 @@ func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
 		return // Skip polling in test mode - use injected state
 	}
 	procs.Add(engine.Poll(m.pollInterval, m.poll))
-
-	// Cleanup old Bambu events after 24 hours (same as Discord)
-	const eventTTL = 24 * 60 * 60 // 24 hours in seconds
-	procs.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "old Bambu events",
-		"DELETE FROM bambu_events WHERE created < unixepoch() - ?", eventTTL)))
 }
 
 func (m *Module) poll(ctx context.Context) bool {
@@ -264,11 +248,11 @@ func (m *Module) poll(ctx context.Context) bool {
 		data, err := printer.GetState()
 		if err != nil {
 			slog.Warn("unable to get status from Bambu printer", "error", err, "printer", name)
-			m.logEvent(ctx, "PollError", name, serial, false, err.Error())
+			m.eventLogger.LogEvent(ctx, "bambu", 0, "PollError", serial, name, false, err.Error())
 			continue
 		}
 
-		m.logEvent(ctx, "Poll", name, serial, true, fmt.Sprintf("state=%s", data.GcodeState))
+		m.eventLogger.LogEvent(ctx, "bambu", 0, "Poll", serial, name, true, fmt.Sprintf("state=%s", data.GcodeState))
 
 		s := PrinterStatus{
 			PrinterData:  data,
@@ -505,24 +489,6 @@ func (m *Module) reloadConfig(ctx context.Context) {
 	}
 
 	slog.Info("loaded Bambu config", "printers", len(configs), "pollInterval", m.pollInterval)
-}
-
-// logEvent logs a Bambu operation event to the database.
-func (m *Module) logEvent(ctx context.Context, eventType, printerName, printerSerial string, success bool, details string) {
-	if m.db == nil {
-		return
-	}
-	successInt := 0
-	if success {
-		successInt = 1
-	}
-	_, err := m.db.ExecContext(ctx,
-		`INSERT INTO bambu_events (event_type, printer_name, printer_serial, success, details)
-		 VALUES (?, ?, ?, ?, ?)`,
-		eventType, printerName, printerSerial, successInt, details)
-	if err != nil {
-		slog.Error("failed to log Bambu event", "error", err, "eventType", eventType)
-	}
 }
 
 // GetConfiguredPrinterCount returns the number of configured printers.

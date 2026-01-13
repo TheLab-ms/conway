@@ -11,7 +11,7 @@ import (
 func TestQueueMessage(t *testing.T) {
 	testDB := engine.OpenTestDB(t)
 
-	m := New(testDB, nil)
+	m := New(testDB, nil, nil)
 	ctx := t.Context()
 
 	err := m.QueueMessage(ctx, "https://discord.com/api/webhooks/test", `{"content":"test message"}`)
@@ -32,7 +32,7 @@ func TestQueueMessage(t *testing.T) {
 func TestGetItem(t *testing.T) {
 	testDB := engine.OpenTestDB(t)
 
-	m := New(testDB, nil)
+	m := New(testDB, nil, nil)
 	ctx := t.Context()
 
 	err := m.QueueMessage(ctx, "https://discord.com/api/webhooks/test", `{"content":"hello"}`)
@@ -48,7 +48,7 @@ func TestGetItem(t *testing.T) {
 func TestUpdateItemSuccess(t *testing.T) {
 	testDB := engine.OpenTestDB(t)
 
-	m := New(testDB, nil)
+	m := New(testDB, nil, nil)
 	ctx := t.Context()
 
 	err := m.QueueMessage(ctx, "https://discord.com/api/webhooks/test", `{"content":"test"}`)
@@ -71,7 +71,7 @@ func TestUpdateItemSuccess(t *testing.T) {
 func TestUpdateItemFailure(t *testing.T) {
 	testDB := engine.OpenTestDB(t)
 
-	m := New(testDB, nil)
+	m := New(testDB, nil, nil)
 	ctx := t.Context()
 
 	err := m.QueueMessage(ctx, "https://discord.com/api/webhooks/test", `{"content":"test"}`)

@@ -49,11 +49,20 @@ type Options struct {
 	// TestMachinesModule allows injecting a mock machines module for testing.
 	// If nil, the real machines module is constructed.
 	TestMachinesModule *machines.Module
+
+	// EventLogger for integration events (optional, created if nil)
+	EventLogger *engine.EventLogger
 }
 
 // Register adds all modules to the app and returns the auth module
 // (which must be set as the router's authenticator by the caller).
 func Register(a *engine.App, opts Options) *auth.Module {
+	// Create EventLogger if not provided
+	eventLogger := opts.EventLogger
+	if eventLogger == nil {
+		eventLogger = engine.NewEventLogger(opts.Database)
+	}
+
 	// Auth module must be created and set as authenticator FIRST,
 	// before any modules that use WithAuthn are added.
 	authModule := auth.New(opts.Database, opts.Self, opts.Turnstile, opts.AuthIssuer)
@@ -68,7 +77,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 
 	a.Add(email.New(opts.Database, opts.EmailSender))
 	a.Add(oauth2.New(opts.Database, opts.Self, opts.OAuthIssuer))
-	a.Add(payment.New(opts.Database, opts.Self))
+	a.Add(payment.New(opts.Database, opts.Self, eventLogger))
 	a.Add(admin.New(opts.Database, opts.Self, opts.AuthIssuer))
 	a.Add(waiver.New(opts.Database))
 	a.Add(kiosk.New(opts.Database, opts.Self, opts.FobIssuer, opts.SpaceHost))
@@ -80,7 +89,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	if opts.TestMachinesModule != nil {
 		machinesMod = opts.TestMachinesModule
 	} else {
-		machinesMod = machines.New(opts.Database)
+		machinesMod = machines.New(opts.Database, eventLogger)
 	}
 	a.Add(machinesMod)
 
@@ -91,11 +100,11 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	// Discord modules - always register, they check config dynamically
 	// Discord webhook module for notifications
 	webhookSender := discordwebhook.NewHTTPSender()
-	discordWebhookMod := discordwebhook.New(opts.Database, webhookSender)
+	discordWebhookMod := discordwebhook.New(opts.Database, webhookSender, eventLogger)
 	a.Add(discordWebhookMod)
 
 	// Discord OAuth/role sync module
-	a.Add(discord.New(opts.Database, opts.Self, opts.DiscordIssuer))
+	a.Add(discord.New(opts.Database, opts.Self, opts.DiscordIssuer, eventLogger))
 
 	// Set the webhook queuer for machines module
 	machinesMod.SetWebhookQueuer(discordWebhookMod)
