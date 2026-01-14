@@ -45,10 +45,6 @@ type Options struct {
 
 	// Generic Access Controller config (empty disables the module)
 	AccessControllerHost string
-
-	// TestMachinesModule allows injecting a mock machines module for testing.
-	// If nil, the real machines module is constructed.
-	TestMachinesModule *machines.Module
 }
 
 // Register adds all modules to the app and returns the auth module
@@ -75,13 +71,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(fobapi.New(opts.Database))
 	a.Add(directory.New(opts.Database))
 
-	var machinesMod *machines.Module
-	if opts.TestMachinesModule != nil {
-		machinesMod = opts.TestMachinesModule
-	} else {
-		machinesMod = machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu"))
-	}
-	a.Add(machinesMod)
+	a.Add(machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu")))
 
 	if opts.AccessControllerHost != "" {
 		a.Add(gac.New(opts.Database, opts.AccessControllerHost))

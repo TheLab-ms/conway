@@ -608,3 +608,14 @@ func getBambuPollInterval(t *testing.T) int {
 	require.NoError(t, err, "could not get bambu poll interval")
 	return pollInterval
 }
+
+// refreshPrinterStateTimestamps updates the updated_at timestamp on all printer states
+// to ensure they don't expire during long test runs. The machines module only shows
+// printers where updated_at > now - (pollInterval * 3).
+func refreshPrinterStateTimestamps(t *testing.T) {
+	t.Helper()
+	_, err := testDB.Exec(`UPDATE bambu_printer_state SET updated_at = strftime('%s', 'now')`)
+	if err != nil {
+		t.Logf("warning: could not refresh printer state timestamps: %v", err)
+	}
+}

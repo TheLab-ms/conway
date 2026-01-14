@@ -474,32 +474,57 @@ func TestOwnerDiscordHandle(t *testing.T) {
 	}
 }
 
-func TestNewForTesting(t *testing.T) {
+func TestStopRequested(t *testing.T) {
 	db := createTestDB(t)
-	finishTime := int64(1234567890)
-
-	printers := []PrinterStatus{
-		{
-			PrinterData:          bambu.PrinterData{GcodeFile: "test.gcode", SubtaskName: "@user"},
-			SerialNumber:         "SN001",
-			PrinterName:          "TestPrinter",
-			JobFinishedTimestamp: &finishTime,
-		},
+	m := &Module{
+		db:           db,
+		pollInterval: time.Second * 5,
 	}
 
-	m := NewForTesting(db, printers)
+	ctx := context.Background()
 
-	// Verify state was stored in DB
-	states, err := m.loadPrinterStates(context.Background())
+	// Insert a printer state
+	_, err := db.Exec(`INSERT INTO bambu_printer_state
+		(serial_number, printer_name, gcode_file, subtask_name, gcode_state,
+		 error_code, remaining_print_time, print_percent_done, job_finished_timestamp, stop_requested, updated_at)
+		VALUES ('ABC123', 'Printer1', 'benchy.gcode', '@jordan', 'RUNNING', '', 60, 50, NULL, 0, strftime('%s', 'now'))`)
+	if err != nil {
+		t.Fatalf("failed to insert initial state: %v", err)
+	}
+
+	// Verify stop is not requested initially
+	if m.isStopRequested(ctx, "ABC123") {
+		t.Error("stop should not be requested initially")
+	}
+
+	// Set stop_requested flag
+	_, err = db.Exec(`UPDATE bambu_printer_state SET stop_requested = 1 WHERE serial_number = 'ABC123'`)
+	if err != nil {
+		t.Fatalf("failed to set stop_requested: %v", err)
+	}
+
+	// Verify stop is now requested
+	if !m.isStopRequested(ctx, "ABC123") {
+		t.Error("stop should be requested after update")
+	}
+
+	// Clear the stop request
+	m.clearStopRequest(ctx, "ABC123")
+
+	// Verify stop is no longer requested
+	if m.isStopRequested(ctx, "ABC123") {
+		t.Error("stop should not be requested after clear")
+	}
+
+	// Verify state includes stop_requested field
+	states, err := m.loadPrinterStates(ctx)
 	if err != nil {
 		t.Fatalf("loadPrinterStates failed: %v", err)
 	}
-
 	if len(states) != 1 {
 		t.Fatalf("expected 1 state, got %d", len(states))
 	}
-
-	if states[0].SerialNumber != "SN001" {
-		t.Errorf("expected SerialNumber 'SN001', got %q", states[0].SerialNumber)
+	if states[0].StopRequested {
+		t.Error("StopRequested should be false after clear")
 	}
 }

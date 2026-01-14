@@ -15,7 +15,6 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules"
 	"github.com/TheLab-ms/conway/modules/auth"
-	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/playwright-community/playwright-go"
 	"github.com/stripe/stripe-go/v78"
 )
@@ -33,9 +32,6 @@ var (
 
 	// testKeyDir stores generated key files for tests
 	testKeyDir string
-
-	// testMachinesModule is the machines module for tests (allows updating printer state)
-	testMachinesModule *machines.Module
 )
 
 func TestMain(m *testing.M) {
@@ -128,14 +124,6 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 	oauthIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "oauth2.pem"))
 	fobIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "fobs.pem"))
 
-	// Machines module with mock printer data for testing
-	inUseTime := time.Now().Add(30 * time.Minute).Unix()
-	testMachinesModule = machines.NewForTesting(database, []machines.PrinterStatus{
-		{PrinterName: "Printer A", SerialNumber: "test-001"},
-		{PrinterName: "Printer B", SerialNumber: "test-002", JobFinishedTimestamp: &inUseTime},
-		{PrinterName: "Printer C", SerialNumber: "test-003", ErrorCode: "HMS_0300_0100_0001"},
-	})
-
 	a := engine.NewApp(":18080", router, database)
 
 	// Create the auth module first and set it as the authenticator BEFORE registering other modules.
@@ -145,18 +133,35 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 	a.Router.Authenticator = authModule
 
 	modules.Register(a, modules.Options{
-		Database:       database,
-		Self:           self,
-		AuthIssuer:     authIssuer,
-		OAuthIssuer:    oauthIssuer,
-		FobIssuer:      fobIssuer,
-		Turnstile:          nil, // No Turnstile for tests
-		EmailSender:        nil, // Emails stored in outbound_mail table
-		SpaceHost:          "localhost",
-		TestMachinesModule: testMachinesModule,
+		Database:    database,
+		Self:        self,
+		AuthIssuer:  authIssuer,
+		OAuthIssuer: oauthIssuer,
+		FobIssuer:   fobIssuer,
+		Turnstile:   nil, // No Turnstile for tests
+		EmailSender: nil, // Emails stored in outbound_mail table
+		SpaceHost:   "localhost",
 	})
 
+	// Seed printer state directly into the database for e2e tests
+	seedPrinterState(database)
+
 	return a, nil
+}
+
+// seedPrinterState inserts mock printer data for e2e tests.
+func seedPrinterState(db *sql.DB) {
+	inUseTime := time.Now().Add(30 * time.Minute).Unix()
+
+	// Insert test printer states directly into the database
+	db.Exec(`INSERT INTO bambu_printer_state
+		(serial_number, printer_name, gcode_file, subtask_name, gcode_state,
+		 error_code, remaining_print_time, print_percent_done, job_finished_timestamp, stop_requested, updated_at)
+		VALUES
+		('test-001', 'Printer A', '', '', '', '', 0, 0, NULL, 0, strftime('%s', 'now')),
+		('test-002', 'Printer B', 'test.gcode', '@testuser', 'RUNNING', '', 30, 50, $1, 0, strftime('%s', 'now')),
+		('test-003', 'Printer C', 'failed.gcode', '', 'FAILED', 'HMS_0300_0100_0001', 0, 0, NULL, 0, strftime('%s', 'now'))`,
+		inUseTime)
 }
 
 func waitForServer(url string) error {

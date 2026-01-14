@@ -977,6 +977,8 @@ func TestMachines_RequiresAuth(t *testing.T) {
 // - "Printer C" (test-003): Failed (has ErrorCode)
 func TestMachines_AllPrinterStatuses(t *testing.T) {
 	_, page := setupMemberTest(t, "machines@example.com", WithConfirmed())
+	// Refresh printer state timestamps to prevent TTL expiration during long test runs
+	refreshPrinterStateTimestamps(t)
 	machinesPage := NewMachinesPage(t, page)
 	machinesPage.Navigate()
 

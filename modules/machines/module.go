@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS bambu_printer_state (
     remaining_print_time INTEGER NOT NULL DEFAULT 0,
     print_percent_done INTEGER NOT NULL DEFAULT 0,
     job_finished_timestamp INTEGER,
+    stop_requested INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 ) STRICT;
 
@@ -130,6 +131,7 @@ type PrinterStatus struct {
 	SerialNumber         string `json:"serial_number"`
 	JobFinishedTimestamp *int64 `json:"job_finished_timestamp"`
 	ErrorCode            string `json:"error_code"`
+	StopRequested        bool   `json:"stop_requested"`
 }
 
 func (p PrinterStatus) OwnerDiscordHandle() string {
@@ -155,13 +157,13 @@ type Module struct {
 
 	// configVersion tracks the current loaded config version to detect changes
 	configVersion int64
-
-	testMode bool // When true, skip polling and use injected state
 }
 
 func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
 	if db != nil {
 		engine.MustMigrate(db, migration)
+		// Add stop_requested column if it doesn't exist (for existing databases)
+		db.Exec(`ALTER TABLE bambu_printer_state ADD COLUMN stop_requested INTEGER NOT NULL DEFAULT 0`)
 	}
 
 	m := &Module{
@@ -212,7 +214,7 @@ func (m *Module) loadPrinterStates(ctx context.Context) ([]PrinterStatus, error)
 	ttlSeconds := int64(m.pollInterval.Seconds()) * 3
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT serial_number, printer_name, gcode_file, subtask_name, gcode_state,
-		       error_code, remaining_print_time, print_percent_done, job_finished_timestamp
+		       error_code, remaining_print_time, print_percent_done, job_finished_timestamp, stop_requested
 		FROM bambu_printer_state
 		WHERE updated_at > unixepoch() - $1
 		ORDER BY printer_name`, ttlSeconds)
@@ -226,40 +228,13 @@ func (m *Module) loadPrinterStates(ctx context.Context) ([]PrinterStatus, error)
 		var s PrinterStatus
 		err := rows.Scan(
 			&s.SerialNumber, &s.PrinterName, &s.GcodeFile, &s.SubtaskName, &s.GcodeState,
-			&s.ErrorCode, &s.RemainingPrintTime, &s.PrintPercentDone, &s.JobFinishedTimestamp)
+			&s.ErrorCode, &s.RemainingPrintTime, &s.PrintPercentDone, &s.JobFinishedTimestamp, &s.StopRequested)
 		if err != nil {
 			return nil, err
 		}
 		states = append(states, s)
 	}
 	return states, rows.Err()
-}
-
-// NewForTesting creates a Module with mock printer data for e2e tests.
-// The printers slice defines what the UI will render - no real connections are made.
-// Requires a test database to store the state.
-func NewForTesting(db *sql.DB, printers []PrinterStatus) *Module {
-	if db != nil {
-		engine.MustMigrate(db, migration)
-	}
-	m := &Module{
-		db:           db,
-		streams:      map[string]*engine.StreamMux{},
-		pollInterval: time.Second * 5,
-		testMode:     true,
-	}
-	// Store initial state in DB
-	for _, p := range printers {
-		m.savePrinterState(context.Background(), p)
-	}
-	return m
-}
-
-// SetTestState updates the printer state in the database (for testing only).
-func (m *Module) SetTestState(ctx context.Context, printers []PrinterStatus) {
-	for _, p := range printers {
-		m.savePrinterState(ctx, p)
-	}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -271,26 +246,23 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 func (m *Module) stopPrint(w http.ResponseWriter, r *http.Request) {
 	serial := r.PathValue("serial")
 
-	// Find the printer for this serial number
-	var printer *bambu.Printer
-	for _, p := range m.printers {
-		if p.GetSerial() == serial {
-			printer = p
-			break
-		}
+	// Set stop_requested flag in database
+	result, err := m.db.ExecContext(r.Context(),
+		`UPDATE bambu_printer_state SET stop_requested = 1 WHERE serial_number = $1`,
+		serial)
+	if err != nil {
+		slog.Error("failed to set stop_requested", "error", err, "serial", serial)
+		engine.ClientError(w, "Stop Failed", "Failed to request stop", http.StatusInternalServerError)
+		return
 	}
-	if printer == nil {
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
 		engine.ClientError(w, "Not Found", "Printer not found", http.StatusNotFound)
 		return
 	}
 
-	if err := printer.StopPrint(); err != nil {
-		slog.Error("failed to stop print", "error", err, "serial", serial)
-		engine.ClientError(w, "Stop Failed", "Failed to stop print", http.StatusInternalServerError)
-		return
-	}
-
-	slog.Info("print stopped successfully", "serial", serial, "printer", m.serialToName[serial])
+	slog.Info("stop requested", "serial", serial, "printer", m.serialToName[serial])
 
 	// Redirect back to machines page
 	http.Redirect(w, r, "/machines", http.StatusSeeOther)
@@ -342,9 +314,6 @@ func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
-	if m.testMode {
-		return // Skip polling in test mode - use injected state
-	}
 	procs.Add(engine.Poll(m.pollInterval, m.poll))
 	// Cleanup old printer states hourly (24 hour TTL for printers removed from config)
 	procs.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "old printer states",
@@ -364,6 +333,20 @@ func (m *Module) poll(ctx context.Context) bool {
 	for _, printer := range m.printers {
 		name := m.serialToName[printer.GetSerial()]
 		serial := printer.GetSerial()
+
+		// Check if stop is requested and execute it
+		if m.isStopRequested(ctx, serial) {
+			if err := printer.StopPrint(); err != nil {
+				slog.Error("failed to stop print", "error", err, "printer", name)
+				m.eventLogger.LogEvent(ctx, 0, "StopError", serial, name, false, err.Error())
+			} else {
+				slog.Info("print stopped", "printer", name)
+				m.eventLogger.LogEvent(ctx, 0, "Stop", serial, name, true, "")
+			}
+			// Clear the stop_requested flag regardless of success
+			m.clearStopRequest(ctx, serial)
+		}
+
 		data, err := printer.GetState()
 		if err != nil {
 			slog.Warn("unable to get status from Bambu printer", "error", err, "printer", name)
@@ -398,6 +381,28 @@ func (m *Module) poll(ctx context.Context) bool {
 
 	slog.Info("finished getting Bambu printer status", "seconds", time.Since(start).Seconds())
 	return false
+}
+
+// isStopRequested checks if a stop has been requested for the given printer.
+func (m *Module) isStopRequested(ctx context.Context, serial string) bool {
+	if m.db == nil {
+		return false
+	}
+	var requested bool
+	m.db.QueryRowContext(ctx,
+		`SELECT stop_requested FROM bambu_printer_state WHERE serial_number = $1`,
+		serial).Scan(&requested)
+	return requested
+}
+
+// clearStopRequest clears the stop_requested flag for the given printer.
+func (m *Module) clearStopRequest(ctx context.Context, serial string) {
+	if m.db == nil {
+		return
+	}
+	m.db.ExecContext(ctx,
+		`UPDATE bambu_printer_state SET stop_requested = 0 WHERE serial_number = $1`,
+		serial)
 }
 
 // configChanged checks if the database config version differs from the loaded version.
