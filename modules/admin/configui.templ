@@ -1,0 +1,427 @@
+package admin
+
+import (
+	"fmt"
+	"reflect"
+	"strconv"
+	"strings"
+
+	"github.com/TheLab-ms/conway/engine/config"
+	"github.com/TheLab-ms/conway/modules/bootstrap"
+)
+
+templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, version int, events []*config.Event, configSections []*configSection, saved bool, errMsg string, selfURL string) {
+	@bootstrap.View() {
+		@adminNav(tabs)
+		<div class="container my-5">
+			<div class="row">
+				<div class="col-md-3">
+					<div class="card">
+						<div class="card-header">
+							<h5 class="mb-0">Configuration</h5>
+						</div>
+						<div class="list-group list-group-flush">
+							for _, section := range configSections {
+								if section.Name == spec.Title {
+									<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
+								} else {
+									<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
+								}
+							}
+						</div>
+					</div>
+				</div>
+				<div class="col-md-9">
+					if spec.ReadOnly {
+						@renderReadOnlyConfigCard(spec)
+					} else {
+						@renderConfigCard(spec, cfg, version, saved, errMsg, selfURL)
+					}
+					if len(events) > 0 {
+						@renderGenericEventLog(events)
+					}
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ renderReadOnlyConfigCard(spec *config.ParsedSpec) {
+	<div class="card mb-4">
+		<div class="card-header">
+			<h5 class="mb-0">{ spec.Title }</h5>
+		</div>
+		<div class="card-body">
+			if spec.Description != "" {
+				<div class="alert alert-info">
+					@templ.Raw(spec.Description)
+				</div>
+			}
+			if spec.InfoContent != "" {
+				@templ.Raw(spec.InfoContent)
+			}
+		</div>
+	</div>
+}
+
+templ renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool, errMsg string, selfURL string) {
+	<div class="card mb-4">
+		<div class="card-header d-flex justify-content-between align-items-center">
+			<h5 class="mb-0">{ spec.Title }</h5>
+			if version > 0 {
+				<span class="badge bg-secondary">{ fmt.Sprintf("Version %d", version) }</span>
+			}
+		</div>
+		<div class="card-body">
+			if saved {
+				<div class="alert alert-success" role="alert">
+					Configuration saved successfully.
+				</div>
+			}
+			if errMsg != "" {
+				<div class="alert alert-danger" role="alert">
+					{ errMsg }
+				</div>
+			}
+			if spec.Description != "" {
+				<div class="alert alert-info" role="alert">
+					@templ.Raw(spec.Description)
+				</div>
+			}
+			<form method="post">
+				for _, section := range spec.Sections {
+					@renderGenericFormSection(section, cfg, selfURL)
+				}
+				for _, af := range spec.ArrayFields {
+					@renderArrayField(af, cfg)
+				}
+				<div class="d-flex justify-content-between align-items-center mt-4">
+					<button type="submit" class="btn btn-primary">Save Changes</button>
+					<span class="text-muted small">Saving creates a new version for audit purposes.</span>
+				</div>
+			</form>
+			if len(spec.ArrayFields) > 0 {
+				@arrayItemScripts()
+			}
+		</div>
+	</div>
+}
+
+templ renderGenericFormSection(section config.Section, cfg any, selfURL string) {
+	if section.Title != "" {
+		<h6 class="text-muted border-bottom pb-2 mb-3 mt-4">{ section.Title }</h6>
+	}
+	if section.Description != "" {
+		<p class="text-muted small mb-3">
+			@templ.Raw(section.Description)
+		</p>
+	}
+	for _, field := range section.Fields {
+		@renderGenericFormField(field, cfg, selfURL)
+	}
+}
+
+templ renderGenericFormField(field config.Field, cfg any, selfURL string) {
+	<div class="mb-3">
+		<label for={ field.JSONName } class="form-label">{ field.Label }</label>
+		switch field.Type {
+		case config.FieldTypeText:
+			<input type="text" class="form-control font-monospace" id={ field.JSONName }
+				   name={ field.JSONName } value={ config.GetStringValue(cfg, field.Name) }
+				   placeholder={ field.Placeholder }/>
+		case config.FieldTypePassword:
+			<input type="password" class="form-control font-monospace" id={ field.JSONName }
+				   name={ field.JSONName } placeholder={ secretPlaceholder(config.HasValue(cfg, field.Name)) }/>
+		case config.FieldTypeNumber:
+			<input type="number" class="form-control" id={ field.JSONName }
+				   name={ field.JSONName } value={ config.GetStringValue(cfg, field.Name) }
+				   if field.Min != nil {
+					   min={ strconv.Itoa(*field.Min) }
+				   }
+				   if field.Max != nil {
+					   max={ strconv.Itoa(*field.Max) }
+				   }/>
+		case config.FieldTypeTextarea:
+			<textarea class="form-control font-monospace" id={ field.JSONName }
+					  name={ field.JSONName }
+					  if field.Rows > 0 {
+					      rows={ strconv.Itoa(field.Rows) }
+					  } else {
+					      rows="10"
+					  }>{ config.GetStringValue(cfg, field.Name) }</textarea>
+		case config.FieldTypeSelect:
+			<select class="form-select" id={ field.JSONName } name={ field.JSONName }>
+				for _, opt := range field.Options {
+					<option value={ opt.Value } selected?={ config.GetStringValue(cfg, field.Name) == opt.Value }>
+						{ opt.Label }
+					</option>
+				}
+			</select>
+		case config.FieldTypeBool:
+			<div class="form-check">
+				<input type="checkbox" class="form-check-input" id={ field.JSONName }
+					   name={ field.JSONName } checked?={ config.HasValue(cfg, field.Name) }/>
+			</div>
+		}
+		if field.Help != "" {
+			<div class="form-text">
+				@templ.Raw(field.Help)
+			</div>
+		}
+	</div>
+}
+
+templ renderArrayField(af config.ArrayField, cfg any) {
+	<h6 class="text-muted border-bottom pb-2 mb-3 mt-4">{ af.Label }</h6>
+	if af.Help != "" {
+		<p class="text-muted small mb-3">{ af.Help }</p>
+	}
+	<div id={ af.JSONName + "-container" } data-next-index={ strconv.Itoa(getArrayLen(cfg, af.Name)) }>
+		for i, item := range getArrayItems(cfg, af.Name) {
+			@renderArrayItem(af, item, i)
+		}
+	</div>
+	<button type="button" class="btn btn-outline-primary mb-4" onclick={ addArrayItem(af.JSONName) }>
+		+ Add { af.ItemLabel }
+	</button>
+	<template id={ af.JSONName + "-template" }>
+		@renderArrayItemTemplate(af)
+	</template>
+}
+
+templ renderArrayItem(af config.ArrayField, item any, index int) {
+	<div class="card mb-3 array-item-card" data-item-index={ strconv.Itoa(index) }>
+		<div class="card-header d-flex justify-content-between align-items-center py-2">
+			<span class="fw-semibold item-name-display">
+				{ getItemDisplayName(item, af.Fields) }
+			</span>
+			<button type="button" class="btn btn-sm btn-outline-danger delete-item-btn" onclick="confirmDeleteItem(this)">
+				Delete
+			</button>
+		</div>
+		<div class="card-body">
+			<div class="row g-3">
+				for _, field := range af.Fields {
+					<div class="col-md-6">
+						<label class="form-label">{ field.Label }</label>
+						switch field.Type {
+						case config.FieldTypePassword:
+							<input type="password" class="form-control font-monospace"
+								   name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }
+								   placeholder={ secretPlaceholder(config.HasValue(item, field.Name)) }/>
+							if field.Help != "" {
+								<div class="form-text">{ field.Help }</div>
+							}
+						default:
+							<input type="text" class="form-control"
+								   name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }
+								   value={ config.GetStringValue(item, field.Name) }
+								   placeholder={ field.Placeholder }
+								   if field.Required {
+									   required
+								   }/>
+						}
+					</div>
+				}
+			</div>
+		</div>
+		<div class="card-footer bg-danger-subtle text-danger d-none delete-confirm">
+			<span>Are you sure you want to remove this { af.ItemLabel }?</span>
+			<button type="button" class="btn btn-sm btn-danger ms-2" onclick="deleteItem(this)">
+				Confirm Delete
+			</button>
+			<button type="button" class="btn btn-sm btn-secondary ms-1" onclick="cancelDeleteItem(this)">
+				Cancel
+			</button>
+		</div>
+	</div>
+}
+
+templ renderArrayItemTemplate(af config.ArrayField) {
+	<div class="card mb-3 array-item-card" data-item-index="-1">
+		<div class="card-header d-flex justify-content-between align-items-center py-2">
+			<span class="fw-semibold item-name-display">New { af.ItemLabel }</span>
+			<button type="button" class="btn btn-sm btn-outline-danger delete-item-btn" onclick="confirmDeleteItem(this)">
+				Delete
+			</button>
+		</div>
+		<div class="card-body">
+			<div class="row g-3">
+				for _, field := range af.Fields {
+					<div class="col-md-6">
+						<label class="form-label">{ field.Label }</label>
+						switch field.Type {
+						case config.FieldTypePassword:
+							<input type="password" class="form-control font-monospace"
+								   name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
+								   placeholder="(required for new items)"/>
+						default:
+							<input type="text" class="form-control item-field"
+								   name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
+								   placeholder={ field.Placeholder }
+								   data-field-name={ field.JSONName }
+								   if field.Required {
+									   required
+								   }/>
+						}
+					</div>
+				}
+			</div>
+		</div>
+		<div class="card-footer bg-danger-subtle text-danger d-none delete-confirm">
+			<span>Are you sure you want to remove this { af.ItemLabel }?</span>
+			<button type="button" class="btn btn-sm btn-danger ms-2" onclick="deleteItem(this)">
+				Confirm Delete
+			</button>
+			<button type="button" class="btn btn-sm btn-secondary ms-1" onclick="cancelDeleteItem(this)">
+				Cancel
+			</button>
+		</div>
+	</div>
+}
+
+script addArrayItem(jsonName string) {
+	var containerId = jsonName + '-container';
+	var templateId = jsonName + '-template';
+	var container = document.getElementById(containerId);
+	var template = document.getElementById(templateId);
+	var nextIndex = parseInt(container.getAttribute('data-next-index')) || 0;
+
+	var clone = template.content.cloneNode(true);
+	var card = clone.querySelector('.array-item-card');
+
+	card.setAttribute('data-item-index', nextIndex);
+	card.querySelectorAll('input').forEach(function(input) {
+		var name = input.getAttribute('name');
+		if (name) {
+			input.setAttribute('name', name.replace('[-1]', '[' + nextIndex + ']'));
+		}
+	});
+
+	container.appendChild(clone);
+	container.setAttribute('data-next-index', nextIndex + 1);
+
+	var firstInput = container.lastElementChild.querySelector('input');
+	if (firstInput) {
+		firstInput.focus();
+	}
+}
+
+templ arrayItemScripts() {
+	<script>
+		function confirmDeleteItem(btn) {
+			var card = btn.closest('.array-item-card');
+			var confirmDiv = card.querySelector('.delete-confirm');
+			confirmDiv.classList.remove('d-none');
+			btn.classList.add('d-none');
+		}
+
+		function deleteItem(btn) {
+			var card = btn.closest('.array-item-card');
+			card.remove();
+		}
+
+		function cancelDeleteItem(btn) {
+			var card = btn.closest('.array-item-card');
+			var confirmDiv = card.querySelector('.delete-confirm');
+			var deleteBtn = card.querySelector('.delete-item-btn');
+			confirmDiv.classList.add('d-none');
+			deleteBtn.classList.remove('d-none');
+		}
+	</script>
+}
+
+templ renderGenericEventLog(events []*config.Event) {
+	<div class="card mb-4">
+		<div class="card-header d-flex justify-content-between align-items-center">
+			<h5 class="mb-0">Recent Events</h5>
+			<span class="badge bg-secondary">{ strconv.Itoa(len(events)) }</span>
+		</div>
+		<div class="card-body p-0">
+			<div class="table-responsive">
+				<table class="table table-hover table-sm mb-0">
+					<thead class="table-light">
+						<tr>
+							<th>Time</th>
+							<th>Type</th>
+							<th>Status</th>
+							<th>Entity</th>
+							<th>Details</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, event := range events {
+							<tr>
+								<td class="text-nowrap">{ formatEventTime(event.Created) }</td>
+								<td><span class="badge bg-secondary">{ event.EventType }</span></td>
+								<td>
+									if event.Success {
+										<span class="text-success">&#10003;</span>
+									} else {
+										<span class="text-danger">&#10007;</span>
+									}
+								</td>
+								<td>{ event.EntityName }</td>
+								<td class="text-truncate" style="max-width: 300px;" title={ event.Details }>{ event.Details }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+}
+
+// Helper functions for template access
+
+func getArrayLen(cfg any, fieldName string) int {
+	v := config.GetFieldValue(cfg, fieldName)
+	if v == nil {
+		return 0
+	}
+	if slice, ok := v.([]any); ok {
+		return len(slice)
+	}
+	// Use reflection for typed slices
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Slice {
+		return rv.Len()
+	}
+	return 0
+}
+
+func getArrayItems(cfg any, fieldName string) []any {
+	v := config.GetFieldValue(cfg, fieldName)
+	if v == nil {
+		return nil
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Slice {
+		return nil
+	}
+	items := make([]any, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		items[i] = rv.Index(i).Interface()
+	}
+	return items
+}
+
+func getItemDisplayName(item any, fields []config.Field) string {
+	// Try to find a "name" field first
+	for _, f := range fields {
+		if strings.ToLower(f.Name) == "name" {
+			if v := config.GetStringValue(item, f.Name); v != "" {
+				return v
+			}
+		}
+	}
+	// Fall back to first non-secret field
+	for _, f := range fields {
+		if !f.Secret {
+			if v := config.GetStringValue(item, f.Name); v != "" {
+				return v
+			}
+		}
+	}
+	return "Item"
+}

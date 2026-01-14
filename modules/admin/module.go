@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/skip2/go-qrcode"
 )
@@ -32,11 +33,13 @@ CREATE TABLE IF NOT EXISTS bambu_config (
 `
 
 type Module struct {
-	db          *sql.DB
-	self        *url.URL
-	links       *engine.TokenIssuer
-	eventLogger *engine.EventLogger
-	nav         []*navbarTab
+	db             *sql.DB
+	self           *url.URL
+	links          *engine.TokenIssuer
+	eventLogger    *engine.EventLogger
+	nav            []*navbarTab
+	configRegistry *config.Registry
+	configStore    *config.Store
 }
 
 func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer, eventLogger *engine.EventLogger) *Module {
@@ -48,7 +51,22 @@ func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer, eventLogger *e
 	}
 	nav = append(nav, &navbarTab{Title: "Metrics", Path: "/admin/metrics"})
 
-	return &Module{db: db, self: self, links: linksIss, eventLogger: eventLogger, nav: nav}
+	return &Module{
+		db:          db,
+		self:        self,
+		links:       linksIss,
+		eventLogger: eventLogger,
+		nav:         nav,
+	}
+}
+
+// SetConfigRegistry sets the config registry for dynamic configuration UI.
+// This should be called after all modules are registered with the App.
+func (m *Module) SetConfigRegistry(registry *config.Registry) {
+	m.configRegistry = registry
+	if registry != nil {
+		m.configStore = config.NewStore(m.db, registry)
+	}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -231,6 +249,12 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /admin/config/bambu", router.WithLeadership(m.renderBambuConfigPage))
 	router.HandleFunc("POST /admin/config/bambu", router.WithLeadership(m.handleBambuConfigSave))
 	router.HandleFunc("GET /admin/config/fobapi", router.WithLeadership(m.renderFobAPIConfigPage))
+
+	// Generic config routes for registered modules
+	if m.configRegistry != nil {
+		router.HandleFunc("GET /admin/config/{module}", router.WithLeadership(m.handleGenericConfigPage))
+		router.HandleFunc("POST /admin/config/{module}", router.WithLeadership(m.handleGenericConfigSave))
+	}
 
 	router.HandleFunc("POST /admin/members/{id}/delete", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		_, err := m.db.ExecContext(r.Context(), "DELETE FROM members WHERE id = $1", r.PathValue("id"))
@@ -806,4 +830,112 @@ func (m *Module) getRecentBambuEvents(ctx context.Context) []*bambuEvent {
 func (m *Module) renderFobAPIConfigPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	renderConfigPage(m.nav, "Fob API", renderFobAPIConfigContent(m.self.String())).Render(r.Context(), w)
+}
+
+// handleGenericConfigPage renders a configuration page for a registered module.
+func (m *Module) handleGenericConfigPage(w http.ResponseWriter, r *http.Request) {
+	moduleName := r.PathValue("module")
+
+	spec, ok := m.configRegistry.Get(moduleName)
+	if !ok {
+		engine.ClientError(w, "Not Found", "Unknown configuration module", http.StatusNotFound)
+		return
+	}
+
+	m.renderGenericConfig(w, r, spec, false, "")
+}
+
+// handleGenericConfigSave saves configuration for a registered module.
+func (m *Module) handleGenericConfigSave(w http.ResponseWriter, r *http.Request) {
+	moduleName := r.PathValue("module")
+
+	spec, ok := m.configRegistry.Get(moduleName)
+	if !ok {
+		engine.ClientError(w, "Not Found", "Unknown configuration module", http.StatusNotFound)
+		return
+	}
+
+	// Parse form into config
+	cfg, err := m.configStore.ParseFormIntoConfig(r, moduleName)
+	if err != nil {
+		m.renderGenericConfig(w, r, spec, false, fmt.Sprintf("Failed to parse form: %v", err))
+		return
+	}
+
+	// Save with secret preservation
+	if err := m.configStore.Save(r.Context(), moduleName, cfg, true); err != nil {
+		m.renderGenericConfig(w, r, spec, false, err.Error())
+		return
+	}
+
+	m.renderGenericConfig(w, r, spec, true, "")
+}
+
+// renderGenericConfig renders a generic config page.
+func (m *Module) renderGenericConfig(w http.ResponseWriter, r *http.Request, spec *config.ParsedSpec, saved bool, errMsg string) {
+	cfg, version, err := m.configStore.Load(r.Context(), spec.Module)
+	if err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	events := m.loadModuleEvents(r.Context(), spec.Module)
+
+	w.Header().Set("Content-Type", "text/html")
+	renderGenericConfigPage(m.nav, spec, cfg, version, events, m.getConfigSections(), saved, errMsg, m.self.String()).Render(r.Context(), w)
+}
+
+// loadModuleEvents loads recent events for a module.
+func (m *Module) loadModuleEvents(ctx context.Context, module string) []*config.Event {
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT id, created, module, member, event_type, COALESCE(entity_id, ''), COALESCE(entity_name, ''), success, COALESCE(details, '')
+		FROM module_events
+		WHERE module = $1
+		ORDER BY created DESC
+		LIMIT 20`, module)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var events []*config.Event
+	for rows.Next() {
+		var created int64
+		var successInt int
+		event := &config.Event{}
+		if rows.Scan(&event.ID, &created, &event.Module, &event.MemberID, &event.EventType, &event.EntityID, &event.EntityName, &successInt, &event.Details) == nil {
+			event.Created = time.Unix(created, 0)
+			event.Success = successInt == 1
+			events = append(events, event)
+		}
+	}
+	return events
+}
+
+// getConfigSections returns the list of config sections for the sidebar.
+// This combines the hardcoded sections with any dynamically registered modules.
+func (m *Module) getConfigSections() []*configSection {
+	sections := make([]*configSection, len(configSections))
+	copy(sections, configSections)
+
+	if m.configRegistry != nil {
+		for _, spec := range m.configRegistry.List() {
+			// Check if this module already has a hardcoded section
+			exists := false
+			for _, s := range sections {
+				if s.Name == spec.Title {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				sections = append(sections, &configSection{
+					Name: spec.Title,
+					Path: "/admin/config/" + spec.Module,
+				})
+			}
+		}
+	}
+
+	return sections
 }

@@ -136,7 +136,7 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 		{PrinterName: "Printer C", SerialNumber: "test-003", ErrorCode: "HMS_0300_0100_0001"},
 	})
 
-	a := engine.NewApp(":18080", router)
+	a := engine.NewApp(":18080", router, database)
 
 	// Create the auth module first and set it as the authenticator BEFORE registering other modules.
 	// This ensures that when modules call router.WithAuthn(), they get the real authenticator

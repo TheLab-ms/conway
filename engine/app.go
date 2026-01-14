@@ -2,8 +2,11 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sync"
+
+	"github.com/TheLab-ms/conway/engine/config"
 )
 
 // App is a wrapper around the process manager and http router/server concepts defined by this pkg.
@@ -11,14 +14,20 @@ import (
 // Just load up modules with .Add() and then run the thing with .ProcMgr.Run().
 type App struct {
 	ProcMgr
-	Router *Router
+	Router         *Router
+	configRegistry *config.Registry
 }
 
-func NewApp(httpAddr string, router *Router) *App {
-	a := &App{Router: router}
+func NewApp(httpAddr string, router *Router, db *sql.DB) *App {
+	a := &App{
+		Router:         router,
+		configRegistry: config.NewRegistry(db),
+	}
 	a.ProcMgr.Add(router.Serve(httpAddr))
 	return a
 }
+
+func (a *App) Configs() *config.Registry { return a.configRegistry }
 
 func (p *ProcMgr) Run(ctx context.Context) { p.run(ctx) }
 
@@ -35,6 +44,14 @@ func (a *App) Add(mod any) {
 	}
 	if m, ok := mod.(workableModule); ok {
 		m.AttachWorkers(&a.ProcMgr)
+	}
+
+	// Auto-register modules that provide a ConfigSpec
+	type configurableModule interface {
+		ConfigSpec() config.Spec
+	}
+	if m, ok := mod.(configurableModule); ok {
+		a.configRegistry.MustRegister(m.ConfigSpec())
 	}
 }
 

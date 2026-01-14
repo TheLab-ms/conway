@@ -69,7 +69,6 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(email.New(opts.Database, opts.EmailSender))
 	a.Add(oauth2.New(opts.Database, opts.Self, opts.OAuthIssuer))
 	a.Add(payment.New(opts.Database, opts.Self, engine.NewEventLogger(opts.Database, "stripe")))
-	a.Add(admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin")))
 	a.Add(waiver.New(opts.Database))
 	a.Add(kiosk.New(opts.Database, opts.Self, opts.FobIssuer, opts.SpaceHost))
 	a.Add(metrics.New(opts.Database))
@@ -96,6 +95,11 @@ func Register(a *engine.App, opts Options) *auth.Module {
 
 	// Discord OAuth/role sync module
 	a.Add(discord.New(opts.Database, opts.Self, opts.DiscordIssuer, engine.NewEventLogger(opts.Database, "discord")))
+
+	// Admin module added last so it can access the fully-populated config registry
+	adminMod := admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin"))
+	adminMod.SetConfigRegistry(a.Configs())
+	a.Add(adminMod)
 
 	return authModule
 }

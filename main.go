@@ -90,7 +90,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		slog.Info("generic access controller module disabled because a URL was not configured")
 	}
 
-	a := engine.NewApp(conf.HttpAddr, router)
+	a := engine.NewApp(conf.HttpAddr, router, database)
 
 	modules.Register(a, modules.Options{
 		Database:             database,
