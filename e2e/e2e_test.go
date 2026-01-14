@@ -130,7 +130,7 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 
 	// Machines module with mock printer data for testing
 	inUseTime := time.Now().Add(30 * time.Minute).Unix()
-	testMachinesModule = machines.NewForTesting([]machines.PrinterStatus{
+	testMachinesModule = machines.NewForTesting(database, []machines.PrinterStatus{
 		{PrinterName: "Printer A", SerialNumber: "test-001"},
 		{PrinterName: "Printer B", SerialNumber: "test-002", JobFinishedTimestamp: &inUseTime},
 		{PrinterName: "Printer C", SerialNumber: "test-003", ErrorCode: "HMS_0300_0100_0001"},
