@@ -182,28 +182,43 @@ class Wiegand:
                 value = int("".join(map(str, self.bit_buffer)), 2)
 
                 bit_count = len(self.bit_buffer)
-                if bit_count != 34:
+                if bit_count not in (26, 34):
                     print(f"unknown wiegand format: {bit_count} bits")
                     self._reset()
                     continue
 
-                if not self._check_parity(value):
-                    print("parity check failed!", value)
+                if not self._check_parity(value, bit_count):
+                    print(f"parity check failed! ({bit_count}-bit)", value)
                     self._reset()
                     continue
 
                 self.last_card = value
                 self.cards_read += 1
 
-                # 34-bit: 1 parity + 32 data + 1 parity
-                raw_32bit = (value >> 1) & 0xFFFFFFFF
-                await self.callback(raw_32bit)
+                # Extract data payload (strip parity bits)
+                if bit_count == 34:
+                    raw_data = (value >> 1) & 0xFFFFFFFF
+                else:  # 26-bit
+                    raw_data = (value >> 1) & 0xFFFFFF
+                await self.callback(raw_data)
                 self._reset()
 
-    def _check_parity(self, value):
-        leading, trailing = (value >> 33) & 1, value & 1
-        data = (value >> 1) & ((1 << 32) - 1)
-        return (bin(data >> 16).count("1") % 2) == leading and (bin(data & 0xFFFF).count("1") % 2) != trailing
+    def _check_parity(self, value, bit_count):
+        if bit_count == 34:
+            # 34-bit: parity over 16-bit halves of 32-bit data
+            leading, trailing = (value >> 33) & 1, value & 1
+            data = (value >> 1) & 0xFFFFFFFF
+            even_ok = (bin(data >> 16).count("1") % 2) == leading
+            odd_ok = (bin(data & 0xFFFF).count("1") % 2) != trailing
+            return even_ok and odd_ok
+        elif bit_count == 26:
+            # 26-bit: parity over 12-bit halves of 24-bit data
+            leading, trailing = (value >> 25) & 1, value & 1
+            data = (value >> 1) & 0xFFFFFF
+            even_ok = (bin(data >> 12).count("1") % 2) == leading
+            odd_ok = (bin(data & 0xFFF).count("1") % 2) != trailing
+            return even_ok and odd_ok
+        return False
 
     def _reset(self):
         self.bit_buffer.clear()

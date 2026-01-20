@@ -1,6 +1,6 @@
 # access-controller
 
-MicroPython access controller for ESP32. Reads 34-bit Wiegand (RFID fobs + NFC tags), authenticates against a Conway server, and triggers a door relay.
+MicroPython access controller for ESP32. Reads 26-bit and 34-bit Wiegand (RFID fobs + NFC tags), authenticates against a Conway server, and triggers a door relay.
 
 ## Hardware
 
@@ -37,10 +37,10 @@ mpremote # enter a repl
 
 ## Credential Encoding
 
-The controller accepts two credential formats over 34-bit Wiegand:
+The controller accepts two credential formats over 26-bit or 34-bit Wiegand:
 
-- **RFID fobs (H10301)**: Facility code + card ID concatenated as decimal. E.g., facility `123`, card `45678` → stored as `12345678`.
-- **NFC tags**: 4-byte UID byte-reversed, stored as decimal. E.g., UID `DE:AD:BE:EF` → `0xEFBEADDE` → `4022250974`.
+- **RFID fobs (H10301)**: Facility code (8-bit) + card ID (16-bit) concatenated as decimal. E.g., facility `123`, card `45678` → stored as `12345678`. Works with both 26-bit and 34-bit readers.
+- **NFC tags (34-bit only)**: 4-byte UID byte-reversed, stored as decimal. E.g., UID `DE:AD:BE:EF` → `0xEFBEADDE` → `4022250974`.
 
 Both formats are checked against the Conway server's fob list - there isn't a way to tell them apart otherwise.
 
