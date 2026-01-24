@@ -289,7 +289,7 @@ class MainLoop:
         # Decode "traditional" RFID fobs
         card_id = raw_wiegand & Wiegand.CARD_MASK
         facility = (raw_wiegand & Wiegand.FACILITY_MASK) >> 16
-        fob = int(f"{facility}{card_id}")
+        fob = int(f"{facility}{card_id:05d}")
 
         # Decode NFC tags
         tag = self._reverse_bytes(raw_wiegand)
