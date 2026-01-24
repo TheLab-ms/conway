@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/TheLab-ms/conway/engine"
 )
@@ -14,7 +15,8 @@ type listView struct {
 	Title       string
 	RelPath     string
 	Searchable  bool
-	ExportTable string // If set, shows a CSV export link for this table
+	ExportTable string   // If set, shows a CSV export link for this table
+	Filters     []string // If set, shows a filter dropdown with these options
 	Rows        []*tableRowMeta
 	BuildQuery  func(*http.Request) (query, rowCountQuery string, args []any)
 	BuildRows   func(*sql.Rows) ([]*tableRow, error)
@@ -84,6 +86,19 @@ var listViews = []listView{
 	{
 		Title:   "Events",
 		RelPath: "/events",
+		Filters: []string{
+			"Fob Swipe",
+			"Waiver",
+			"EmailConfirmed",
+			"DiscountTypeModified",
+			"AccessStatusChanged",
+			"LeadershipStatusAdded",
+			"LeadershipStatusRemoved",
+			"NonBillableStatusAdded",
+			"NonBillableStatusRemoved",
+			"FobChanged",
+			"WaiverSigned",
+		},
 		Rows: []*tableRowMeta{
 			{Title: "Timestamp", Width: 1},
 			{Title: "Type", Width: 1},
@@ -91,7 +106,11 @@ var listViews = []listView{
 			{Title: "Details", Width: 2},
 		},
 		BuildQuery: func(r *http.Request) (q, rowCountQuery string, args []any) {
-			q = `SELECT timestamp, event_type, member_id, member_name, details FROM (
+			// Parse filter values from form
+			r.ParseForm()
+			filters := r.Form["event_type"]
+
+			baseQuery := `SELECT timestamp, event_type, member_id, member_name, details FROM (
 				SELECT
 					f.timestamp AS timestamp,
 					'Fob Swipe' AS event_type,
@@ -122,13 +141,40 @@ var listViews = []listView{
 					w.email AS details
 				FROM waivers w
 				WHERE w.name != ''
-			) AS unified_events
-			ORDER BY timestamp DESC
-			LIMIT :limit OFFSET :offset`
-			rowCountQuery = `SELECT
-				(SELECT COUNT(*) FROM fob_swipes) +
-				(SELECT COUNT(*) FROM member_events) +
-				(SELECT COUNT(*) FROM waivers WHERE name != '')`
+			) AS unified_events`
+
+			if len(filters) > 0 {
+				// Build WHERE clause with placeholders
+				placeholders := make([]string, len(filters))
+				for i, f := range filters {
+					placeholders[i] = fmt.Sprintf("$%d", i+1)
+					args = append(args, f)
+				}
+				baseQuery += " WHERE event_type IN (" + strings.Join(placeholders, ", ") + ")"
+			}
+
+			q = baseQuery + " ORDER BY timestamp DESC LIMIT :limit OFFSET :offset"
+
+			// Build row count query
+			if len(filters) > 0 {
+				// Count with filters - use same UNION but add WHERE
+				countPlaceholders := make([]string, len(filters))
+				for i := range filters {
+					countPlaceholders[i] = fmt.Sprintf("$%d", i+1)
+				}
+				rowCountQuery = `SELECT COUNT(*) FROM (
+					SELECT 'Fob Swipe' AS event_type FROM fob_swipes
+					UNION ALL
+					SELECT event AS event_type FROM member_events
+					UNION ALL
+					SELECT 'Waiver' AS event_type FROM waivers WHERE name != ''
+				) AS unified_events WHERE event_type IN (` + strings.Join(countPlaceholders, ", ") + ")"
+			} else {
+				rowCountQuery = `SELECT
+					(SELECT COUNT(*) FROM fob_swipes) +
+					(SELECT COUNT(*) FROM member_events) +
+					(SELECT COUNT(*) FROM waivers WHERE name != '')`
+			}
 			return
 		},
 		BuildRows: func(results *sql.Rows) ([]*tableRow, error) {

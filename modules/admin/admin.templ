@@ -68,7 +68,7 @@ templ (t tableCell) Render(row *tableRow) {
 	}
 }
 
-templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string, showSearch bool) {
+templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string, showSearch bool, filters []string) {
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
@@ -84,28 +84,64 @@ templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string
 				}
 			</div>
 			<div class="card">
-				if showSearch {
+				if showSearch || len(filters) > 0 {
 					<div class="card-header">
 						<div class="d-flex justify-content-between align-items-center">
 							<div class="d-flex align-items-center">
-								<input
-									type="search"
-									class="form-control form-control-sm me-2"
-									placeholder="Search..."
-									style="width: 200px;"
-									name="search"
-									id="searchbox"
-									hx-post={ searchURL }
-									hx-trigger="input changed delay:500ms, keyup[key=='Enter'], load, change"
-									hx-target="#results"
-									hx-include="[name='search'], [name='currentpage']"
-									hx-indicator="#loading-indicator"
-								/>
+								if showSearch {
+									<input
+										type="search"
+										class="form-control form-control-sm me-2"
+										placeholder="Search..."
+										style="width: 200px;"
+										name="search"
+										id="searchbox"
+										hx-post={ searchURL }
+										hx-trigger="input changed delay:500ms, keyup[key=='Enter'], load, change"
+										hx-target="#results"
+										hx-include="[name='search'], [name='currentpage'], [name='event_type']"
+										hx-indicator="#loading-indicator"
+									/>
+								}
+								if len(filters) > 0 {
+									<div class="dropdown">
+										<button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+											<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+												<path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.342.474l-3 1A.5.5 0 0 1 6 14.5V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5zm1 .5v1.308l4.372 4.858A.5.5 0 0 1 7 8.5v5.306l2-.666V8.5a.5.5 0 0 1 .128-.334L13.5 3.308V2z"/>
+											</svg>
+											Filter
+										</button>
+										<ul class="dropdown-menu" style="min-width: 220px;">
+											for _, f := range filters {
+												<li>
+													<label class="dropdown-item d-flex align-items-center" style="cursor: pointer;">
+														<input
+															type="checkbox"
+															class="form-check-input me-2 mt-0"
+															name="event_type"
+															value={ f }
+															hx-post={ searchURL }
+															hx-trigger="change"
+															hx-target="#results"
+															hx-include="[name='search'], [name='currentpage'], [name='event_type']"
+															hx-indicator="#loading-indicator"
+														/>
+														{ f }
+													</label>
+												</li>
+											}
+										</ul>
+									</div>
+								}
 							</div>
 						</div>
 					</div>
-				} else {
+				}
+				if !showSearch && len(filters) == 0 {
 					<input type="hidden" id="searchbox" hx-post={ searchURL } hx-trigger="load, change" hx-target="#results" hx-include="[name='currentpage']" hx-indicator="#loading-indicator"/>
+				}
+				if !showSearch && len(filters) > 0 {
+					<input type="hidden" id="searchbox" hx-post={ searchURL } hx-trigger="load" hx-target="#results" hx-include="[name='event_type']" hx-indicator="#loading-indicator"/>
 				}
 				<div id="results">
 					<div id="loading-indicator" class="htmx-indicator card-body text-center py-5">

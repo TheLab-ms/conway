@@ -73,7 +73,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	for _, view := range listViews {
 		router.HandleFunc("GET /admin"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
-			renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath, view.ExportTable, view.Searchable).Render(r.Context(), w)
+			renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath, view.ExportTable, view.Searchable, view.Filters).Render(r.Context(), w)
 		}))
 
 		router.HandleFunc("POST /admin/search"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +111,11 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			if hasMore {
 				search := r.PostFormValue("search")
 				moreURL = fmt.Sprintf("/admin/more%s?page=2&search=%s", view.RelPath, url.QueryEscape(search))
+				// Include any filter params in the moreURL
+				r.ParseForm()
+				for _, f := range r.Form["event_type"] {
+					moreURL += "&event_type=" + url.QueryEscape(f)
+				}
 			}
 			colCount := len(view.Rows)
 			if colCount == 0 {
@@ -162,6 +167,10 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			if hasMore {
 				search := r.URL.Query().Get("search")
 				moreURL = fmt.Sprintf("/admin/more%s?page=%d&search=%s", view.RelPath, page+1, url.QueryEscape(search))
+				// Include any filter params in the moreURL
+				for _, f := range r.URL.Query()["event_type"] {
+					moreURL += "&event_type=" + url.QueryEscape(f)
+				}
 			}
 			colCount := len(view.Rows)
 			if colCount == 0 {
