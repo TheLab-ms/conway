@@ -30,8 +30,6 @@ type Config struct {
 
 	TurnstileSiteKey string
 	TurnstileSecret  string
-
-	AccessControllerHost string
 }
 
 func main() {
@@ -86,10 +84,6 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		sender = email.NewGoogleSmtpSender(conf.EmailFrom, conf.EmailSenderName)
 	}
 
-	if conf.AccessControllerHost == "" {
-		slog.Info("generic access controller module disabled because a URL was not configured")
-	}
-
 	a := engine.NewApp(conf.HttpAddr, router, database)
 
 	modules.Register(a, modules.Options{
@@ -99,10 +93,9 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		OAuthIssuer:          engine.NewTokenIssuer("oauth2.pem"),
 		FobIssuer:            engine.NewTokenIssuer("fobs.pem"),
 		DiscordIssuer:        engine.NewTokenIssuer("discord-oauth.pem"),
-		Turnstile:            tso,
-		EmailSender:          sender,
-		SpaceHost:            conf.SpaceHost,
-		AccessControllerHost: conf.AccessControllerHost,
+		Turnstile:     tso,
+		EmailSender:   sender,
+		SpaceHost:     conf.SpaceHost,
 	})
 
 	return a, nil

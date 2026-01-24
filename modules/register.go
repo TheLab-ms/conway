@@ -13,7 +13,6 @@ import (
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/fobapi"
-	gac "github.com/TheLab-ms/conway/modules/generic-access-controller"
 	"github.com/TheLab-ms/conway/modules/kiosk"
 	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/TheLab-ms/conway/modules/members"
@@ -42,9 +41,6 @@ type Options struct {
 
 	// Kiosk config
 	SpaceHost string
-
-	// Generic Access Controller config (empty disables the module)
-	AccessControllerHost string
 }
 
 // Register adds all modules to the app and returns the auth module
@@ -72,10 +68,6 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(directory.New(opts.Database))
 
 	a.Add(machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu")))
-
-	if opts.AccessControllerHost != "" {
-		a.Add(gac.New(opts.Database, opts.AccessControllerHost))
-	}
 
 	// Discord modules - always register, they check config dynamically
 	// Discord webhook module for notifications
