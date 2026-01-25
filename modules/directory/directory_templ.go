@@ -46,7 +46,7 @@ func renderDirectory(members []DirectoryMember, currentUserID int64) templ.Compo
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"container my-5\"><h2>Member Directory</h2><div class=\"row g-4 mt-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"container my-5\"><h2>Member Directory</h2><p class=\"text-muted mb-4\">Put a face to the name! This directory helps members remember each other and connect Discord handles with the people you meet at the space. Only other members can see this page, so consider uploading a real photo of yourself.</p><div class=\"row g-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -63,7 +63,7 @@ func renderDirectory(members []DirectoryMember, currentUserID int64) templ.Compo
 					var templ_7745c5c3_Var3 string
 					templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/directory/avatar/%d", member.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `directory.templ`, Line: 20, Col: 62}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `directory.templ`, Line: 24, Col: 62}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 					if templ_7745c5c3_Err != nil {
@@ -76,7 +76,7 @@ func renderDirectory(members []DirectoryMember, currentUserID int64) templ.Compo
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(member.DisplayName)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `directory.templ`, Line: 21, Col: 34}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `directory.templ`, Line: 25, Col: 34}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {
@@ -99,7 +99,7 @@ func renderDirectory(members []DirectoryMember, currentUserID int64) templ.Compo
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(member.DisplayName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `directory.templ`, Line: 30, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `directory.templ`, Line: 34, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -110,7 +110,7 @@ func renderDirectory(members []DirectoryMember, currentUserID int64) templ.Compo
 					return templ_7745c5c3_Err
 				}
 				if member.Leadership {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<span class=\"badge bg-primary mb-2\">Leadership</span>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<span class=\"badge text-muted\" style=\"font-weight: 500; font-size: 0.75rem;\">Leadership</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -134,7 +134,7 @@ func renderDirectory(members []DirectoryMember, currentUserID int64) templ.Compo
 						var templ_7745c5c3_Var6 string
 						templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/directory/avatar/%d?type=discord", member.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `directory.templ`, Line: 61, Col: 77}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `directory.templ`, Line: 65, Col: 77}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 						if templ_7745c5c3_Err != nil {
@@ -152,7 +152,7 @@ func renderDirectory(members []DirectoryMember, currentUserID int64) templ.Compo
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs("@" + member.DiscordUsername)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `directory.templ`, Line: 68, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `directory.templ`, Line: 72, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
