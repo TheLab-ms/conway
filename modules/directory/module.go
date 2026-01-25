@@ -70,7 +70,7 @@ func (m *Module) queryMembers(ctx context.Context) ([]DirectoryMember, error) {
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT
 			id,
-			name as display_name,
+			COALESCE(name_override, name) as display_name,
 			COALESCE(discord_username, '') as discord_username,
 			profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0 as has_profile_picture,
 			discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0 as has_discord_avatar,
@@ -78,7 +78,7 @@ func (m *Module) queryMembers(ctx context.Context) ([]DirectoryMember, error) {
 			COALESCE(fob_last_seen, 0) as fob_last_seen
 		FROM members
 		WHERE access_status = 'Ready'
-			AND name IS NOT NULL AND name != ''
+			AND COALESCE(name_override, name) IS NOT NULL AND COALESCE(name_override, name) != ''
 			AND (
 				(profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0)
 				OR (discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0)
