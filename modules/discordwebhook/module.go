@@ -85,9 +85,9 @@ func (m *Module) ProcessItem(ctx context.Context, item message) error {
 func (m *Module) UpdateItem(ctx context.Context, item message, success bool) (err error) {
 	if success {
 		m.logEvent(ctx, "WebhookSent", true, fmt.Sprintf("id=%d", item.ID))
-		_, err = m.db.Exec("DELETE FROM discord_webhook_queue WHERE id = $1;", item.ID)
+		_, err = m.db.ExecContext(ctx, "DELETE FROM discord_webhook_queue WHERE id = $1;", item.ID)
 	} else {
-		_, err = m.db.Exec("UPDATE discord_webhook_queue SET send_at = unixepoch() + ((send_at - created) * 2) WHERE id = $1;", item.ID)
+		_, err = m.db.ExecContext(ctx, "UPDATE discord_webhook_queue SET send_at = unixepoch() + ((send_at - created) * 2) WHERE id = $1;", item.ID)
 	}
 	return err
 }

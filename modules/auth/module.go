@@ -149,7 +149,7 @@ func (s *Module) handleLoginFormPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate login code and email
-	code, body, err := s.newLoginEmail(memberID, callback)
+	code, body, err := s.newLoginEmail(r.Context(), memberID, callback)
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return
@@ -181,7 +181,7 @@ func generateLoginCode() (string, error) {
 	return fmt.Sprintf("%05d", n%100000), nil
 }
 
-func (m *Module) newLoginEmail(memberID int64, callback string) (code string, body string, err error) {
+func (m *Module) newLoginEmail(ctx context.Context, memberID int64, callback string) (code string, body string, err error) {
 	expiresAt := time.Now().Add(time.Minute * 5)
 
 	tok, err := m.tokens.Sign(&jwt.RegisteredClaims{
@@ -200,7 +200,7 @@ func (m *Module) newLoginEmail(memberID int64, callback string) (code string, bo
 		}
 
 		// Try to insert the code (will fail if code already exists due to PRIMARY KEY)
-		_, err = m.db.Exec(
+		_, err = m.db.ExecContext(ctx,
 			"INSERT INTO login_codes (code, token, email, callback, expires_at) VALUES (?, ?, (SELECT email FROM members WHERE id = ?), ?, ?)",
 			code, tok, memberID, callback, expiresAt.Unix(),
 		)
@@ -304,13 +304,13 @@ func (s *Module) verifyCodeAndLogin(w http.ResponseWriter, r *http.Request, code
 
 	// Check expiration
 	if time.Now().Unix() > expiresAt {
-		s.db.Exec("DELETE FROM login_codes WHERE code = ?", code)
+		s.db.ExecContext(r.Context(), "DELETE FROM login_codes WHERE code = ?", code)
 		engine.ClientError(w, "Code Expired", "The login code has expired - please request a new one", 400)
 		return
 	}
 
 	// Delete code (single use)
-	s.db.Exec("DELETE FROM login_codes WHERE code = ?", code)
+	s.db.ExecContext(r.Context(), "DELETE FROM login_codes WHERE code = ?", code)
 
 	// Complete login with the stored token
 	s.completeLogin(w, r, token, callback)
