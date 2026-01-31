@@ -25,11 +25,11 @@ impl<'a> Wiegand<'a> {
     /// Waits for the first bit, then collects bits until no more arrive
     /// within the timeout period.
     pub async fn read(&mut self) -> Option<WiegandRead> {
-        // Set timestamp before first bit to enable debounce on first loop iteration
-        let mut last_bit = Instant::now();
-
         // Wait for first bit
         let first_bit = self.wait_for_bit().await;
+
+        // Set timestamp after first bit for debouncing subsequent bits
+        let mut last_bit = Instant::now();
         let mut bits: u64 = first_bit as u64;
         let mut count: u32 = 1;
 

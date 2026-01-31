@@ -14,7 +14,7 @@ use heapless::String as HString;
 use smoltcp::wire::IpAddress;
 
 use crate::events::{AccessEvent, MAX_EVENTS};
-use crate::storage::{Config, Storage, MAX_FOBS};
+use crate::storage::{Config, MAX_FOBS};
 use crate::{EVENT_BUFFER, SYNC_COMPLETE};
 
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
@@ -24,7 +24,6 @@ const IO_TIMEOUT: Duration = Duration::from_secs(10);
 pub async fn sync_with_conway(
     stack: &'static Stack<'static>,
     config: &'static Config,
-    storage: &'static Mutex<CriticalSectionRawMutex, Storage>,
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &'static Mutex<CriticalSectionRawMutex, HString<64>>,
 ) {
@@ -192,17 +191,6 @@ pub async fn sync_with_conway(
                 let mut guard = etag.lock().await;
                 guard.clear();
                 let _ = guard.push_str(etag_value);
-            }
-
-            // Save to flash
-            {
-                let mut guard = storage.lock().await;
-                guard.save_fobs(&new_fobs).await;
-                if let Some(etag_value) = new_etag {
-                    let mut etag_str: HString<64> = HString::new();
-                    let _ = etag_str.push_str(etag_value);
-                    guard.save_etag(&etag_str).await;
-                }
             }
 
             // Server acknowledged the request - safe to remove events from buffer

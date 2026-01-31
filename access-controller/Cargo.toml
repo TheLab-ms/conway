@@ -10,7 +10,6 @@ esp-rtos = { version = "0.2", features = ["esp-radio", "embassy", "log-04"] }
 esp-alloc = "0.9"
 esp-println = { version = "0.13", default-features = false, features = ["log", "uart"] }
 esp-bootloader-esp-idf = "0.1"
-esp-storage = { version = "0.4", features = ["nor-flash"] }
 
 # Use same embassy versions that esp-rtos uses
 embassy-executor = "0.9"
@@ -18,7 +17,6 @@ embassy-time = "0.5"
 embassy-sync = "0.7"
 embassy-net = { version = "0.8", features = ["dhcpv4", "tcp", "medium-ethernet", "proto-ipv4", "dns"] }
 embassy-futures = "0.1"
-embassy-embedded-hal = "0.3"
 
 smoltcp = { version = "0.12", default-features = false, features = ["medium-ethernet", "proto-ipv4", "proto-dhcpv4", "socket-tcp", "socket-dhcpv4"] }
 heapless = "0.8"
@@ -26,12 +24,9 @@ log = "0.4"
 embedded-io-async = "0.7"
 static_cell = "2"
 
-# High-level flash storage
-sequential-storage = "3"
-
 [features]
 default = ["esp32"]
-esp32 = ["esp-hal/esp32", "esp-radio/esp32", "esp-rtos/esp32", "esp-println/esp32", "esp-storage/esp32"]
+esp32 = ["esp-hal/esp32", "esp-radio/esp32", "esp-rtos/esp32", "esp-println/esp32"]
 
 # Override esp32 PAC to use the git version that esp-hal 1.0 was built against
 [patch.crates-io]
@@ -40,9 +35,3 @@ esp32 = { git = "https://github.com/esp-rs/esp-pacs", rev = "5d7a479" }
 [profile.release]
 opt-level = "s"
 lto = true
-
-[profile.dev.package.esp-storage]
-opt-level = 2
-
-[profile.release.package.esp-storage]
-opt-level = 2

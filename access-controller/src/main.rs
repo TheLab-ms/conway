@@ -39,7 +39,7 @@ use heapless::String as HString;
 use static_cell::StaticCell;
 
 use crate::events::{AccessEvent, EventBuffer};
-use crate::storage::{Config, Storage, MAX_FOBS};
+use crate::storage::{Config, MAX_FOBS};
 use crate::wiegand::{Wiegand, WiegandRead};
 
 // Channel for Wiegand reads -> access control task
@@ -59,7 +59,6 @@ pub static DOOR_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
 // Static cells for 'static lifetime requirements
 static CONFIG: StaticCell<Config> = StaticCell::new();
-static STORAGE: StaticCell<Mutex<CriticalSectionRawMutex, Storage>> = StaticCell::new();
 static FOBS: StaticCell<Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>> =
     StaticCell::new();
 static ETAG: StaticCell<Mutex<CriticalSectionRawMutex, HString<64>>> = StaticCell::new();
@@ -100,16 +99,11 @@ async fn main(spawner: embassy_executor::Spawner) {
         config.conway_port
     );
 
-    // Initialize storage and shared state (async to load from flash)
-    let storage_inner = Storage::new().await;
-    let cached_fobs = storage_inner.load_fobs();
-    let cached_etag = storage_inner.load_etag();
+    // Initialize shared state (fobs and etag start empty, populated by sync)
+    let fobs = FOBS.init(Mutex::new(heapless::Vec::new()));
+    let etag = ETAG.init(Mutex::new(HString::new()));
 
-    let storage = STORAGE.init(Mutex::new(storage_inner));
-    let fobs = FOBS.init(Mutex::new(cached_fobs));
-    let etag = ETAG.init(Mutex::new(cached_etag));
-
-    log::info!("storage: loaded {} fobs from cache", fobs.lock().await.len());
+    log::info!("storage: fob cache initialized (empty, will sync from server)");
 
     // Initialize esp-radio for WiFi
     // NOTE: esp_rtos::start() must be called before this (done above after peripherals init).
@@ -160,7 +154,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     spawner.spawn(wiegand_task(wiegand)).unwrap();
     spawner.spawn(access_task(fobs)).unwrap();
     spawner.spawn(door_task(door)).unwrap();
-    spawner.spawn(sync_task(stack, config, storage, fobs, etag)).unwrap();
+    spawner.spawn(sync_task(stack, config, fobs, etag)).unwrap();
     spawner.spawn(http_task(stack, fobs, etag)).unwrap();
 }
 
@@ -344,7 +338,6 @@ async fn door_task(mut door: Output<'static>) {
 async fn sync_task(
     stack: &'static Stack<'static>,
     config: &'static Config,
-    storage: &'static Mutex<CriticalSectionRawMutex, Storage>,
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &'static Mutex<CriticalSectionRawMutex, HString<64>>,
 ) {
@@ -370,7 +363,7 @@ async fn sync_task(
             continue;
         }
 
-        crate::sync::sync_with_conway(stack, config, storage, fobs, etag).await;
+        crate::sync::sync_with_conway(stack, config, fobs, etag).await;
     }
 }
 

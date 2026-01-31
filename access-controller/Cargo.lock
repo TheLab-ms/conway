@@ -6,12 +6,11 @@ version = 4
 name = "access-controller"
 version = "0.1.0"
 dependencies = [
- "embassy-embedded-hal 0.3.2",
  "embassy-executor",
  "embassy-futures",
  "embassy-net",
  "embassy-sync 0.7.2",
- "embassy-time 0.5.0",
+ "embassy-time",
  "embedded-io-async 0.7.0",
  "esp-alloc",
  "esp-bootloader-esp-idf",
@@ -19,10 +18,8 @@ dependencies = [
  "esp-println",
  "esp-radio",
  "esp-rtos",
- "esp-storage",
  "heapless 0.8.0",
  "log",
- "sequential-storage",
  "smoltcp",
  "static_cell",
 ]
@@ -318,41 +315,6 @@ dependencies = [
 
 [[package]]
 name = "embassy-embedded-hal"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c62a3bf127e03832fb97d8b01a058775e617653bc89e2a12c256485a7fb54c1"
-dependencies = [
- "embassy-embedded-hal 0.4.0",
- "embassy-futures",
- "embassy-sync 0.6.2",
- "embassy-time 0.4.0",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "embedded-storage",
- "embedded-storage-async",
- "nb 1.1.0",
-]
-
-[[package]]
-name = "embassy-embedded-hal"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1611b7a7ab5d1fbed84c338df26d56fd9bded58006ebb029075112ed2c5e039"
-dependencies = [
- "embassy-futures",
- "embassy-hal-internal",
- "embassy-sync 0.7.2",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "embedded-storage",
- "embedded-storage-async",
- "nb 1.1.0",
-]
-
-[[package]]
-name = "embassy-embedded-hal"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "554e3e840696f54b4c9afcf28a0f24da431c927f4151040020416e7393d6d0d8"
@@ -422,7 +384,7 @@ dependencies = [
  "document-features",
  "embassy-net-driver",
  "embassy-sync 0.7.2",
- "embassy-time 0.5.0",
+ "embassy-time",
  "embedded-io-async 0.7.0",
  "embedded-nal-async",
  "heapless 0.8.0",
@@ -462,22 +424,6 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "heapless 0.8.0",
-]
-
-[[package]]
-name = "embassy-time"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f820157f198ada183ad62e0a66f554c610cdcd1a9f27d4b316358103ced7a1f8"
-dependencies = [
- "cfg-if",
- "critical-section",
- "document-features",
- "embassy-time-driver",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "futures-util",
 ]
 
 [[package]]
@@ -672,17 +618,6 @@ dependencies = [
 
 [[package]]
 name = "esp-build"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b94a4b8d74e7cc7baabcca5b2277b41877e039ad9cd49959d48ef94dac7eab4b"
-dependencies = [
- "quote",
- "syn 2.0.114",
- "termcolor",
-]
-
-[[package]]
-name = "esp-build"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8aa1c8f9954c9506699cf1ca10a2adcc226ff10b6ae3cb9e875cf2c6a0b9a372"
@@ -730,7 +665,7 @@ dependencies = [
  "delegate",
  "digest",
  "document-features",
- "embassy-embedded-hal 0.5.0",
+ "embassy-embedded-hal",
  "embassy-futures",
  "embassy-sync 0.7.2",
  "embedded-can",
@@ -813,7 +748,7 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "960703930f9f3c899ddedd122ea27a09d6a612c22323157e524af5b18876448e"
 dependencies = [
- "esp-build 0.2.0",
+ "esp-build",
  "log",
 ]
 
@@ -900,17 +835,6 @@ dependencies = [
  "esp-sync",
  "log",
  "portable-atomic",
-]
-
-[[package]]
-name = "esp-storage"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "661aebceb62e0caadd7e6bddd88b2d891c3b08cea4eb5afe96ef697674ccda5c"
-dependencies = [
- "critical-section",
- "embedded-storage",
- "esp-build 0.1.0",
 ]
 
 [[package]]
@@ -1446,15 +1370,6 @@ name = "ryu"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a50f4cf475b65d88e057964e0e9bb1f0aa9bbb2036dc65c64596b42932536984"
-
-[[package]]
-name = "sequential-storage"
-version = "3.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b80693b2169b3fe0f9c68d5fae804490cc437113c0526dbabb75c01e758db597"
-dependencies = [
- "embedded-storage-async",
-]
 
 [[package]]
 name = "serde"
