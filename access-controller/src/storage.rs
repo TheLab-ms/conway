@@ -163,17 +163,28 @@ mod flash_ops {
 
     pub async fn fetch<V: for<'a> Value<'a>>(key: StorageKey, buf: &mut [u8]) -> Option<V> {
         let mut flash = BlockingAsync::new(FlashStorage::new());
-        map::fetch_item(&mut flash, FLASH_RANGE, &mut NoCache::new(), buf, &key)
+        match map::fetch_item::<StorageKey, V, _>(&mut flash, FLASH_RANGE, &mut NoCache::new(), buf, &key)
             .await
-            .ok()
-            .flatten()
+        {
+            Ok(value) => value,
+            Err(e) => {
+                log::error!("storage: flash fetch error: {:?}", e);
+                None
+            }
+        }
     }
 
     pub async fn store<V: for<'a> Value<'a>>(key: StorageKey, value: &V, buf: &mut [u8]) -> bool {
         let mut flash = BlockingAsync::new(FlashStorage::new());
-        map::store_item(&mut flash, FLASH_RANGE, &mut NoCache::new(), buf, &key, value)
+        match map::store_item::<StorageKey, V, _>(&mut flash, FLASH_RANGE, &mut NoCache::new(), buf, &key, value)
             .await
-            .is_ok()
+        {
+            Ok(()) => true,
+            Err(e) => {
+                log::error!("storage: flash store error: {:?}", e);
+                false
+            }
+        }
     }
 }
 
