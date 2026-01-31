@@ -106,10 +106,16 @@ async fn main(spawner: embassy_executor::Spawner) {
     log::info!("storage: loaded {} fobs from cache", fobs.lock().await.len());
 
     // Initialize esp-radio for WiFi
+    // NOTE: This must happen BEFORE any Timer::after() calls, because esp-rtos
+    // initializes the Embassy time driver during esp_radio::init().
     let esp_radio_ctrl = esp_radio::init().unwrap();
 
     // Leak the controller to get 'static lifetime before creating WiFi
     let esp_radio_ctrl: &'static _ = Box::leak(Box::new(esp_radio_ctrl));
+
+    // Yield to allow esp-rtos background tasks to fully start.
+    // Now safe to use Timer since esp_radio::init() has initialized the time driver.
+    Timer::after(Duration::from_millis(10)).await;
 
     let wifi_config = WifiConfig::default();
     let (wifi_controller, interfaces) =

@@ -4,6 +4,10 @@ target = "xtensa-esp32-none-elf"
 [target.xtensa-esp32-none-elf]
 linker = "xtensa-esp32-elf-gcc"
 runner = "espflash flash --monitor"
+rustflags = [
+    "-C", "link-arg=-nostartfiles",
+    "-C", "link-arg=-Wl,-Tlinkall.x",
+]
 
 [env]
 ESP_LOG = "info"
