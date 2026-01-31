@@ -1,53 +1,69 @@
-# access-controller
+# Conway Building Access Controller
 
-MicroPython access controller for ESP32. Reads 26-bit and 34-bit Wiegand (RFID fobs + NFC tags), authenticates against a Conway server, and triggers a door relay.
+Bare metal Rust implementation of the Conway building access controller for ESP32.
+
+## Architecture
+
+- **Core 0 (PRO_CPU)**: Real-time Wiegand reader + door relay. Never blocks on network.
+- **Core 1 (APP_CPU)**: WiFi, HTTP client (Conway sync), HTTP server, flash storage.
+
+**Inter-core communication** uses lock-free atomics:
+- Fob list: Core 1 writes, Core 0 reads
+- Access events: Core 0 writes, Core 1 reads
+- Unlock requests: Core 1 writes, Core 0 reads
 
 ## Hardware
 
-- ESP32 (tested on ESP32-WROOM)
+- ESP32-WROOM
 - Wiegand reader: D0 → GPIO14, D1 → GPIO27
-- Door relay/strike: GPIO25 (active high, 200ms pulse)
+- Door relay: GPIO25 (active high, 200ms pulse)
 
-## Dependencies
+## Prerequisites
 
-Requires MicroPython. Copy `aiorepl.py` to the device for REPL access over the event loop.
+1. **Rust** (stable): https://rustup.rs
+2. **espup** (ESP32 Rust toolchain manager):
+   ```bash
+   cargo install espup
+   espup install
+   ```
+3. **espflash** (flashing tool):
+   ```bash
+   cargo install espflash
+   ```
 
-## Configuration
+## Building
 
-Create `network.conf` on the device:
-
-```json
-{
-  "conwayHost": "192.168.1.x",
-  "conwayPort": 8080,
-  "ssid": "your-ssid",
-  "password": "your-password"
-}
-```
-
-## Deployment
+WiFi and server credentials are embedded at build time. Use `build.sh`:
 
 ```bash
-# Initial connection may require a delay workaround
-mpremote connect /dev/cu.usbserial-0001 sleep 2 fs cp main.py :main.py
-mpremote connect /dev/cu.usbserial-0001 sleep 2 fs cp aiorepl.py :aiorepl.py
-mpremote connect /dev/cu.usbserial-0001 sleep 2 fs cp network.conf :network.conf
-mpremote # enter a repl
+# Source the ESP toolchain (add to .bashrc/.zshrc for persistence)
+. $HOME/export-esp.sh
+
+# Build with credentials
+./build.sh --ssid "YourWiFi" --password "secret" --host 192.168.1.68
 ```
 
-## Credential Encoding
+Options:
+- `--ssid` (required) - WiFi network name
+- `--password` (required) - WiFi password
+- `--host` (required) - Conway server hostname or IP
+- `--port` - Conway server port (default: 8080)
+- `--flash` - Flash to device after building
+- `--serial` - Serial port for flashing (e.g., `/dev/ttyUSB0`)
 
-The controller accepts two credential formats over 26-bit or 34-bit Wiegand:
+The binary is at `target/xtensa-esp32-none-elf/release/access-controller`.
 
-- **RFID fobs (H10301)**: Facility code (8-bit) + card ID (16-bit) concatenated as decimal. E.g., facility `123`, card `45678` → stored as `12345678`. Works with both 26-bit and 34-bit readers.
-- **NFC tags (34-bit only)**: 4-byte UID byte-reversed, stored as decimal. E.g., UID `DE:AD:BE:EF` → `0xEFBEADDE` → `4022250974`.
+## Flashing
 
-Both formats are checked against the Conway server's fob list - there isn't a way to tell them apart otherwise.
+Connect the ESP32 via USB, then either:
 
-## Runtime
+```bash
+# Build and flash in one step
+./build.sh --ssid "YourWiFi" --password "secret" --host 192.168.1.68 --flash
 
-- Polls Conway server every 10s; caches fob list to flash (`conwaystate.json`) with CRC32 validation
-- HTTP server on :80 for status + manual unlock (`POST /unlock`)
-- 30s hardware watchdog; exponential backoff on failed auth attempts
-- `boom()` in REPL removes `main.py` for recovery/re-flash
+# Or flash manually
+espflash flash target/xtensa-esp32-none-elf/release/access-controller --monitor
+```
+
+Hold BOOT button while flashing if it fails to connect.
 
