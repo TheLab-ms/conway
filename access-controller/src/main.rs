@@ -136,14 +136,14 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     // Setup GPIO pins
     let d0 = Input::new(
-        peripherals.GPIO14,
+        peripherals.GPIO25,
         InputConfig::default().with_pull(Pull::Up),
     );
     let d1 = Input::new(
-        peripherals.GPIO27,
+        peripherals.GPIO33,
         InputConfig::default().with_pull(Pull::Up),
     );
-    let door = Output::new(peripherals.GPIO25, Level::Low, OutputConfig::default());
+    let door = Output::new(peripherals.GPIO32, Level::Low, OutputConfig::default());
 
     // Create Wiegand reader
     let wiegand = Wiegand::new(d0, d1);
