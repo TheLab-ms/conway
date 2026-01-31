@@ -1,69 +1,38 @@
-# Conway Building Access Controller
+# Access Controller v2
 
-Bare metal Rust implementation of the Conway building access controller for ESP32.
-
-## Architecture
-
-- **Core 0 (PRO_CPU)**: Real-time Wiegand reader + door relay. Never blocks on network.
-- **Core 1 (APP_CPU)**: WiFi, HTTP client (Conway sync), HTTP server, flash storage.
-
-**Inter-core communication** uses lock-free atomics:
-- Fob list: Core 1 writes, Core 0 reads
-- Access events: Core 0 writes, Core 1 reads
-- Unlock requests: Core 1 writes, Core 0 reads
+ESP32 door access controller firmware written in Rust using Embassy async. Reads Wiegand 26/34-bit RFID credentials, authenticates against the Conway fob API, and controls a door relay.
 
 ## Hardware
 
-- ESP32-WROOM
-- Wiegand reader: D0 → GPIO14, D1 → GPIO27
-- Door relay: GPIO25 (active high, 200ms pulse)
+- ESP32 (4MB flash)
+- Wiegand RFID reader on GPIO14 (D0) and GPIO27 (D1)
+- Door relay on GPIO25
 
-## Prerequisites
+## Requirements
 
-1. **Rust** (stable): https://rustup.rs
-2. **espup** (ESP32 Rust toolchain manager):
-   ```bash
-   cargo install espup
-   espup install
-   ```
-3. **espflash** (flashing tool):
-   ```bash
-   cargo install espflash
-   ```
+- [Rust ESP toolchain](https://docs.esp-rs.org/book/installation/index.html): `rustup +esp`
+- espflash: `cargo install espflash`
 
-## Building
+## Configuration
 
-WiFi and server credentials are embedded at build time. Use `build.sh`:
+Copy `network.env.example` to `network.env` and edit with your values:
+
+## Build and Flash
 
 ```bash
-# Source the ESP toolchain (add to .bashrc/.zshrc for persistence)
-. $HOME/export-esp.sh
+# Build
+source network.env && cargo build --release
 
-# Build with credentials
-./build.sh --ssid "YourWiFi" --password "secret" --host 192.168.1.68
+# Flash (auto-detects serial port)
+espflash flash --monitor target/xtensa-esp32-none-elf/release/access-controller
 ```
 
-Options:
-- `--ssid` (required) - WiFi network name
-- `--password` (required) - WiFi password
-- `--host` (required) - Conway server hostname or IP
-- `--port` - Conway server port (default: 8080)
-- `--flash` - Flash to device after building
-- `--serial` - Serial port for flashing (e.g., `/dev/ttyUSB0`)
+## Flashing an ESP32
 
-The binary is at `target/xtensa-esp32-none-elf/release/access-controller`.
+1. Connect ESP32 via USB
+2. Hold BOOT button, press RESET, release BOOT (if auto-reset doesn't work)
+3. Run the flash command above
+4. After flashing, press RESET or power cycle
 
-## Flashing
-
-Connect the ESP32 via USB, then either:
-
-```bash
-# Build and flash in one step
-./build.sh --ssid "YourWiFi" --password "secret" --host 192.168.1.68 --flash
-
-# Or flash manually
-espflash flash target/xtensa-esp32-none-elf/release/access-controller --monitor
-```
-
-Hold BOOT button while flashing if it fails to connect.
+The device will connect to WiFi, sync fobs from Conway, and begin accepting card scans.
 

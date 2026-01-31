@@ -6,20 +6,28 @@ edition = "2021"
 [dependencies]
 esp-hal = { version = "1.0", features = ["unstable", "rt"] }
 esp-radio = { version = "0.17", default-features = false, features = ["wifi", "smoltcp", "log-04", "unstable"] }
-esp-radio-rtos-driver = "0.2"
-esp-rtos = { version = "0.2", features = ["esp-radio", "log-04"] }
+esp-rtos = { version = "0.2", features = ["esp-radio", "embassy", "log-04"] }
 esp-alloc = "0.9"
 esp-println = { version = "0.13", default-features = false, features = ["log", "uart"] }
 esp-bootloader-esp-idf = "0.1"
 esp-storage = { version = "0.4", features = ["nor-flash"] }
+
+# Use same embassy versions that esp-rtos uses
+embassy-executor = "0.9"
+embassy-time = "0.5"
+embassy-sync = "0.7"
+embassy-net = { version = "0.8", features = ["dhcpv4", "tcp", "medium-ethernet", "proto-ipv4", "dns"] }
+embassy-futures = "0.1"
+embassy-embedded-hal = "0.3"
+
 smoltcp = { version = "0.12", default-features = false, features = ["medium-ethernet", "proto-ipv4", "proto-dhcpv4", "socket-tcp", "socket-dhcpv4"] }
 heapless = "0.8"
-critical-section = "1.2"
 log = "0.4"
-embedded-io = "0.6"
-embedded-storage = "0.3"
-fugit = "0.3"
-portable-atomic = { version = "1", features = ["critical-section"] }
+embedded-io-async = "0.7"
+static_cell = "2"
+
+# High-level flash storage
+sequential-storage = "3"
 
 [features]
 default = ["esp32"]

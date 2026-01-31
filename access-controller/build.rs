@@ -6,6 +6,7 @@
 //!   CONWAY_PASSWORD=secret123 \
 //!   CONWAY_HOST=192.168.1.68 \
 //!   CONWAY_PORT=8080 \
+//!   CONWAY_UNLOCK_SECRET=mysecret \
 //!   cargo build --release
 //!
 //! Or use the build.sh wrapper script.
@@ -16,4 +17,5 @@ fn main() {
     println!("cargo::rerun-if-env-changed=CONWAY_PASSWORD");
     println!("cargo::rerun-if-env-changed=CONWAY_HOST");
     println!("cargo::rerun-if-env-changed=CONWAY_PORT");
+    println!("cargo::rerun-if-env-changed=CONWAY_UNLOCK_SECRET");
 }

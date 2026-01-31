@@ -1,0 +1,24 @@
+[package]
+name = "access-controller-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# This is a test-only crate that runs on the host system.
+# It tests the pure logic from the access-controller without ESP32 dependencies.
+
+[[test]]
+name = "wiegand_tests"
+path = "wiegand_tests.rs"
+
+[[test]]
+name = "storage_tests"
+path = "storage_tests.rs"
+
+[[test]]
+name = "sync_tests"
+path = "sync_tests.rs"
+
+[[test]]
+name = "events_tests"
+path = "events_tests.rs"
