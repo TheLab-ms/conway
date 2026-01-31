@@ -32,6 +32,7 @@ use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
+use esp_hal::timer::timg::TimerGroup;
 use esp_println::logger::init_logger;
 use esp_radio::wifi::{ClientConfig, Config as WifiConfig, ModeConfig, WifiController};
 use heapless::String as HString;
@@ -85,6 +86,11 @@ async fn main(spawner: embassy_executor::Spawner) {
     let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(hal_config);
 
+    // Start the esp-rtos scheduler with a timer - MUST happen before esp_radio::init()
+    // The scheduler requires a hardware timer for task scheduling and time management.
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
+    esp_rtos::start(timg0.timer0);
+
     // Load configuration
     let config = CONFIG.init(Config::get());
     log::info!(
@@ -106,16 +112,11 @@ async fn main(spawner: embassy_executor::Spawner) {
     log::info!("storage: loaded {} fobs from cache", fobs.lock().await.len());
 
     // Initialize esp-radio for WiFi
-    // NOTE: This must happen BEFORE any Timer::after() calls, because esp-rtos
-    // initializes the Embassy time driver during esp_radio::init().
+    // NOTE: esp_rtos::start() must be called before this (done above after peripherals init).
     let esp_radio_ctrl = esp_radio::init().unwrap();
 
     // Leak the controller to get 'static lifetime before creating WiFi
     let esp_radio_ctrl: &'static _ = Box::leak(Box::new(esp_radio_ctrl));
-
-    // Yield to allow esp-rtos background tasks to fully start.
-    // Now safe to use Timer since esp_radio::init() has initialized the time driver.
-    Timer::after(Duration::from_millis(10)).await;
 
     let wifi_config = WifiConfig::default();
     let (wifi_controller, interfaces) =

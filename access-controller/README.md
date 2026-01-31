@@ -21,10 +21,7 @@ Copy `network.env.example` to `network.env` and edit with your values:
 
 ```bash
 # Build
-source network.env && cargo build --release
-
-# Flash (auto-detects serial port)
-espflash flash --monitor target/xtensa-esp32-none-elf/release/access-controller
+source network.env && cargo run --release
 ```
 
 ## Flashing an ESP32
