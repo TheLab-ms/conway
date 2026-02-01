@@ -5,7 +5,11 @@
 use embassy_time::{Duration, Instant, with_timeout};
 use esp_hal::gpio::Input;
 
-const DEBOUNCE: Duration = Duration::from_micros(200);
+// Debounce time accounts for optocoupler propagation delay and slower edge transitions.
+// Typical optocouplers (e.g., PC817, 6N137) have 3-18µs rise/fall times which can cause
+// ringing or multiple edge detections. Wiegand pulse width is typically 50-100µs with
+// 1-2ms between pulses, so 500µs debounce is safe and eliminates duplicate bits.
+const DEBOUNCE: Duration = Duration::from_micros(500);
 const BIT_TIMEOUT: Duration = Duration::from_millis(25);
 
 /// Async Wiegand reader.
