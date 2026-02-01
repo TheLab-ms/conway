@@ -10,7 +10,7 @@ Circuit summary:
 - AMS1117-3.3 LDO for ESP32 power (44uF MLCC filtering)
 - 2x EL817 SMD optocouplers for Wiegand D0/D1 isolation (5V reader -> 3.3V ESP32)
 - SS8050 NPN transistor + M7 flyback diode for 12V external relay control
-- ESP32-WROOM-32 module on 2x19 female headers (manual assembly)
+- ESP32 module on 1x19 female header (left side only, fits any width dev board)
 - Screw terminals for power, Wiegand, and relay connections (manual assembly)
 
 Note: Optocouplers invert the Wiegand signal. Firmware must detect rising edges.
@@ -210,8 +210,7 @@ def place_components(brd):
     parts["R5"] = R0805(brd.DC((58, 32)).right(90), val="10K", side="top")
 
     # ESP32 socket
-    parts["J4"] = PinHeader_1x19(brd.DC((9, 25)), val="ESP32_L", side="top")
-    parts["J5"] = PinHeader_1x19(brd.DC((56, 25)), val="ESP32_R", side="top")
+    parts["J4"] = PinHeader_1x19(brd.DC((9, 25)), val="ESP32", side="top")
     parts["C5"] = C0805(brd.DC((14, 4)), val="100nF", side="top")
     parts["C6"] = C0805(brd.DC((18, 4)), val="10uF", side="top")
 
@@ -317,7 +316,6 @@ def route_all(brd, parts):
     via(brd, parts["U3"].pads[1].xy)  # U3 cathode
     via(brd, parts["U3"].pads[2].xy)  # U3 emitter
     via(brd, parts["J4"].pads[13].xy)  # ESP32 GND (pin 14)
-    via(brd, parts["J5"].pads[0].xy)   # ESP32 GND (pin 1)
     via(brd, parts["Q1"].pads[1].xy)   # Q1 emitter
 
     # === Wiegand D0 Path ===
@@ -475,7 +473,7 @@ def main():
     print("  3. Review component placement and confirm order")
     print("\nManual Assembly Required (after delivery):")
     print("  - J1, J2, J3: Screw terminals")
-    print("  - J4, J5: ESP32 socket headers")
+    print("  - J4: ESP32 socket header (left side only)")
     print("=" * 70)
 
 
