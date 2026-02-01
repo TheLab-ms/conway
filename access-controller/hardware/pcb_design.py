@@ -224,6 +224,33 @@ def place_components(brd):
 
 
 # =============================================================================
+# SILKSCREEN LABELS
+# =============================================================================
+
+def add_labels(brd, parts):
+    """Add silkscreen labels to identify screw terminals."""
+    # +12V terminal label (J1)
+    j1_pos = parts["J1"].center.xy
+    brd.add_text((j1_pos[0], j1_pos[1] - 7), "+12V", scale=0.8, side="top")
+    brd.add_text((j1_pos[0] - 2.5, j1_pos[1] + 6), "+", scale=0.6, side="top")
+    brd.add_text((j1_pos[0] + 2.5, j1_pos[1] + 6), "-", scale=0.6, side="top")
+
+    # WIEGAND terminal label (J2)
+    j2_pos = parts["J2"].center.xy
+    brd.add_text((j2_pos[0], j2_pos[1] + 7), "WIEGAND", scale=0.7, side="top")
+    brd.add_text((j2_pos[0] - 7.5, j2_pos[1] - 6), "D0", scale=0.5, side="top")
+    brd.add_text((j2_pos[0] - 2.5, j2_pos[1] - 6), "D1", scale=0.5, side="top")
+    brd.add_text((j2_pos[0] + 2.5, j2_pos[1] - 6), "+", scale=0.5, side="top")
+    brd.add_text((j2_pos[0] + 7.5, j2_pos[1] - 6), "-", scale=0.5, side="top")
+
+    # RELAY terminal label (J3)
+    j3_pos = parts["J3"].center.xy
+    brd.add_text((j3_pos[0], j3_pos[1] + 6), "RELAY", scale=0.8, side="top")
+    brd.add_text((j3_pos[0] - 2.5, j3_pos[1] - 5), "NO", scale=0.5, side="top")
+    brd.add_text((j3_pos[0] + 2.5, j3_pos[1] - 5), "C", scale=0.5, side="top")
+
+
+# =============================================================================
 # ROUTING
 # =============================================================================
 
@@ -450,7 +477,8 @@ def main():
     print("[3/5] Routing traces...")
     route_all(brd, parts)
 
-    print("[4/5] Adding board outline...")
+    print("[4/5] Adding labels and board outline...")
+    add_labels(brd, parts)
     brd.add_outline()
 
     print("[5/5] Generating output files...")
