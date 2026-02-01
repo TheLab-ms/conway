@@ -68,14 +68,20 @@ impl<'a> Wiegand<'a> {
         }
     }
 
-    /// Wait for either D0 or D1 falling edge and return the bit value.
+    /// Wait for either D0 or D1 edge and return the bit value.
+    ///
+    /// NOTE: With optocoupler isolation (PC817), the signal is inverted:
+    /// - Reader idle (HIGH) -> LED on -> transistor on -> ESP32 sees LOW
+    /// - Reader pulse (LOW) -> LED off -> transistor off -> ESP32 sees HIGH
+    /// Therefore we detect RISING edges (the inverted falling edge from reader).
     async fn wait_for_bit(&mut self) -> u8 {
         use embassy_futures::select::Either;
 
-        // D0 falling edge = 0 bit, D1 falling edge = 1 bit
+        // D0 rising edge = 0 bit, D1 rising edge = 1 bit
+        // (inverted from reader's falling edge by optocoupler)
         match embassy_futures::select::select(
-            self.d0.wait_for_falling_edge(),
-            self.d1.wait_for_falling_edge(),
+            self.d0.wait_for_rising_edge(),
+            self.d1.wait_for_rising_edge(),
         )
         .await
         {

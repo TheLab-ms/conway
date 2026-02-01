@@ -1,0 +1,11 @@
+WARNING: KICAD8_SYMBOL_DIR environment variable is missing, so the default KiCad symbol libraries won't be searched. @ [/Users/jordan/code/conway/access-controller/hardware/<frozen importlib._bootstrap_external>:1026=>/Users/jordan/code/conway/access-controller/hardware/<frozen importlib._bootstrap>:488]
+WARNING: KICAD6_SYMBOL_DIR environment variable is missing, so the default KiCad symbol libraries won't be searched. @ [/Users/jordan/code/conway/access-controller/hardware/<frozen importlib._bootstrap_external>:1026=>/Users/jordan/code/conway/access-controller/hardware/<frozen importlib._bootstrap>:488]
+WARNING: KICAD7_SYMBOL_DIR environment variable is missing, so the default KiCad symbol libraries won't be searched. @ [/Users/jordan/code/conway/access-controller/hardware/<frozen importlib._bootstrap_external>:1026=>/Users/jordan/code/conway/access-controller/hardware/<frozen importlib._bootstrap>:488]
+WARNING: KICAD9_SYMBOL_DIR environment variable is missing, so the default KiCad symbol libraries won't be searched. @ [/Users/jordan/code/conway/access-controller/hardware/<frozen importlib._bootstrap_external>:1026=>/Users/jordan/code/conway/access-controller/hardware/<frozen importlib._bootstrap>:488]
+WARNING: KICAD_SYMBOL_DIR environment variable is missing, so the default KiCad symbol libraries won't be searched. @ [/Users/jordan/code/conway/access-controller/hardware/<frozen importlib._bootstrap_external>:1026=>/Users/jordan/code/conway/access-controller/hardware/<frozen importlib._bootstrap>:488]
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+ERROR: Can't open file: Device.
+ @ [/Users/jordan/code/conway/access-controller/hardware/<stdin>:13=>/Users/jordan/code/conway/access-controller/hardware/<string>:40]
+WARNING: Could not load KiCad schematic library "Device", falling back to backup library. @ [/Users/jordan/code/conway/access-controller/hardware/<stdin>:13=>/Users/jordan/code/conway/access-controller/hardware/<string>:40]

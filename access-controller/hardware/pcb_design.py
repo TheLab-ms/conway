@@ -3,79 +3,158 @@
 ESP32 Door Access Controller PCB - SKiDL Design
 
 Generates a KiCad-compatible netlist for PCB layout.
+Optimized for JLCPCB assembly with LCSC part numbers.
 
 Circuit summary:
-- 12V input with reverse polarity protection
-- AMS1117-3.3 LDO for ESP32 power
-- 2x PC817 optocouplers for Wiegand D0/D1 isolation (5V reader -> 3.3V ESP32)
-- 2N2222 NPN transistor + flyback diode for 12V external relay control
-- ESP32-WROOM-32 module on 2x19 female headers
-- Screw terminals for power, Wiegand, and relay connections
+- 12V input with reverse polarity protection (SS34 Schottky)
+- AMS1117-3.3 LDO for ESP32 power (44uF MLCC filtering)
+- 2x EL817 SMD optocouplers for Wiegand D0/D1 isolation (5V reader -> 3.3V ESP32)
+- SS8050 NPN transistor + M7 flyback diode for 12V external relay control
+- ESP32-WROOM-32 module on 2x19 female headers (manual assembly)
+- Screw terminals for power, Wiegand, and relay connections (manual assembly)
 
 Note: Optocouplers invert the Wiegand signal. Firmware must detect rising edges.
+
+JLCPCB Assembly:
+- SMD components: Fully assembled by JLCPCB
+- THT connectors (J1-J5): Require manual soldering after delivery
+- Extended parts: Only optocouplers (U2, U3) - $6 total setup fee
+- All other parts are JLCPCB basic parts (no setup fee)
 """
 
+import csv
 from skidl import *
 
 # Use KiCad 8 libraries
 set_default_tool(KICAD8)
 
 # =============================================================================
-# PART TEMPLATES
+# JLCPCB-COMPATIBLE PART TEMPLATES (with LCSC part numbers)
 # =============================================================================
+# All SMD components have LCSC part numbers for JLCPCB assembly.
+# THT connectors are for manual assembly after SMT delivery.
+#
+# Part types:
+#   Basic    - No setup fee, lower cost
+#   Extended - $3 setup fee per unique part type
 
-# Passive components (0805 SMD)
-resistor_template = Part(
+# --- SMD Resistors (0805) - JLCPCB Basic Parts ---
+resistor_390r = Part(
     "Device", "R",
     dest=TEMPLATE,
-    footprint="Resistor_SMD:R_0805_2012Metric"
+    footprint="Resistor_SMD:R_0805_2012Metric",
+    value="390R",
+    LCSC="C17630"
 )
 
-capacitor_template = Part(
+resistor_1k = Part(
+    "Device", "R",
+    dest=TEMPLATE,
+    footprint="Resistor_SMD:R_0805_2012Metric",
+    value="1K",
+    LCSC="C17513"
+)
+
+resistor_10k = Part(
+    "Device", "R",
+    dest=TEMPLATE,
+    footprint="Resistor_SMD:R_0805_2012Metric",
+    value="10K",
+    LCSC="C17414"
+)
+
+# --- SMD Capacitors (0805 MLCC) - JLCPCB Basic Parts ---
+capacitor_100nf = Part(
     "Device", "C",
     dest=TEMPLATE,
-    footprint="Capacitor_SMD:C_0805_2012Metric"
+    footprint="Capacitor_SMD:C_0805_2012Metric",
+    value="100nF",
+    LCSC="C49678"
 )
 
-cap_electrolytic_template = Part(
-    "Device", "C_Polarized",
+capacitor_10uf = Part(
+    "Device", "C",
     dest=TEMPLATE,
-    footprint="Capacitor_THT:CP_Radial_D6.3mm_P2.50mm"
+    footprint="Capacitor_SMD:C_0805_2012Metric",
+    value="10uF",
+    LCSC="C15850"
 )
 
-# Semiconductors
-diode_template = Part(
-    "Device", "D",
+# --- SMD MLCC Capacitors for Power Supply - JLCPCB Basic Parts ---
+# Using 22uF MLCC instead of 100uF electrolytic to avoid extended part fees
+# Two 22uF in parallel provide adequate filtering for LDO input/output
+
+# Input cap: 22uF/25V MLCC for 12V input filtering (0805)
+capacitor_22uf_25v = Part(
+    "Device", "C",
     dest=TEMPLATE,
-    footprint="Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal"
+    footprint="Capacitor_SMD:C_0805_2012Metric",
+    value="22uF/25V",
+    LCSC="C45783"
 )
 
-diode_do201_template = Part(
-    "Device", "D",
+# Output cap: 22uF/25V MLCC for 3.3V output filtering (0805)
+# Same part as input - 25V rating is fine for 3.3V rail
+capacitor_22uf_output = Part(
+    "Device", "C",
     dest=TEMPLATE,
-    footprint="Diode_THT:D_DO-201_P15.24mm_Horizontal"
+    footprint="Capacitor_SMD:C_0805_2012Metric",
+    value="22uF/25V",
+    LCSC="C45783"
 )
 
-npn_template = Part(
-    "Transistor_BJT", "PN2222A",
-    dest=TEMPLATE,
-    footprint="Package_TO_SOT_THT:TO-92_Inline"
-)
-
-optocoupler_template = Part(
-    "Isolator", "PC817",
-    dest=TEMPLATE,
-    footprint="Package_DIP:DIP-4_W7.62mm"
-)
-
-# Voltage regulator
-ldo_template = Part(
+# --- Voltage Regulator - JLCPCB Basic Part ---
+ldo_ams1117_33 = Part(
     "Regulator_Linear", "AMS1117-3.3",
     dest=TEMPLATE,
-    footprint="Package_TO_SOT_SMD:SOT-223-3_TabPin2"
+    footprint="Package_TO_SOT_SMD:SOT-223-3_TabPin2",
+    LCSC="C6186"
 )
 
-# Connectors - use generic connectors (screw terminals have same pinout)
+# --- SMD Optocoupler - JLCPCB Extended Part ---
+# EL817S is SMD equivalent of PC817, same pinout
+# Pin 1=Anode, 2=Cathode, 3=Emitter, 4=Collector
+# Using PC817 symbol (electrically identical) with SMD footprint
+optocoupler_el817 = Part(
+    "Isolator", "PC817",
+    dest=TEMPLATE,
+    footprint="Package_SO:SOP-4_4.4x2.6mm_P1.27mm",
+    LCSC="C63268"
+)
+
+# --- SMD NPN Transistor - JLCPCB Basic Part ---
+# SS8050: NPN, 1.5A, 25V, hFE 200-350, SOT-23
+# Pinout (SOT-23): Pin 1=Base, 2=Emitter, 3=Collector
+# Using generic NPN symbol with SOT-23 footprint
+npn_ss8050 = Part(
+    "Transistor_BJT", "PN2222A",
+    dest=TEMPLATE,
+    footprint="Package_TO_SOT_SMD:SOT-23",
+    LCSC="C2150"
+)
+
+# --- SMD Diodes ---
+# SS34: 3A 40V Schottky for reverse polarity protection (SMA package)
+# Using generic diode symbol (schematic symbol is the same)
+diode_ss34 = Part(
+    "Device", "D",
+    dest=TEMPLATE,
+    footprint="Diode_SMD:D_SMA",
+    value="SS34",
+    LCSC="C8678"
+)
+
+# M7: 1A 1000V rectifier for flyback protection (SMA package, 1N4007 equivalent)
+diode_m7 = Part(
+    "Device", "D",
+    dest=TEMPLATE,
+    footprint="Diode_SMD:D_SMA",
+    value="M7",
+    LCSC="C95872"
+)
+
+# --- THT Connectors (Manual Assembly - No LCSC) ---
+# These components are not assembled by JLCPCB and require manual soldering.
 screw_terminal_2_template = Part(
     "Connector", "Conn_01x02_Pin",
     dest=TEMPLATE,
@@ -111,32 +190,39 @@ def power_supply(vin_net, vout_net, gnd_net):
     """
     12V to 3.3V power supply with reverse polarity protection.
 
-    Components:
-    - D1: 1N5400 reverse polarity protection diode
-    - U1: AMS1117-3.3 LDO regulator
-    - C1: 100uF/25V input electrolytic
-    - C2: 100nF input ceramic bypass
-    - C3: 100uF/10V output electrolytic
-    - C4: 100nF output ceramic bypass
+    Components (all SMD JLCPCB Basic parts):
+    - D1: SS34 Schottky reverse polarity protection (SMA)
+    - U1: AMS1117-3.3 LDO regulator (SOT-223)
+    - C1, C1B: 2x 22uF/25V MLCC input (0805) - 44uF total
+    - C2: 100nF ceramic input bypass (0805)
+    - C3, C3B: 2x 22uF/25V MLCC output (0805) - 44uF total
+    - C4: 100nF ceramic output bypass (0805)
+
+    Note: Using parallel 22uF MLCCs instead of 100uF electrolytics
+    to use only JLCPCB basic parts (no extended part setup fees).
     """
-    # Reverse polarity protection diode
-    d1 = diode_do201_template(value="1N5400")
+    # Reverse polarity protection diode (SS34 Schottky)
+    d1 = diode_ss34()
     d1.ref = "D1"
 
-    # Input capacitors
-    c1 = cap_electrolytic_template(value="100uF/25V")
+    # Input capacitors - 2x 22uF in parallel = 44uF
+    c1 = capacitor_22uf_25v()
     c1.ref = "C1"
-    c2 = capacitor_template(value="100nF")
+    c1b = capacitor_22uf_25v()
+    c1b.ref = "C1B"
+    c2 = capacitor_100nf()
     c2.ref = "C2"
 
     # LDO regulator
-    u1 = ldo_template()
+    u1 = ldo_ams1117_33()
     u1.ref = "U1"
 
-    # Output capacitors
-    c3 = cap_electrolytic_template(value="100uF/10V")
+    # Output capacitors - 2x 22uF in parallel = 44uF
+    c3 = capacitor_22uf_output()
     c3.ref = "C3"
-    c4 = capacitor_template(value="100nF")
+    c3b = capacitor_22uf_output()
+    c3b.ref = "C3B"
+    c4 = capacitor_100nf()
     c4.ref = "C4"
 
     # Internal net after diode
@@ -146,18 +232,18 @@ def power_supply(vin_net, vout_net, gnd_net):
     vin_net += d1["A"]  # Anode to 12V input
     d1["K"] += vin_protected  # Cathode to protected rail
 
-    vin_protected += u1["VI"], c1[1], c2[1]
-    gnd_net += c1[2], c2[2], u1["GND"]
+    vin_protected += u1["VI"], c1[1], c1b[1], c2[1]
+    gnd_net += c1[2], c1b[2], c2[2], u1["GND"]
 
     # Output side connections
-    vout_net += u1["VO"], c3[1], c4[1]
-    gnd_net += c3[2], c4[2]
+    vout_net += u1["VO"], c3[1], c3b[1], c4[1]
+    gnd_net += c3[2], c3b[2], c4[2]
 
 
 @subcircuit
 def wiegand_input(data_in_net, data_out_net, reader_gnd_net, esp_vcc_net, esp_gnd_net, ref_prefix):
     """
-    Single Wiegand channel with PC817 optocoupler isolation.
+    Single Wiegand channel with EL817 SMD optocoupler isolation.
 
     The optocoupler INVERTS the signal:
     - Reader idle (HIGH): LED on -> transistor on -> GPIO LOW
@@ -165,32 +251,32 @@ def wiegand_input(data_in_net, data_out_net, reader_gnd_net, esp_vcc_net, esp_gn
 
     Firmware must detect RISING edges instead of falling edges.
 
-    Components:
-    - Ux: PC817 optocoupler
-    - Rx_in: 390 ohm input resistor (LED current limit)
-    - Rx_pu: 10K pull-up resistor on output
+    Components (all SMD for JLCPCB assembly):
+    - Ux: EL817 optocoupler (SOP-4)
+    - Rx_in: 390 ohm input resistor (0805)
+    - Rx_pu: 10K pull-up resistor (0805)
     """
-    # Optocoupler
-    opto = optocoupler_template()
+    # Optocoupler (EL817 SMD - same pinout as PC817)
+    opto = optocoupler_el817()
     opto.ref = f"U{ref_prefix}"
 
     # Input current limiting resistor
     # I = (5V - 1.2V) / 390 = ~10mA
-    r_in = resistor_template(value="390R")
+    r_in = resistor_390r()
     r_in.ref = f"R{ref_prefix}"
 
     # Pull-up resistor on output
-    r_pu = resistor_template(value="10K")
-    r_pu.ref = f"R{ref_prefix + 2}"  # R3/R4 for pull-ups
+    r_pu = resistor_10k()
+    r_pu.ref = f"R{ref_prefix + 2}"  # R4/R5 for pull-ups
 
-    # LED side (pins 1=Anode, 2=Cathode on PC817)
+    # LED side (pins 1=Anode, 2=Cathode on EL817)
     # Reader D0/D1 -> resistor -> LED anode
     # LED cathode -> reader GND
     data_in_net += r_in[1]
     r_in[2] += opto[1]  # Anode
     reader_gnd_net += opto[2]  # Cathode
 
-    # Phototransistor side (pins 3=Emitter, 4=Collector on PC817)
+    # Phototransistor side (pins 3=Emitter, 4=Collector on EL817)
     # Collector with pull-up to 3.3V -> GPIO output
     # Emitter to ESP32 GND
     esp_gnd_net += opto[3]  # Emitter
@@ -206,23 +292,23 @@ def relay_driver(gpio_net, coil_minus_net, coil_plus_net, gnd_net):
     The relay coil connects between +12V (coil+) and the transistor collector (coil-).
     GPIO HIGH -> transistor on -> coil- pulled to GND -> relay energized.
 
-    Components:
-    - Q1: 2N2222 NPN transistor
-    - R5: 1K base resistor
-    - D2: 1N4007 flyback diode (cathode to +12V)
+    Components (all SMD for JLCPCB assembly):
+    - Q1: SS8050 NPN transistor (SOT-23)
+    - R6: 1K base resistor (0805)
+    - D2: M7 flyback diode (SMA, cathode to +12V)
     """
-    # NPN transistor
-    q1 = npn_template()
+    # NPN transistor (SS8050 SMD)
+    q1 = npn_ss8050()
     q1.ref = "Q1"
 
     # Base resistor
     # I_base = (3.3V - 0.7V) / 1K = 2.6mA
-    # With hFE >= 75, I_collector_max = 195mA (plenty for relay coil)
-    r_base = resistor_template(value="1K")
-    r_base.ref = "R5"
+    # SS8050 hFE >= 200, I_collector_max = 520mA (plenty for relay coil)
+    r_base = resistor_1k()
+    r_base.ref = "R6"
 
-    # Flyback diode
-    d_flyback = diode_template(value="1N4007")
+    # Flyback diode (M7 SMD - equivalent to 1N4007)
+    d_flyback = diode_m7()
     d_flyback.ref = "D2"
 
     # Transistor connections
@@ -372,9 +458,9 @@ def create_access_controller():
     hdr_left, hdr_right, gpio_nets = create_esp32_socket()
 
     # Decoupling capacitors near ESP32 power pins
-    c5 = capacitor_template(value="100nF")
+    c5 = capacitor_100nf()
     c5.ref = "C5"
-    c6 = capacitor_template(value="10uF")
+    c6 = capacitor_10uf()
     c6.ref = "C6"
 
     vcc_3v3 += c5[1], c6[1]
@@ -455,22 +541,82 @@ def create_access_controller():
     # Generate BOM as XML
     generate_xml(file_="output/access_controller.xml")
 
-    print("\n" + "=" * 60)
+    # Generate JLCPCB-compatible BOM CSV
+    generate_jlcpcb_bom("output/access_controller_bom.csv")
+
+    print("\n" + "=" * 70)
     print("PCB Design Generation Complete!")
-    print("=" * 60)
+    print("=" * 70)
     print("\nOutput files:")
-    print("  - output/access_controller.net  (KiCad netlist)")
-    print("  - output/access_controller.xml  (Bill of Materials)")
-    print("\nNext steps:")
+    print("  - output/access_controller.net      (KiCad netlist)")
+    print("  - output/access_controller.xml      (Bill of Materials - XML)")
+    print("  - output/access_controller_bom.csv  (JLCPCB BOM)")
+    print("\nJLCPCB Assembly Workflow:")
     print("  1. Open KiCad and create a new project")
     print("  2. Open PCB Editor (Pcbnew)")
-    print("  3. File -> Import -> Netlist...")
-    print("  4. Select access_controller.net and click 'Update PCB'")
-    print("  5. Arrange components and route traces")
-    print("  6. Run DRC, then generate Gerbers")
+    print("  3. File -> Import -> Netlist... -> Select access_controller.net")
+    print("  4. Arrange components and route traces")
+    print("  5. Run DRC, then generate Gerbers (File -> Fabrication Outputs)")
+    print("  6. Generate CPL file (File -> Fabrication Outputs -> Component Placement)")
+    print("  7. Upload to JLCPCB:")
+    print("     - Gerbers as ZIP")
+    print("     - access_controller_bom.csv for BOM")
+    print("     - CPL file for pick-and-place positions")
+    print("\nManual Assembly Required:")
+    print("  - J1, J2, J3: Screw terminals (solder after SMT delivery)")
+    print("  - J4, J5: ESP32 socket headers (solder after SMT delivery)")
     print("\nNOTE: The Wiegand signals are INVERTED by the optocouplers.")
-    print("      Update firmware to detect RISING edges instead of falling.")
-    print("=" * 60)
+    print("      Firmware must detect RISING edges instead of falling.")
+    print("=" * 70)
+
+
+def generate_jlcpcb_bom(filename):
+    """
+    Generate JLCPCB-compatible BOM CSV file.
+
+    JLCPCB requires a BOM with columns: Comment, Designator, Footprint, LCSC Part #
+    Components without LCSC numbers are listed as requiring manual assembly.
+    """
+    bom_entries = {}
+    manual_assembly = []
+
+    for part in default_circuit.parts:
+        # LCSC is stored as a direct attribute by SKiDL, not in fields dict
+        lcsc = getattr(part, 'LCSC', None) or part.fields.get("LCSC", "")
+        if not lcsc:
+            manual_assembly.append(part.ref)
+            continue
+
+        if lcsc not in bom_entries:
+            # Extract just the footprint name without library prefix
+            footprint_name = part.footprint
+            if ":" in footprint_name:
+                footprint_name = footprint_name.split(":")[-1]
+
+            bom_entries[lcsc] = {
+                "Comment": part.value if part.value else part.name,
+                "Designator": [],
+                "Footprint": footprint_name,
+                "LCSC Part #": lcsc
+            }
+        bom_entries[lcsc]["Designator"].append(part.ref)
+
+    # Write CSV
+    with open(filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Comment", "Designator", "Footprint", "LCSC Part #"])
+
+        for entry in sorted(bom_entries.values(), key=lambda x: x["Designator"][0]):
+            writer.writerow([
+                entry["Comment"],
+                ",".join(sorted(entry["Designator"])),
+                entry["Footprint"],
+                entry["LCSC Part #"]
+            ])
+
+    print(f"Generated JLCPCB BOM: {filename}")
+    if manual_assembly:
+        print(f"  Manual assembly: {', '.join(sorted(manual_assembly))}")
 
 
 if __name__ == "__main__":
