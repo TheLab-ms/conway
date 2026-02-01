@@ -1,1 +1,4 @@
 output
+.venv
+pcb_design.erc
+pcb_design.log
