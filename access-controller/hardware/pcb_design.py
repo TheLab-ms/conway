@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-ESP32 Door Access Controller PCB - SKiDL Design
+ESP32 Door Access Controller PCB - pcbflow Design
 
-Generates a KiCad-compatible netlist for PCB layout.
-Optimized for JLCPCB assembly with LCSC part numbers.
+Generates complete PCB layout with Gerber output for JLCPCB.
+This replaces the previous SKiDL-based design that only generated netlists.
 
 Circuit summary:
 - 12V input with reverse polarity protection (SS34 Schottky)
@@ -23,601 +23,461 @@ JLCPCB Assembly:
 """
 
 import csv
-from skidl import *
-
-# Use KiCad 8 libraries
-set_default_tool(KICAD8)
-
-# =============================================================================
-# JLCPCB-COMPATIBLE PART TEMPLATES (with LCSC part numbers)
-# =============================================================================
-# All SMD components have LCSC part numbers for JLCPCB assembly.
-# THT connectors are for manual assembly after SMT delivery.
-#
-# Part types:
-#   Basic    - No setup fee, lower cost
-#   Extended - $3 setup fee per unique part type
-
-# --- SMD Resistors (0805) - JLCPCB Basic Parts ---
-resistor_390r = Part(
-    "Device", "R",
-    dest=TEMPLATE,
-    footprint="Resistor_SMD:R_0805_2012Metric",
-    value="390R",
-    LCSC="C17630"
-)
-
-resistor_1k = Part(
-    "Device", "R",
-    dest=TEMPLATE,
-    footprint="Resistor_SMD:R_0805_2012Metric",
-    value="1K",
-    LCSC="C17513"
-)
-
-resistor_10k = Part(
-    "Device", "R",
-    dest=TEMPLATE,
-    footprint="Resistor_SMD:R_0805_2012Metric",
-    value="10K",
-    LCSC="C17414"
-)
-
-# --- SMD Capacitors (0805 MLCC) - JLCPCB Basic Parts ---
-capacitor_100nf = Part(
-    "Device", "C",
-    dest=TEMPLATE,
-    footprint="Capacitor_SMD:C_0805_2012Metric",
-    value="100nF",
-    LCSC="C49678"
-)
-
-capacitor_10uf = Part(
-    "Device", "C",
-    dest=TEMPLATE,
-    footprint="Capacitor_SMD:C_0805_2012Metric",
-    value="10uF",
-    LCSC="C15850"
-)
-
-# --- SMD MLCC Capacitors for Power Supply - JLCPCB Basic Parts ---
-# Using 22uF MLCC instead of 100uF electrolytic to avoid extended part fees
-# Two 22uF in parallel provide adequate filtering for LDO input/output
-
-# Input cap: 22uF/25V MLCC for 12V input filtering (0805)
-capacitor_22uf_25v = Part(
-    "Device", "C",
-    dest=TEMPLATE,
-    footprint="Capacitor_SMD:C_0805_2012Metric",
-    value="22uF/25V",
-    LCSC="C45783"
-)
-
-# Output cap: 22uF/25V MLCC for 3.3V output filtering (0805)
-# Same part as input - 25V rating is fine for 3.3V rail
-capacitor_22uf_output = Part(
-    "Device", "C",
-    dest=TEMPLATE,
-    footprint="Capacitor_SMD:C_0805_2012Metric",
-    value="22uF/25V",
-    LCSC="C45783"
-)
-
-# --- Voltage Regulator - JLCPCB Basic Part ---
-ldo_ams1117_33 = Part(
-    "Regulator_Linear", "AMS1117-3.3",
-    dest=TEMPLATE,
-    footprint="Package_TO_SOT_SMD:SOT-223-3_TabPin2",
-    LCSC="C6186"
-)
-
-# --- SMD Optocoupler - JLCPCB Extended Part ---
-# EL817S is SMD equivalent of PC817, same pinout
-# Pin 1=Anode, 2=Cathode, 3=Emitter, 4=Collector
-# Using PC817 symbol (electrically identical) with SMD footprint
-optocoupler_el817 = Part(
-    "Isolator", "PC817",
-    dest=TEMPLATE,
-    footprint="Package_SO:SOP-4_4.4x2.6mm_P1.27mm",
-    LCSC="C63268"
-)
-
-# --- SMD NPN Transistor - JLCPCB Basic Part ---
-# SS8050: NPN, 1.5A, 25V, hFE 200-350, SOT-23
-# Pinout (SOT-23): Pin 1=Base, 2=Emitter, 3=Collector
-# Using generic NPN symbol with SOT-23 footprint
-npn_ss8050 = Part(
-    "Transistor_BJT", "PN2222A",
-    dest=TEMPLATE,
-    footprint="Package_TO_SOT_SMD:SOT-23",
-    LCSC="C2150"
-)
-
-# --- SMD Diodes ---
-# SS34: 3A 40V Schottky for reverse polarity protection (SMA package)
-# Using generic diode symbol (schematic symbol is the same)
-diode_ss34 = Part(
-    "Device", "D",
-    dest=TEMPLATE,
-    footprint="Diode_SMD:D_SMA",
-    value="SS34",
-    LCSC="C8678"
-)
-
-# M7: 1A 1000V rectifier for flyback protection (SMA package, 1N4007 equivalent)
-diode_m7 = Part(
-    "Device", "D",
-    dest=TEMPLATE,
-    footprint="Diode_SMD:D_SMA",
-    value="M7",
-    LCSC="C95872"
-)
-
-# --- THT Connectors (Manual Assembly - No LCSC) ---
-# These components are not assembled by JLCPCB and require manual soldering.
-screw_terminal_2_template = Part(
-    "Connector", "Conn_01x02_Pin",
-    dest=TEMPLATE,
-    footprint="TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2_1x02_P5.00mm_Horizontal"
-)
-
-screw_terminal_4_template = Part(
-    "Connector", "Conn_01x04_Pin",
-    dest=TEMPLATE,
-    footprint="TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-4_1x04_P5.00mm_Horizontal"
-)
-
-header_1x19_template = Part(
-    "Connector", "Conn_01x19_Socket",
-    dest=TEMPLATE,
-    footprint="Connector_PinSocket_2.54mm:PinSocket_1x19_P2.54mm_Vertical"
-)
-
-# =============================================================================
-# GLOBAL NETS
-# =============================================================================
-
-gnd = Net("GND")
-vcc_12v = Net("+12V")
-vcc_3v3 = Net("+3V3")
-
-# =============================================================================
-# SUBCIRCUITS
-# =============================================================================
-
-@subcircuit
-def power_supply(vin_net, vout_net, gnd_net):
-    """
-    12V to 3.3V power supply with reverse polarity protection.
-
-    Components (all SMD JLCPCB Basic parts):
-    - D1: SS34 Schottky reverse polarity protection (SMA)
-    - U1: AMS1117-3.3 LDO regulator (SOT-223)
-    - C1, C1B: 2x 22uF/25V MLCC input (0805) - 44uF total
-    - C2: 100nF ceramic input bypass (0805)
-    - C3, C3B: 2x 22uF/25V MLCC output (0805) - 44uF total
-    - C4: 100nF ceramic output bypass (0805)
-
-    Note: Using parallel 22uF MLCCs instead of 100uF electrolytics
-    to use only JLCPCB basic parts (no extended part setup fees).
-    """
-    # Reverse polarity protection diode (SS34 Schottky)
-    d1 = diode_ss34()
-    d1.ref = "D1"
-
-    # Input capacitors - 2x 22uF in parallel = 44uF
-    c1 = capacitor_22uf_25v()
-    c1.ref = "C1"
-    c1b = capacitor_22uf_25v()
-    c1b.ref = "C1B"
-    c2 = capacitor_100nf()
-    c2.ref = "C2"
-
-    # LDO regulator
-    u1 = ldo_ams1117_33()
-    u1.ref = "U1"
-
-    # Output capacitors - 2x 22uF in parallel = 44uF
-    c3 = capacitor_22uf_output()
-    c3.ref = "C3"
-    c3b = capacitor_22uf_output()
-    c3b.ref = "C3B"
-    c4 = capacitor_100nf()
-    c4.ref = "C4"
-
-    # Internal net after diode
-    vin_protected = Net("VIN_PROT")
-
-    # Input side connections
-    vin_net += d1["A"]  # Anode to 12V input
-    d1["K"] += vin_protected  # Cathode to protected rail
-
-    vin_protected += u1["VI"], c1[1], c1b[1], c2[1]
-    gnd_net += c1[2], c1b[2], c2[2], u1["GND"]
-
-    # Output side connections
-    vout_net += u1["VO"], c3[1], c3b[1], c4[1]
-    gnd_net += c3[2], c3b[2], c4[2]
-
-
-@subcircuit
-def wiegand_input(data_in_net, data_out_net, reader_gnd_net, esp_vcc_net, esp_gnd_net, ref_prefix):
-    """
-    Single Wiegand channel with EL817 SMD optocoupler isolation.
-
-    The optocoupler INVERTS the signal:
-    - Reader idle (HIGH): LED on -> transistor on -> GPIO LOW
-    - Reader pulse (LOW): LED off -> transistor off -> GPIO HIGH
-
-    Firmware must detect RISING edges instead of falling edges.
-
-    Components (all SMD for JLCPCB assembly):
-    - Ux: EL817 optocoupler (SOP-4)
-    - Rx_in: 390 ohm input resistor (0805)
-    - Rx_pu: 10K pull-up resistor (0805)
-    """
-    # Optocoupler (EL817 SMD - same pinout as PC817)
-    opto = optocoupler_el817()
-    opto.ref = f"U{ref_prefix}"
-
-    # Input current limiting resistor
-    # I = (5V - 1.2V) / 390 = ~10mA
-    r_in = resistor_390r()
-    r_in.ref = f"R{ref_prefix}"
-
-    # Pull-up resistor on output
-    r_pu = resistor_10k()
-    r_pu.ref = f"R{ref_prefix + 2}"  # R4/R5 for pull-ups
-
-    # LED side (pins 1=Anode, 2=Cathode on EL817)
-    # Reader D0/D1 -> resistor -> LED anode
-    # LED cathode -> reader GND
-    data_in_net += r_in[1]
-    r_in[2] += opto[1]  # Anode
-    reader_gnd_net += opto[2]  # Cathode
-
-    # Phototransistor side (pins 3=Emitter, 4=Collector on EL817)
-    # Collector with pull-up to 3.3V -> GPIO output
-    # Emitter to ESP32 GND
-    esp_gnd_net += opto[3]  # Emitter
-    data_out_net += opto[4], r_pu[1]  # Collector and pull-up
-    esp_vcc_net += r_pu[2]  # Pull-up to 3.3V
-
-
-@subcircuit
-def relay_driver(gpio_net, coil_minus_net, coil_plus_net, gnd_net):
-    """
-    NPN low-side switch for external 12V relay coil.
-
-    The relay coil connects between +12V (coil+) and the transistor collector (coil-).
-    GPIO HIGH -> transistor on -> coil- pulled to GND -> relay energized.
-
-    Components (all SMD for JLCPCB assembly):
-    - Q1: SS8050 NPN transistor (SOT-23)
-    - R6: 1K base resistor (0805)
-    - D2: M7 flyback diode (SMA, cathode to +12V)
-    """
-    # NPN transistor (SS8050 SMD)
-    q1 = npn_ss8050()
-    q1.ref = "Q1"
-
-    # Base resistor
-    # I_base = (3.3V - 0.7V) / 1K = 2.6mA
-    # SS8050 hFE >= 200, I_collector_max = 520mA (plenty for relay coil)
-    r_base = resistor_1k()
-    r_base.ref = "R6"
-
-    # Flyback diode (M7 SMD - equivalent to 1N4007)
-    d_flyback = diode_m7()
-    d_flyback.ref = "D2"
-
-    # Transistor connections
-    gpio_net += r_base[1]
-    r_base[2] += q1["B"]  # Base
-    gnd_net += q1["E"]  # Emitter to ground
-
-    # Collector connects to relay coil- terminal
-    # Flyback diode: anode to collector, cathode to +12V
-    coil_minus_net += q1["C"], d_flyback["A"]
-    coil_plus_net += d_flyback["K"]
+from pathlib import Path
+from pcbflow import *
 
 
 # =============================================================================
-# ESP32 HEADER PIN MAPPING
+# JLCPCB PART NUMBERS
 # =============================================================================
 
-# ESP32-WROOM-32 DevKit 38-pin pinout
-# These are the physical header positions (1-19 for each side)
-# Mapping based on common ESP32 DevKit V1 layout
-
-ESP32_LEFT_PINOUT = {
-    1: "3V3",
-    2: "EN",
-    3: "VP",       # GPIO36
-    4: "VN",       # GPIO39
-    5: "IO34",
-    6: "IO35",
-    7: "IO32",     # GPIO32 - Relay control
-    8: "IO33",     # GPIO33 - Wiegand D1
-    9: "IO25",     # GPIO25 - Wiegand D0
-    10: "IO26",
-    11: "IO27",
-    12: "IO14",
-    13: "IO12",
-    14: "GND",
-    15: "IO13",
-    16: "D2",
-    17: "D3",
-    18: "CMD",
-    19: "5V",
-}
-
-ESP32_RIGHT_PINOUT = {
-    1: "GND",
-    2: "IO23",
-    3: "IO22",
-    4: "TX",
-    5: "RX",
-    6: "IO21",
-    7: "NC",
-    8: "IO19",
-    9: "IO18",
-    10: "IO5",
-    11: "IO17",
-    12: "IO16",
-    13: "IO4",
-    14: "IO0",
-    15: "IO2",
-    16: "IO15",
-    17: "D1",
-    18: "D0",
-    19: "CLK",
+LCSC_PARTS = {
+    "R_390R_0805": "C17630",
+    "R_1K_0805": "C17513",
+    "R_10K_0805": "C17414",
+    "C_100nF_0805": "C49678",
+    "C_10uF_0805": "C15850",
+    "C_22uF_25V_0805": "C45783",
+    "U_AMS1117-3.3": "C6186",
+    "U_EL817": "C63268",
+    "Q_SS8050": "C2150",
+    "D_SS34": "C8678",
+    "D_M7": "C95872",
 }
 
 
-def create_esp32_socket():
+# =============================================================================
+# CUSTOM FOOTPRINTS
+# =============================================================================
+
+class D_SMA(PCBPart):
     """
-    Create 2x 1x19 female headers for ESP32 module.
-    Returns the header parts and a dict of important GPIO nets.
+    SMA diode package for SS34 and M7 diodes.
+    Pad ordering: [0]=Cathode (K), [1]=Anode (A)
     """
-    global gnd, vcc_3v3
+    def __init__(self, *args, **kwargs):
+        self.family = "D"
+        self.footprint = "D_SMA"
+        super().__init__(*args, **kwargs)
 
-    # Create headers
-    hdr_left = header_1x19_template()
-    hdr_left.ref = "J4"
+    def place(self, dc):
+        self.chamfered(dc, 4.3, 2.8)
+        dc.push()
+        dc.goxy(-2.3, 0)
+        dc.rect(1.6, 2.2)
+        self.smd_pad(dc)
+        dc.pop()
+        dc.push()
+        dc.goxy(2.3, 0)
+        dc.rect(1.6, 2.2)
+        self.smd_pad(dc)
+        dc.pop()
 
-    hdr_right = header_1x19_template()
-    hdr_right.ref = "J5"
 
-    # Create nets for the GPIOs we need
-    gpio_nets = {
-        "GPIO25": Net("GPIO25"),  # Wiegand D0
-        "GPIO32": Net("GPIO32"),  # Relay control
-        "GPIO33": Net("GPIO33"),  # Wiegand D1
-    }
+class SOP4(PCBPart):
+    """
+    SOP-4 optocoupler package (EL817 compatible).
+    Pad ordering: [0]=Pin1/Anode, [1]=Pin2/Cathode, [2]=Pin3/Emitter, [3]=Pin4/Collector
+    """
+    def __init__(self, *args, **kwargs):
+        self.family = "U"
+        self.footprint = "SOP-4"
+        super().__init__(*args, **kwargs)
 
-    # Connect power pins on left header
-    vcc_3v3 += hdr_left[1]   # Pin 1: 3V3
-    gnd += hdr_left[14]      # Pin 14: GND
-    # Note: Pin 19 is 5V input, we don't connect it (using 3.3V regulated)
+    def place(self, dc):
+        self.chamfered(dc, 4.4, 2.6)
+        for pos in [(-0.635, -2.0), (0.635, -2.0), (0.635, 2.0), (-0.635, 2.0)]:
+            dc.push()
+            dc.goxy(*pos)
+            dc.rect(0.6, 1.7)
+            self.smd_pad(dc)
+            dc.pop()
 
-    # Connect power pins on right header
-    gnd += hdr_right[1]      # Pin 1: GND
 
-    # Connect our GPIO pins (based on ESP32_LEFT_PINOUT)
-    gpio_nets["GPIO32"] += hdr_left[7]   # Pin 7: IO32
-    gpio_nets["GPIO33"] += hdr_left[8]   # Pin 8: IO33
-    gpio_nets["GPIO25"] += hdr_left[9]   # Pin 9: IO25
+class ScrewTerminal2(PCBPart):
+    """2-pin screw terminal, 5mm pitch. Pads: [0]=Pin1, [1]=Pin2"""
+    def __init__(self, *args, **kwargs):
+        self.family = "J"
+        self.footprint = "ScrewTerminal_1x02_P5.00mm"
+        super().__init__(*args, **kwargs)
 
-    return hdr_left, hdr_right, gpio_nets
+    def place(self, dc):
+        dc.push()
+        dc.rect(11, 8)
+        dc.silk(side=self.side)
+        dc.pop()
+        for i in range(2):
+            dc.push()
+            dc.goxy((i - 0.5) * 5.0, 0)
+            dc.board.add_drill(dc.xy, 1.3)
+            p = dc.copy()
+            p.n_agon(2.0, 8)
+            p.pin_pad()
+            self.pads.append(p)
+            dc.pop()
+
+
+class ScrewTerminal4(PCBPart):
+    """4-pin screw terminal, 5mm pitch. Pads: [0]-[3] = Pin1-Pin4"""
+    def __init__(self, *args, **kwargs):
+        self.family = "J"
+        self.footprint = "ScrewTerminal_1x04_P5.00mm"
+        super().__init__(*args, **kwargs)
+
+    def place(self, dc):
+        dc.push()
+        dc.rect(21, 8)
+        dc.silk(side=self.side)
+        dc.pop()
+        for i in range(4):
+            dc.push()
+            dc.goxy((i - 1.5) * 5.0, 0)
+            dc.board.add_drill(dc.xy, 1.3)
+            p = dc.copy()
+            p.n_agon(2.0, 8)
+            p.pin_pad()
+            self.pads.append(p)
+            dc.pop()
+
+
+class PinHeader_1x19(PCBPart):
+    """1x19 pin header, 2.54mm pitch. Pads: [0]-[18] = Pin1-Pin19"""
+    def __init__(self, *args, **kwargs):
+        self.family = "J"
+        self.footprint = "PinSocket_1x19_P2.54mm"
+        super().__init__(*args, **kwargs)
+
+    def place(self, dc):
+        total = 18 * 2.54
+        dc.push()
+        dc.rect(2.54, total + 2.54)
+        dc.silk(side=self.side)
+        dc.pop()
+        for i in range(19):
+            dc.push()
+            dc.goxy(0, (i - 9) * 2.54)
+            dc.board.add_drill(dc.xy, 1.0)
+            p = dc.copy()
+            p.n_agon(1.7, 8)
+            p.pin_pad()
+            self.pads.append(p)
+            dc.pop()
 
 
 # =============================================================================
-# MAIN CIRCUIT ASSEMBLY
+# BOARD CREATION
 # =============================================================================
 
-def create_access_controller():
-    """Assemble the complete access controller circuit."""
+def create_board():
+    """Create and configure the PCB board."""
+    brd = Board((65, 50))
+    brd.drc.trace_width = 0.2
+    brd.drc.clearance = 0.2
+    brd.drc.via_drill = 0.3
+    brd.drc.via_annular_ring = 0.15
+    brd.drc.hole_clearance = 0.25
+    brd.drc.outline_clearance = 0.3
+    brd.drc.soldermask_margin = 0.05
+    return brd
 
-    # Declare global nets
-    global gnd, vcc_12v, vcc_3v3
 
-    # -------------------------------------------------------------------------
-    # Connectors
-    # -------------------------------------------------------------------------
+# =============================================================================
+# COMPONENT PLACEMENT
+# =============================================================================
 
-    # J1: Power input (12V, GND)
-    j1_power = screw_terminal_2_template()
-    j1_power.ref = "J1"
+def place_components(brd):
+    """Place all components on the board."""
+    parts = {}
 
-    # J2: Wiegand reader (D0, D1, +12V, GND)
-    j2_wiegand = screw_terminal_4_template()
-    j2_wiegand.ref = "J2"
+    # Power section
+    parts["J1"] = ScrewTerminal2(brd.DC((8, 45)), val="12V_IN", side="top")
+    parts["D1"] = D_SMA(brd.DC((18, 45)), val="SS34", side="top")
+    parts["U1"] = SOT223(brd.DC((28, 43)).right(90), val="AMS1117-3.3", side="top")
+    parts["C1"] = C0805(brd.DC((20, 38)), val="22uF", side="top")
+    parts["C1B"] = C0805(brd.DC((24, 38)), val="22uF", side="top")
+    parts["C2"] = C0805(brd.DC((28, 38)), val="100nF", side="top")
+    parts["C3"] = C0805(brd.DC((34, 43)), val="22uF", side="top")
+    parts["C3B"] = C0805(brd.DC((38, 43)), val="22uF", side="top")
+    parts["C4"] = C0805(brd.DC((36, 38)), val="100nF", side="top")
 
-    # J3: Relay output (COIL-, COIL+/12V)
-    j3_relay = screw_terminal_2_template()
-    j3_relay.ref = "J3"
+    # Wiegand section
+    parts["J2"] = ScrewTerminal4(brd.DC((50, 47)), val="WIEGAND", side="top")
+    parts["U2"] = SOP4(brd.DC((42, 38)), val="EL817", side="top")
+    parts["R2"] = R0805(brd.DC((42, 32)).right(90), val="390R", side="top")
+    parts["R4"] = R0805(brd.DC((46, 32)).right(90), val="10K", side="top")
+    parts["U3"] = SOP4(brd.DC((54, 38)), val="EL817", side="top")
+    parts["R3"] = R0805(brd.DC((54, 32)).right(90), val="390R", side="top")
+    parts["R5"] = R0805(brd.DC((58, 32)).right(90), val="10K", side="top")
 
-    # -------------------------------------------------------------------------
-    # Power input connections
-    # -------------------------------------------------------------------------
+    # ESP32 socket
+    parts["J4"] = PinHeader_1x19(brd.DC((9, 25)), val="ESP32_L", side="top")
+    parts["J5"] = PinHeader_1x19(brd.DC((56, 25)), val="ESP32_R", side="top")
+    parts["C5"] = C0805(brd.DC((14, 4)), val="100nF", side="top")
+    parts["C6"] = C0805(brd.DC((18, 4)), val="10uF", side="top")
 
-    vcc_12v += j1_power[1]  # Pin 1: +12V
-    gnd += j1_power[2]       # Pin 2: GND
-
-    # -------------------------------------------------------------------------
-    # Power supply
-    # -------------------------------------------------------------------------
-
-    power_supply(vcc_12v, vcc_3v3, gnd)
-
-    # -------------------------------------------------------------------------
-    # ESP32 module socket
-    # -------------------------------------------------------------------------
-
-    hdr_left, hdr_right, gpio_nets = create_esp32_socket()
-
-    # Decoupling capacitors near ESP32 power pins
-    c5 = capacitor_100nf()
-    c5.ref = "C5"
-    c6 = capacitor_10uf()
-    c6.ref = "C6"
-
-    vcc_3v3 += c5[1], c6[1]
-    gnd += c5[2], c6[2]
-
-    # -------------------------------------------------------------------------
-    # Wiegand interface
-    # -------------------------------------------------------------------------
-
-    # Internal nets for Wiegand signals
-    wiegand_d0_reader = Net("WIEG_D0_IN")  # From reader
-    wiegand_d1_reader = Net("WIEG_D1_IN")  # From reader
-    reader_gnd = Net("READER_GND")
-
-    # Wiegand connector assignments
-    # J2 pin 1: D0 from reader
-    # J2 pin 2: D1 from reader
-    # J2 pin 3: +12V to reader
-    # J2 pin 4: GND to reader
-    wiegand_d0_reader += j2_wiegand[1]
-    wiegand_d1_reader += j2_wiegand[2]
-    vcc_12v += j2_wiegand[3]  # 12V pass-through for reader
-    reader_gnd += j2_wiegand[4]
-
-    # Connect reader ground to main ground
-    # (Optocouplers provide isolation, but grounds are common)
-    gnd += reader_gnd
-
-    # Wiegand D0 optocoupler (U2, R1, R3)
-    wiegand_input(
-        data_in_net=wiegand_d0_reader,
-        data_out_net=gpio_nets["GPIO25"],
-        reader_gnd_net=reader_gnd,
-        esp_vcc_net=vcc_3v3,
-        esp_gnd_net=gnd,
-        ref_prefix=2  # U2, R1, R3
-    )
-
-    # Wiegand D1 optocoupler (U3, R2, R4)
-    wiegand_input(
-        data_in_net=wiegand_d1_reader,
-        data_out_net=gpio_nets["GPIO33"],
-        reader_gnd_net=reader_gnd,
-        esp_vcc_net=vcc_3v3,
-        esp_gnd_net=gnd,
-        ref_prefix=3  # U3, R2, R4
-    )
-
-    # -------------------------------------------------------------------------
     # Relay driver
-    # -------------------------------------------------------------------------
+    parts["J3"] = ScrewTerminal2(brd.DC((8, 5)), val="RELAY", side="top")
+    parts["Q1"] = SOT23(brd.DC((18, 8)), val="SS8050", side="top")
+    parts["R6"] = R0805(brd.DC((24, 8)), val="1K", side="top")
+    parts["D2"] = D_SMA(brd.DC((18, 14)).right(180), val="M7", side="top")
 
-    relay_coil_minus = Net("RELAY_COIL_NEG")
+    return parts
 
-    relay_driver(
-        gpio_net=gpio_nets["GPIO32"],
-        coil_minus_net=relay_coil_minus,
-        coil_plus_net=vcc_12v,
-        gnd_net=gnd
-    )
 
-    # Relay connector
-    # J3 pin 1: Coil- (switched by transistor)
-    # J3 pin 2: Coil+ (+12V)
-    relay_coil_minus += j3_relay[1]
-    vcc_12v += j3_relay[2]
+# =============================================================================
+# ROUTING
+# =============================================================================
 
-    # -------------------------------------------------------------------------
-    # Run checks and generate output
-    # -------------------------------------------------------------------------
+def wire(brd, points, width=0.25, layer="GTL"):
+    """Create a wire through a list of points."""
+    if len(points) < 2:
+        return
+    dc = brd.DC(points[0])
+    dc.newpath()
+    for p in points[1:]:
+        dc.goxy(p[0] - dc.xy[0], p[1] - dc.xy[1])
+    dc.wire(layer=layer, width=width)
 
-    # Electrical Rules Check
-    ERC()
 
-    # Generate netlist for KiCad
-    generate_netlist(file_="output/access_controller.net")
+def via(brd, xy):
+    """Add a via at location."""
+    dc = brd.DC(xy)
+    dc.via(connect="GND")
 
-    # Generate BOM as XML
-    generate_xml(file_="output/access_controller.xml")
 
-    # Generate JLCPCB-compatible BOM CSV
-    generate_jlcpcb_bom("output/access_controller_bom.csv")
+def route_all(brd, parts):
+    """Route all connections."""
+
+    # === 12V Power Path ===
+    # J1.1 -> D1.A (anode)
+    j1_1 = parts["J1"].pads[0].xy
+    d1_a = parts["D1"].pads[1].xy
+    wire(brd, [j1_1, (j1_1[0]+3, j1_1[1]), (d1_a[0], j1_1[1]), d1_a], width=0.5)
+
+    # D1.K -> U1.VIN (SOT223: pads[3]=VIN)
+    d1_k = parts["D1"].pads[0].xy
+    u1_vin = parts["U1"].pads[3].xy
+    wire(brd, [d1_k, (d1_k[0]-3, d1_k[1]), (d1_k[0]-3, u1_vin[1]), u1_vin], width=0.5)
+
+    # 12V rail to input caps
+    wire(brd, [parts["C1"].pads[0].xy, (parts["C1"].pads[0].xy[0], 41), (d1_k[0]-3, 41)], width=0.5)
+    wire(brd, [parts["C1B"].pads[0].xy, (parts["C1B"].pads[0].xy[0], 41)], width=0.5)
+    wire(brd, [parts["C2"].pads[0].xy, (parts["C2"].pads[0].xy[0], 41)], width=0.5)
+
+    # 12V to J2.3 (Wiegand reader power)
+    j2_3 = parts["J2"].pads[2].xy
+    wire(brd, [d1_k, (d1_k[0], 49), (j2_3[0], 49), j2_3], width=0.5)
+
+    # 12V to D2.K and J3.2 (via bottom layer)
+    d2_k = parts["D2"].pads[0].xy
+    j3_2 = parts["J3"].pads[1].xy
+    via(brd, (d1_k[0]-6, d1_k[1]-3))
+    wire(brd, [(d1_k[0]-6, d1_k[1]-3), (d1_k[0]-6, 16), (d2_k[0], 16), d2_k], width=0.5, layer="GBL")
+    wire(brd, [d2_k, (d2_k[0], j3_2[1]), j3_2], width=0.5)
+
+    # === 3.3V Power Path ===
+    # U1.VOUT (pads[2]) to output caps
+    u1_vout = parts["U1"].pads[2].xy
+    wire(brd, [u1_vout, (u1_vout[0], 41)], width=0.5)
+    wire(brd, [parts["C3"].pads[0].xy, (parts["C3"].pads[0].xy[0], 41)], width=0.5)
+    wire(brd, [parts["C3B"].pads[0].xy, (parts["C3B"].pads[0].xy[0], 41)], width=0.5)
+    wire(brd, [parts["C4"].pads[0].xy, (parts["C4"].pads[0].xy[0], 41)], width=0.5)
+
+    # 3.3V to ESP32 (J4.1 = pads[0]) via bottom layer
+    j4_1 = parts["J4"].pads[0].xy
+    via(brd, (u1_vout[0]+5, 41))
+    wire(brd, [(u1_vout[0]+5, 41), (u1_vout[0]+5, j4_1[1]-5), (j4_1[0]+3, j4_1[1]-5)], width=0.5, layer="GBL")
+    via(brd, (j4_1[0]+3, j4_1[1]-5))
+    wire(brd, [(j4_1[0]+3, j4_1[1]-5), (j4_1[0]+3, j4_1[1]), j4_1], width=0.5)
+
+    # 3.3V to decoupling caps
+    c5_1 = parts["C5"].pads[0].xy
+    c6_1 = parts["C6"].pads[0].xy
+    wire(brd, [(j4_1[0]+3, j4_1[1]-5), (c5_1[0], j4_1[1]-5), c5_1], width=0.5)
+    wire(brd, [c5_1, (c6_1[0], c5_1[1]), c6_1], width=0.5)
+
+    # 3.3V to pullups R4, R5 (via bottom layer)
+    r4_vcc = parts["R4"].pads[1].xy
+    r5_vcc = parts["R5"].pads[1].xy
+    wire(brd, [(u1_vout[0]+5, 41), (r4_vcc[0], 41), (r4_vcc[0], r4_vcc[1]-1)], width=0.3, layer="GBL")
+    via(brd, (r4_vcc[0], r4_vcc[1]-1))
+    wire(brd, [(r4_vcc[0], r4_vcc[1]-1), r4_vcc], width=0.3)
+    wire(brd, [(r4_vcc[0], 41), (r5_vcc[0], 41), (r5_vcc[0], r5_vcc[1]-1)], width=0.3, layer="GBL")
+    via(brd, (r5_vcc[0], r5_vcc[1]-1))
+    wire(brd, [(r5_vcc[0], r5_vcc[1]-1), r5_vcc], width=0.3)
+
+    # === Ground Connections (vias to bottom pour) ===
+    for ref in ["C1", "C1B", "C2", "C3", "C3B", "C4", "C5", "C6"]:
+        via(brd, parts[ref].pads[1].xy)
+    via(brd, parts["U1"].pads[1].xy)  # U1 GND
+    via(brd, parts["J1"].pads[1].xy)  # J1 GND
+    via(brd, parts["J2"].pads[3].xy)  # J2 GND
+    via(brd, parts["U2"].pads[1].xy)  # U2 cathode
+    via(brd, parts["U2"].pads[2].xy)  # U2 emitter
+    via(brd, parts["U3"].pads[1].xy)  # U3 cathode
+    via(brd, parts["U3"].pads[2].xy)  # U3 emitter
+    via(brd, parts["J4"].pads[13].xy)  # ESP32 GND (pin 14)
+    via(brd, parts["J5"].pads[0].xy)   # ESP32 GND (pin 1)
+    via(brd, parts["Q1"].pads[1].xy)   # Q1 emitter
+
+    # === Wiegand D0 Path ===
+    # J2.1 -> R2 -> U2.1 (anode)
+    j2_d0 = parts["J2"].pads[0].xy
+    r2_in = parts["R2"].pads[0].xy
+    r2_out = parts["R2"].pads[1].xy
+    u2_anode = parts["U2"].pads[0].xy
+    wire(brd, [j2_d0, (j2_d0[0], r2_in[1]-5), (r2_in[0], r2_in[1]-5), r2_in], width=0.25)
+    wire(brd, [r2_out, (r2_out[0], u2_anode[1]), u2_anode], width=0.25)
+
+    # U2.4 (collector) -> R4.1 (pullup) -> J4.9 (GPIO25)
+    u2_col = parts["U2"].pads[3].xy
+    r4_sig = parts["R4"].pads[0].xy
+    j4_gpio25 = parts["J4"].pads[8].xy
+    wire(brd, [u2_col, (u2_col[0]+2, u2_col[1]), (r4_sig[0], u2_col[1]), r4_sig], width=0.25)
+    via(brd, (u2_col[0]-5, u2_col[1]))
+    wire(brd, [(u2_col[0]-5, u2_col[1]), (u2_col[0]-5, j4_gpio25[1]), (j4_gpio25[0]+3, j4_gpio25[1])], width=0.25, layer="GBL")
+    via(brd, (j4_gpio25[0]+3, j4_gpio25[1]))
+    wire(brd, [(j4_gpio25[0]+3, j4_gpio25[1]), j4_gpio25], width=0.25)
+
+    # === Wiegand D1 Path ===
+    # J2.2 -> R3 -> U3.1 (anode)
+    j2_d1 = parts["J2"].pads[1].xy
+    r3_in = parts["R3"].pads[0].xy
+    r3_out = parts["R3"].pads[1].xy
+    u3_anode = parts["U3"].pads[0].xy
+    wire(brd, [j2_d1, (j2_d1[0], r3_in[1]-3), (r3_in[0], r3_in[1]-3), r3_in], width=0.25)
+    wire(brd, [r3_out, (r3_out[0], u3_anode[1]), u3_anode], width=0.25)
+
+    # U3.4 (collector) -> R5.1 (pullup) -> J4.8 (GPIO33)
+    u3_col = parts["U3"].pads[3].xy
+    r5_sig = parts["R5"].pads[0].xy
+    j4_gpio33 = parts["J4"].pads[7].xy
+    wire(brd, [u3_col, (u3_col[0]+2, u3_col[1]), (r5_sig[0], u3_col[1]), r5_sig], width=0.25)
+    via(brd, (u3_col[0]-3, u3_col[1]+2))
+    wire(brd, [(u3_col[0]-3, u3_col[1]+2), (u3_col[0]-3, j4_gpio33[1]+2), (j4_gpio33[0]+5, j4_gpio33[1]+2)], width=0.25, layer="GBL")
+    via(brd, (j4_gpio33[0]+5, j4_gpio33[1]+2))
+    wire(brd, [(j4_gpio33[0]+5, j4_gpio33[1]+2), (j4_gpio33[0]+5, j4_gpio33[1]), j4_gpio33], width=0.25)
+
+    # === Relay Control Path ===
+    # J4.7 (GPIO32) -> R6 -> Q1.B -> Q1.C -> D2.A -> J3.1
+    j4_gpio32 = parts["J4"].pads[6].xy
+    r6_in = parts["R6"].pads[0].xy
+    r6_out = parts["R6"].pads[1].xy
+    q1_base = parts["Q1"].pads[0].xy
+    q1_col = parts["Q1"].pads[2].xy
+    d2_a = parts["D2"].pads[1].xy
+    j3_1 = parts["J3"].pads[0].xy
+
+    via(brd, (j4_gpio32[0]+5, j4_gpio32[1]))
+    wire(brd, [(j4_gpio32[0]+5, j4_gpio32[1]), (r6_in[0], j4_gpio32[1]), (r6_in[0], r6_in[1])], width=0.25, layer="GBL")
+    via(brd, (r6_in[0], r6_in[1]))
+    wire(brd, [r6_out, (q1_base[0], r6_out[1]), q1_base], width=0.25)
+    wire(brd, [q1_col, (q1_col[0], d2_a[1]), d2_a], width=0.5)
+    wire(brd, [q1_col, (q1_col[0], j3_1[1]), j3_1], width=0.5)
+
+
+# =============================================================================
+# JLCPCB OUTPUT GENERATION
+# =============================================================================
+
+def generate_jlcpcb_bom(parts, filename):
+    """Generate JLCPCB-compatible BOM CSV file."""
+    bom = {}
+    manual = []
+    lcsc = {"390R": "C17630", "1K": "C17513", "10K": "C17414",
+            "100nF": "C49678", "10uF": "C15850", "22uF": "C45783",
+            "SS34": "C8678", "M7": "C95872", "AMS1117-3.3": "C6186",
+            "EL817": "C63268", "SS8050": "C2150"}
+
+    for ref, part in parts.items():
+        val = part.val if hasattr(part, 'val') else ""
+        pn = lcsc.get(val, "")
+        if not pn:
+            manual.append(ref)
+            continue
+        fp = part.footprint if hasattr(part, 'footprint') else ""
+        if pn not in bom:
+            bom[pn] = {"Comment": val, "Designator": [], "Footprint": fp, "LCSC": pn}
+        bom[pn]["Designator"].append(ref)
+
+    with open(filename, 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(["Comment", "Designator", "Footprint", "LCSC Part #"])
+        for e in sorted(bom.values(), key=lambda x: x["Designator"][0]):
+            w.writerow([e["Comment"], ",".join(sorted(e["Designator"])), e["Footprint"], e["LCSC"]])
+
+    print(f"Generated JLCPCB BOM: {filename}")
+    if manual:
+        print(f"  Manual assembly: {', '.join(sorted(manual))}")
+
+
+def generate_jlcpcb_cpl(parts, filename):
+    """Generate JLCPCB Component Placement List."""
+    with open(filename, 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(["Designator", "Mid X", "Mid Y", "Rotation", "Layer"])
+        for ref, part in sorted(parts.items()):
+            if ref.startswith("J"):
+                continue
+            x, y = part.center.xy
+            w.writerow([ref, f"{x:.3f}", f"{y:.3f}", f"{part.center.dir:.1f}",
+                       "top" if part.side == "top" else "bottom"])
+    print(f"Generated JLCPCB CPL: {filename}")
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+def main():
+    """Generate complete PCB design with Gerber output."""
+    import os
+    script_dir = Path(__file__).parent.resolve()
+    os.chdir(script_dir)
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
+
+    print("=" * 70)
+    print("ESP32 Door Access Controller PCB Design")
+    print("Using pcbflow for layout and Gerber generation")
+    print("=" * 70)
+
+    print("\n[1/5] Creating board (65mm x 50mm)...")
+    brd = create_board()
+
+    print("[2/5] Placing components...")
+    parts = place_components(brd)
+    print(f"       Placed {len(parts)} components")
+
+    print("[3/5] Routing traces...")
+    route_all(brd, parts)
+
+    print("[4/5] Adding board outline...")
+    brd.add_outline()
+
+    print("[5/5] Generating output files...")
+    brd.save("output/access_controller_pcb", in_subdir=False, gerber=True, pdf=True, bom=False)
+    generate_jlcpcb_bom(parts, "output/access_controller_jlcpcb_bom.csv")
+    generate_jlcpcb_cpl(parts, "output/access_controller_jlcpcb_cpl.csv")
 
     print("\n" + "=" * 70)
     print("PCB Design Generation Complete!")
     print("=" * 70)
-    print("\nOutput files:")
-    print("  - output/access_controller.net      (KiCad netlist)")
-    print("  - output/access_controller.xml      (Bill of Materials - XML)")
-    print("  - output/access_controller_bom.csv  (JLCPCB BOM)")
-    print("\nJLCPCB Assembly Workflow:")
-    print("  1. Open KiCad and create a new project")
-    print("  2. Open PCB Editor (Pcbnew)")
-    print("  3. File -> Import -> Netlist... -> Select access_controller.net")
-    print("  4. Arrange components and route traces")
-    print("  5. Run DRC, then generate Gerbers (File -> Fabrication Outputs)")
-    print("  6. Generate CPL file (File -> Fabrication Outputs -> Component Placement)")
-    print("  7. Upload to JLCPCB:")
-    print("     - Gerbers as ZIP")
-    print("     - access_controller_bom.csv for BOM")
-    print("     - CPL file for pick-and-place positions")
-    print("\nManual Assembly Required:")
-    print("  - J1, J2, J3: Screw terminals (solder after SMT delivery)")
-    print("  - J4, J5: ESP32 socket headers (solder after SMT delivery)")
-    print("\nNOTE: The Wiegand signals are INVERTED by the optocouplers.")
-    print("      Firmware must detect RISING edges instead of falling.")
+    print("\nOutput files in output/:")
+    print("  - access_controller_pcb_*.GBR  (Gerber files)")
+    print("  - access_controller_pcb_*.DRL  (Drill files)")
+    print("  - access_controller_pcb.pdf    (Preview)")
+    print("  - access_controller_jlcpcb_bom.csv")
+    print("  - access_controller_jlcpcb_cpl.csv")
+    print("\nJLCPCB Upload Instructions:")
+    print("  1. ZIP all *_pcb_* files and upload to jlcpcb.com")
+    print("  2. Select 'SMT Assembly' and upload BOM and CPL files")
+    print("  3. Review component placement and confirm order")
+    print("\nManual Assembly Required (after delivery):")
+    print("  - J1, J2, J3: Screw terminals")
+    print("  - J4, J5: ESP32 socket headers")
     print("=" * 70)
 
 
-def generate_jlcpcb_bom(filename):
-    """
-    Generate JLCPCB-compatible BOM CSV file.
-
-    JLCPCB requires a BOM with columns: Comment, Designator, Footprint, LCSC Part #
-    Components without LCSC numbers are listed as requiring manual assembly.
-    """
-    bom_entries = {}
-    manual_assembly = []
-
-    for part in default_circuit.parts:
-        # LCSC is stored as a direct attribute by SKiDL, not in fields dict
-        lcsc = getattr(part, 'LCSC', None) or part.fields.get("LCSC", "")
-        if not lcsc:
-            manual_assembly.append(part.ref)
-            continue
-
-        if lcsc not in bom_entries:
-            # Extract just the footprint name without library prefix
-            footprint_name = part.footprint
-            if ":" in footprint_name:
-                footprint_name = footprint_name.split(":")[-1]
-
-            bom_entries[lcsc] = {
-                "Comment": part.value if part.value else part.name,
-                "Designator": [],
-                "Footprint": footprint_name,
-                "LCSC Part #": lcsc
-            }
-        bom_entries[lcsc]["Designator"].append(part.ref)
-
-    # Write CSV
-    with open(filename, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(["Comment", "Designator", "Footprint", "LCSC Part #"])
-
-        for entry in sorted(bom_entries.values(), key=lambda x: x["Designator"][0]):
-            writer.writerow([
-                entry["Comment"],
-                ",".join(sorted(entry["Designator"])),
-                entry["Footprint"],
-                entry["LCSC Part #"]
-            ])
-
-    print(f"Generated JLCPCB BOM: {filename}")
-    if manual_assembly:
-        print(f"  Manual assembly: {', '.join(sorted(manual_assembly))}")
-
-
 if __name__ == "__main__":
-    create_access_controller()
+    main()

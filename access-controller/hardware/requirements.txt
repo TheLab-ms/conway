@@ -1,1 +1,2 @@
 skidl>=2.0.0
+pcbflow @ git+https://github.com/michaelgale/pcbflow.git
