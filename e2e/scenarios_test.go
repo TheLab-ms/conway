@@ -2113,6 +2113,101 @@ func TestDirectory_ExcludesMembersWithoutName(t *testing.T) {
 	directoryPage.ExpectMemberCardNotVisible("noname@example.com")
 }
 
+// TestDirectory_ShowsProfileData verifies that the directory correctly displays
+// bio, name override, and shows the current user first.
+func TestDirectory_ShowsProfileData(t *testing.T) {
+	pngData := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+		0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00,
+		0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+		0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xFE, 0xD4, 0xEF, 0x00, 0x00,
+		0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+	}
+
+	// Current user with avatar
+	_, page := setupMemberTest(t, "current@example.com", WithConfirmed(), WithReadyAccess(),
+		WithName("Current User"), WithDiscordAvatar(pngData))
+
+	// Member with bio
+	seedMember(t, "bio@example.com", WithConfirmed(), WithReadyAccess(),
+		WithName("Bio User"), WithBio("I love making things!"), WithDiscordAvatar(pngData))
+
+	// Member with name override (should show override, not original)
+	seedMember(t, "override@example.com", WithConfirmed(), WithReadyAccess(),
+		WithName("Original Name"), WithNameOverride("Preferred Name"), WithDiscordAvatar(pngData),
+		WithFobLastSeen(9999999999)) // More recent, but current user should still be first
+
+	directoryPage := NewDirectoryPage(t, page)
+	directoryPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// Current user appears first despite others having more recent fob_last_seen
+	directoryPage.ExpectMemberCardFirst("Current User")
+
+	// Bio is displayed
+	directoryPage.ExpectMemberCard("Bio User")
+	directoryPage.ExpectBio("Bio User", "I love making things!")
+
+	// Name override is used instead of original name
+	directoryPage.ExpectMemberCard("Preferred Name")
+	directoryPage.ExpectMemberCardNotVisible("Original Name")
+}
+
+// TestJourney_MemberEditsProfile tests the complete flow of a member
+// customizing their profile bio and verifying changes appear in the directory.
+func TestJourney_MemberEditsProfile(t *testing.T) {
+	pngData := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+		0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00,
+		0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+		0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xFE, 0xD4, 0xEF, 0x00, 0x00,
+		0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+	}
+	_, page := setupMemberTest(t, "member@example.com", WithConfirmed(), WithReadyAccess(),
+		WithName("John Smith"), WithDiscordAvatar(pngData), WithDiscordUsername("johnsmith"))
+
+	// View directory and navigate to profile
+	directoryPage := NewDirectoryPage(t, page)
+	directoryPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	directoryPage.ExpectMemberCard("John Smith")
+	directoryPage.ClickEditProfile()
+
+	err = page.WaitForURL("**/directory/profile")
+	require.NoError(t, err)
+
+	// Edit profile
+	profilePage := NewProfilePage(t, page)
+	profilePage.ExpectHeading()
+	profilePage.ExpectPreviewName("John Smith")
+	profilePage.ExpectDiscordUsername("johnsmith")
+
+	profilePage.FillBio("Maker and tinkerer")
+	profilePage.Submit()
+
+	// Verify changes in directory
+	err = page.WaitForURL("**/directory")
+	require.NoError(t, err)
+
+	directoryPage.ExpectMemberCard("John Smith")
+	directoryPage.ExpectBio("John Smith", "Maker and tinkerer")
+
+	// Verify saved values persist
+	profilePage.Navigate()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	profilePage.ExpectBioValue("Maker and tinkerer")
+}
+
 // TestAdmin_BambuConfigPage verifies that administrators can view the
 // Bambu configuration page and see all required elements.
 func TestAdmin_BambuConfigPage(t *testing.T) {

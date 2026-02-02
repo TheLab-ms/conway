@@ -8,11 +8,16 @@ import (
 templ renderDirectory(members []DirectoryMember, currentUserID int64) {
 	@bootstrap.View() {
 		<div class="container my-5">
-			<h2>Member Directory</h2>
-			<p class="text-muted mb-4">
-				Put a face to the name! This directory helps members remember each other and connect Discord handles with the people you meet at the space.
-				Only other members can see this page, so consider uploading a real photo of yourself.
-			</p>
+			<div class="d-flex justify-content-between align-items-start mb-4">
+				<div>
+					<h2>Member Directory</h2>
+					<p class="text-muted mb-0">
+						Put a face to the name! This directory helps members remember each other and connect Discord handles with the people you meet at the space.
+						Only other members can see this page, so consider uploading a real photo of yourself.
+					</p>
+				</div>
+				<a href="/directory/profile" class="btn btn-outline-primary flex-shrink-0 ms-3">Edit Profile</a>
+			</div>
 			<div class="row g-4">
 				for _, member := range members {
 					<div class="col-6 col-md-4 col-lg-3">
@@ -36,25 +41,11 @@ templ renderDirectory(members []DirectoryMember, currentUserID int64) {
 							if member.Leadership {
 								<span class="badge text-muted" style="font-weight: 500; font-size: 0.75rem;">Leadership</span>
 							}
-							// Upload button for current user
-							if member.ID == currentUserID {
-								<form method="post" action="/directory/picture" enctype="multipart/form-data" class="mt-2">
-									<input
-										type="file"
-										id="picture-upload"
-										name="picture"
-										accept="image/png,image/jpeg"
-										style="display: none;"
-										onchange="this.form.submit()"
-									/>
-									<button
-										type="button"
-										class="btn btn-sm btn-outline-primary"
-										onclick="document.getElementById('picture-upload').click()"
-									>
-										Upload Image
-									</button>
-								</form>
+							// Bio
+							if member.Bio != "" {
+								<p class="card-text text-muted small mb-1" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+									{ member.Bio }
+								</p>
 							}
 							// Discord section - visually separated
 							if member.DiscordUsername != "" {

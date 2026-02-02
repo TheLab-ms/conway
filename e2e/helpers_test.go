@@ -113,6 +113,9 @@ type MemberOption func(*memberConfig)
 type memberConfig struct {
 	email            string
 	name             string
+	nameOverride     string
+	bio              string
+	profilePicture   []byte
 	confirmed        bool
 	leadership       bool
 	nonBillable      bool
@@ -190,6 +193,21 @@ func WithDiscordAvatar(avatar []byte) MemberOption {
 	return func(c *memberConfig) { c.discordAvatar = avatar }
 }
 
+// WithBio sets the member's bio text.
+func WithBio(bio string) MemberOption {
+	return func(c *memberConfig) { c.bio = bio }
+}
+
+// WithNameOverride sets the member's custom display name override.
+func WithNameOverride(nameOverride string) MemberOption {
+	return func(c *memberConfig) { c.nameOverride = nameOverride }
+}
+
+// WithProfilePicture sets the member's profile picture (raw bytes).
+func WithProfilePicture(picture []byte) MemberOption {
+	return func(c *memberConfig) { c.profilePicture = picture }
+}
+
 // WithFobLastSeen sets the member's fob last seen timestamp.
 func WithFobLastSeen(timestamp int64) MemberOption {
 	return func(c *memberConfig) { c.fobLastSeen = timestamp }
@@ -218,10 +236,13 @@ func seedMember(t *testing.T, email string, opts ...MemberOption) int64 {
 
 	// Insert member
 	result, err := testDB.Exec(`
-		INSERT INTO members (email, name, confirmed, leadership, non_billable, fob_id, fob_last_seen, stripe_subscription_state, stripe_customer_id, discount_type, discord_user_id, discord_username, discord_avatar)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO members (email, name, name_override, bio, profile_picture, confirmed, leadership, non_billable, fob_id, fob_last_seen, stripe_subscription_state, stripe_customer_id, discount_type, discord_user_id, discord_username, discord_avatar)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cfg.email,
 		cfg.name, // Empty string is fine, column has NOT NULL DEFAULT ''
+		sql.NullString{String: cfg.nameOverride, Valid: cfg.nameOverride != ""},
+		sql.NullString{String: cfg.bio, Valid: cfg.bio != ""},
+		cfg.profilePicture,
 		cfg.confirmed, cfg.leadership, cfg.nonBillable,
 		sql.NullInt64{Int64: cfg.fobID, Valid: cfg.fobID != 0},
 		sql.NullInt64{Int64: cfg.fobLastSeen, Valid: cfg.fobLastSeen != 0},

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
@@ -19,11 +20,24 @@ import (
 type DirectoryMember struct {
 	ID                int64
 	DisplayName       string
+	Bio               string
 	DiscordUsername   string
 	HasProfilePicture bool
 	HasDiscordAvatar  bool
 	Leadership        bool
 	FobLastSeen       int64
+}
+
+// ProfileData represents the current user's profile for editing.
+type ProfileData struct {
+	ID                int64
+	Name              string  // Original name from signup
+	NameOverride      *string // Custom display name
+	Bio               string
+	HasProfilePicture bool
+	HasDiscordAvatar  bool
+	DiscordUsername   string
+	Leadership        bool
 }
 
 type Module struct {
@@ -33,6 +47,8 @@ type Module struct {
 func New(db *sql.DB) *Module {
 	// Add profile_picture column if it doesn't exist (ignore error if already exists)
 	db.Exec(`ALTER TABLE members ADD COLUMN profile_picture BLOB`)
+	// Add bio column if it doesn't exist
+	db.Exec(`ALTER TABLE members ADD COLUMN bio TEXT`)
 	return &Module{db: db}
 }
 
@@ -40,6 +56,8 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /directory", router.WithAuthn(m.renderDirectoryView))
 	router.HandleFunc("GET /directory/avatar/{id}", router.WithAuthn(m.serveAvatar))
 	router.HandleFunc("POST /directory/picture", router.WithAuthn(m.handleProfilePictureUpload))
+	router.HandleFunc("GET /directory/profile", router.WithAuthn(m.renderEditProfile))
+	router.HandleFunc("POST /directory/profile", router.WithAuthn(m.handleEditProfile))
 }
 
 func (m *Module) renderDirectoryView(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +89,7 @@ func (m *Module) queryMembers(ctx context.Context) ([]DirectoryMember, error) {
 		SELECT
 			id,
 			COALESCE(name_override, name) as display_name,
+			COALESCE(bio, '') as bio,
 			COALESCE(discord_username, '') as discord_username,
 			profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0 as has_profile_picture,
 			discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0 as has_discord_avatar,
@@ -93,7 +112,7 @@ func (m *Module) queryMembers(ctx context.Context) ([]DirectoryMember, error) {
 	var members []DirectoryMember
 	for rows.Next() {
 		var m DirectoryMember
-		if err := rows.Scan(&m.ID, &m.DisplayName, &m.DiscordUsername, &m.HasProfilePicture, &m.HasDiscordAvatar, &m.Leadership, &m.FobLastSeen); err != nil {
+		if err := rows.Scan(&m.ID, &m.DisplayName, &m.Bio, &m.DiscordUsername, &m.HasProfilePicture, &m.HasDiscordAvatar, &m.Leadership, &m.FobLastSeen); err != nil {
 			return nil, err
 		}
 		members = append(members, m)
@@ -226,6 +245,75 @@ func (m *Module) handleProfilePictureUpload(w http.ResponseWriter, r *http.Reque
 	_, err = m.db.ExecContext(r.Context(),
 		"UPDATE members SET profile_picture = $1 WHERE id = $2",
 		processedImage, userID)
+	if engine.HandleError(w, err) {
+		return
+	}
+
+	http.Redirect(w, r, "/directory/profile", http.StatusSeeOther)
+}
+
+func (m *Module) renderEditProfile(w http.ResponseWriter, r *http.Request) {
+	userID := auth.GetUserMeta(r.Context()).ID
+
+	profile, err := m.queryProfile(r.Context(), userID)
+	if engine.HandleError(w, err) {
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	renderProfile(profile).Render(r.Context(), w)
+}
+
+func (m *Module) queryProfile(ctx context.Context, userID int64) (*ProfileData, error) {
+	profile := &ProfileData{}
+	err := m.db.QueryRowContext(ctx, `
+		SELECT
+			id,
+			COALESCE(name, '') as name,
+			name_override,
+			COALESCE(bio, '') as bio,
+			profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0 as has_profile_picture,
+			discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0 as has_discord_avatar,
+			COALESCE(discord_username, '') as discord_username,
+			leadership
+		FROM members
+		WHERE id = ?`,
+		userID).Scan(
+		&profile.ID,
+		&profile.Name,
+		&profile.NameOverride,
+		&profile.Bio,
+		&profile.HasProfilePicture,
+		&profile.HasDiscordAvatar,
+		&profile.DiscordUsername,
+		&profile.Leadership,
+	)
+	return profile, err
+}
+
+func (m *Module) handleEditProfile(w http.ResponseWriter, r *http.Request) {
+	userID := auth.GetUserMeta(r.Context()).ID
+
+	if err := r.ParseForm(); err != nil {
+		engine.ClientError(w, "Invalid Form", "Could not parse form data.", http.StatusBadRequest)
+		return
+	}
+
+	bio := strings.TrimSpace(r.FormValue("bio"))
+
+	// Validate bio length
+	if len(bio) > 500 {
+		engine.ClientError(w, "Bio Too Long", "Bio must be 500 characters or less.", http.StatusBadRequest)
+		return
+	}
+
+	// Update profile bio only
+	_, err := m.db.ExecContext(r.Context(), `
+		UPDATE members SET
+			bio = CASE WHEN $1 = '' THEN NULL ELSE $1 END
+		WHERE id = $2`,
+		bio, userID)
+
 	if engine.HandleError(w, err) {
 		return
 	}

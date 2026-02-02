@@ -586,6 +586,67 @@ func (p *DirectoryPage) GetMemberCardCount() int {
 	return count
 }
 
+func (p *DirectoryPage) ExpectBio(displayName, bio string) {
+	card := p.MemberCard(displayName)
+	expect(p.t).Locator(card.GetByText(bio)).ToBeVisible()
+}
+
+func (p *DirectoryPage) ClickEditProfile() {
+	err := p.page.Locator("a:has-text('Edit Profile')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *DirectoryPage) ExpectMemberCardFirst(displayName string) {
+	// The first member card should have the given display name
+	firstCard := p.page.Locator(".card").First()
+	expect(p.t).Locator(firstCard.Locator(".card-title", playwright.LocatorLocatorOptions{HasText: displayName})).ToBeVisible()
+}
+
+// ProfilePage represents the profile editing page.
+type ProfilePage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewProfilePage(t *testing.T, page playwright.Page) *ProfilePage {
+	return &ProfilePage{page: page, t: t}
+}
+
+func (p *ProfilePage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/directory/profile")
+	require.NoError(p.t, err)
+}
+
+func (p *ProfilePage) ExpectHeading() {
+	locator := p.page.Locator("h2", playwright.PageLocatorOptions{HasText: "Edit Profile"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *ProfilePage) ExpectPreviewName(name string) {
+	locator := p.page.Locator("#preview-name")
+	expect(p.t).Locator(locator).ToHaveText(name)
+}
+
+func (p *ProfilePage) ExpectBioValue(bio string) {
+	locator := p.page.Locator("#bio")
+	expect(p.t).Locator(locator).ToHaveValue(bio)
+}
+
+func (p *ProfilePage) FillBio(bio string) {
+	err := p.page.Locator("#bio").Fill(bio)
+	require.NoError(p.t, err)
+}
+
+func (p *ProfilePage) Submit() {
+	err := p.page.Locator("button[type='submit']:has-text('Save Changes')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *ProfilePage) ExpectDiscordUsername(username string) {
+	locator := p.page.GetByText("@" + username)
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
 // AdminStripeConfigPage represents the admin Stripe configuration page.
 type AdminStripeConfigPage struct {
 	page playwright.Page
