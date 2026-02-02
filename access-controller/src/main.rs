@@ -12,7 +12,6 @@
 use esp_bootloader_esp_idf::esp_app_desc;
 esp_app_desc!();
 
-mod events;
 mod sync;
 mod wiegand;
 
@@ -36,7 +35,7 @@ use esp_radio::wifi::{ClientConfig, Config as WifiConfig, ModeConfig, WifiContro
 use heapless::String as HString;
 use static_cell::StaticCell;
 
-use crate::events::{AccessEvent, EventBuffer};
+use crate::sync::{AccessEvent, EventBuffer};
 use crate::wiegand::{Wiegand, WiegandRead};
 
 // Configuration constants

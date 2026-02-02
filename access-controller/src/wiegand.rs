@@ -1,25 +1,19 @@
-//! Async Wiegand 26/34-bit decoder using Embassy GPIO.
+//! Async Wiegand 26/34-bit decoder.
 //!
 //! Uses async edge detection instead of interrupt handlers.
 
 use embassy_time::{Duration, Instant, with_timeout};
 use esp_hal::gpio::Input;
 
-// Debounce time accounts for optocoupler propagation delay and slower edge transitions.
-// Typical optocouplers (e.g., PC817, 6N137) have 3-18µs rise/fall times which can cause
-// ringing or multiple edge detections. Wiegand pulse width is typically 50-100µs with
-// 1-2ms between pulses, so 500µs debounce is safe and eliminates duplicate bits.
 const DEBOUNCE: Duration = Duration::from_micros(500);
 const BIT_TIMEOUT: Duration = Duration::from_millis(25);
 
-/// Async Wiegand reader.
 pub struct Wiegand<'a> {
     d0: Input<'a>,
     d1: Input<'a>,
 }
 
 impl<'a> Wiegand<'a> {
-    /// Create a new Wiegand reader on specified D0 and D1 pins.
     pub fn new(d0: Input<'a>, d1: Input<'a>) -> Self {
         Self { d0, d1 }
     }
@@ -29,7 +23,6 @@ impl<'a> Wiegand<'a> {
     /// Waits for the first bit, then collects bits until no more arrive
     /// within the timeout period.
     pub async fn read(&mut self) -> Option<WiegandRead> {
-        // Wait for first bit
         let first_bit = self.wait_for_bit().await;
 
         // Set timestamp after first bit for debouncing subsequent bits
