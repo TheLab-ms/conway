@@ -75,6 +75,7 @@ pub async fn sync_with_conway(
 
     if let Err(e) = socket.connect(remote).await {
         log::error!("sync: connect failed: {:?}", e);
+        socket.abort();
         SYNC_COMPLETE.signal(());
         return;
     }
@@ -99,7 +100,7 @@ pub async fn sync_with_conway(
     // Send request headers
     if let Err(e) = socket.write_all(request.as_bytes()).await {
         log::error!("sync: write headers failed: {:?}", e);
-        socket.close();
+        socket.abort();
         SYNC_COMPLETE.signal(());
         return;
     }
@@ -107,7 +108,7 @@ pub async fn sync_with_conway(
     // Send request body
     if let Err(e) = socket.write_all(body.as_bytes()).await {
         log::error!("sync: write body failed: {:?}", e);
-        socket.close();
+        socket.abort();
         SYNC_COMPLETE.signal(());
         return;
     }
@@ -127,14 +128,14 @@ pub async fn sync_with_conway(
             }
             Err(e) => {
                 log::error!("sync: read failed: {:?}", e);
-                socket.close();
+                socket.abort();
                 SYNC_COMPLETE.signal(());
                 return;
             }
         }
     }
 
-    socket.close();
+    socket.abort();
 
     // Parse HTTP response
     let response = match core::str::from_utf8(&response_buf[..total_read]) {

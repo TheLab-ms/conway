@@ -28,11 +28,12 @@ pub async fn run_server(
         socket.set_timeout(Some(IO_TIMEOUT));
 
         if socket.accept(80).await.is_err() {
+            socket.abort();
             continue;
         }
 
         handle_request(&mut socket, fobs, etag).await;
-        socket.close();
+        socket.abort();
     }
 }
 

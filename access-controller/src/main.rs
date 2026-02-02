@@ -62,7 +62,7 @@ static CONFIG: StaticCell<Config> = StaticCell::new();
 static FOBS: StaticCell<Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>> =
     StaticCell::new();
 static ETAG: StaticCell<Mutex<CriticalSectionRawMutex, HString<64>>> = StaticCell::new();
-static STACK_RESOURCES: StaticCell<StackResources<4>> = StaticCell::new();
+static STACK_RESOURCES: StaticCell<StackResources<8>> = StaticCell::new();
 static STACK: StaticCell<Stack<'static>> = StaticCell::new();
 
 #[esp_rtos::main]
