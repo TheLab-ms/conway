@@ -30,14 +30,15 @@ use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
-use esp_hal::timer::timg::TimerGroup;
+use esp_hal::time::Duration as HalDuration;
+use esp_hal::timer::timg::{MwdtStage, MwdtStageAction, TimerGroup, Wdt};
 use esp_println::logger::init_logger;
 use esp_radio::wifi::{ClientConfig, Config as WifiConfig, ModeConfig, WifiController};
 use heapless::String as HString;
 use static_cell::StaticCell;
 
 use crate::events::{AccessEvent, EventBuffer};
-use crate::storage::{Config, MAX_FOBS};
+use crate::storage::{CONWAY_HOST, CONWAY_PORT, MAX_FOBS, PASSWORD, SSID};
 use crate::wiegand::{Wiegand, WiegandRead};
 
 // Channel for Wiegand reads -> access control task
@@ -55,13 +56,19 @@ pub static SYNC_COMPLETE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 // Signal for door unlock (after successful auth)
 pub static DOOR_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
+// Signal to request watchdog feed (proves access_task is responsive)
+pub static WATCHDOG_FEED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
 // Static cells for 'static lifetime requirements
-static CONFIG: StaticCell<Config> = StaticCell::new();
 static FOBS: StaticCell<Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>> =
     StaticCell::new();
 static ETAG: StaticCell<Mutex<CriticalSectionRawMutex, HString<64>>> = StaticCell::new();
 static STACK_RESOURCES: StaticCell<StackResources<8>> = StaticCell::new();
 static STACK: StaticCell<Stack<'static>> = StaticCell::new();
+
+// Type alias for the watchdog timer
+type WdtType = Wdt<esp_hal::peripherals::TIMG1<'static>>;
+static WDT: StaticCell<Mutex<CriticalSectionRawMutex, WdtType>> = StaticCell::new();
 
 #[esp_rtos::main]
 async fn main(spawner: embassy_executor::Spawner) {
@@ -88,13 +95,22 @@ async fn main(spawner: embassy_executor::Spawner) {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
-    // Load configuration
-    let config = CONFIG.init(Config::get());
+    // Initialize hardware watchdog timer using TIMG1
+    // The watchdog will reset the system if not fed within 30 seconds.
+    // Feeding is done by access_task to prove it's not blocked.
+    let timg1 = TimerGroup::new(peripherals.TIMG1);
+    let mut wdt = timg1.wdt;
+    wdt.set_timeout(MwdtStage::Stage0, HalDuration::from_secs(30));
+    wdt.set_stage_action(MwdtStage::Stage0, MwdtStageAction::ResetSystem);
+    wdt.enable();
+    let wdt = WDT.init(Mutex::new(wdt));
+    log::info!("watchdog: initialized with 30s timeout");
+
     log::info!(
         "config: ssid={}, host={}:{}",
-        config.ssid,
-        config.conway_host,
-        config.conway_port
+        SSID,
+        CONWAY_HOST,
+        CONWAY_PORT
     );
 
     // Initialize shared state (fobs and etag start empty, populated by sync)
@@ -148,11 +164,12 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     // Spawn tasks
     spawner.spawn(net_task(runner)).unwrap();
-    spawner.spawn(wifi_task(wifi_controller, config)).unwrap();
+    spawner.spawn(wifi_task(wifi_controller)).unwrap();
     spawner.spawn(wiegand_task(wiegand)).unwrap();
-    spawner.spawn(access_task(fobs)).unwrap();
+    spawner.spawn(access_task(fobs, wdt)).unwrap();
     spawner.spawn(door_task(door)).unwrap();
-    spawner.spawn(sync_task(stack, config, fobs, etag)).unwrap();
+    spawner.spawn(sync_task(stack, fobs, etag)).unwrap();
+    spawner.spawn(watchdog_feed_task()).unwrap();
 }
 
 /// Runs the embassy-net stack, processing incoming/outgoing packets and maintaining network state.
@@ -165,19 +182,19 @@ async fn net_task(mut runner: embassy_net::Runner<'static, esp_radio::wifi::Wifi
 /// WiFi connection management.
 /// Tries to connect every 5 seconds, with a 20 second timeout.
 #[embassy_executor::task]
-async fn wifi_task(mut controller: WifiController<'static>, config: &'static Config) {
+async fn wifi_task(mut controller: WifiController<'static>) {
     use alloc::string::ToString;
 
     loop {
         if !controller.is_connected().unwrap_or(false) {
-            log::info!("wifi: connecting to {}", config.ssid);
+            log::info!("wifi: connecting to {}", SSID);
 
             let _ = controller.stop();
             Timer::after(Duration::from_millis(100)).await;
 
             let client_config = ClientConfig::default()
-                .with_ssid(config.ssid.to_string())
-                .with_password(config.password.to_string());
+                .with_ssid(SSID.to_string())
+                .with_password(PASSWORD.to_string());
 
             if let Err(e) = controller.set_config(&ModeConfig::Client(client_config)) {
                 log::error!("wifi: set_config failed: {:?}", e);
@@ -220,8 +237,14 @@ async fn wiegand_task(mut wiegand: Wiegand<'static>) {
 ///
 /// CRITICAL: This task must NEVER block on networking. All authorization checks
 /// use only local cached data. Network sync happens asynchronously in sync_task.
+///
+/// This task also handles watchdog feeding. When WATCHDOG_FEED is signaled,
+/// this task feeds the hardware watchdog, proving it is not blocked.
 #[embassy_executor::task]
-async fn access_task(fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>) {
+async fn access_task(
+    fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
+    wdt: &'static Mutex<CriticalSectionRawMutex, WdtType>,
+) {
     // Pending credentials that were denied but might be valid after sync.
     // We check these after each sync completes without blocking main auth flow.
     let mut pending_recheck: Option<(u32, u32, u64)> = None; // (fob, nfc, deadline)
@@ -229,19 +252,27 @@ async fn access_task(fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec
     let mut failed_attempts: u8 = 0;
 
     loop {
-        // Use select to handle both new card reads AND sync completion signals.
-        // This ensures we can recheck pending credentials without blocking new reads.
-        let event = embassy_futures::select::select(
+        // Use select3 to handle card reads, sync completion, AND watchdog feed requests.
+        // This ensures we can service all events without blocking.
+        let event = embassy_futures::select::select3(
             WIEGAND_CHANNEL.receive(),
             SYNC_COMPLETE.wait(),
+            WATCHDOG_FEED.wait(),
         )
         .await;
 
         let now = embassy_time::Instant::now().as_millis();
 
         match event {
+            // Watchdog feed request - feed the hardware watchdog to prove we're alive
+            embassy_futures::select::Either3::Third(()) => {
+                wdt.lock().await.feed();
+                log::debug!("watchdog: fed");
+                continue;
+            }
+
             // Sync completed - check if pending credential is now valid
-            embassy_futures::select::Either::Second(()) => {
+            embassy_futures::select::Either3::Second(()) => {
                 if let Some((fob, nfc, deadline)) = pending_recheck.take() {
                     if now > deadline {
                         log::debug!("pending recheck expired");
@@ -270,7 +301,7 @@ async fn access_task(fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec
             }
 
             // New card read - process immediately
-            embassy_futures::select::Either::First(read) => {
+            embassy_futures::select::Either3::First(read) => {
                 if now < backoff_until {
                     log::debug!("card ignored (backoff)");
                     continue;
@@ -336,7 +367,6 @@ async fn door_task(mut door: Output<'static>) {
 #[embassy_executor::task]
 async fn sync_task(
     stack: &'static Stack<'static>,
-    config: &'static Config,
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &'static Mutex<CriticalSectionRawMutex, HString<64>>,
 ) {
@@ -362,7 +392,23 @@ async fn sync_task(
             continue;
         }
 
-        crate::sync::sync_with_conway(stack, config, fobs, etag).await;
+        crate::sync::sync_with_conway(stack, fobs, etag).await;
+    }
+}
+
+/// Watchdog feed task - periodically signals access_task to feed the watchdog.
+///
+/// This task runs on a 10-second interval and sends a signal to access_task
+/// requesting it to feed the hardware watchdog. If access_task is blocked and
+/// cannot respond, the watchdog will not be fed and will eventually reset the system.
+///
+/// The 10-second interval with a 30-second watchdog timeout provides 3 feed
+/// opportunities before reset, allowing for some timing variance.
+#[embassy_executor::task]
+async fn watchdog_feed_task() {
+    loop {
+        Timer::after(Duration::from_secs(10)).await;
+        WATCHDOG_FEED.signal(());
     }
 }
 

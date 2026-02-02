@@ -14,7 +14,7 @@ use heapless::String as HString;
 use smoltcp::wire::IpAddress;
 
 use crate::events::{AccessEvent, MAX_EVENTS};
-use crate::storage::{Config, MAX_FOBS};
+use crate::storage::{CONWAY_HOST, CONWAY_PORT, MAX_FOBS};
 use crate::{EVENT_BUFFER, SYNC_COMPLETE};
 
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
@@ -23,7 +23,6 @@ const IO_TIMEOUT: Duration = Duration::from_secs(10);
 /// Events are only removed from the buffer after successful server acknowledgment.
 pub async fn sync_with_conway(
     stack: &'static Stack<'static>,
-    config: &'static Config,
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &'static Mutex<CriticalSectionRawMutex, HString<64>>,
 ) {
@@ -54,10 +53,10 @@ pub async fn sync_with_conway(
     };
 
     // Parse host as IP address
-    let remote_addr = match parse_ipv4(config.conway_host) {
+    let remote_addr = match parse_ipv4(CONWAY_HOST) {
         Some(ip) => IpAddress::Ipv4(ip),
         None => {
-            log::error!("sync: invalid IP address: {}", config.conway_host);
+            log::error!("sync: invalid IP address: {}", CONWAY_HOST);
             SYNC_COMPLETE.signal(());
             return;
         }
@@ -70,7 +69,7 @@ pub async fn sync_with_conway(
     socket.set_timeout(Some(IO_TIMEOUT));
 
     // Connect to server
-    let remote = smoltcp::wire::IpEndpoint::new(remote_addr, config.conway_port);
+    let remote = smoltcp::wire::IpEndpoint::new(remote_addr, CONWAY_PORT);
     log::debug!("sync: connecting to {:?}", remote);
 
     if let Err(e) = socket.connect(remote).await {
@@ -89,7 +88,7 @@ pub async fn sync_with_conway(
          Content-Type: application/json\r\n\
          Content-Length: {}\r\n\
          Connection: close\r\n",
-        config.conway_host,
+        CONWAY_HOST,
         body.len()
     );
     if !current_etag.is_empty() {
