@@ -4,7 +4,6 @@
 //! - Wiegand RFID reading (async GPIO edge detection)
 //! - WiFi connectivity
 //! - Conway API sync
-//! - HTTP status server
 
 #![no_std]
 #![no_main]
@@ -14,7 +13,6 @@ use esp_bootloader_esp_idf::esp_app_desc;
 esp_app_desc!();
 
 mod events;
-mod http;
 mod storage;
 mod sync;
 mod wiegand;
@@ -54,7 +52,7 @@ pub static SYNC_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 // Signal sent when sync completes (success or failure)
 pub static SYNC_COMPLETE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
-// Signal for door unlock (from HTTP or after successful auth)
+// Signal for door unlock (after successful auth)
 pub static DOOR_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
 // Static cells for 'static lifetime requirements
@@ -155,16 +153,17 @@ async fn main(spawner: embassy_executor::Spawner) {
     spawner.spawn(access_task(fobs)).unwrap();
     spawner.spawn(door_task(door)).unwrap();
     spawner.spawn(sync_task(stack, config, fobs, etag)).unwrap();
-    spawner.spawn(http_task(stack, fobs, etag)).unwrap();
 }
 
-/// Network driver task.
+/// Runs the embassy-net stack, processing incoming/outgoing packets and maintaining network state.
+/// Must run continuously for the network stack to function.
 #[embassy_executor::task]
 async fn net_task(mut runner: embassy_net::Runner<'static, esp_radio::wifi::WifiDevice<'static>>) {
     runner.run().await;
 }
 
 /// WiFi connection management.
+/// Tries to connect every 5 seconds, with a 20 second timeout.
 #[embassy_executor::task]
 async fn wifi_task(mut controller: WifiController<'static>, config: &'static Config) {
     use alloc::string::ToString;
@@ -196,7 +195,7 @@ async fn wifi_task(mut controller: WifiController<'static>, config: &'static Con
                     log::info!("wifi: connected");
                     break;
                 }
-                Timer::after(Duration::from_millis(100)).await;
+                Timer::after(Duration::from_millis(200)).await;
             }
         }
 
@@ -365,25 +364,6 @@ async fn sync_task(
 
         crate::sync::sync_with_conway(stack, config, fobs, etag).await;
     }
-}
-
-/// HTTP server task.
-#[embassy_executor::task]
-async fn http_task(
-    stack: &'static Stack<'static>,
-    fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
-    etag: &'static Mutex<CriticalSectionRawMutex, HString<64>>,
-) {
-    // Wait for network
-    loop {
-        if stack.is_link_up() && stack.config_v4().is_some() {
-            break;
-        }
-        Timer::after(Duration::from_millis(100)).await;
-    }
-    log::info!("http: server starting on port 80");
-
-    crate::http::run_server(stack, fobs, etag).await;
 }
 
 #[panic_handler]
