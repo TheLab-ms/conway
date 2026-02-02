@@ -14,8 +14,7 @@ use heapless::String as HString;
 use smoltcp::wire::IpAddress;
 
 use crate::events::{AccessEvent, MAX_EVENTS};
-use crate::storage::{CONWAY_HOST, CONWAY_PORT, MAX_FOBS};
-use crate::{EVENT_BUFFER, SYNC_COMPLETE};
+use crate::{CONWAY_HOST, CONWAY_PORT, EVENT_BUFFER, MAX_FOBS, SYNC_COMPLETE};
 
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 

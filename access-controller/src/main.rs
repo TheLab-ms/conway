@@ -13,7 +13,6 @@ use esp_bootloader_esp_idf::esp_app_desc;
 esp_app_desc!();
 
 mod events;
-mod storage;
 mod sync;
 mod wiegand;
 
@@ -38,8 +37,24 @@ use heapless::String as HString;
 use static_cell::StaticCell;
 
 use crate::events::{AccessEvent, EventBuffer};
-use crate::storage::{CONWAY_HOST, CONWAY_PORT, MAX_FOBS, PASSWORD, SSID};
 use crate::wiegand::{Wiegand, WiegandRead};
+
+// Configuration constants
+pub const MAX_FOBS: usize = 512;
+
+pub const SSID: &str = match option_env!("CONWAY_SSID") {
+    Some(s) => s,
+    None => "unconfigured",
+};
+pub const PASSWORD: &str = match option_env!("CONWAY_PASSWORD") {
+    Some(s) => s,
+    None => "",
+};
+pub const CONWAY_HOST: &str = match option_env!("CONWAY_HOST") {
+    Some(s) => s,
+    None => "192.168.1.1",
+};
+pub const CONWAY_PORT: u16 = 8080;
 
 // Channel for Wiegand reads -> access control task
 static WIEGAND_CHANNEL: Channel<CriticalSectionRawMutex, WiegandRead, 4> = Channel::new();
