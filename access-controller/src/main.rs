@@ -389,7 +389,5 @@ async fn http_task(
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     log::error!("PANIC: {}", info);
-    loop {
-        core::hint::spin_loop();
-    }
+    esp_hal::system::software_reset()
 }
