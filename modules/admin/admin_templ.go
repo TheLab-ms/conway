@@ -14,12 +14,12 @@ import (
 	"strconv"
 )
 
-type navbarTab struct {
+type NavbarTab struct {
 	Title string
 	Path  string
 }
 
-func adminNav(tabs []*navbarTab) templ.Component {
+func AdminNav(tabs []*NavbarTab) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -254,7 +254,7 @@ func (t tableCell) Render(row *tableRow) templ.Component {
 	})
 }
 
-func renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string, showSearch bool, filters []string) templ.Component {
+func renderAdminList(tabs []*NavbarTab, typeName, searchURL, exportTable string, showSearch bool, filters []string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -287,7 +287,7 @@ func renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string,
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = adminNav(tabs).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = AdminNav(tabs).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -684,7 +684,7 @@ func renderAdminListRows(rows []*tableRow, moreURL string, hasMore bool, colCoun
 var intervalLabels = []string{"7 days", "30 days", "60 days", "90 days", "180 days", "365 days"}
 var intervalValues = []string{"168h", "720h", "1440h", "2160h", "4320h", "8760h"}
 
-func renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string) templ.Component {
+func renderMetricsAdminPage(tabs []*NavbarTab, metrics []string, selected string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -717,7 +717,7 @@ func renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = adminNav(tabs).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = AdminNav(tabs).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

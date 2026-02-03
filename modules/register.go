@@ -10,6 +10,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/directory"
 	"github.com/TheLab-ms/conway/modules/discord"
+	"github.com/TheLab-ms/conway/modules/calendar"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/fobapi"
@@ -66,6 +67,8 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(metrics.New(opts.Database))
 	a.Add(fobapi.New(opts.Database))
 	a.Add(directory.New(opts.Database))
+	calendarMod := calendar.New(opts.Database, opts.Self)
+	a.Add(calendarMod)
 
 	a.Add(machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu")))
 
@@ -82,6 +85,12 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	adminMod := admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin"))
 	adminMod.SetConfigRegistry(a.Configs())
 	a.Add(adminMod)
+
+	// Set config registry on calendar module for room loading
+	calendarMod.SetConfigRegistry(a.Configs())
+
+	// Share navbar with calendar module so its admin pages have consistent navigation
+	calendarMod.SetNavbar(adminMod.GetNavbar())
 
 	return authModule
 }

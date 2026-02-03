@@ -37,7 +37,7 @@ type Module struct {
 	self           *url.URL
 	links          *engine.TokenIssuer
 	eventLogger    *engine.EventLogger
-	nav            []*navbarTab
+	nav            []*NavbarTab
 	configRegistry *config.Registry
 	configStore    *config.Store
 }
@@ -45,11 +45,12 @@ type Module struct {
 func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer, eventLogger *engine.EventLogger) *Module {
 	engine.MustMigrate(db, migration)
 
-	nav := []*navbarTab{}
+	nav := []*NavbarTab{}
 	for _, view := range listViews {
-		nav = append(nav, &navbarTab{Title: view.Title, Path: "/admin" + view.RelPath})
+		nav = append(nav, &NavbarTab{Title: view.Title, Path: "/admin" + view.RelPath})
 	}
-	nav = append(nav, &navbarTab{Title: "Metrics", Path: "/admin/metrics"})
+	nav = append(nav, &NavbarTab{Title: "Calendar", Path: "/admin/calendar"})
+	nav = append(nav, &NavbarTab{Title: "Metrics", Path: "/admin/metrics"})
 
 	return &Module{
 		db:          db,
@@ -58,6 +59,12 @@ func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer, eventLogger *e
 		eventLogger: eventLogger,
 		nav:         nav,
 	}
+}
+
+// GetNavbar returns the navigation tabs for the admin UI.
+// This allows other modules to include the admin navbar in their pages.
+func (m *Module) GetNavbar() []*NavbarTab {
+	return m.nav
 }
 
 // SetConfigRegistry sets the config registry for dynamic configuration UI.
@@ -399,7 +406,7 @@ func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request
 func (m *Module) renderWaiverConfigPage(w http.ResponseWriter, r *http.Request) {
 	data := m.getWaiverConfigData(r)
 	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Waiver", renderWaiverConfigContent(data)).Render(r.Context(), w)
+	renderConfigPage(m.nav, "Waiver", renderWaiverConfigContent(data), m.getConfigSections()).Render(r.Context(), w)
 }
 
 func (m *Module) handleWaiverConfigSave(w http.ResponseWriter, r *http.Request) {
@@ -420,7 +427,7 @@ func (m *Module) handleWaiverConfigSave(w http.ResponseWriter, r *http.Request) 
 	data := m.getWaiverConfigData(r)
 	data.Saved = true
 	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Waiver", renderWaiverConfigContent(data)).Render(r.Context(), w)
+	renderConfigPage(m.nav, "Waiver", renderWaiverConfigContent(data), m.getConfigSections()).Render(r.Context(), w)
 }
 
 func (m *Module) getWaiverConfigData(r *http.Request) *waiverConfigData {
@@ -438,7 +445,7 @@ func (m *Module) getWaiverConfigData(r *http.Request) *waiverConfigData {
 func (m *Module) renderDiscordConfigPage(w http.ResponseWriter, r *http.Request) {
 	data := m.getDiscordConfigData(r)
 	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Discord", renderDiscordConfigContent(data, m.self.String())).Render(r.Context(), w)
+	renderConfigPage(m.nav, "Discord", renderDiscordConfigContent(data, m.self.String()), m.getConfigSections()).Render(r.Context(), w)
 }
 
 func (m *Module) handleDiscordConfigSave(w http.ResponseWriter, r *http.Request) {
@@ -487,7 +494,7 @@ func (m *Module) handleDiscordConfigSave(w http.ResponseWriter, r *http.Request)
 	data := m.getDiscordConfigData(r)
 	data.Saved = true
 	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Discord", renderDiscordConfigContent(data, m.self.String())).Render(r.Context(), w)
+	renderConfigPage(m.nav, "Discord", renderDiscordConfigContent(data, m.self.String()), m.getConfigSections()).Render(r.Context(), w)
 }
 
 func (m *Module) getDiscordConfigData(r *http.Request) *discordConfigData {
@@ -547,7 +554,7 @@ func (m *Module) getRecentDiscordEvents(ctx context.Context) []*discordEvent {
 func (m *Module) renderStripeConfigPage(w http.ResponseWriter, r *http.Request) {
 	data := m.getStripeConfigData(r)
 	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Stripe", renderStripeConfigContent(data, m.self.String())).Render(r.Context(), w)
+	renderConfigPage(m.nav, "Stripe", renderStripeConfigContent(data, m.self.String()), m.getConfigSections()).Render(r.Context(), w)
 }
 
 func (m *Module) handleStripeConfigSave(w http.ResponseWriter, r *http.Request) {
@@ -578,7 +585,7 @@ func (m *Module) handleStripeConfigSave(w http.ResponseWriter, r *http.Request) 
 	data := m.getStripeConfigData(r)
 	data.Saved = true
 	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Stripe", renderStripeConfigContent(data, m.self.String())).Render(r.Context(), w)
+	renderConfigPage(m.nav, "Stripe", renderStripeConfigContent(data, m.self.String()), m.getConfigSections()).Render(r.Context(), w)
 }
 
 func (m *Module) getStripeConfigData(r *http.Request) *stripeConfigData {
@@ -635,7 +642,7 @@ func (m *Module) getRecentStripeEvents(ctx context.Context) []*stripeEvent {
 func (m *Module) renderBambuConfigPage(w http.ResponseWriter, r *http.Request) {
 	data := m.getBambuConfigData(r)
 	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
+	renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data), m.getConfigSections()).Render(r.Context(), w)
 }
 
 func (m *Module) handleBambuConfigSave(w http.ResponseWriter, r *http.Request) {
@@ -643,7 +650,7 @@ func (m *Module) handleBambuConfigSave(w http.ResponseWriter, r *http.Request) {
 		data := m.getBambuConfigData(r)
 		data.Error = "Failed to parse form: " + err.Error()
 		w.Header().Set("Content-Type", "text/html")
-		renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
+		renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data), m.getConfigSections()).Render(r.Context(), w)
 		return
 	}
 
@@ -727,7 +734,7 @@ func (m *Module) handleBambuConfigSave(w http.ResponseWriter, r *http.Request) {
 		data := m.getBambuConfigData(r)
 		data.Error = "Failed to encode printers: " + err.Error()
 		w.Header().Set("Content-Type", "text/html")
-		renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
+		renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data), m.getConfigSections()).Render(r.Context(), w)
 		return
 	}
 
@@ -742,7 +749,7 @@ func (m *Module) handleBambuConfigSave(w http.ResponseWriter, r *http.Request) {
 	data := m.getBambuConfigData(r)
 	data.Saved = true
 	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
+	renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data), m.getConfigSections()).Render(r.Context(), w)
 }
 
 // getExistingPrinters returns existing printer access codes keyed by serial number
@@ -838,7 +845,7 @@ func (m *Module) getRecentBambuEvents(ctx context.Context) []*bambuEvent {
 
 func (m *Module) renderFobAPIConfigPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Fob API", renderFobAPIConfigContent(m.self.String())).Render(r.Context(), w)
+	renderConfigPage(m.nav, "Fob API", renderFobAPIConfigContent(m.self.String()), m.getConfigSections()).Render(r.Context(), w)
 }
 
 // handleGenericConfigPage renders a configuration page for a registered module.

@@ -882,3 +882,236 @@ func (p *AdminBambuConfigPage) ExpectPrinterCardHeaderText(index int, expectedTe
 	require.NoError(p.t, err)
 	require.Equal(p.t, expectedText, text)
 }
+
+// CalendarPage represents the public calendar page.
+type CalendarPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewCalendarPage(t *testing.T, page playwright.Page) *CalendarPage {
+	return &CalendarPage{page: page, t: t}
+}
+
+func (p *CalendarPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/calendar")
+	require.NoError(p.t, err)
+}
+
+func (p *CalendarPage) ExpectHeading() {
+	locator := p.page.Locator("h2", playwright.PageLocatorOptions{HasText: "Upcoming Events"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *CalendarPage) ExpectNoEventsMessage() {
+	locator := p.page.GetByText("No upcoming events scheduled")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *CalendarPage) ExpectEventCard(title string) {
+	locator := p.page.Locator(".card", playwright.PageLocatorOptions{
+		Has: p.page.Locator(".card-title", playwright.PageLocatorOptions{HasText: title}),
+	})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *CalendarPage) ExpectEventNotVisible(title string) {
+	locator := p.page.Locator(".card", playwright.PageLocatorOptions{
+		Has: p.page.Locator(".card-title", playwright.PageLocatorOptions{HasText: title}),
+	})
+	expect(p.t).Locator(locator).ToBeHidden()
+}
+
+func (p *CalendarPage) EventCardCount() int {
+	count, err := p.page.Locator(".card").Count()
+	require.NoError(p.t, err)
+	return count
+}
+
+func (p *CalendarPage) ExpectSubscribeButton() {
+	locator := p.page.Locator("a:has-text('Subscribe')")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *CalendarPage) ExpectRecurrenceBadge(title, recurrence string) {
+	card := p.page.Locator(".card", playwright.PageLocatorOptions{
+		Has: p.page.Locator(".card-title", playwright.PageLocatorOptions{HasText: title}),
+	})
+	expect(p.t).Locator(card.Locator(".badge", playwright.LocatorLocatorOptions{HasText: recurrence})).ToBeVisible()
+}
+
+// AdminCalendarPage represents the admin calendar management page.
+type AdminCalendarPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewAdminCalendarPage(t *testing.T, page playwright.Page) *AdminCalendarPage {
+	return &AdminCalendarPage{page: page, t: t}
+}
+
+func (p *AdminCalendarPage) Navigate() {
+	_, err := p.page.Goto(baseURL + "/admin/calendar")
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarPage) ExpectHeading() {
+	locator := p.page.Locator("h2", playwright.PageLocatorOptions{HasText: "Manage Events"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminCalendarPage) ExpectNoEventsMessage() {
+	locator := p.page.GetByText("No events created yet")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminCalendarPage) ExpectEventInTable(title string) {
+	locator := p.page.Locator("table tbody tr td", playwright.PageLocatorOptions{HasText: title})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminCalendarPage) ExpectEventNotInTable(title string) {
+	locator := p.page.Locator("table tbody tr td", playwright.PageLocatorOptions{HasText: title})
+	expect(p.t).Locator(locator).ToBeHidden()
+}
+
+func (p *AdminCalendarPage) ClickNewEvent() {
+	err := p.page.Locator("a:has-text('New Event')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarPage) ClickEditEvent(title string) {
+	row := p.page.Locator("tr", playwright.PageLocatorOptions{HasText: title})
+	err := row.Locator("a:has-text('Edit')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarPage) ClickDeleteEvent(title string) {
+	row := p.page.Locator("tr", playwright.PageLocatorOptions{HasText: title})
+	p.page.On("dialog", func(dialog playwright.Dialog) {
+		dialog.Accept()
+	})
+	err := row.Locator("button:has-text('Delete')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarPage) EventRowCount() int {
+	count, err := p.page.Locator("table tbody tr").Count()
+	require.NoError(p.t, err)
+	return count
+}
+
+func (p *AdminCalendarPage) ExpectViewPublicCalendarLink() {
+	locator := p.page.Locator("a:has-text('View Public Calendar')")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminCalendarPage) ClickViewPublicCalendar() {
+	err := p.page.Locator("a:has-text('View Public Calendar')").Click()
+	require.NoError(p.t, err)
+}
+
+// AdminCalendarFormPage represents the event create/edit form.
+type AdminCalendarFormPage struct {
+	page playwright.Page
+	t    *testing.T
+}
+
+func NewAdminCalendarFormPage(t *testing.T, page playwright.Page) *AdminCalendarFormPage {
+	return &AdminCalendarFormPage{page: page, t: t}
+}
+
+func (p *AdminCalendarFormPage) NavigateNew() {
+	_, err := p.page.Goto(baseURL + "/admin/calendar/new")
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) NavigateEdit(eventID int64) {
+	_, err := p.page.Goto(fmt.Sprintf("%s/admin/calendar/%d/edit", baseURL, eventID))
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) ExpectNewEventHeading() {
+	locator := p.page.Locator("h2", playwright.PageLocatorOptions{HasText: "New Event"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminCalendarFormPage) ExpectEditEventHeading() {
+	locator := p.page.Locator("h2", playwright.PageLocatorOptions{HasText: "Edit Event"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminCalendarFormPage) FillTitle(title string) {
+	err := p.page.Locator("#title").Fill(title)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) FillDescription(description string) {
+	err := p.page.Locator("#description").Fill(description)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) FillDate(date string) {
+	err := p.page.Locator("#date").Fill(date)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) FillTime(time string) {
+	err := p.page.Locator("#time").Fill(time)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) SelectDuration(minutes string) {
+	_, err := p.page.Locator("#duration").SelectOption(playwright.SelectOptionValues{
+		Values: &[]string{minutes},
+	})
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) SelectRecurrenceType(recType string) {
+	_, err := p.page.Locator("#recurrence_type").SelectOption(playwright.SelectOptionValues{
+		Values: &[]string{recType},
+	})
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) SelectRecurrenceDay(day string) {
+	_, err := p.page.Locator("#recurrence_day").SelectOption(playwright.SelectOptionValues{
+		Values: &[]string{day},
+	})
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) SelectRecurrenceWeek(week string) {
+	_, err := p.page.Locator("#recurrence_week").SelectOption(playwright.SelectOptionValues{
+		Values: &[]string{week},
+	})
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) FillRecurrenceEnd(date string) {
+	err := p.page.Locator("#recurrence_end").Fill(date)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) Submit() {
+	err := p.page.Locator("button[type='submit']:has-text('Save Event')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) ClickCancel() {
+	err := p.page.Locator("a:has-text('Cancel')").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminCalendarFormPage) GetTitle() string {
+	value, err := p.page.Locator("#title").InputValue()
+	require.NoError(p.t, err)
+	return value
+}
+
+func (p *AdminCalendarFormPage) GetDescription() string {
+	value, err := p.page.Locator("#description").InputValue()
+	require.NoError(p.t, err)
+	return value
+}

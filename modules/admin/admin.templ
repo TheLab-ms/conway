@@ -6,12 +6,12 @@ import (
 	"strconv"
 )
 
-type navbarTab struct {
+type NavbarTab struct {
 	Title string
 	Path  string
 }
 
-templ adminNav(tabs []*navbarTab) {
+templ AdminNav(tabs []*NavbarTab) {
 	<nav class="navbar navbar-expand-lg bg-light">
 		<div class="container-fluid">
 			<a class="navbar-brand" href="/admin">Conway</a>
@@ -68,9 +68,9 @@ templ (t tableCell) Render(row *tableRow) {
 	}
 }
 
-templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string, showSearch bool, filters []string) {
+templ renderAdminList(tabs []*NavbarTab, typeName, searchURL, exportTable string, showSearch bool, filters []string) {
 	@bootstrap.View() {
-		@adminNav(tabs)
+		@AdminNav(tabs)
 		<div class="container my-5">
 			<div class="d-flex align-items-center mb-4">
 				<h1 class="mb-0">{ typeName }</h1>
@@ -215,9 +215,9 @@ templ renderAdminListRows(rows []*tableRow, moreURL string, hasMore bool, colCou
 var intervalLabels = []string{"7 days", "30 days", "60 days", "90 days", "180 days", "365 days"}
 var intervalValues = []string{"168h", "720h", "1440h", "2160h", "4320h", "8760h"}
 
-templ renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string) {
+templ renderMetricsAdminPage(tabs []*NavbarTab, metrics []string, selected string) {
 	@bootstrap.View() {
-		@adminNav(tabs)
+		@AdminNav(tabs)
 		<div class="container my-5">
 			<h2 class="mb-4">Metrics</h2>
 			<form method="get" class="mb-5">

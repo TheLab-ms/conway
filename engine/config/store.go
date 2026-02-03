@@ -43,12 +43,19 @@ func (s *Store) Load(ctx context.Context, module string) (any, int, error) {
 	}
 	configPtr := reflect.New(configType)
 
-	// Query latest version
+	// Get table columns BEFORE the main query to avoid nested queries
+	// which cause deadlock with SQLite single connection
 	tableName := module + "_config"
+	columns, err := s.getTableColumns(ctx, tableName)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Query latest version
 	row := s.db.QueryRowContext(ctx,
 		fmt.Sprintf("SELECT * FROM %s ORDER BY version DESC LIMIT 1", tableName))
 
-	version, err := s.scanRow(ctx, row, configPtr, spec)
+	version, err := s.scanRowWithColumns(row, configPtr, spec, columns)
 	if err == sql.ErrNoRows {
 		// Return zero value with defaults applied
 		applyDefaults(configPtr.Elem(), spec)
@@ -61,15 +68,8 @@ func (s *Store) Load(ctx context.Context, module string) (any, int, error) {
 	return configPtr.Interface(), version, nil
 }
 
-// scanRow scans a database row into the config struct.
-func (s *Store) scanRow(ctx context.Context, row *sql.Row, configPtr reflect.Value, spec *ParsedSpec) (int, error) {
-	// Get column names from the table
-	tableName := spec.Module + "_config"
-	columns, err := s.getTableColumns(ctx, tableName)
-	if err != nil {
-		return 0, err
-	}
-
+// scanRowWithColumns scans a database row into the config struct using pre-fetched columns.
+func (s *Store) scanRowWithColumns(row *sql.Row, configPtr reflect.Value, spec *ParsedSpec, columns []string) (int, error) {
 	// Create scan destinations
 	scanDests := make([]any, len(columns))
 	columnValues := make(map[string]any)

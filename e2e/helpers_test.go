@@ -394,7 +394,7 @@ func seedLoginCode(t *testing.T, code string, memberID int64, callback string, e
 // clearTestData removes all test data from the database between tests.
 func clearTestData(t *testing.T) {
 	t.Helper()
-	tables := []string{"members", "waivers", "waiver_content", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes", "stripe_config", "stripe_events", "bambu_config", "bambu_events"}
+	tables := []string{"members", "waivers", "waiver_content", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes", "stripe_config", "stripe_events", "bambu_config", "bambu_events", "calendar_events"}
 	for _, table := range tables {
 		_, err := testDB.Exec(fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
@@ -638,5 +638,99 @@ func refreshPrinterStateTimestamps(t *testing.T) {
 	_, err := testDB.Exec(`UPDATE bambu_printer_state SET updated_at = strftime('%s', 'now')`)
 	if err != nil {
 		t.Logf("warning: could not refresh printer state timestamps: %v", err)
+	}
+}
+
+// CalendarEventOption is a functional option for configuring a test calendar event.
+type CalendarEventOption func(*calendarEventConfig)
+
+type calendarEventConfig struct {
+	title           string
+	description     string
+	startTime       int64
+	durationMinutes int
+	recurrenceType  string
+	recurrenceDay   string
+	recurrenceWeek  string
+	recurrenceEnd   int64
+}
+
+// WithEventDescription sets the event description.
+func WithEventDescription(desc string) CalendarEventOption {
+	return func(c *calendarEventConfig) { c.description = desc }
+}
+
+// WithEventStartTime sets the event start time as a Unix timestamp.
+func WithEventStartTime(ts int64) CalendarEventOption {
+	return func(c *calendarEventConfig) { c.startTime = ts }
+}
+
+// WithEventDuration sets the event duration in minutes.
+func WithEventDuration(minutes int) CalendarEventOption {
+	return func(c *calendarEventConfig) { c.durationMinutes = minutes }
+}
+
+// WithWeeklyRecurrence sets the event to recur weekly on the given day.
+func WithWeeklyRecurrence(day string) CalendarEventOption {
+	return func(c *calendarEventConfig) {
+		c.recurrenceType = "weekly"
+		c.recurrenceDay = day
+	}
+}
+
+// WithMonthlyRecurrence sets the event to recur monthly on the nth weekday.
+func WithMonthlyRecurrence(week, day string) CalendarEventOption {
+	return func(c *calendarEventConfig) {
+		c.recurrenceType = "monthly"
+		c.recurrenceWeek = week
+		c.recurrenceDay = day
+	}
+}
+
+// WithRecurrenceEnd sets the recurrence end date as a Unix timestamp.
+func WithRecurrenceEnd(ts int64) CalendarEventOption {
+	return func(c *calendarEventConfig) { c.recurrenceEnd = ts }
+}
+
+// seedCalendarEvent creates a test calendar event and returns its ID.
+func seedCalendarEvent(t *testing.T, title string, opts ...CalendarEventOption) int64 {
+	t.Helper()
+
+	cfg := &calendarEventConfig{
+		title:           title,
+		durationMinutes: 60,
+		startTime:       time.Now().Add(24 * time.Hour).Unix(), // Default to tomorrow
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	result, err := testDB.Exec(`
+		INSERT INTO calendar_events (title, description, start_time, duration_minutes,
+			recurrence_type, recurrence_day, recurrence_week, recurrence_end)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		cfg.title,
+		sql.NullString{String: cfg.description, Valid: cfg.description != ""},
+		cfg.startTime,
+		cfg.durationMinutes,
+		sql.NullString{String: cfg.recurrenceType, Valid: cfg.recurrenceType != ""},
+		sql.NullString{String: cfg.recurrenceDay, Valid: cfg.recurrenceDay != ""},
+		sql.NullString{String: cfg.recurrenceWeek, Valid: cfg.recurrenceWeek != ""},
+		sql.NullInt64{Int64: cfg.recurrenceEnd, Valid: cfg.recurrenceEnd != 0},
+	)
+	require.NoError(t, err, "could not insert calendar event")
+
+	eventID, err := result.LastInsertId()
+	require.NoError(t, err, "could not get event ID")
+
+	return eventID
+}
+
+// clearCalendarEvents removes all calendar events from the database.
+func clearCalendarEvents(t *testing.T) {
+	t.Helper()
+	_, err := testDB.Exec(`DELETE FROM calendar_events`)
+	if err != nil {
+		t.Logf("warning: could not clear calendar_events: %v", err)
 	}
 }

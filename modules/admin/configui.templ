@@ -10,9 +10,9 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
-templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, version int, events []*config.Event, configSections []*configSection, saved bool, errMsg string, selfURL string) {
+templ renderGenericConfigPage(tabs []*NavbarTab, spec *config.ParsedSpec, cfg any, version int, events []*config.Event, configSections []*configSection, saved bool, errMsg string, selfURL string) {
 	@bootstrap.View() {
-		@adminNav(tabs)
+		@AdminNav(tabs)
 		<div class="container my-5">
 			<div class="row">
 				<div class="col-md-3">

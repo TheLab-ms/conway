@@ -1,0 +1,574 @@
+package calendar
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/TheLab-ms/conway/modules/admin"
+	"github.com/TheLab-ms/conway/modules/bootstrap"
+)
+
+// CalendarMonth holds data for rendering the monthly calendar widget.
+type CalendarMonth struct {
+	Year        int
+	Month       time.Month
+	Today       time.Time
+	EventDays   map[int]bool // day number -> has events
+	DaysInMonth int
+	FirstDay    time.Weekday // weekday of the 1st of the month
+	SelectedDay int          // 0 = no selection, otherwise the selected day number
+}
+
+templ renderCalendar(occurrences []EventOccurrence, cal CalendarMonth, host string, rooms []RoomConfig) {
+	@bootstrap.View() {
+		<body style="scroll-behavior: smooth;">
+			<div class="container my-5" style="max-width: 800px;">
+				<div class="d-flex justify-content-between align-items-center mb-4">
+					<h2 class="mb-0">Upcoming Events</h2>
+					<a href="/ical" class="btn btn-outline-secondary btn-sm">
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-calendar-plus me-1" viewBox="0 0 16 16">
+							<path d="M8 7a.5.5 0 0 1 .5.5V9H10a.5.5 0 0 1 0 1H8.5v1.5a.5.5 0 0 1-1 0V10H6a.5.5 0 0 1 0-1h1.5V7.5A.5.5 0 0 1 8 7"/>
+							<path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
+						</svg>
+						Subscribe
+					</a>
+				</div>
+
+				<div id="calendar-content">
+					@renderCalendarContent(occurrences, cal, rooms)
+				</div>
+			</div>
+		</body>
+	}
+}
+
+templ renderCalendarContent(occurrences []EventOccurrence, cal CalendarMonth, rooms []RoomConfig) {
+	@renderMonthlyCalendar(cal)
+	if len(occurrences) == 0 {
+		<div class="alert alert-info">
+			No events for this selection.
+		</div>
+	} else {
+		<div class="d-flex flex-column gap-3">
+			for _, occ := range occurrences {
+				@renderEventCard(occ, rooms)
+			}
+		</div>
+	}
+}
+
+templ renderEventCard(occ EventOccurrence, rooms []RoomConfig) {
+	<div class="card" id={ eventAnchorID(occ.StartTime) }>
+		<div class="card-body">
+			<div class="d-flex w-100 justify-content-between align-items-start">
+				<div>
+					<h5 class="card-title mb-2">{ occ.Event.Title }</h5>
+					<p class="card-text text-muted mb-2">
+						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-calendar-event me-1" viewBox="0 0 16 16">
+							<path d="M11 6.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z"/>
+							<path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/>
+						</svg>
+						{ formatEventDate(occ.StartTime) }
+						<span class="mx-2">·</span>
+						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-clock me-1" viewBox="0 0 16 16">
+							<path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/>
+							<path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/>
+						</svg>
+						{ formatEventTime(occ.StartTime, occ.EndTime) }
+						if roomName := getRoomNameFromList(occ.Event.RoomID, rooms); roomName != "" {
+							<span class="mx-2">·</span>
+							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-geo-alt me-1" viewBox="0 0 16 16">
+								<path d="M12.166 8.94c-.524 1.062-1.234 2.12-1.96 3.07A32 32 0 0 1 8 14.58a32 32 0 0 1-2.206-2.57c-.726-.95-1.436-2.008-1.96-3.07C3.304 7.867 3 6.862 3 6a5 5 0 0 1 10 0c0 .862-.305 1.867-.834 2.94M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10"/>
+								<path d="M8 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4m0 1a3 3 0 1 0 0-6 3 3 0 0 0 0 6"/>
+							</svg>
+							{ roomName }
+						}
+					</p>
+					if occ.Event.Description != nil && *occ.Event.Description != "" {
+						<p class="card-text small text-secondary mb-0">{ *occ.Event.Description }</p>
+					}
+				</div>
+				if occ.Event.RecurrenceType != nil && *occ.Event.RecurrenceType != "" {
+					<span class="badge bg-secondary">{ FormatRecurrence(occ.Event) }</span>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ renderMonthlyCalendar(cal CalendarMonth) {
+	<div class="card mb-4">
+		<div class="card-body">
+			<div class="d-flex justify-content-between align-items-center mb-3">
+				<a href={ templ.SafeURL(prevMonthURL(cal.Year, cal.Month)) } class="btn btn-sm btn-outline-secondary">
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+						<path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0"/>
+					</svg>
+				</a>
+				<h5 class="mb-0">{ cal.Month.String() } { strconv.Itoa(cal.Year) }</h5>
+				<a href={ templ.SafeURL(nextMonthURL(cal.Year, cal.Month)) } class="btn btn-sm btn-outline-secondary">
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+						<path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
+					</svg>
+				</a>
+			</div>
+			<div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center;">
+				<div class="text-muted small fw-bold py-1">Sun</div>
+				<div class="text-muted small fw-bold py-1">Mon</div>
+				<div class="text-muted small fw-bold py-1">Tue</div>
+				<div class="text-muted small fw-bold py-1">Wed</div>
+				<div class="text-muted small fw-bold py-1">Thu</div>
+				<div class="text-muted small fw-bold py-1">Fri</div>
+				<div class="text-muted small fw-bold py-1">Sat</div>
+				for i := 0; i < int(cal.FirstDay); i++ {
+					<div class="py-2"></div>
+				}
+				for day := 1; day <= cal.DaysInMonth; day++ {
+					@renderCalendarDay(cal, day)
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ renderCalendarDay(cal CalendarMonth, day int) {
+	<a
+		href={ templ.SafeURL(dayFilterURL(cal, day)) }
+		hx-get={ dayFilterURL(cal, day) }
+		hx-target="#calendar-content"
+		hx-swap="innerHTML"
+		hx-push-url="true"
+		class={ "py-2 text-decoration-none", templ.KV("text-body", !isToday(cal, day)), templ.KV("text-muted", !isToday(cal, day) && !cal.EventDays[day] && cal.SelectedDay != day) }
+		style="position: relative; cursor: pointer;"
+	>
+		if isToday(cal, day) {
+			<span class={ "d-inline-flex align-items-center justify-content-center rounded-circle", templ.KV("bg-primary text-white", cal.SelectedDay != day), templ.KV("bg-white text-primary border border-2 border-primary", cal.SelectedDay == day) } style="width: 28px; height: 28px;">{ strconv.Itoa(day) }</span>
+		} else if cal.SelectedDay == day {
+			<span class="d-inline-flex align-items-center justify-content-center border border-2 border-primary rounded-circle" style="width: 28px; height: 28px;">{ strconv.Itoa(day) }</span>
+		} else {
+			<span>{ strconv.Itoa(day) }</span>
+		}
+		if cal.EventDays[day] {
+			<span style="position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; background: var(--bs-primary); border-radius: 50%;"></span>
+		}
+	</a>
+}
+
+templ renderAdminList(tabs []*admin.NavbarTab, events []*Event, hasMore bool, moreURL string, rooms []RoomConfig) {
+	@bootstrap.View() {
+		@admin.AdminNav(tabs)
+		<div class="container my-5">
+			<div class="d-flex justify-content-between align-items-center mb-4">
+				<h2 class="mb-0">Manage Events</h2>
+				<a href="/admin/calendar/new" class="btn btn-primary">
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-lg me-1" viewBox="0 0 16 16">
+						<path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+					</svg>
+					New Event
+				</a>
+			</div>
+
+			<div class="mb-3">
+				<a href="/calendar" class="btn btn-outline-secondary btn-sm">View Public Calendar</a>
+			</div>
+
+			if len(events) == 0 {
+				<div class="alert alert-info">
+					No events created yet.
+				</div>
+			} else {
+				<div class="table-responsive">
+					<table class="table table-hover">
+						<thead>
+							<tr>
+								<th>Title</th>
+								<th>Date/Time</th>
+								<th>Duration</th>
+								<th>Room</th>
+								<th>Recurrence</th>
+								<th>Actions</th>
+							</tr>
+						</thead>
+						<tbody id="events-table-body">
+							for _, e := range events {
+								@renderAdminEventRow(e, rooms)
+							}
+							if hasMore {
+								<tr hx-get={ moreURL } hx-trigger="revealed" hx-swap="outerHTML" hx-target="this">
+									<td colspan="6" class="text-center text-muted py-3">
+										<span class="spinner-border spinner-border-sm me-2" role="status"></span>
+										Loading...
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		</div>
+	}
+}
+
+templ renderAdminListRows(events []*Event, hasMore bool, moreURL string, rooms []RoomConfig) {
+	for _, e := range events {
+		@renderAdminEventRow(e, rooms)
+	}
+	if hasMore {
+		<tr hx-get={ moreURL } hx-trigger="revealed" hx-swap="outerHTML" hx-target="this">
+			<td colspan="6" class="text-center text-muted py-3">
+				<span class="spinner-border spinner-border-sm me-2" role="status"></span>
+				Loading...
+			</td>
+		</tr>
+	}
+}
+
+templ renderAdminEventRow(e *Event, rooms []RoomConfig) {
+	<tr>
+		<td>{ e.Title }</td>
+		<td>{ formatEventDateTime(e.StartTime) }</td>
+		<td>{ formatDuration(e.DurationMinutes) }</td>
+		<td>{ formatRoomName(e.RoomID, rooms) }</td>
+		<td>{ FormatRecurrence(e) }</td>
+		<td>
+			<a href={ templ.SafeURL(fmt.Sprintf("/admin/calendar/%d/edit", e.ID)) } class="btn btn-sm btn-outline-primary me-1">Edit</a>
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/admin/calendar/%d/delete", e.ID)) } style="display: inline;" onsubmit="return confirm('Delete this event?');">
+				<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+			</form>
+		</td>
+	</tr>
+}
+
+templ renderEventForm(tabs []*admin.NavbarTab, event *Event, rooms []RoomConfig) {
+	@bootstrap.View() {
+		@admin.AdminNav(tabs)
+		<div class="container my-5" style="max-width: 600px;">
+			if event == nil {
+				<h2 class="mb-4">New Event</h2>
+			} else {
+				<h2 class="mb-4">Edit Event</h2>
+			}
+
+			<form method="post" action={ formAction(event) }>
+				<div class="mb-3">
+					<label for="title" class="form-label">Title <span class="text-danger">*</span></label>
+					<input type="text" class="form-control" id="title" name="title" required value={ eventTitle(event) }/>
+				</div>
+
+				<div class="mb-3">
+					<label for="description" class="form-label">Description</label>
+					<textarea class="form-control" id="description" name="description" rows="3">{ eventDescription(event) }</textarea>
+				</div>
+
+				<div class="row mb-3">
+					<div class="col-md-6">
+						<label for="date" class="form-label">Date <span class="text-danger">*</span></label>
+						<input type="date" class="form-control" id="date" name="date" required value={ eventDate(event) }/>
+					</div>
+					<div class="col-md-6">
+						<label for="time" class="form-label">Time <span class="text-danger">*</span></label>
+						<input type="time" class="form-control" id="time" name="time" required value={ eventTime(event) }/>
+					</div>
+				</div>
+
+				<div class="row mb-3">
+					<div class="col-md-6">
+						<label for="duration" class="form-label">Duration</label>
+						<select class="form-select" id="duration" name="duration">
+							<option value="30" selected?={ eventDuration(event) == 30 }>30 minutes</option>
+							<option value="60" selected?={ eventDuration(event) == 60 }>1 hour</option>
+							<option value="90" selected?={ eventDuration(event) == 90 }>1.5 hours</option>
+							<option value="120" selected?={ eventDuration(event) == 120 }>2 hours</option>
+							<option value="180" selected?={ eventDuration(event) == 180 }>3 hours</option>
+							<option value="480" selected?={ eventDuration(event) == 480 }>All day (8 hours)</option>
+						</select>
+					</div>
+					<div class="col-md-6">
+						<label for="room_id" class="form-label">Room</label>
+						<select class="form-select" id="room_id" name="room_id">
+							<option value="" selected?={ eventRoomID(event) == nil }></option>
+							for i, room := range rooms {
+								<option value={ strconv.Itoa(i) } selected?={ eventRoomIDEquals(event, i) }>{ room.Name }</option>
+							}
+						</select>
+						<div class="form-text">Events in the same room cannot overlap.</div>
+					</div>
+				</div>
+
+				<hr class="my-4"/>
+
+				<h5 class="mb-3">Recurrence</h5>
+
+				<div class="mb-3">
+					<label for="recurrence_type" class="form-label">Repeat</label>
+					<select class="form-select" id="recurrence_type" name="recurrence_type" onchange="toggleRecurrenceFields()">
+						<option value="none" selected?={ eventRecurrenceType(event) == "" }>Does not repeat</option>
+						<option value="weekly" selected?={ eventRecurrenceType(event) == "weekly" }>Weekly</option>
+						<option value="monthly" selected?={ eventRecurrenceType(event) == "monthly" }>Monthly</option>
+					</select>
+				</div>
+
+				<div id="recurrence-fields" style={ recurrenceFieldsStyle(event) }>
+					<div class="mb-3">
+						<label for="recurrence_day" class="form-label">Day of Week</label>
+						<select class="form-select" id="recurrence_day" name="recurrence_day">
+							<option value="sunday" selected?={ eventRecurrenceDay(event) == "sunday" }>Sunday</option>
+							<option value="monday" selected?={ eventRecurrenceDay(event) == "monday" }>Monday</option>
+							<option value="tuesday" selected?={ eventRecurrenceDay(event) == "tuesday" }>Tuesday</option>
+							<option value="wednesday" selected?={ eventRecurrenceDay(event) == "wednesday" }>Wednesday</option>
+							<option value="thursday" selected?={ eventRecurrenceDay(event) == "thursday" }>Thursday</option>
+							<option value="friday" selected?={ eventRecurrenceDay(event) == "friday" }>Friday</option>
+							<option value="saturday" selected?={ eventRecurrenceDay(event) == "saturday" }>Saturday</option>
+						</select>
+					</div>
+
+					<div id="monthly-fields" class="mb-3" style={ monthlyFieldsStyle(event) }>
+						<label for="recurrence_week" class="form-label">Which Week</label>
+						<select class="form-select" id="recurrence_week" name="recurrence_week">
+							<option value="first" selected?={ eventRecurrenceWeek(event) == "first" }>First</option>
+							<option value="second" selected?={ eventRecurrenceWeek(event) == "second" }>Second</option>
+							<option value="third" selected?={ eventRecurrenceWeek(event) == "third" }>Third</option>
+							<option value="fourth" selected?={ eventRecurrenceWeek(event) == "fourth" }>Fourth</option>
+							<option value="last" selected?={ eventRecurrenceWeek(event) == "last" }>Last</option>
+						</select>
+					</div>
+
+					<div class="mb-3">
+						<label for="recurrence_end" class="form-label">End Date (optional)</label>
+						<input type="date" class="form-control" id="recurrence_end" name="recurrence_end" value={ eventRecurrenceEndDate(event) }/>
+						<div class="form-text">Leave empty for no end date.</div>
+					</div>
+				</div>
+
+				<div class="d-flex gap-2 mt-4">
+					<button type="submit" class="btn btn-primary">Save Event</button>
+					<a href="/admin/calendar" class="btn btn-outline-secondary">Cancel</a>
+				</div>
+			</form>
+
+			<script>
+				function toggleRecurrenceFields() {
+					const recType = document.getElementById('recurrence_type').value;
+					const fields = document.getElementById('recurrence-fields');
+					const monthlyFields = document.getElementById('monthly-fields');
+
+					if (recType === 'none') {
+						fields.style.display = 'none';
+					} else {
+						fields.style.display = 'block';
+						monthlyFields.style.display = recType === 'monthly' ? 'block' : 'none';
+					}
+				}
+			</script>
+		</div>
+	}
+}
+
+// Helper functions for templates
+
+func formAction(event *Event) templ.SafeURL {
+	if event == nil {
+		return "/admin/calendar"
+	}
+	return templ.SafeURL(fmt.Sprintf("/admin/calendar/%d", event.ID))
+}
+
+func eventTitle(e *Event) string {
+	if e == nil {
+		return ""
+	}
+	return e.Title
+}
+
+func eventDescription(e *Event) string {
+	if e == nil || e.Description == nil {
+		return ""
+	}
+	return *e.Description
+}
+
+func eventDate(e *Event) string {
+	if e == nil {
+		return time.Now().Format("2006-01-02")
+	}
+	return time.Unix(e.StartTime, 0).Format("2006-01-02")
+}
+
+func eventTime(e *Event) string {
+	if e == nil {
+		return "19:00"
+	}
+	return time.Unix(e.StartTime, 0).Format("15:04")
+}
+
+func eventDuration(e *Event) int {
+	if e == nil {
+		return 60
+	}
+	return e.DurationMinutes
+}
+
+func eventRecurrenceType(e *Event) string {
+	if e == nil || e.RecurrenceType == nil {
+		return ""
+	}
+	return *e.RecurrenceType
+}
+
+func eventRecurrenceDay(e *Event) string {
+	if e == nil || e.RecurrenceDay == nil {
+		return "monday"
+	}
+	return *e.RecurrenceDay
+}
+
+func eventRecurrenceWeek(e *Event) string {
+	if e == nil || e.RecurrenceWeek == nil {
+		return "first"
+	}
+	return *e.RecurrenceWeek
+}
+
+func eventRecurrenceEndDate(e *Event) string {
+	if e == nil || e.RecurrenceEnd == nil || *e.RecurrenceEnd == 0 {
+		return ""
+	}
+	return time.Unix(*e.RecurrenceEnd, 0).Format("2006-01-02")
+}
+
+func recurrenceFieldsStyle(e *Event) string {
+	if e == nil || e.RecurrenceType == nil || *e.RecurrenceType == "" {
+		return "display: none;"
+	}
+	return "display: block;"
+}
+
+func monthlyFieldsStyle(e *Event) string {
+	if e == nil || e.RecurrenceType == nil || *e.RecurrenceType != "monthly" {
+		return "display: none;"
+	}
+	return "display: block;"
+}
+
+func eventRoomID(e *Event) *int64 {
+	if e == nil {
+		return nil
+	}
+	return e.RoomID
+}
+
+func eventRoomIDEquals(e *Event, idx int) bool {
+	if e == nil || e.RoomID == nil {
+		return false
+	}
+	return *e.RoomID == int64(idx)
+}
+
+func formatRoomName(roomID *int64, rooms []RoomConfig) string {
+	if roomID == nil {
+		return ""
+	}
+	if int(*roomID) < len(rooms) {
+		return rooms[*roomID].Name
+	}
+	return "(Unknown Room)"
+}
+
+func getRoomNameFromList(roomID *int64, rooms []RoomConfig) string {
+	if roomID == nil {
+		return ""
+	}
+	if int(*roomID) < len(rooms) {
+		return rooms[*roomID].Name
+	}
+	return ""
+}
+
+func formatEventDate(t time.Time) string {
+	return t.Format("Monday, January 2, 2006")
+}
+
+func formatEventTime(start, end time.Time) string {
+	return fmt.Sprintf("%s - %s", start.Format("3:04 PM"), end.Format("3:04 PM"))
+}
+
+func formatEventDateTime(ts int64) string {
+	return time.Unix(ts, 0).Format("Jan 2, 2006 3:04 PM")
+}
+
+func formatDuration(minutes int) string {
+	if minutes < 60 {
+		return fmt.Sprintf("%d min", minutes)
+	}
+	hours := minutes / 60
+	mins := minutes % 60
+	if mins == 0 {
+		if hours == 1 {
+			return "1 hour"
+		}
+		return fmt.Sprintf("%d hours", hours)
+	}
+	return fmt.Sprintf("%d hr %d min", hours, mins)
+}
+
+// Calendar widget helper functions
+
+func buildCalendarMonth(occurrences []EventOccurrence, year int, month time.Month) CalendarMonth {
+	firstOfMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
+	lastOfMonth := firstOfMonth.AddDate(0, 1, -1)
+
+	eventDays := make(map[int]bool)
+	for _, occ := range occurrences {
+		if occ.StartTime.Year() == year && occ.StartTime.Month() == month {
+			eventDays[occ.StartTime.Day()] = true
+		}
+	}
+
+	return CalendarMonth{
+		Year:        year,
+		Month:       month,
+		Today:       time.Now(),
+		EventDays:   eventDays,
+		DaysInMonth: lastOfMonth.Day(),
+		FirstDay:    firstOfMonth.Weekday(),
+	}
+}
+
+func prevMonthURL(year int, month time.Month) string {
+	if month == time.January {
+		return fmt.Sprintf("/calendar?year=%d&month=12", year-1)
+	}
+	return fmt.Sprintf("/calendar?year=%d&month=%d", year, int(month)-1)
+}
+
+func nextMonthURL(year int, month time.Month) string {
+	if month == time.December {
+		return fmt.Sprintf("/calendar?year=%d&month=1", year+1)
+	}
+	return fmt.Sprintf("/calendar?year=%d&month=%d", year, int(month)+1)
+}
+
+func dayFilterURL(cal CalendarMonth, day int) string {
+	// If clicking the already selected day, deselect (remove day param)
+	if cal.SelectedDay == day {
+		return fmt.Sprintf("/calendar?year=%d&month=%d", cal.Year, int(cal.Month))
+	}
+	// Otherwise select this day
+	return fmt.Sprintf("/calendar?year=%d&month=%d&day=%d", cal.Year, int(cal.Month), day)
+}
+
+func isToday(cal CalendarMonth, day int) bool {
+	return cal.Today.Year() == cal.Year &&
+		cal.Today.Month() == cal.Month &&
+		cal.Today.Day() == day
+}
+
+func eventAnchorID(t time.Time) string {
+	return fmt.Sprintf("event-%s", t.Format("2006-01-02"))
+}
+
+func dayAnchorLink(cal CalendarMonth, day int) string {
+	date := time.Date(cal.Year, cal.Month, day, 0, 0, 0, 0, time.Local)
+	return fmt.Sprintf("#event-%s", date.Format("2006-01-02"))
+}

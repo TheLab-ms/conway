@@ -34,9 +34,9 @@ var configSections = []*configSection{
 	{Name: "Fob API", Path: "/admin/config/fobapi"},
 }
 
-templ renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Component) {
+templ renderConfigPage(tabs []*NavbarTab, activeSection string, content templ.Component, sections []*configSection) {
 	@bootstrap.View() {
-		@adminNav(tabs)
+		@AdminNav(tabs)
 		<div class="container my-5">
 			<div class="row">
 				<div class="col-md-3">
@@ -45,7 +45,7 @@ templ renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Co
 							<h5 class="mb-0">Configuration</h5>
 						</div>
 						<div class="list-group list-group-flush">
-							for _, section := range configSections {
+							for _, section := range sections {
 								if section.Name == activeSection {
 									<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
 								} else {
