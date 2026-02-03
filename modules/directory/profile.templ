@@ -11,61 +11,53 @@ templ renderProfile(profile *ProfileData) {
 			<h2 class="mb-4">Edit Profile</h2>
 
 			// Card Preview
-			<div class="card mb-4">
-				<div class="card-header">
-					<strong>Preview</strong>
-					<span class="text-muted small ms-2">How your card appears in the directory</span>
-				</div>
-				<div class="card-body">
-					<div class="d-flex justify-content-center">
-						<div class="card text-center p-3" style="width: 200px;">
-							<div class="d-flex justify-content-center mb-3">
-								if profile.HasProfilePicture || profile.HasDiscordAvatar {
-									<img
-										src={ fmt.Sprintf("/directory/avatar/%d", profile.ID) }
-										alt="Your avatar"
-										class="rounded-circle"
-										style="width: 96px; height: 96px; object-fit: cover;"
-									/>
-								} else {
-									@previewPlaceholderAvatar()
-								}
-							</div>
-							<h6 class="card-title mb-1" id="preview-name">{ getDisplayName(profile) }</h6>
-							if profile.Pronouns != "" {
-								<span class="text-muted small" id="preview-pronouns">{ profile.Pronouns }</span>
-							} else {
-								<span class="text-muted small" id="preview-pronouns"></span>
-							}
-							if profile.Leadership {
-								<span class="badge text-muted" style="font-weight: 500; font-size: 0.75rem;">Leadership</span>
-							}
-							if profile.Bio != "" {
-								<p class="card-text text-muted small mb-1" id="preview-bio">
-									{ profile.Bio }
-								</p>
-							} else {
-								<p class="card-text text-muted small mb-1" id="preview-bio"></p>
-							}
-							if profile.DiscordUsername != "" {
-								<div class="mt-2 pt-2 border-top">
-									<div class="d-flex align-items-center justify-content-center gap-2">
-										if profile.HasDiscordAvatar {
-											<img
-												src={ fmt.Sprintf("/directory/avatar/%d?type=discord", profile.ID) }
-												alt="Discord avatar"
-												class="rounded-circle"
-												style="width: 24px; height: 24px; object-fit: cover;"
-											/>
-										}
-										<span style="color: #5865F2; font-size: 0.85rem;">
-											{ "@" + profile.DiscordUsername }
-										</span>
-									</div>
-								</div>
-							}
-						</div>
+			<div class="d-flex justify-content-center mb-4">
+				<div class="card text-center p-3" style="width: 200px;">
+					<div class="d-flex justify-content-center mb-3">
+						if profile.HasProfilePicture || profile.HasDiscordAvatar {
+							<img
+								src={ fmt.Sprintf("/directory/avatar/%d", profile.ID) }
+								alt="Your avatar"
+								class="rounded-circle"
+								style="width: 96px; height: 96px; object-fit: cover;"
+							/>
+						} else {
+							@previewPlaceholderAvatar()
+						}
 					</div>
+					<h6 class="card-title mb-1" id="preview-name">{ getDisplayName(profile) }</h6>
+					if profile.Pronouns != "" {
+						<span class="text-muted small" id="preview-pronouns">{ profile.Pronouns }</span>
+					} else {
+						<span class="text-muted small" id="preview-pronouns"></span>
+					}
+					if profile.Leadership {
+						<span class="badge text-muted" style="font-weight: 500; font-size: 0.75rem;">Leadership</span>
+					}
+					if profile.Bio != "" {
+						<p class="card-text text-muted small mb-1" id="preview-bio">
+							{ profile.Bio }
+						</p>
+					} else {
+						<p class="card-text text-muted small mb-1" id="preview-bio"></p>
+					}
+					if profile.DiscordUsername != "" {
+						<div class="mt-2 pt-2 border-top">
+							<div class="d-flex align-items-center justify-content-center gap-2">
+								if profile.HasDiscordAvatar {
+									<img
+										src={ fmt.Sprintf("/directory/avatar/%d?type=discord", profile.ID) }
+										alt="Discord avatar"
+										class="rounded-circle"
+										style="width: 24px; height: 24px; object-fit: cover;"
+									/>
+								}
+								<span style="color: #5865F2; font-size: 0.85rem;">
+									{ "@" + profile.DiscordUsername }
+								</span>
+							</div>
+						</div>
+					}
 				</div>
 			</div>
 
