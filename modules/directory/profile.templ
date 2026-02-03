@@ -41,11 +41,11 @@ templ renderProfile(profile *ProfileData) {
 								<span class="badge text-muted" style="font-weight: 500; font-size: 0.75rem;">Leadership</span>
 							}
 							if profile.Bio != "" {
-								<p class="card-text text-muted small mb-1" id="preview-bio" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+								<p class="card-text text-muted small mb-1" id="preview-bio">
 									{ profile.Bio }
 								</p>
 							} else {
-								<p class="card-text text-muted small mb-1" id="preview-bio" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;"></p>
+								<p class="card-text text-muted small mb-1" id="preview-bio"></p>
 							}
 							if profile.DiscordUsername != "" {
 								<div class="mt-2 pt-2 border-top">
@@ -145,11 +145,11 @@ templ renderProfile(profile *ProfileData) {
 							id="bio"
 							name="bio"
 							rows="3"
-							maxlength="500"
+							maxlength="100"
 							placeholder="Tell other members a bit about yourself..."
 							oninput="updatePreviewBio(this.value)"
 						>{ profile.Bio }</textarea>
-						<p class="text-muted small mt-2 mb-0">Optional. 500 characters max. Keep it brief - only ~2 lines show on the card.</p>
+						<p class="text-muted small mt-2 mb-0">Optional. 100 characters max.</p>
 					</div>
 				</div>
 

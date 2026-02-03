@@ -122,7 +122,7 @@ func renderProfile(profile *ProfileData) templ.Component {
 				}
 			}
 			if profile.Bio != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"card-text text-muted small mb-1\" id=\"preview-bio\" style=\"display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"card-text text-muted small mb-1\" id=\"preview-bio\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -140,7 +140,7 @@ func renderProfile(profile *ProfileData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<p class=\"card-text text-muted small mb-1\" id=\"preview-bio\" style=\"display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;\"></p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<p class=\"card-text text-muted small mb-1\" id=\"preview-bio\"></p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -228,7 +228,7 @@ func renderProfile(profile *ProfileData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" oninput=\"updatePreviewPronouns(this.value)\"><p class=\"text-muted small mt-2 mb-0\">Optional. 50 characters max.</p></div></div><div class=\"card mb-4\"><div class=\"card-header\"><strong>Bio</strong></div><div class=\"card-body\"><textarea class=\"form-control\" id=\"bio\" name=\"bio\" rows=\"3\" maxlength=\"500\" placeholder=\"Tell other members a bit about yourself...\" oninput=\"updatePreviewBio(this.value)\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" oninput=\"updatePreviewPronouns(this.value)\"><p class=\"text-muted small mt-2 mb-0\">Optional. 50 characters max.</p></div></div><div class=\"card mb-4\"><div class=\"card-header\"><strong>Bio</strong></div><div class=\"card-body\"><textarea class=\"form-control\" id=\"bio\" name=\"bio\" rows=\"3\" maxlength=\"100\" placeholder=\"Tell other members a bit about yourself...\" oninput=\"updatePreviewBio(this.value)\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -241,7 +241,7 @@ func renderProfile(profile *ProfileData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</textarea><p class=\"text-muted small mt-2 mb-0\">Optional. 500 characters max. Keep it brief - only ~2 lines show on the card.</p></div></div><div class=\"d-flex gap-2\"><button type=\"submit\" class=\"btn btn-primary\">Save Changes</button> <a href=\"/directory\" class=\"btn btn-outline-secondary\">Cancel</a></div></form></div><script>\n\t\t\tfunction updatePreviewPronouns(value) {\n\t\t\t\tconst preview = document.getElementById('preview-pronouns');\n\t\t\t\tpreview.textContent = value.trim();\n\t\t\t}\n\t\t\tfunction updatePreviewBio(value) {\n\t\t\t\tconst preview = document.getElementById('preview-bio');\n\t\t\t\tpreview.textContent = value.trim();\n\t\t\t}\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</textarea><p class=\"text-muted small mt-2 mb-0\">Optional. 100 characters max.</p></div></div><div class=\"d-flex gap-2\"><button type=\"submit\" class=\"btn btn-primary\">Save Changes</button> <a href=\"/directory\" class=\"btn btn-outline-secondary\">Cancel</a></div></form></div><script>\n\t\t\tfunction updatePreviewPronouns(value) {\n\t\t\t\tconst preview = document.getElementById('preview-pronouns');\n\t\t\t\tpreview.textContent = value.trim();\n\t\t\t}\n\t\t\tfunction updatePreviewBio(value) {\n\t\t\t\tconst preview = document.getElementById('preview-bio');\n\t\t\t\tpreview.textContent = value.trim();\n\t\t\t}\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

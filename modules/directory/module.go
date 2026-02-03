@@ -316,8 +316,8 @@ func (m *Module) handleEditProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate bio length
-	if len(bio) > 500 {
-		engine.ClientError(w, "Bio Too Long", "Bio must be 500 characters or less.", http.StatusBadRequest)
+	if len(bio) > 100 {
+		engine.ClientError(w, "Bio Too Long", "Bio must be 100 characters or less.", http.StatusBadRequest)
 		return
 	}
 
