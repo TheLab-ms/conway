@@ -37,6 +37,10 @@ templ renderDirectory(members []DirectoryMember, currentUserID int64) {
 							</div>
 							// Display name
 							<h6 class="card-title mb-1">{ member.DisplayName }</h6>
+							// Pronouns
+							if member.Pronouns != "" {
+								<span class="text-muted small">{ member.Pronouns }</span>
+							}
 							// Leadership badge
 							if member.Leadership {
 								<span class="badge text-muted" style="font-weight: 500; font-size: 0.75rem;">Leadership</span>

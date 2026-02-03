@@ -13,6 +13,7 @@ func TestQueryMembersNameOverride(t *testing.T) {
 	db := members.NewTestDB(t)
 	db.Exec(`ALTER TABLE members ADD COLUMN profile_picture BLOB`)
 	db.Exec(`ALTER TABLE members ADD COLUMN bio TEXT`)
+	db.Exec(`ALTER TABLE members ADD COLUMN pronouns TEXT`)
 
 	// Insert a member with only billing name (no override)
 	_, err := db.Exec(`INSERT INTO members (email, name, confirmed, non_billable, waiver, fob_id, profile_picture)
@@ -51,6 +52,7 @@ func TestQueryMembersExcludesEmptyNames(t *testing.T) {
 	db := members.NewTestDB(t)
 	db.Exec(`ALTER TABLE members ADD COLUMN profile_picture BLOB`)
 	db.Exec(`ALTER TABLE members ADD COLUMN bio TEXT`)
+	db.Exec(`ALTER TABLE members ADD COLUMN pronouns TEXT`)
 
 	// Member with empty name and no override should be excluded
 	_, err := db.Exec(`INSERT INTO members (email, name, confirmed, non_billable, waiver, fob_id, profile_picture)

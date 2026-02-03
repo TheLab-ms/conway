@@ -20,6 +20,7 @@ import (
 type DirectoryMember struct {
 	ID                int64
 	DisplayName       string
+	Pronouns          string
 	Bio               string
 	DiscordUsername   string
 	HasProfilePicture bool
@@ -33,6 +34,7 @@ type ProfileData struct {
 	ID                int64
 	Name              string  // Original name from signup
 	NameOverride      *string // Custom display name
+	Pronouns          string
 	Bio               string
 	HasProfilePicture bool
 	HasDiscordAvatar  bool
@@ -49,6 +51,8 @@ func New(db *sql.DB) *Module {
 	db.Exec(`ALTER TABLE members ADD COLUMN profile_picture BLOB`)
 	// Add bio column if it doesn't exist
 	db.Exec(`ALTER TABLE members ADD COLUMN bio TEXT`)
+	// Add pronouns column if it doesn't exist
+	db.Exec(`ALTER TABLE members ADD COLUMN pronouns TEXT`)
 	return &Module{db: db}
 }
 
@@ -89,6 +93,7 @@ func (m *Module) queryMembers(ctx context.Context) ([]DirectoryMember, error) {
 		SELECT
 			id,
 			COALESCE(name_override, name) as display_name,
+			COALESCE(pronouns, '') as pronouns,
 			COALESCE(bio, '') as bio,
 			COALESCE(discord_username, '') as discord_username,
 			profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0 as has_profile_picture,
@@ -112,7 +117,7 @@ func (m *Module) queryMembers(ctx context.Context) ([]DirectoryMember, error) {
 	var members []DirectoryMember
 	for rows.Next() {
 		var m DirectoryMember
-		if err := rows.Scan(&m.ID, &m.DisplayName, &m.Bio, &m.DiscordUsername, &m.HasProfilePicture, &m.HasDiscordAvatar, &m.Leadership, &m.FobLastSeen); err != nil {
+		if err := rows.Scan(&m.ID, &m.DisplayName, &m.Pronouns, &m.Bio, &m.DiscordUsername, &m.HasProfilePicture, &m.HasDiscordAvatar, &m.Leadership, &m.FobLastSeen); err != nil {
 			return nil, err
 		}
 		members = append(members, m)
@@ -271,6 +276,7 @@ func (m *Module) queryProfile(ctx context.Context, userID int64) (*ProfileData, 
 			id,
 			COALESCE(name, '') as name,
 			name_override,
+			COALESCE(pronouns, '') as pronouns,
 			COALESCE(bio, '') as bio,
 			profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0 as has_profile_picture,
 			discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0 as has_discord_avatar,
@@ -282,6 +288,7 @@ func (m *Module) queryProfile(ctx context.Context, userID int64) (*ProfileData, 
 		&profile.ID,
 		&profile.Name,
 		&profile.NameOverride,
+		&profile.Pronouns,
 		&profile.Bio,
 		&profile.HasProfilePicture,
 		&profile.HasDiscordAvatar,
@@ -299,7 +306,14 @@ func (m *Module) handleEditProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pronouns := strings.TrimSpace(r.FormValue("pronouns"))
 	bio := strings.TrimSpace(r.FormValue("bio"))
+
+	// Validate pronouns length
+	if len(pronouns) > 50 {
+		engine.ClientError(w, "Pronouns Too Long", "Pronouns must be 50 characters or less.", http.StatusBadRequest)
+		return
+	}
 
 	// Validate bio length
 	if len(bio) > 500 {
@@ -307,12 +321,13 @@ func (m *Module) handleEditProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update profile bio only
+	// Update profile
 	_, err := m.db.ExecContext(r.Context(), `
 		UPDATE members SET
-			bio = CASE WHEN $1 = '' THEN NULL ELSE $1 END
-		WHERE id = $2`,
-		bio, userID)
+			pronouns = CASE WHEN $1 = '' THEN NULL ELSE $1 END,
+			bio = CASE WHEN $2 = '' THEN NULL ELSE $2 END
+		WHERE id = $3`,
+		pronouns, bio, userID)
 
 	if engine.HandleError(w, err) {
 		return

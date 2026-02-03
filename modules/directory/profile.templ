@@ -32,6 +32,11 @@ templ renderProfile(profile *ProfileData) {
 								}
 							</div>
 							<h6 class="card-title mb-1" id="preview-name">{ getDisplayName(profile) }</h6>
+							if profile.Pronouns != "" {
+								<span class="text-muted small" id="preview-pronouns">{ profile.Pronouns }</span>
+							} else {
+								<span class="text-muted small" id="preview-pronouns"></span>
+							}
 							if profile.Leadership {
 								<span class="badge text-muted" style="font-weight: 500; font-size: 0.75rem;">Leadership</span>
 							}
@@ -113,6 +118,25 @@ templ renderProfile(profile *ProfileData) {
 			<form method="post" action="/directory/profile">
 				<div class="card mb-4">
 					<div class="card-header">
+						<strong>Pronouns</strong>
+					</div>
+					<div class="card-body">
+						<input
+							type="text"
+							class="form-control"
+							id="pronouns"
+							name="pronouns"
+							maxlength="50"
+							placeholder="e.g., she/her, he/him, they/them"
+							value={ profile.Pronouns }
+							oninput="updatePreviewPronouns(this.value)"
+						/>
+						<p class="text-muted small mt-2 mb-0">Optional. 50 characters max.</p>
+					</div>
+				</div>
+
+				<div class="card mb-4">
+					<div class="card-header">
 						<strong>Bio</strong>
 					</div>
 					<div class="card-body">
@@ -137,6 +161,10 @@ templ renderProfile(profile *ProfileData) {
 		</div>
 
 		<script>
+			function updatePreviewPronouns(value) {
+				const preview = document.getElementById('preview-pronouns');
+				preview.textContent = value.trim();
+			}
 			function updatePreviewBio(value) {
 				const preview = document.getElementById('preview-bio');
 				preview.textContent = value.trim();
