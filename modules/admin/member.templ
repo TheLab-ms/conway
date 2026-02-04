@@ -130,9 +130,9 @@ var _ = handlePostForm(formHandler{
 	},
 })
 
-templ renderSingleMember(tabs []*NavbarTab, member *member, events []*memberEvent) {
+templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent) {
 	@bootstrap.View() {
-		@AdminNav(tabs)
+		@adminNav(tabs)
 		<div class="container my-5">
 			<div class="card">
 				<div class="card-body">
