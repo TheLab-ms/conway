@@ -327,7 +327,10 @@ func (m *Module) poll(ctx context.Context) bool {
 		m.reloadConfig(ctx)
 	}
 
-	slog.Info("starting to get Bambu printer status")
+	if len(m.printers) == 0 {
+		return false
+	}
+
 	start := time.Now()
 
 	for _, printer := range m.printers {
