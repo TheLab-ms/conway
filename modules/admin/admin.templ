@@ -68,7 +68,7 @@ templ (t tableCell) Render(row *tableRow) {
 	}
 }
 
-templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string, showSearch bool, filters []string) {
+templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string, showSearch bool, filterParam string, filters []string) {
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
@@ -99,7 +99,7 @@ templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string
 										hx-post={ searchURL }
 										hx-trigger="input changed delay:500ms, keyup[key=='Enter'], load, change"
 										hx-target="#results"
-										hx-include="[name='search'], [name='currentpage'], [name='event_type']"
+										hx-include={ fmt.Sprintf("[name='search'], [name='currentpage'], [name='%s']", filterParam) }
 										hx-indicator="#loading-indicator"
 									/>
 								}
@@ -118,12 +118,12 @@ templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string
 														<input
 															type="checkbox"
 															class="form-check-input me-2 mt-0"
-															name="event_type"
+															name={ filterParam }
 															value={ f }
 															hx-post={ searchURL }
 															hx-trigger="change"
 															hx-target="#results"
-															hx-include="[name='search'], [name='currentpage'], [name='event_type']"
+															hx-include={ fmt.Sprintf("[name='search'], [name='currentpage'], [name='%s']", filterParam) }
 															hx-indicator="#loading-indicator"
 														/>
 														{ f }
@@ -141,7 +141,7 @@ templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string
 					<input type="hidden" id="searchbox" hx-post={ searchURL } hx-trigger="load, change" hx-target="#results" hx-include="[name='currentpage']" hx-indicator="#loading-indicator"/>
 				}
 				if !showSearch && len(filters) > 0 {
-					<input type="hidden" id="searchbox" hx-post={ searchURL } hx-trigger="load" hx-target="#results" hx-include="[name='event_type']" hx-indicator="#loading-indicator"/>
+					<input type="hidden" id="searchbox" hx-post={ searchURL } hx-trigger="load" hx-target="#results" hx-include={ fmt.Sprintf("[name='%s']", filterParam) } hx-indicator="#loading-indicator"/>
 				}
 				<div id="results">
 					<div id="loading-indicator" class="htmx-indicator card-body text-center py-5">

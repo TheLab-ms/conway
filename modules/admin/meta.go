@@ -16,6 +16,7 @@ type listView struct {
 	RelPath     string
 	Searchable  bool
 	ExportTable string   // If set, shows a CSV export link for this table
+	FilterParam string   // The form parameter name for filters (e.g., "event_type", "access_status")
 	Filters     []string // If set, shows a filter dropdown with these options
 	Rows        []*tableRowMeta
 	BuildQuery  func(*http.Request) (query, rowCountQuery string, args []any)
@@ -28,6 +29,15 @@ var listViews = []listView{
 		RelPath:     "/members",
 		Searchable:  true,
 		ExportTable: "members",
+		FilterParam: "access_status",
+		Filters: []string{
+			"Ready",
+			"UnconfirmedEmail",
+			"MissingWaiver",
+			"PaymentInactive",
+			"MissingKeyFob",
+			"FamilyInactive",
+		},
 		Rows: []*tableRowMeta{
 			{Title: "Member", Width: 5},
 		},
@@ -35,12 +45,32 @@ var listViews = []listView{
 			q = "SELECT id, COALESCE(name_override, identifier) AS identifier, COALESCE(payment_status, 'Inactive') AS payment_status, access_status FROM members"
 			rowCountQuery = "SELECT COUNT(*) FROM members"
 
+			// Parse filter values from form
+			r.ParseForm()
+			filters := r.Form["access_status"]
+
 			search := r.FormValue("search")
+
+			// Build WHERE clause based on search and filters
+			whereClauses := []string{}
 			if search != "" {
-				logic := " WHERE name LIKE '%' || $1 || '%' OR name_override LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%' OR CAST(fob_id AS TEXT) LIKE '%' || $1 || '%' OR discount_type LIKE '%' || $1 || '%'"
-				q += logic
-				rowCountQuery += logic
+				whereClauses = append(whereClauses, "(name LIKE '%' || $1 || '%' OR name_override LIKE '%' || $1 || '%' OR email LIKE '%' || $1 || '%' OR CAST(fob_id AS TEXT) LIKE '%' || $1 || '%' OR discount_type LIKE '%' || $1 || '%')")
 				args = append(args, search)
+			}
+
+			if len(filters) > 0 {
+				placeholders := make([]string, len(filters))
+				for i, f := range filters {
+					placeholders[i] = fmt.Sprintf("$%d", len(args)+1)
+					args = append(args, f)
+				}
+				whereClauses = append(whereClauses, "access_status IN ("+strings.Join(placeholders, ", ")+")")
+			}
+
+			if len(whereClauses) > 0 {
+				whereClause := " WHERE " + strings.Join(whereClauses, " AND ")
+				q += whereClause
+				rowCountQuery += whereClause
 			}
 
 			if search == "" {
@@ -84,8 +114,9 @@ var listViews = []listView{
 		},
 	},
 	{
-		Title:   "Events",
-		RelPath: "/events",
+		Title:       "Events",
+		RelPath:     "/events",
+		FilterParam: "event_type",
 		Filters: []string{
 			"Fob Swipe",
 			"Waiver",
