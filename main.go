@@ -15,6 +15,7 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/caarlos0/env/v11"
 )
 
@@ -23,6 +24,12 @@ type Config struct {
 
 	// SpaceHost is a hostname that resolves to the public IP used to egress the makerspace LAN.
 	SpaceHost string `envDefault:"localhost"`
+
+	EmailFrom       string
+	EmailSenderName string
+
+	TurnstileSiteKey string
+	TurnstileSecret  string
 }
 
 func main() {
@@ -64,15 +71,30 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 	router := engine.NewRouter()
 	router.HandleFunc("/healthz", auth.OnlyLAN(engine.ServeHealthProbe(database)))
 
+	var tso *auth.TurnstileOptions
+	if conf.TurnstileSiteKey != "" {
+		tso = &auth.TurnstileOptions{
+			SiteKey: conf.TurnstileSiteKey,
+			Secret:  conf.TurnstileSecret,
+		}
+	}
+
+	var sender email.Sender
+	if conf.EmailFrom != "" && conf.EmailSenderName != "" {
+		sender = email.NewGoogleSmtpSender(conf.EmailFrom, conf.EmailSenderName)
+	}
+
 	a := engine.NewApp(conf.HttpAddr, router, database)
 
 	modules.Register(a, modules.Options{
-		Database:      database,
-		Self:          self,
-		AuthIssuer:    engine.NewTokenIssuer("auth.pem"),
-		OAuthIssuer:   engine.NewTokenIssuer("oauth2.pem"),
-		FobIssuer:     engine.NewTokenIssuer("fobs.pem"),
-		DiscordIssuer: engine.NewTokenIssuer("discord-oauth.pem"),
+		Database:             database,
+		Self:                 self,
+		AuthIssuer:           engine.NewTokenIssuer("auth.pem"),
+		OAuthIssuer:          engine.NewTokenIssuer("oauth2.pem"),
+		FobIssuer:            engine.NewTokenIssuer("fobs.pem"),
+		DiscordIssuer:        engine.NewTokenIssuer("discord-oauth.pem"),
+		Turnstile:     tso,
+		EmailSender:   sender,
 		SpaceHost:     conf.SpaceHost,
 	})
 

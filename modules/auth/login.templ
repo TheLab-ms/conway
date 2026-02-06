@@ -1,79 +1,73 @@
 package auth
 
 import (
+	"fmt"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 	"net/url"
 )
 
-templ renderLoginPage(callbackURI string, googleEnabled bool, discordEnabled bool) {
+templ renderLoginPage(callbackURI string, tso *TurnstileOptions) {
+	if tso != nil {
+		<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+	}
 	@bootstrap.View() {
 		<body class="d-flex align-items-center justify-content-center vh-100 bg-light p-3">
-			<div class="card shadow p-4" style="max-width: 400px; width: 100%;">
-				<div class="text-center">
-					<h5 class="mb-4">Login or Signup</h5>
-					<div id="oauth-error"></div>
-					if googleEnabled {
-						<a href={ templ.SafeURL("/login/google?callback_uri=" + url.QueryEscape(callbackURI)) } class="btn btn-outline-dark w-100 mb-2 d-flex align-items-center justify-content-center">
-							<svg class="me-2" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 48 48">
-								<path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-								<path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-								<path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-								<path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
-								<path fill="none" d="M0 0h48v48H0z"></path>
-							</svg>
-							Sign in with Google
-						</a>
-					}
-					if discordEnabled {
-						<a href={ templ.SafeURL("/login/discord?callback_uri=" + url.QueryEscape(callbackURI)) } class="btn w-100 mb-2 d-flex align-items-center justify-content-center text-white" style="background-color: #5865F2;">
-							<svg class="me-2" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
-								<path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019c.308-.42.582-.863.818-1.329a.05.05 0 0 0-.01-.059.05.05 0 0 0-.018-.011 8.8 8.8 0 0 1-1.248-.595.05.05 0 0 1-.02-.066.05.05 0 0 1 .015-.019c.084-.063.168-.129.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007c.08.066.164.132.248.195a.05.05 0 0 1-.004.085 8.3 8.3 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"></path>
-							</svg>
-							Sign in with Discord
-						</a>
-					}
-					if !googleEnabled && !discordEnabled {
-						<p class="text-muted">No login methods are configured. Please contact an administrator.</p>
-					}
-					if googleEnabled || discordEnabled {
-						<hr class="my-3"/>
-						<div>
-							<a class="text-muted small" data-bs-toggle="collapse" href="#login-code-section" role="button" aria-expanded="false" aria-controls="login-code-section">
-								Have a login code?
-							</a>
-							<div class="collapse mt-3" id="login-code-section">
-								<form action="/login/code" method="post" id="code-form">
-									<label class="form-label">Enter your 5-digit code</label>
-									<div class="d-flex justify-content-center gap-2 mb-3">
-										<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="0"/>
-										<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="1"/>
-										<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="2"/>
-										<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="3"/>
-										<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="4"/>
-									</div>
-									<input type="hidden" name="code" id="code-value"/>
-									<button type="submit" class="btn btn-primary w-100" id="submit-btn" disabled>Verify Code</button>
-								</form>
-							</div>
+			<div class="card shadow p-4">
+				<div id="login-email" class="text-center">
+					<h5 class="mb-3">Login or Signup</h5>
+					<form action="/login" method="post">
+						<div class="mb-3">
+							<input type="email" class="form-control" id="email" name="email" placeholder="Email" required/>
 						</div>
+						<input type="hidden" id="callback_uri" name="callback_uri" value={ callbackURI }/>
+						if tso != nil {
+							<div class="cf-turnstile mb-3" data-sitekey={ tso.SiteKey }></div>
+						}
+						<button type="submit" class="btn btn-primary w-100">Submit</button>
+					</form>
+				</div>
+			</div>
+		</body>
+	}
+}
+
+templ renderLoginSentPage(email string) {
+	@bootstrap.View() {
+		<body class="d-flex align-items-center justify-content-center vh-100 bg-light p-3">
+			<div id="login-code" class="text-center">
+				<div class="card shadow p-4" style="max-width: 400px;">
+					<h5 class="mb-3">Check Your Email</h5>
+					if email != "" {
+						<p class="text-muted mb-4">
+							We sent a login code to <strong>{ email }</strong>
+						</p>
+					} else {
+						<p class="text-muted mb-4">
+							We sent a login code to your email address.
+						</p>
 					}
+					<form action="/login/code" method="post" id="code-form">
+						<label class="form-label">Enter your 5-digit code</label>
+						<div class="d-flex justify-content-center gap-2 mb-3">
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="0" autofocus/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="1"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="2"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="3"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px;" data-index="4"/>
+						</div>
+						<input type="hidden" name="code" id="code-value"/>
+						<div id="code-error" class="text-danger mb-3" style="display: none;"></div>
+						<button type="submit" class="btn btn-primary w-100" id="submit-btn" disabled>Verify Code</button>
+					</form>
+					<hr class="my-4"/>
+					<p class="text-muted small mb-0">
+						You can also click the link in your email to sign in.
+					</p>
 				</div>
 			</div>
 			<script>
 				(function() {
-					// Display error from query params
-					const params = new URLSearchParams(window.location.search);
-					const error = params.get('error');
-					if (error) {
-						const el = document.getElementById('oauth-error');
-						if (el) {
-							el.innerHTML = '<div class="alert alert-danger mb-3">' + error + '</div>';
-						}
-					}
-
-					// Code digit input handling
 					const digits = document.querySelectorAll('.code-digit');
-					if (digits.length === 0) return;
 					const codeValue = document.getElementById('code-value');
 					const submitBtn = document.getElementById('submit-btn');
 					const form = document.getElementById('code-form');
@@ -83,6 +77,7 @@ templ renderLoginPage(callbackURI string, googleEnabled bool, discordEnabled boo
 						digits.forEach(d => code += d.value);
 						codeValue.value = code;
 						submitBtn.disabled = code.length !== 5;
+
 						if (code.length === 5) {
 							form.submit();
 						}
@@ -120,4 +115,36 @@ templ renderLoginPage(callbackURI string, googleEnabled bool, discordEnabled boo
 			</script>
 		</body>
 	}
+}
+
+templ renderLoginEmail(self *url.URL, code string) {
+	<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+		<p>Here is your makerspace login code:</p>
+		<div style="text-align: center; margin: 30px 0;">
+			<div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; display: inline-block;">
+				<p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">Your login code:</p>
+				<div style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #212529;">
+					{ code }
+				</div>
+			</div>
+		</div>
+		<p style="text-align: center; color: #666;">
+			Enter this code on the login page, or click the link below:
+		</p>
+		<p style="text-align: center; margin: 20px 0;">
+			<a href={ templ.SafeURL(fmt.Sprintf("%s/login/code?code=%s", self.String(), code)) } style="background-color: #0d6efd; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+				Sign In
+			</a>
+		</p>
+		<p style="text-align: center; color: #999; font-size: 12px;">
+			Or copy this link: <a href={ templ.SafeURL(fmt.Sprintf("%s/login/code?code=%s", self.String(), code)) }>{ self.String() }/login/code?code={ code }</a>
+		</p>
+		<hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;"/>
+		<p style="color: #666; font-size: 14px;">
+			This code expires in 5 minutes.
+		</p>
+		<p style="color: #999; font-size: 12px;">
+			If you did not request this login code, please ignore this message.
+		</p>
+	</div>
 }

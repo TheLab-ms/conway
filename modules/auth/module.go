@@ -1,12 +1,15 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -31,43 +34,44 @@ CREATE TABLE IF NOT EXISTS login_codes (
 
 CREATE INDEX IF NOT EXISTS login_codes_expires_at_idx ON login_codes (expires_at);
 CREATE INDEX IF NOT EXISTS login_codes_email_idx ON login_codes (email);
-
-/* OAuth config - Google and Discord OAuth credentials for login */
-CREATE TABLE IF NOT EXISTS auth_config (
-    version INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    google_client_id TEXT NOT NULL DEFAULT '',
-    google_client_secret TEXT NOT NULL DEFAULT '',
-    discord_client_id TEXT NOT NULL DEFAULT '',
-    discord_client_secret TEXT NOT NULL DEFAULT ''
-) STRICT;
 `
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
+// See: https://www.cloudflare.com/application-services/products/turnstile
+type TurnstileOptions struct {
+	SiteKey string
+	Secret  string
+}
+
 type Module struct {
 	db          *sql.DB
 	self        *url.URL
+	turnstile   *TurnstileOptions
 	authLimiter *rate.Limiter
 	tokens      *engine.TokenIssuer
 }
 
-func New(d *sql.DB, self *url.URL, tokens *engine.TokenIssuer) *Module {
+func New(d *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIssuer) *Module {
 	engine.MustMigrate(d, migration)
-	return &Module{db: d, self: self, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), tokens: tokens}
+	return &Module{db: d, self: self, turnstile: tso, authLimiter: rate.NewLimiter(rate.Every(time.Second), 5), tokens: tokens}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.HandleFunc("GET /login", m.handleLoginPage)
+	router.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
+		callback := r.URL.Query().Get("callback_uri")
+		w.Header().Set("Content-Type", "text/html")
+		renderLoginPage(callback, m.turnstile).Render(r.Context(), w)
+	})
+
+	router.HandleFunc("GET /login/sent", func(w http.ResponseWriter, r *http.Request) {
+		email := r.URL.Query().Get("email")
+		w.Header().Set("Content-Type", "text/html")
+		renderLoginSentPage(email).Render(r.Context(), w)
+	})
 
 	router.HandleFunc("POST /login/code", m.handleLoginCodeSubmit)
 	router.HandleFunc("GET /login/code", m.handleLoginCodeLink)
-
-	// OAuth login
-	router.HandleFunc("GET /login/google", m.handleGoogleLogin)
-	router.HandleFunc("GET /login/google/callback", m.handleGoogleCallback)
-	router.HandleFunc("GET /login/discord", m.handleDiscordLogin)
-	router.HandleFunc("GET /login/discord/callback", m.handleDiscordCallback)
 
 	router.HandleFunc("GET /whoami", m.WithAuthn(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -80,6 +84,8 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 		http.SetCookie(w, cook)
 		http.Redirect(w, r, callback, http.StatusTemporaryRedirect)
 	})
+
+	router.HandleFunc("POST /login", m.handleLoginFormPost)
 }
 
 // WithAuthn authenticates incoming requests, or redirects them to the login page.
@@ -124,35 +130,46 @@ func (m *Module) WithLeadership(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
-// handleLoginPage renders the login page or handles admin-generated token logins (?t= parameter).
-func (m *Module) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	// Handle admin-generated login token (?t= parameter)
-	if tok := r.URL.Query().Get("t"); tok != "" {
-		m.handleTokenLogin(w, r, tok)
+// handleLoginFormPost starts a login flow for the given member (by email).
+func (s *Module) handleLoginFormPost(w http.ResponseWriter, r *http.Request) {
+	email := strings.ToLower(r.FormValue("email"))
+	callback := r.FormValue("callback_uri")
+
+	if !s.verifyTurnstileResponse(r) {
+		engine.ClientError(w, "Verification Failed", "We weren't able to verify that you are a human", 401)
 		return
 	}
 
-	callback := r.URL.Query().Get("callback_uri")
-	cfg := m.loadOAuthConfig(r.Context())
-	w.Header().Set("Content-Type", "text/html")
-	renderLoginPage(callback, cfg.GoogleClientID != "", cfg.DiscordClientID != "").Render(r.Context(), w)
-}
-
-// handleTokenLogin handles login via admin-generated JWT token (e.g., from QR code).
-func (m *Module) handleTokenLogin(w http.ResponseWriter, r *http.Request, tok string) {
-	claims, err := m.tokens.Verify(tok)
+	// Find the corresponding member ID or insert a new row if one doesn't exist for this email address
+	var memberID int64
+	err := s.db.QueryRowContext(r.Context(), "INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id", email).Scan(&memberID)
 	if err != nil {
-		engine.ClientError(w, "Invalid Link", "The login link is invalid or has expired", 400)
+		engine.SystemError(w, err.Error())
 		return
 	}
 
-	memberID, err := strconv.ParseInt(claims.Subject, 10, 64)
+	// Generate login code and email
+	code, body, err := s.newLoginEmail(r.Context(), memberID, callback)
 	if err != nil {
-		engine.ClientError(w, "Invalid Link", "The login link is invalid", 400)
+		engine.SystemError(w, err.Error())
 		return
 	}
 
-	m.completeLoginByMemberID(w, r, memberID, "/")
+	// Queue the email
+	_, err = s.db.ExecContext(r.Context(), "INSERT INTO outbound_mail (recipient, subject, body) VALUES ($1, 'Makerspace Login', $2);", email, body)
+	if err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	// Redirect to sent page with email for display
+	q := url.Values{}
+	q.Set("email", email)
+	if callback != "" {
+		q.Set("callback_uri", callback)
+	}
+	_ = code // code is stored in DB during newLoginEmail
+	http.Redirect(w, r, "/login/sent?"+q.Encode(), http.StatusSeeOther)
 }
 
 // generateLoginCode generates a cryptographically secure 5-digit code.
@@ -164,9 +181,7 @@ func generateLoginCode() (string, error) {
 	return fmt.Sprintf("%05d", n%100000), nil
 }
 
-// GenerateLoginCode creates a 5-digit login code for the given member without sending email.
-// Used by the admin module to generate codes for members.
-func (m *Module) GenerateLoginCode(ctx context.Context, memberID int64) (string, error) {
+func (m *Module) newLoginEmail(ctx context.Context, memberID int64, callback string) (code string, body string, err error) {
 	expiresAt := time.Now().Add(time.Minute * 5)
 
 	tok, err := m.tokens.Sign(&jwt.RegisteredClaims{
@@ -174,31 +189,75 @@ func (m *Module) GenerateLoginCode(ctx context.Context, memberID int64) (string,
 		ExpiresAt: &jwt.NumericDate{Time: expiresAt},
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	var code string
+	// Generate a unique 5-digit code
 	for attempts := 0; attempts < 3; attempts++ {
 		code, err = generateLoginCode()
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 
+		// Try to insert the code (will fail if code already exists due to PRIMARY KEY)
 		_, err = m.db.ExecContext(ctx,
 			"INSERT INTO login_codes (code, token, email, callback, expires_at) VALUES (?, ?, (SELECT email FROM members WHERE id = ?), ?, ?)",
-			code, tok, memberID, "", expiresAt.Unix(),
+			code, tok, memberID, callback, expiresAt.Unix(),
 		)
 		if err == nil {
-			return code, nil
+			break
 		}
+		// If we get here, code collision occurred, try again
 		if attempts == 2 {
-			return "", fmt.Errorf("failed to generate unique login code after 3 attempts")
+			return "", "", fmt.Errorf("failed to generate unique login code after 3 attempts")
 		}
 	}
-	return code, nil
+
+	var buf bytes.Buffer
+	err = renderLoginEmail(m.self, code).Render(context.Background(), &buf)
+	if err != nil {
+		return "", "", err
+	}
+	return code, buf.String(), nil
 }
 
-// handleLoginCodeSubmit handles code entry from the login page form.
+func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
+	if s.turnstile == nil {
+		return true // fail open
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*3)
+	defer cancel()
+
+	tsr := r.FormValue("cf-turnstile-response")
+	if tsr == "" {
+		return false
+	}
+	form := url.Values{}
+	form.Set("response", tsr)
+	form.Set("secret", s.turnstile.Secret)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(form.Encode()))
+	if err != nil {
+		return true
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		slog.Warn("unable to verify turnstile response - failing open", "error", err, "status", resp.StatusCode, "body", string(body))
+		return true
+	}
+	defer resp.Body.Close()
+
+	result := &struct {
+		Success bool `json:"success"`
+	}{}
+	json.NewDecoder(resp.Body).Decode(result)
+	return result.Success
+}
+
+// handleLoginCodeSubmit handles code entry from the login sent page form.
 func (s *Module) handleLoginCodeSubmit(w http.ResponseWriter, r *http.Request) {
 	s.authLimiter.Wait(r.Context())
 
@@ -206,7 +265,7 @@ func (s *Module) handleLoginCodeSubmit(w http.ResponseWriter, r *http.Request) {
 	s.verifyCodeAndLogin(w, r, code)
 }
 
-// handleLoginCodeLink handles link clicks with code (GET /login/code?code=xxxxx).
+// handleLoginCodeLink handles short link clicks from email (GET /login/code?code=xxxxx).
 func (s *Module) handleLoginCodeLink(w http.ResponseWriter, r *http.Request) {
 	s.authLimiter.Wait(r.Context())
 
@@ -265,18 +324,7 @@ func (s *Module) completeLogin(w http.ResponseWriter, r *http.Request, token, ca
 		return
 	}
 
-	memberID, err := strconv.ParseInt(claims.Subject, 10, 64)
-	if err != nil {
-		engine.ClientError(w, "Invalid Link", "The login link is invalid", 400)
-		return
-	}
-
-	s.completeLoginByMemberID(w, r, memberID, callback)
-}
-
-// completeLoginByMemberID creates a session for the given member ID.
-func (s *Module) completeLoginByMemberID(w http.ResponseWriter, r *http.Request, memberID int64, callback string) {
-	_, err := s.db.ExecContext(r.Context(), "UPDATE members SET confirmed = true WHERE id = ? AND confirmed = false;", memberID)
+	_, err = s.db.ExecContext(r.Context(), "UPDATE members SET confirmed = true WHERE id = CAST($1 AS INTEGER) AND confirmed = false;", claims.Subject)
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return
@@ -285,7 +333,7 @@ func (s *Module) completeLoginByMemberID(w http.ResponseWriter, r *http.Request,
 	exp := time.Now().Add(time.Hour * 24 * 30)
 	sessionToken, err := s.tokens.Sign(&jwt.RegisteredClaims{
 		Issuer:    "conway",
-		Subject:   strconv.FormatInt(memberID, 10),
+		Subject:   claims.Subject,
 		Audience:  jwt.ClaimStrings{"conway"},
 		ExpiresAt: &jwt.NumericDate{Time: exp},
 	})
@@ -304,19 +352,10 @@ func (s *Module) completeLoginByMemberID(w http.ResponseWriter, r *http.Request,
 	}
 	http.SetCookie(w, cook)
 
-	if callback == "" || !strings.HasPrefix(callback, "/") {
+	if callback == "" {
 		callback = "/"
 	}
 	http.Redirect(w, r, callback, http.StatusFound)
-}
-
-// loadOAuthConfig loads the latest OAuth configuration from the database.
-func (m *Module) loadOAuthConfig(ctx context.Context) *OAuthConfig {
-	cfg := &OAuthConfig{}
-	m.db.QueryRowContext(ctx,
-		"SELECT google_client_id, google_client_secret, discord_client_id, discord_client_secret FROM auth_config ORDER BY version DESC LIMIT 1").
-		Scan(&cfg.GoogleClientID, &cfg.GoogleClientSecret, &cfg.DiscordClientID, &cfg.DiscordClientSecret)
-	return cfg
 }
 
 // OnlyLAN returns a 403 error if the request is coming from the internet.

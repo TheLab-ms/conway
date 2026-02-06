@@ -15,7 +15,8 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/config"
-	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/skip2/go-qrcode"
 )
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
@@ -35,7 +36,6 @@ type Module struct {
 	db             *sql.DB
 	self           *url.URL
 	links          *engine.TokenIssuer
-	authModule     *auth.Module
 	eventLogger    *engine.EventLogger
 	nav            []*navbarTab
 	configRegistry *config.Registry
@@ -67,11 +67,6 @@ func (m *Module) SetConfigRegistry(registry *config.Registry) {
 	if registry != nil {
 		m.configStore = config.NewStore(m.db, registry)
 	}
-}
-
-// SetAuthModule sets the auth module for generating login codes.
-func (m *Module) SetAuthModule(a *auth.Module) {
-	m.authModule = a
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -205,18 +200,22 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	}))
 
 	router.HandleFunc("GET /admin/members/{id}/logincode", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
-		memberID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		tok, err := m.links.Sign(&jwt.RegisteredClaims{
+			Subject:   r.PathValue("id"),
+			ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
+		})
 		if engine.HandleError(w, err) {
 			return
 		}
 
-		code, err := m.authModule.GenerateLoginCode(r.Context(), memberID)
+		url := fmt.Sprintf("%s/login?t=%s", m.self, url.QueryEscape(tok))
+		p, err := qrcode.Encode(url, qrcode.Medium, 512)
 		if engine.HandleError(w, err) {
 			return
 		}
 
-		w.Header().Set("Content-Type", "text/html")
-		renderLoginCodeResult(code).Render(r.Context(), w)
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(p)
 	}))
 
 	router.HandleFunc("GET /admin/members/{id}/events", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {

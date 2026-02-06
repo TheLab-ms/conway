@@ -29,26 +29,23 @@ func (p *LoginPage) NavigateWithCallback(callback string) {
 	require.NoError(p.t, err)
 }
 
-func (p *LoginPage) ExpandLoginCodeSection() {
-	err := p.page.Locator("a:has-text('Have a login code?')").Click()
-	require.NoError(p.t, err)
-	// Wait for collapse animation
-	err = p.page.Locator("#login-code-section").WaitFor(playwright.LocatorWaitForOptions{
-		State: playwright.WaitForSelectorStateVisible,
-	})
+func (p *LoginPage) FillEmail(email string) {
+	err := p.page.Locator("#email").Fill(email)
 	require.NoError(p.t, err)
 }
 
-func (p *LoginPage) FillCode(code string) {
-	digits := p.page.Locator(".code-digit")
-	for i, digit := range code {
-		err := digits.Nth(i).Fill(string(digit))
-		require.NoError(p.t, err)
-	}
+func (p *LoginPage) Submit() {
+	err := p.page.Locator("button[type='submit']").Click()
+	require.NoError(p.t, err)
 }
 
-func (p *LoginPage) ExpectNoLoginMethods() {
-	locator := p.page.GetByText("No login methods are configured")
+func (p *LoginPage) ExpectSentPage() {
+	err := p.page.WaitForURL("**/login/sent**")
+	require.NoError(p.t, err)
+}
+
+func (p *LoginPage) ExpectEmailSentMessage() {
+	locator := p.page.GetByText("We sent a login link")
 	expect(p.t).Locator(locator).ToBeVisible()
 }
 

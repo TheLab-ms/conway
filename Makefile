@@ -1,4 +1,4 @@
-.PHONY: build cloc dev seed login clean
+.PHONY: build cloc dev seed clean
 
 build:
 	go generate ./...
@@ -14,9 +14,6 @@ dev:
 
 seed:
 	sqlite3 .dev/conway.sqlite3 "INSERT INTO members (email, leadership) VALUES ('dev@localhost', TRUE);"
-
-login:
-	cd .dev && go run ../cmd/devlogin
 
 clean:
 	rm -rf .dev
