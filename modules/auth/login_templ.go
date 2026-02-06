@@ -9,12 +9,11 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
-	"fmt"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 	"net/url"
 )
 
-func renderLoginPage(callbackURI string, tso *TurnstileOptions) templ.Component {
+func renderLoginPage(callbackURI string, googleEnabled bool, discordEnabled bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -35,12 +34,6 @@ func renderLoginPage(callbackURI string, tso *TurnstileOptions) templ.Component 
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		if tso != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<script src=\"https://challenges.cloudflare.com/turnstile/v0/api.js\" async defer></script>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
 		templ_7745c5c3_Var2 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -53,218 +46,67 @@ func renderLoginPage(callbackURI string, tso *TurnstileOptions) templ.Component 
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<body class=\"d-flex align-items-center justify-content-center vh-100 bg-light p-3\"><div class=\"card shadow p-4\"><div id=\"login-email\" class=\"text-center\"><h5 class=\"mb-3\">Login or Signup</h5><form action=\"/login\" method=\"post\"><div class=\"mb-3\"><input type=\"email\" class=\"form-control\" id=\"email\" name=\"email\" placeholder=\"Email\" required></div><input type=\"hidden\" id=\"callback_uri\" name=\"callback_uri\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<body class=\"d-flex align-items-center justify-content-center vh-100 bg-light p-3\"><div class=\"card shadow p-4\" style=\"max-width: 400px; width: 100%;\"><div class=\"text-center\"><h5 class=\"mb-4\">Login or Signup</h5><div id=\"oauth-error\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var3 string
-			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(callbackURI)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 22, Col: 84}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if tso != nil {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"cf-turnstile mb-3\" data-sitekey=\"")
+			if googleEnabled {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var4 string
-				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(tso.SiteKey)
+				var templ_7745c5c3_Var3 templ.SafeURL
+				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/login/google?callback_uri=" + url.QueryEscape(callbackURI)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 24, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 16, Col: 91}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" class=\"btn btn-outline-dark w-100 mb-2 d-flex align-items-center justify-content-center\"><svg class=\"me-2\" xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 48 48\"><path fill=\"#EA4335\" d=\"M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z\"></path> <path fill=\"#4285F4\" d=\"M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z\"></path> <path fill=\"#FBBC05\" d=\"M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z\"></path> <path fill=\"#34A853\" d=\"M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z\"></path> <path fill=\"none\" d=\"M0 0h48v48H0z\"></path></svg> Sign in with Google</a> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if discordEnabled {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<a href=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var4 templ.SafeURL
+				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/login/discord?callback_uri=" + url.QueryEscape(callbackURI)))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 28, Col: 92}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"btn w-100 mb-2 d-flex align-items-center justify-content-center text-white\" style=\"background-color: #5865F2;\"><svg class=\"me-2\" xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" fill=\"currentColor\" viewBox=\"0 0 16 16\"><path d=\"M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019c.308-.42.582-.863.818-1.329a.05.05 0 0 0-.01-.059.05.05 0 0 0-.018-.011 8.8 8.8 0 0 1-1.248-.595.05.05 0 0 1-.02-.066.05.05 0 0 1 .015-.019c.084-.063.168-.129.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007c.08.066.164.132.248.195a.05.05 0 0 1-.004.085 8.3 8.3 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612\"></path></svg> Sign in with Discord</a> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<button type=\"submit\" class=\"btn btn-primary w-100\">Submit</button></form></div></div></body>")
+			if !googleEnabled && !discordEnabled {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p class=\"text-muted\">No login methods are configured. Please contact an administrator.</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if googleEnabled || discordEnabled {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<hr class=\"my-3\"><div><a class=\"text-muted small\" data-bs-toggle=\"collapse\" href=\"#login-code-section\" role=\"button\" aria-expanded=\"false\" aria-controls=\"login-code-section\">Have a login code?</a><div class=\"collapse mt-3\" id=\"login-code-section\"><form action=\"/login/code\" method=\"post\" id=\"code-form\"><label class=\"form-label\">Enter your 5-digit code</label><div class=\"d-flex justify-content-center gap-2 mb-3\"><input type=\"text\" class=\"form-control text-center code-digit\" maxlength=\"1\" pattern=\"[0-9]\" inputmode=\"numeric\" style=\"width: 50px; height: 60px; font-size: 24px;\" data-index=\"0\"> <input type=\"text\" class=\"form-control text-center code-digit\" maxlength=\"1\" pattern=\"[0-9]\" inputmode=\"numeric\" style=\"width: 50px; height: 60px; font-size: 24px;\" data-index=\"1\"> <input type=\"text\" class=\"form-control text-center code-digit\" maxlength=\"1\" pattern=\"[0-9]\" inputmode=\"numeric\" style=\"width: 50px; height: 60px; font-size: 24px;\" data-index=\"2\"> <input type=\"text\" class=\"form-control text-center code-digit\" maxlength=\"1\" pattern=\"[0-9]\" inputmode=\"numeric\" style=\"width: 50px; height: 60px; font-size: 24px;\" data-index=\"3\"> <input type=\"text\" class=\"form-control text-center code-digit\" maxlength=\"1\" pattern=\"[0-9]\" inputmode=\"numeric\" style=\"width: 50px; height: 60px; font-size: 24px;\" data-index=\"4\"></div><input type=\"hidden\" name=\"code\" id=\"code-value\"> <button type=\"submit\" class=\"btn btn-primary w-100\" id=\"submit-btn\" disabled>Verify Code</button></form></div></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div></div><script>\n\t\t\t\t(function() {\n\t\t\t\t\t// Display error from query params\n\t\t\t\t\tconst params = new URLSearchParams(window.location.search);\n\t\t\t\t\tconst error = params.get('error');\n\t\t\t\t\tif (error) {\n\t\t\t\t\t\tconst el = document.getElementById('oauth-error');\n\t\t\t\t\t\tif (el) {\n\t\t\t\t\t\t\tel.innerHTML = '<div class=\"alert alert-danger mb-3\">' + error + '</div>';\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\t// Code digit input handling\n\t\t\t\t\tconst digits = document.querySelectorAll('.code-digit');\n\t\t\t\t\tif (digits.length === 0) return;\n\t\t\t\t\tconst codeValue = document.getElementById('code-value');\n\t\t\t\t\tconst submitBtn = document.getElementById('submit-btn');\n\t\t\t\t\tconst form = document.getElementById('code-form');\n\n\t\t\t\t\tfunction updateCode() {\n\t\t\t\t\t\tlet code = '';\n\t\t\t\t\t\tdigits.forEach(d => code += d.value);\n\t\t\t\t\t\tcodeValue.value = code;\n\t\t\t\t\t\tsubmitBtn.disabled = code.length !== 5;\n\t\t\t\t\t\tif (code.length === 5) {\n\t\t\t\t\t\t\tform.submit();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tdigits.forEach((digit, index) => {\n\t\t\t\t\t\tdigit.addEventListener('input', (e) => {\n\t\t\t\t\t\t\tdigit.value = digit.value.replace(/[^0-9]/g, '');\n\t\t\t\t\t\t\tif (digit.value && index < 4) {\n\t\t\t\t\t\t\t\tdigits[index + 1].focus();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tupdateCode();\n\t\t\t\t\t\t});\n\n\t\t\t\t\t\tdigit.addEventListener('keydown', (e) => {\n\t\t\t\t\t\t\tif (e.key === 'Backspace' && !digit.value && index > 0) {\n\t\t\t\t\t\t\t\tdigits[index - 1].focus();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\n\t\t\t\t\t\tdigit.addEventListener('paste', (e) => {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tconst paste = (e.clipboardData || window.clipboardData).getData('text');\n\t\t\t\t\t\t\tconst nums = paste.replace(/[^0-9]/g, '').slice(0, 5);\n\t\t\t\t\t\t\tfor (let i = 0; i < nums.length && i < 5; i++) {\n\t\t\t\t\t\t\t\tdigits[i].value = nums[i];\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tif (nums.length > 0) {\n\t\t\t\t\t\t\t\tdigits[Math.min(nums.length, 4)].focus();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tupdateCode();\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script></body>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
 		templ_7745c5c3_Err = bootstrap.View().Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-func renderLoginSentPage(email string) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var5 == nil {
-			templ_7745c5c3_Var5 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var6 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<body class=\"d-flex align-items-center justify-content-center vh-100 bg-light p-3\"><div id=\"login-code\" class=\"text-center\"><div class=\"card shadow p-4\" style=\"max-width: 400px;\"><h5 class=\"mb-3\">Check Your Email</h5>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if email != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<p class=\"text-muted mb-4\">We sent a login code to <strong>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var7 string
-				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(email)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 42, Col: 46}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</strong></p>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"text-muted mb-4\">We sent a login code to your email address.</p>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<form action=\"/login/code\" method=\"post\" id=\"code-form\"><label class=\"form-label\">Enter your 5-digit code</label><div class=\"d-flex justify-content-center gap-2 mb-3\"><input type=\"text\" class=\"form-control text-center code-digit\" maxlength=\"1\" pattern=\"[0-9]\" inputmode=\"numeric\" style=\"width: 50px; height: 60px; font-size: 24px;\" data-index=\"0\" autofocus> <input type=\"text\" class=\"form-control text-center code-digit\" maxlength=\"1\" pattern=\"[0-9]\" inputmode=\"numeric\" style=\"width: 50px; height: 60px; font-size: 24px;\" data-index=\"1\"> <input type=\"text\" class=\"form-control text-center code-digit\" maxlength=\"1\" pattern=\"[0-9]\" inputmode=\"numeric\" style=\"width: 50px; height: 60px; font-size: 24px;\" data-index=\"2\"> <input type=\"text\" class=\"form-control text-center code-digit\" maxlength=\"1\" pattern=\"[0-9]\" inputmode=\"numeric\" style=\"width: 50px; height: 60px; font-size: 24px;\" data-index=\"3\"> <input type=\"text\" class=\"form-control text-center code-digit\" maxlength=\"1\" pattern=\"[0-9]\" inputmode=\"numeric\" style=\"width: 50px; height: 60px; font-size: 24px;\" data-index=\"4\"></div><input type=\"hidden\" name=\"code\" id=\"code-value\"><div id=\"code-error\" class=\"text-danger mb-3\" style=\"display: none;\"></div><button type=\"submit\" class=\"btn btn-primary w-100\" id=\"submit-btn\" disabled>Verify Code</button></form><hr class=\"my-4\"><p class=\"text-muted small mb-0\">You can also click the link in your email to sign in.</p></div></div><script>\n\t\t\t\t(function() {\n\t\t\t\t\tconst digits = document.querySelectorAll('.code-digit');\n\t\t\t\t\tconst codeValue = document.getElementById('code-value');\n\t\t\t\t\tconst submitBtn = document.getElementById('submit-btn');\n\t\t\t\t\tconst form = document.getElementById('code-form');\n\n\t\t\t\t\tfunction updateCode() {\n\t\t\t\t\t\tlet code = '';\n\t\t\t\t\t\tdigits.forEach(d => code += d.value);\n\t\t\t\t\t\tcodeValue.value = code;\n\t\t\t\t\t\tsubmitBtn.disabled = code.length !== 5;\n\n\t\t\t\t\t\tif (code.length === 5) {\n\t\t\t\t\t\t\tform.submit();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tdigits.forEach((digit, index) => {\n\t\t\t\t\t\tdigit.addEventListener('input', (e) => {\n\t\t\t\t\t\t\tdigit.value = digit.value.replace(/[^0-9]/g, '');\n\t\t\t\t\t\t\tif (digit.value && index < 4) {\n\t\t\t\t\t\t\t\tdigits[index + 1].focus();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tupdateCode();\n\t\t\t\t\t\t});\n\n\t\t\t\t\t\tdigit.addEventListener('keydown', (e) => {\n\t\t\t\t\t\t\tif (e.key === 'Backspace' && !digit.value && index > 0) {\n\t\t\t\t\t\t\t\tdigits[index - 1].focus();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\n\t\t\t\t\t\tdigit.addEventListener('paste', (e) => {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tconst paste = (e.clipboardData || window.clipboardData).getData('text');\n\t\t\t\t\t\t\tconst nums = paste.replace(/[^0-9]/g, '').slice(0, 5);\n\t\t\t\t\t\t\tfor (let i = 0; i < nums.length && i < 5; i++) {\n\t\t\t\t\t\t\t\tdigits[i].value = nums[i];\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tif (nums.length > 0) {\n\t\t\t\t\t\t\t\tdigits[Math.min(nums.length, 4)].focus();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tupdateCode();\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script></body>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = bootstrap.View().Render(templ.WithChildren(ctx, templ_7745c5c3_Var6), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-func renderLoginEmail(self *url.URL, code string) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var8 == nil {
-			templ_7745c5c3_Var8 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\"><p>Here is your makerspace login code:</p><div style=\"text-align: center; margin: 30px 0;\"><div style=\"background-color: #f8f9fa; border-radius: 8px; padding: 20px; display: inline-block;\"><p style=\"margin: 0 0 10px 0; color: #666; font-size: 14px;\">Your login code:</p><div style=\"font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #212529;\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var9 string
-		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(code)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 127, Col: 11}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div></div></div><p style=\"text-align: center; color: #666;\">Enter this code on the login page, or click the link below:</p><p style=\"text-align: center; margin: 20px 0;\"><a href=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var10 templ.SafeURL
-		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/login/code?code=%s", self.String(), code)))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 135, Col: 85}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" style=\"background-color: #0d6efd; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;\">Sign In</a></p><p style=\"text-align: center; color: #999; font-size: 12px;\">Or copy this link: <a href=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var11 templ.SafeURL
-		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/login/code?code=%s", self.String(), code)))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 140, Col: 104}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(self.String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 140, Col: 122}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "/login/code?code=")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var13 string
-		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(code)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `login.templ`, Line: 140, Col: 147}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</a></p><hr style=\"margin: 30px 0; border: none; border-top: 1px solid #eee;\"><p style=\"color: #666; font-size: 14px;\">This code expires in 5 minutes.</p><p style=\"color: #999; font-size: 12px;\">If you did not request this login code, please ignore this message.</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

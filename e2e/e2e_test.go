@@ -14,7 +14,6 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules"
-	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/playwright-community/playwright-go"
 	"github.com/stripe/stripe-go/v78"
 )
@@ -126,20 +125,12 @@ func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App,
 
 	a := engine.NewApp(":18080", router, database)
 
-	// Create the auth module first and set it as the authenticator BEFORE registering other modules.
-	// This ensures that when modules call router.WithAuthn(), they get the real authenticator
-	// instead of the noopAuthenticator default.
-	authModule := auth.New(database, self, nil, authIssuer)
-	a.Router.Authenticator = authModule
-
 	modules.Register(a, modules.Options{
 		Database:    database,
 		Self:        self,
 		AuthIssuer:  authIssuer,
 		OAuthIssuer: oauthIssuer,
 		FobIssuer:   fobIssuer,
-		Turnstile:   nil, // No Turnstile for tests
-		EmailSender: nil, // Emails stored in outbound_mail table
 		SpaceHost:   "localhost",
 	})
 

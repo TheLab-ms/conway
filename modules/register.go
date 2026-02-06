@@ -11,7 +11,6 @@ import (
 	"github.com/TheLab-ms/conway/modules/directory"
 	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
-	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/fobapi"
 	"github.com/TheLab-ms/conway/modules/kiosk"
 	"github.com/TheLab-ms/conway/modules/machines"
@@ -33,12 +32,6 @@ type Options struct {
 	FobIssuer     *engine.TokenIssuer
 	DiscordIssuer *engine.TokenIssuer
 
-	// Auth options
-	Turnstile *auth.TurnstileOptions
-
-	// Email sender (nil to disable sending)
-	EmailSender email.Sender
-
 	// Kiosk config
 	SpaceHost string
 }
@@ -48,7 +41,7 @@ type Options struct {
 func Register(a *engine.App, opts Options) *auth.Module {
 	// Auth module must be created and set as authenticator FIRST,
 	// before any modules that use WithAuthn are added.
-	authModule := auth.New(opts.Database, opts.Self, opts.Turnstile, opts.AuthIssuer)
+	authModule := auth.New(opts.Database, opts.Self, opts.AuthIssuer)
 	a.Router.Authenticator = authModule
 
 	// Members module registered early to apply base schema
@@ -58,7 +51,6 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	// Now add auth routes
 	a.Add(authModule)
 
-	a.Add(email.New(opts.Database, opts.EmailSender))
 	a.Add(oauth2.New(opts.Database, opts.Self, opts.OAuthIssuer))
 	a.Add(payment.New(opts.Database, opts.Self, engine.NewEventLogger(opts.Database, "stripe")))
 	a.Add(waiver.New(opts.Database))
@@ -81,6 +73,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	// Admin module added last so it can access the fully-populated config registry
 	adminMod := admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin"))
 	adminMod.SetConfigRegistry(a.Configs())
+	adminMod.SetAuthModule(authModule)
 	a.Add(adminMod)
 
 	return authModule

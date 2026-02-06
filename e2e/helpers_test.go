@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -324,17 +323,6 @@ func seedMetrics(t *testing.T, series string, count int) {
 	}
 }
 
-// getLastEmail retrieves the most recent email sent to a recipient.
-func getLastEmail(t *testing.T, recipient string) (subject, body string, found bool) {
-	t.Helper()
-	err := testDB.QueryRow(`SELECT subject, body FROM outbound_mail WHERE recipient = ? ORDER BY id DESC LIMIT 1`, recipient).Scan(&subject, &body)
-	if err == sql.ErrNoRows {
-		return "", "", false
-	}
-	require.NoError(t, err, "could not query outbound_mail")
-	return subject, body, true
-}
-
 func splitLines(s string) []string {
 	var lines []string
 	start := 0
@@ -348,33 +336,6 @@ func splitLines(s string) []string {
 		lines = append(lines, s[start:])
 	}
 	return lines
-}
-
-// extractLoginCodeFromEmail parses the 5-digit login code from an email body.
-func extractLoginCodeFromEmail(t *testing.T, body string) string {
-	t.Helper()
-	// Look for 5-digit code pattern in the styled box
-	// The code is displayed in a div with letter-spacing
-	re := regexp.MustCompile(`>\s*(\d{5})\s*<`)
-	matches := re.FindStringSubmatch(body)
-	if len(matches) >= 2 {
-		return matches[1]
-	}
-	t.Fatal("could not extract login code from email body")
-	return ""
-}
-
-// extractLoginCodeLinkFromEmail parses the login link URL from an email body.
-func extractLoginCodeLinkFromEmail(t *testing.T, body string) string {
-	t.Helper()
-	// Look for /login/code?code={code} pattern
-	re := regexp.MustCompile(`href="([^"]*\/login\/code\?code=\d{5})"`)
-	matches := re.FindStringSubmatch(body)
-	if len(matches) >= 2 {
-		return matches[1]
-	}
-	t.Fatal("could not extract login code link from email body")
-	return ""
 }
 
 // seedLoginCode creates a login code in the database for testing.
@@ -394,7 +355,7 @@ func seedLoginCode(t *testing.T, code string, memberID int64, callback string, e
 // clearTestData removes all test data from the database between tests.
 func clearTestData(t *testing.T) {
 	t.Helper()
-	tables := []string{"members", "waivers", "waiver_content", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes", "stripe_config", "stripe_events", "bambu_config", "bambu_events"}
+	tables := []string{"members", "waivers", "waiver_content", "fob_swipes", "member_events", "metrics", "login_codes", "stripe_config", "stripe_events", "bambu_config", "bambu_events"}
 	for _, table := range tables {
 		_, err := testDB.Exec(fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
