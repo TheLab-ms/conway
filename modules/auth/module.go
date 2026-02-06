@@ -54,6 +54,10 @@ type Module struct {
 	// DiscordLoginEnabled is set by the discord module to indicate whether
 	// Discord-based login is available. If nil, the Discord login button is hidden.
 	DiscordLoginEnabled func(ctx context.Context) bool
+
+	// GoogleLoginEnabled is set by the google module to indicate whether
+	// Google-based login is available. If nil, the Google login button is hidden.
+	GoogleLoginEnabled func(ctx context.Context) bool
 }
 
 func New(d *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIssuer) *Module {
@@ -65,8 +69,9 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
 		callback := r.URL.Query().Get("callback_uri")
 		discordEnabled := m.DiscordLoginEnabled != nil && m.DiscordLoginEnabled(r.Context())
+		googleEnabled := m.GoogleLoginEnabled != nil && m.GoogleLoginEnabled(r.Context())
 		w.Header().Set("Content-Type", "text/html")
-		renderLoginPage(callback, m.turnstile, discordEnabled).Render(r.Context(), w)
+		renderLoginPage(callback, m.turnstile, discordEnabled, googleEnabled).Render(r.Context(), w)
 	})
 
 	router.HandleFunc("GET /login/sent", func(w http.ResponseWriter, r *http.Request) {

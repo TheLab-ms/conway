@@ -238,3 +238,10 @@ CREATE TABLE IF NOT EXISTS stripe_config (
     api_key TEXT NOT NULL DEFAULT '',
     webhook_key TEXT NOT NULL DEFAULT ''
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS google_config (
+    version INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    client_id TEXT NOT NULL DEFAULT '',
+    client_secret TEXT NOT NULL DEFAULT ''
+) STRICT;

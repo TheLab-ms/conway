@@ -6,7 +6,7 @@ import (
 	"net/url"
 )
 
-templ renderLoginPage(callbackURI string, tso *TurnstileOptions, discordEnabled bool) {
+templ renderLoginPage(callbackURI string, tso *TurnstileOptions, discordEnabled bool, googleEnabled bool) {
 	if tso != nil {
 		<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 	}
@@ -25,13 +25,18 @@ templ renderLoginPage(callbackURI string, tso *TurnstileOptions, discordEnabled 
 						}
 						<button type="submit" class="btn btn-primary w-100">Submit</button>
 					</form>
-					if discordEnabled {
+					if discordEnabled || googleEnabled {
 						<div class="d-flex align-items-center my-3">
 							<hr class="flex-grow-1"/>
 							<span class="mx-3 text-muted">or</span>
 							<hr class="flex-grow-1"/>
 						</div>
+					}
+					if discordEnabled {
 						<a href={ templ.SafeURL(fmt.Sprintf("/login/discord?callback_uri=%s", url.QueryEscape(callbackURI))) } class="btn btn-outline-secondary w-100">Login with Discord</a>
+					}
+					if googleEnabled {
+						<a href={ templ.SafeURL(fmt.Sprintf("/login/google?callback_uri=%s", url.QueryEscape(callbackURI))) } class="btn btn-outline-secondary w-100 mt-2">Login with Google</a>
 					}
 				</div>
 			</div>

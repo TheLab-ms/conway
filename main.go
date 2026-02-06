@@ -93,6 +93,7 @@ func newApp(conf Config, self *url.URL) (*engine.App, error) {
 		OAuthIssuer:          engine.NewTokenIssuer("oauth2.pem"),
 		FobIssuer:            engine.NewTokenIssuer("fobs.pem"),
 		DiscordIssuer:        engine.NewTokenIssuer("discord-oauth.pem"),
+		GoogleIssuer:         engine.NewTokenIssuer("google-oauth.pem"),
 		Turnstile:     tso,
 		EmailSender:   sender,
 		SpaceHost:     conf.SpaceHost,

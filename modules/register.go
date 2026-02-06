@@ -13,6 +13,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/fobapi"
+	"github.com/TheLab-ms/conway/modules/google"
 	"github.com/TheLab-ms/conway/modules/kiosk"
 	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/TheLab-ms/conway/modules/members"
@@ -32,6 +33,7 @@ type Options struct {
 	OAuthIssuer   *engine.TokenIssuer
 	FobIssuer     *engine.TokenIssuer
 	DiscordIssuer *engine.TokenIssuer
+	GoogleIssuer  *engine.TokenIssuer
 
 	// Auth options
 	Turnstile *auth.TurnstileOptions
@@ -80,6 +82,12 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	discordMod.SetLoginCompleter(authModule.CompleteLoginForMember)
 	authModule.DiscordLoginEnabled = discordMod.IsLoginEnabled
 	a.Add(discordMod)
+
+	// Google OAuth login module
+	googleMod := google.New(opts.Database, opts.Self, opts.GoogleIssuer)
+	googleMod.SetLoginCompleter(authModule.CompleteLoginForMember)
+	authModule.GoogleLoginEnabled = googleMod.IsLoginEnabled
+	a.Add(googleMod)
 
 	// Admin module added last so it can access the fully-populated config registry
 	adminMod := admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin"))
