@@ -76,7 +76,10 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(discordWebhookMod)
 
 	// Discord OAuth/role sync module
-	a.Add(discord.New(opts.Database, opts.Self, opts.DiscordIssuer, engine.NewEventLogger(opts.Database, "discord")))
+	discordMod := discord.New(opts.Database, opts.Self, opts.DiscordIssuer, engine.NewEventLogger(opts.Database, "discord"))
+	discordMod.SetLoginCompleter(authModule.CompleteLoginForMember)
+	authModule.DiscordLoginEnabled = discordMod.IsLoginEnabled
+	a.Add(discordMod)
 
 	// Admin module added last so it can access the fully-populated config registry
 	adminMod := admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin"))

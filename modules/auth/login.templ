@@ -6,7 +6,7 @@ import (
 	"net/url"
 )
 
-templ renderLoginPage(callbackURI string, tso *TurnstileOptions) {
+templ renderLoginPage(callbackURI string, tso *TurnstileOptions, discordEnabled bool) {
 	if tso != nil {
 		<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 	}
@@ -25,6 +25,14 @@ templ renderLoginPage(callbackURI string, tso *TurnstileOptions) {
 						}
 						<button type="submit" class="btn btn-primary w-100">Submit</button>
 					</form>
+					if discordEnabled {
+						<div class="d-flex align-items-center my-3">
+							<hr class="flex-grow-1"/>
+							<span class="mx-3 text-muted">or</span>
+							<hr class="flex-grow-1"/>
+						</div>
+						<a href={ templ.SafeURL(fmt.Sprintf("/login/discord?callback_uri=%s", url.QueryEscape(callbackURI))) } class="btn btn-outline-secondary w-100">Login with Discord</a>
+					}
 				</div>
 			</div>
 		</body>

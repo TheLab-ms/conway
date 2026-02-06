@@ -50,6 +50,10 @@ type Module struct {
 	turnstile   *TurnstileOptions
 	authLimiter *rate.Limiter
 	tokens      *engine.TokenIssuer
+
+	// DiscordLoginEnabled is set by the discord module to indicate whether
+	// Discord-based login is available. If nil, the Discord login button is hidden.
+	DiscordLoginEnabled func(ctx context.Context) bool
 }
 
 func New(d *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIssuer) *Module {
@@ -60,8 +64,9 @@ func New(d *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIs
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
 		callback := r.URL.Query().Get("callback_uri")
+		discordEnabled := m.DiscordLoginEnabled != nil && m.DiscordLoginEnabled(r.Context())
 		w.Header().Set("Content-Type", "text/html")
-		renderLoginPage(callback, m.turnstile).Render(r.Context(), w)
+		renderLoginPage(callback, m.turnstile, discordEnabled).Render(r.Context(), w)
 	})
 
 	router.HandleFunc("GET /login/sent", func(w http.ResponseWriter, r *http.Request) {
@@ -356,6 +361,20 @@ func (s *Module) completeLogin(w http.ResponseWriter, r *http.Request, token, ca
 		callback = "/"
 	}
 	http.Redirect(w, r, callback, http.StatusFound)
+}
+
+// CompleteLoginForMember creates a session for the given member ID and redirects.
+// This is used by external login providers (e.g. Discord OAuth) to finish a login flow.
+func (m *Module) CompleteLoginForMember(w http.ResponseWriter, r *http.Request, memberID int64, callbackURI string) {
+	internalToken, err := m.tokens.Sign(&jwt.RegisteredClaims{
+		Subject:   strconv.FormatInt(memberID, 10),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
+	})
+	if err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
+	m.completeLogin(w, r, internalToken, callbackURI)
 }
 
 // OnlyLAN returns a 403 error if the request is coming from the internet.

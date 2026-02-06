@@ -3,11 +3,13 @@ package discord
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
@@ -44,12 +46,17 @@ type discordConfig struct {
 	syncIntervalHours int
 }
 
+// LoginCompleteFunc is called by the discord module to finish a login flow.
+// It receives the member ID and the callback URI to redirect to after login.
+type LoginCompleteFunc func(w http.ResponseWriter, r *http.Request, memberID int64, callbackURI string)
+
 type Module struct {
 	db             *sql.DB
 	self           *url.URL
 	stateTokIssuer *engine.TokenIssuer
 	httpClient     *http.Client
 	eventLogger    *engine.EventLogger
+	loginComplete  LoginCompleteFunc
 }
 
 func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine.EventLogger) *Module {
@@ -63,6 +70,12 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine
 		httpClient:     &http.Client{Timeout: time.Second * 10},
 		eventLogger:    eventLogger,
 	}
+}
+
+// SetLoginCompleter configures the function used to complete Discord-based logins.
+// This must be called before routes are attached.
+func (m *Module) SetLoginCompleter(f LoginCompleteFunc) {
+	m.loginComplete = f
 }
 
 // loadConfig loads the latest Discord configuration from the database.
@@ -129,9 +142,42 @@ func (m *Module) getRoleID(ctx context.Context) (string, error) {
 	return cfg.roleID, nil
 }
 
+// IsLoginEnabled reports whether Discord OAuth login is available.
+func (m *Module) IsLoginEnabled(ctx context.Context) bool {
+	cfg, err := m.loadConfig(ctx)
+	if err != nil {
+		return false
+	}
+	return cfg.clientID != "" && cfg.clientSecret != "" && m.loginComplete != nil
+}
+
+// getLoginOAuthConfig builds an OAuth2 config for the login flow
+// (uses a different redirect URL than account linking).
+func (m *Module) getLoginOAuthConfig(ctx context.Context) (*oauth2.Config, error) {
+	cfg, err := m.loadConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.clientID == "" || cfg.clientSecret == "" {
+		return nil, fmt.Errorf("discord OAuth is not configured")
+	}
+	return &oauth2.Config{
+		Endpoint:     endpoint,
+		Scopes:       []string{"identify", "email"},
+		RedirectURL:  fmt.Sprintf("%s/login/discord/callback", m.self.String()),
+		ClientID:     cfg.clientID,
+		ClientSecret: cfg.clientSecret,
+	}, nil
+}
+
 func (m *Module) AttachRoutes(router *engine.Router) {
+	// Account linking (requires existing session)
 	router.HandleFunc("GET /discord/login", router.WithAuthn(m.handleLogin))
 	router.HandleFunc("GET /discord/callback", router.WithAuthn(m.handleCallback))
+
+	// Discord-based login (unauthenticated)
+	router.HandleFunc("GET /login/discord", m.handleLoginStart)
+	router.HandleFunc("GET /login/discord/callback", m.handleLoginCallback)
 }
 
 func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -213,6 +259,115 @@ func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authC
 
 	m.eventLogger.LogEvent(ctx, userID, "OAuthCallback", userInfo.ID, "", true, fmt.Sprintf("linked Discord account: %s", userInfo.Email))
 	return nil
+}
+
+// handleLoginStart initiates the Discord OAuth2 login flow (unauthenticated).
+func (m *Module) handleLoginStart(w http.ResponseWriter, r *http.Request) {
+	oauthConf, err := m.getLoginOAuthConfig(r.Context())
+	if err != nil {
+		engine.ClientError(w, "Not Available", "Discord login is not configured", 503)
+		return
+	}
+
+	callbackURI := r.URL.Query().Get("callback_uri")
+
+	state, err := m.stateTokIssuer.Sign(&jwt.RegisteredClaims{
+		Issuer:    callbackURI,
+		Audience:  jwt.ClaimStrings{"discord-login"},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+	})
+	if err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	http.Redirect(w, r, oauthConf.AuthCodeURL(state), http.StatusTemporaryRedirect)
+}
+
+// handleLoginCallback completes the Discord OAuth2 login flow (unauthenticated).
+func (m *Module) handleLoginCallback(w http.ResponseWriter, r *http.Request) {
+	// Verify state JWT
+	stateStr := r.URL.Query().Get("state")
+	stateClaims, err := m.stateTokIssuer.Verify(stateStr)
+	if err != nil || len(stateClaims.Audience) == 0 || stateClaims.Audience[0] != "discord-login" {
+		engine.ClientError(w, "Invalid State", "The login state is invalid or expired. Please try again.", 400)
+		return
+	}
+	callbackURI := stateClaims.Issuer
+
+	// Handle OAuth error (e.g. user denied)
+	if r.URL.Query().Get("error") != "" {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
+	// Exchange code for token
+	oauthConf, err := m.getLoginOAuthConfig(r.Context())
+	if err != nil {
+		engine.ClientError(w, "Not Available", "Discord login is not configured", 503)
+		return
+	}
+
+	token, err := oauthConf.Exchange(r.Context(), r.URL.Query().Get("code"))
+	if err != nil {
+		engine.ClientError(w, "Login Failed", "Discord login failed. Please try again.", 400)
+		return
+	}
+
+	// Fetch Discord user info
+	client := oauthConf.Client(r.Context(), token)
+	resp, err := client.Get("https://discord.com/api/users/@me")
+	if err != nil {
+		engine.SystemError(w, "Failed to fetch Discord user info: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	var discordUser struct {
+		ID    string `json:"id"`
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&discordUser); err != nil {
+		engine.SystemError(w, "Failed to decode Discord user info: "+err.Error())
+		return
+	}
+
+	if discordUser.Email == "" {
+		engine.ClientError(w, "Email Required", "Your Discord account does not have a verified email address. Please use email login instead.", 400)
+		return
+	}
+	discordUser.Email = strings.ToLower(discordUser.Email)
+
+	// Find or create member: first by discord_user_id, then by email
+	var memberID int64
+	err = m.db.QueryRowContext(r.Context(),
+		"SELECT id FROM members WHERE discord_user_id = ? LIMIT 1",
+		discordUser.ID).Scan(&memberID)
+
+	if err == sql.ErrNoRows {
+		// No member with this discord_user_id; upsert by email (same as email login)
+		err = m.db.QueryRowContext(r.Context(),
+			"INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id",
+			discordUser.Email).Scan(&memberID)
+		if err != nil {
+			engine.SystemError(w, err.Error())
+			return
+		}
+	} else if err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	// Link Discord account and mark for async sync (avatar will be fetched by the
+	// discord module's background worker via discord_last_synced = NULL).
+	_, err = m.db.ExecContext(r.Context(),
+		"UPDATE members SET email = ?, discord_user_id = ?, discord_email = ?, discord_last_synced = NULL WHERE id = ?",
+		discordUser.Email, discordUser.ID, discordUser.Email, memberID)
+	if err != nil {
+		slog.Error("failed to link discord account during login", "error", err, "memberID", memberID)
+	}
+
+	m.loginComplete(w, r, memberID, callbackURI)
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
