@@ -125,6 +125,22 @@ func (s *StreamMux) broadcast(ctx context.Context, reader io.ReadCloser, myGen u
 	}
 }
 
+// Stop cancels the source and closes all client channels.
+func (s *StreamMux) Stop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
+	s.running = false
+	for ch := range s.clients {
+		close(ch)
+		delete(s.clients, ch)
+	}
+}
+
 // ClientCount returns the current number of subscribers.
 func (s *StreamMux) ClientCount() int {
 	s.mu.RLock()

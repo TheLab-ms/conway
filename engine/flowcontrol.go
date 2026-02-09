@@ -18,9 +18,14 @@ type PollingFunc func(context.Context) bool
 // If the function returns true, it will be called again immediately.
 // This is useful for polling a queue for new items.
 func Poll(interval time.Duration, fn PollingFunc) Proc {
+	return DynamicPoll(func() time.Duration { return interval }, fn)
+}
+
+// DynamicPoll is like Poll but accepts a function that returns the interval,
+// allowing the interval to be changed at runtime.
+func DynamicPoll(intervalFn func() time.Duration, fn PollingFunc) Proc {
 	return func(ctx context.Context) error {
-		jitter := time.Duration(interval)
-		ticker := time.NewTicker(jitter)
+		ticker := time.NewTicker(intervalFn())
 		defer ticker.Stop()
 		for {
 			if fn(ctx) {
@@ -31,6 +36,7 @@ func Poll(interval time.Duration, fn PollingFunc) Proc {
 				return ctx.Err()
 			case <-ticker.C:
 			}
+			interval := intervalFn()
 			ticker.Reset(time.Duration(float64(interval) * (0.9 + 0.2*rand.Float64())))
 		}
 	}

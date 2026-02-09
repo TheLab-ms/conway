@@ -73,6 +73,9 @@ func (p *Printer) GetState() (PrinterData, error) {
 	// Wait for response with timeout
 	select {
 	case msg := <-p.responseCh:
+		p.mu.Lock()
+		p.responseCh = nil
+		p.mu.Unlock()
 		return PrinterData{
 			GcodeFile:          msg.Print.GcodeFile,
 			SubtaskName:        msg.Print.SubtaskName,
@@ -125,10 +128,12 @@ func (p *Printer) Disconnect() {
 		close(p.responseCh)
 		p.responseCh = nil
 	}
+	client := p.client
+	p.client = nil
 	p.mu.Unlock()
 
-	if p.client != nil {
-		p.client.Disconnect(250)
+	if client != nil {
+		client.Disconnect(250)
 	}
 }
 
@@ -160,7 +165,9 @@ func (p *Printer) onConnect(client paho.Client) {
 		return
 	}
 	slog.Debug("subscribed to printer MQTT topic", "serial", p.config.SerialNumber)
-	p.requestUpdate()
+	if err := p.requestUpdate(); err != nil {
+		slog.Warn("failed to request update after connect", "error", err, "serial", p.config.SerialNumber)
+	}
 }
 
 func (p *Printer) onConnectionLost(client paho.Client, err error) {

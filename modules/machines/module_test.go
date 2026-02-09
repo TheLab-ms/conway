@@ -294,7 +294,7 @@ func TestTrigger_NoNotificationWhenWebhookEmpty(t *testing.T) {
 
 	// Complete the job
 	status := PrinterStatus{
-		PrinterData:          bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@testuser"},
+		PrinterData:          bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@testuser", GcodeState: "FINISH"},
 		SerialNumber:         "ABC123",
 		PrinterName:          "Printer1",
 		JobFinishedTimestamp: nil,
@@ -333,7 +333,7 @@ func TestTrigger_NoNotificationForUnknownUser(t *testing.T) {
 
 	// Complete the job
 	status := PrinterStatus{
-		PrinterData:          bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@unknownuser"},
+		PrinterData:          bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@unknownuser", GcodeState: "FINISH"},
 		SerialNumber:         "ABC123",
 		PrinterName:          "Printer1",
 		JobFinishedTimestamp: nil,
@@ -422,7 +422,7 @@ func TestTrigger_NoDuplicateNotifications(t *testing.T) {
 
 	// Complete the job
 	status := PrinterStatus{
-		PrinterData:          bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@jordan"},
+		PrinterData:          bambu.PrinterData{GcodeFile: "benchy.gcode", SubtaskName: "@jordan", GcodeState: "FINISH"},
 		SerialNumber:         "ABC123",
 		PrinterName:          "Printer1",
 		JobFinishedTimestamp: nil,

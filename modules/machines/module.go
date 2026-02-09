@@ -47,6 +47,7 @@ AFTER UPDATE ON bambu_printer_state
 WHEN OLD.job_finished_timestamp IS NOT NULL
      AND NEW.job_finished_timestamp IS NULL
      AND (NEW.error_code = '' OR NEW.error_code IS NULL)
+     AND NEW.gcode_state IN ('FINISH', 'IDLE')
 BEGIN
     INSERT INTO discord_webhook_queue (webhook_url, payload)
     SELECT
@@ -314,7 +315,7 @@ func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) AttachWorkers(procs *engine.ProcMgr) {
-	procs.Add(engine.Poll(m.pollInterval, m.poll))
+	procs.Add(engine.DynamicPoll(func() time.Duration { return m.pollInterval }, m.poll))
 	// Cleanup old printer states hourly (24 hour TTL for printers removed from config)
 	procs.Add(engine.Poll(time.Hour, engine.Cleanup(m.db, "old printer states",
 		"DELETE FROM bambu_printer_state WHERE updated_at < unixepoch() - 86400")))
@@ -455,6 +456,25 @@ func (m *Module) reloadConfig(ctx context.Context) {
 	// Apply poll interval
 	if pollIntervalSec >= 1 {
 		m.pollInterval = time.Duration(pollIntervalSec) * time.Second
+	}
+
+	// Disconnect old printer MQTT connections before rebuilding
+	for _, printer := range m.printers {
+		printer.Disconnect()
+	}
+
+	// Build set of new serial numbers to detect removed printers
+	newSerials := make(map[string]struct{}, len(configs))
+	for _, cfg := range configs {
+		newSerials[cfg.SerialNumber] = struct{}{}
+	}
+
+	// Remove StreamMux instances for printers no longer in config
+	for serial, mux := range m.streams {
+		if _, exists := newSerials[serial]; !exists {
+			mux.Stop()
+			delete(m.streams, serial)
+		}
 	}
 
 	// Rebuild printer connections
