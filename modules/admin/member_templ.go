@@ -560,7 +560,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if (member.PaypalSubID == nil || *member.PaypalSubID == "") && (member.StripeStatus == nil || (*member.StripeStatus != "active" && *member.StripeStatus != "trialing")) {
+			if (member.PaypalSubID == nil || *member.PaypalSubID == "") && (member.StripeStatus == nil || *member.StripeStatus != "active") {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<span class=\"badge text-bg-danger\">!</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err

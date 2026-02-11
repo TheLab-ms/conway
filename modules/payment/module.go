@@ -118,11 +118,8 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	var memberID int64
 	m.db.QueryRowContext(r.Context(), "SELECT id FROM members WHERE email = ?", strings.ToLower(cust.Email)).Scan(&memberID)
 
-	// Update our representation of the member to reflect Stripe.
-	// Normalize the status so "trialing" is stored as "active" - the DB schema's
-	// payment_status generated column only recognizes "active" for Stripe.
-	dbStatus := normalizeSubscriptionStatus(sub.Status)
-	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET stripe_customer_id = $2, stripe_subscription_id = $3, stripe_subscription_state = $4, name = $5 WHERE email = $1", strings.ToLower(cust.Email), cust.ID, sub.ID, dbStatus, cust.Name)
+	// Update our representation of the member to reflect Stripe
+	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET stripe_customer_id = $2, stripe_subscription_id = $3, stripe_subscription_state = $4, name = $5 WHERE email = $1", strings.ToLower(cust.Email), cust.ID, sub.ID, sub.Status, cust.Name)
 	if err != nil {
 		m.eventLogger.LogEvent(r.Context(), memberID, "WebhookError", cust.ID, "", false, "db update: "+err.Error())
 		engine.SystemError(w, err.Error())
@@ -132,17 +129,6 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	m.eventLogger.LogEvent(r.Context(), memberID, "WebhookReceived", cust.ID, "", true, fmt.Sprintf("event=%s status=%s", event.Type, sub.Status))
 	slog.Info("updated member's stripe subscription metadata", "member", cust.Email, "status", sub.Status)
 	w.WriteHeader(204)
-}
-
-// normalizeSubscriptionStatus maps Stripe subscription statuses to the values
-// recognized by the database schema. The DB's payment_status generated column
-// only recognizes "active", so we treat "trialing" as equivalent to "active"
-// at the application layer rather than modifying the schema.
-func normalizeSubscriptionStatus(status stripe.SubscriptionStatus) stripe.SubscriptionStatus {
-	if status == stripe.SubscriptionStatusTrialing {
-		return stripe.SubscriptionStatusActive
-	}
-	return status
 }
 
 // handleCheckoutForm redirects users to the appropriate Stripe Checkout workflow.

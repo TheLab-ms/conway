@@ -240,7 +240,7 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 				<div class="card-body">
 					<h5 class="card-title">
 						Payment
-						if (member.PaypalSubID == nil || *member.PaypalSubID == "") && (member.StripeStatus == nil || (*member.StripeStatus != "active" && *member.StripeStatus != "trialing")) {
+						if (member.PaypalSubID == nil || *member.PaypalSubID == "") && (member.StripeStatus == nil || *member.StripeStatus != "active") {
 							<span class="badge text-bg-danger">!</span>
 						}
 					</h5>
