@@ -25,12 +25,17 @@ var endpoint = oauth2.Endpoint{
 // It receives the member ID and the callback URI to redirect to after login.
 type LoginCompleteFunc func(w http.ResponseWriter, r *http.Request, memberID int64, callbackURI string)
 
+// SignupConfirmFunc is called when no account exists for the user's email.
+// It renders a confirmation page asking the user to confirm account creation.
+type SignupConfirmFunc func(w http.ResponseWriter, r *http.Request, email, provider, callbackURI string)
+
 type Module struct {
 	db             *sql.DB
 	self           *url.URL
 	stateTokIssuer *engine.TokenIssuer
 	httpClient     *http.Client
 	loginComplete  LoginCompleteFunc
+	signupConfirm  SignupConfirmFunc
 }
 
 func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer) *Module {
@@ -52,6 +57,12 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer) *Module {
 // This must be called before routes are attached.
 func (m *Module) SetLoginCompleter(f LoginCompleteFunc) {
 	m.loginComplete = f
+}
+
+// SetSignupConfirm configures the function used to show the signup confirmation page.
+// This must be called before routes are attached.
+func (m *Module) SetSignupConfirm(f SignupConfirmFunc) {
+	m.signupConfirm = f
 }
 
 // loadConfig loads the latest Google configuration from the database.
@@ -176,12 +187,27 @@ func (m *Module) handleLoginCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	googleUser.Email = strings.ToLower(googleUser.Email)
 
-	// Find or create member by email (same as email login)
+	// Find or create member by email
 	var memberID int64
 	err = m.db.QueryRowContext(r.Context(),
-		"INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id",
+		"SELECT id FROM members WHERE email = ?",
 		googleUser.Email).Scan(&memberID)
-	if err != nil {
+
+	if err == sql.ErrNoRows {
+		// No account exists - show signup confirmation
+		if m.signupConfirm != nil {
+			m.signupConfirm(w, r, googleUser.Email, "google", callbackURI)
+			return
+		}
+		// Fallback: create account directly if no confirmation function is set
+		err = m.db.QueryRowContext(r.Context(),
+			"INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id",
+			googleUser.Email).Scan(&memberID)
+		if err != nil {
+			engine.SystemError(w, err.Error())
+			return
+		}
+	} else if err != nil {
 		engine.SystemError(w, err.Error())
 		return
 	}

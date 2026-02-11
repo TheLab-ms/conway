@@ -44,6 +44,17 @@ func (p *LoginPage) ExpectSentPage() {
 	require.NoError(p.t, err)
 }
 
+// ConfirmSignup handles the signup confirmation page that appears when
+// no account exists for the submitted email. Clicks "Yes, Create Account"
+// and waits for the sent page.
+func (p *LoginPage) ConfirmSignup() {
+	// Wait for the confirmation page to appear
+	expect(p.t).Locator(p.page.GetByText("Create a New Account?")).ToBeVisible()
+	// Click the confirm button
+	err := p.page.Locator("button[type='submit']").Click()
+	require.NoError(p.t, err)
+}
+
 func (p *LoginPage) ExpectEmailSentMessage() {
 	locator := p.page.GetByText("We sent a login link")
 	expect(p.t).Locator(locator).ToBeVisible()

@@ -131,6 +131,7 @@ func TestLoginFlow_TypeCode(t *testing.T) {
 	loginPage.Navigate()
 	loginPage.FillEmail(email)
 	loginPage.Submit()
+	loginPage.ConfirmSignup()
 	loginPage.ExpectSentPage()
 
 	// Step 2: Verify email was queued
@@ -169,6 +170,7 @@ func TestLoginFlow_ClickEmailLink(t *testing.T) {
 	loginPage.Navigate()
 	loginPage.FillEmail(email)
 	loginPage.Submit()
+	loginPage.ConfirmSignup()
 	loginPage.ExpectSentPage()
 
 	// Step 2: Verify email was queued
@@ -422,6 +424,7 @@ func TestJourney_NewMemberOnboarding(t *testing.T) {
 	loginPage.Navigate()
 	loginPage.FillEmail(email)
 	loginPage.Submit()
+	loginPage.ConfirmSignup()
 	loginPage.ExpectSentPage()
 
 	// Verify member was created
@@ -467,6 +470,7 @@ func TestJourney_WaiverThenLogin(t *testing.T) {
 	loginPage.Navigate()
 	loginPage.FillEmail(email)
 	loginPage.Submit()
+	loginPage.ConfirmSignup()
 	loginPage.ExpectSentPage()
 
 	// Get member ID

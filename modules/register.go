@@ -80,12 +80,14 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	// Discord OAuth/role sync module
 	discordMod := discord.New(opts.Database, opts.Self, opts.DiscordIssuer, engine.NewEventLogger(opts.Database, "discord"))
 	discordMod.SetLoginCompleter(authModule.CompleteLoginForMember)
+	discordMod.SetSignupConfirm(authModule.RenderSignupConfirmation)
 	authModule.DiscordLoginEnabled = discordMod.IsLoginEnabled
 	a.Add(discordMod)
 
 	// Google OAuth login module
 	googleMod := google.New(opts.Database, opts.Self, opts.GoogleIssuer)
 	googleMod.SetLoginCompleter(authModule.CompleteLoginForMember)
+	googleMod.SetSignupConfirm(authModule.RenderSignupConfirmation)
 	authModule.GoogleLoginEnabled = googleMod.IsLoginEnabled
 	a.Add(googleMod)
 

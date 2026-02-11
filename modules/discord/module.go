@@ -50,6 +50,10 @@ type discordConfig struct {
 // It receives the member ID and the callback URI to redirect to after login.
 type LoginCompleteFunc func(w http.ResponseWriter, r *http.Request, memberID int64, callbackURI string)
 
+// SignupConfirmFunc is called when no account exists for the user's email.
+// It renders a confirmation page asking the user to confirm account creation.
+type SignupConfirmFunc func(w http.ResponseWriter, r *http.Request, email, provider, callbackURI string)
+
 type Module struct {
 	db             *sql.DB
 	self           *url.URL
@@ -57,6 +61,7 @@ type Module struct {
 	httpClient     *http.Client
 	eventLogger    *engine.EventLogger
 	loginComplete  LoginCompleteFunc
+	signupConfirm  SignupConfirmFunc
 }
 
 func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine.EventLogger) *Module {
@@ -76,6 +81,12 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine
 // This must be called before routes are attached.
 func (m *Module) SetLoginCompleter(f LoginCompleteFunc) {
 	m.loginComplete = f
+}
+
+// SetSignupConfirm configures the function used to show the signup confirmation page.
+// This must be called before routes are attached.
+func (m *Module) SetSignupConfirm(f SignupConfirmFunc) {
+	m.signupConfirm = f
 }
 
 // loadConfig loads the latest Discord configuration from the database.
@@ -345,11 +356,26 @@ func (m *Module) handleLoginCallback(w http.ResponseWriter, r *http.Request) {
 		discordUser.ID).Scan(&memberID)
 
 	if err == sql.ErrNoRows {
-		// No member with this discord_user_id; upsert by email (same as email login)
+		// No member with this discord_user_id; check by email
 		err = m.db.QueryRowContext(r.Context(),
-			"INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id",
+			"SELECT id FROM members WHERE email = ?",
 			discordUser.Email).Scan(&memberID)
-		if err != nil {
+
+		if err == sql.ErrNoRows {
+			// No account exists at all - show signup confirmation
+			if m.signupConfirm != nil {
+				m.signupConfirm(w, r, discordUser.Email, "discord:"+discordUser.ID, callbackURI)
+				return
+			}
+			// Fallback: create account directly if no confirmation function is set
+			err = m.db.QueryRowContext(r.Context(),
+				"INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id",
+				discordUser.Email).Scan(&memberID)
+			if err != nil {
+				engine.SystemError(w, err.Error())
+				return
+			}
+		} else if err != nil {
 			engine.SystemError(w, err.Error())
 			return
 		}

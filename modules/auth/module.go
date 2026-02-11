@@ -96,6 +96,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	})
 
 	router.HandleFunc("POST /login", m.handleLoginFormPost)
+	router.HandleFunc("POST /login/confirm-signup", m.handleConfirmSignup)
 }
 
 // WithAuthn authenticates incoming requests, or redirects them to the login page.
@@ -150,14 +151,24 @@ func (s *Module) handleLoginFormPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find the corresponding member ID or insert a new row if one doesn't exist for this email address
+	// Check whether an account already exists for this email
 	var memberID int64
-	err := s.db.QueryRowContext(r.Context(), "INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id", email).Scan(&memberID)
+	err := s.db.QueryRowContext(r.Context(), "SELECT id FROM members WHERE email = ?", email).Scan(&memberID)
+	if err == sql.ErrNoRows {
+		// No account exists - show the signup confirmation page
+		s.renderSignupConfirmation(w, r, email, "email", callback)
+		return
+	}
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return
 	}
 
+	s.sendLoginCode(w, r, memberID, email, callback)
+}
+
+// sendLoginCode generates a login code for an existing member and sends it via email.
+func (s *Module) sendLoginCode(w http.ResponseWriter, r *http.Request, memberID int64, email, callback string) {
 	// Generate login code and email
 	code, body, err := s.newLoginEmail(r.Context(), memberID, callback)
 	if err != nil {
@@ -180,6 +191,80 @@ func (s *Module) handleLoginFormPost(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = code // code is stored in DB during newLoginEmail
 	http.Redirect(w, r, "/login/sent?"+q.Encode(), http.StatusSeeOther)
+}
+
+// renderSignupConfirmation renders the signup confirmation page with a signed token.
+// The provider parameter indicates the login method: "email", "discord:<user_id>", or "google".
+func (s *Module) renderSignupConfirmation(w http.ResponseWriter, r *http.Request, email, provider, callbackURI string) {
+	confirmToken, err := s.tokens.Sign(&jwt.RegisteredClaims{
+		Subject:   email,
+		Issuer:    provider,
+		Audience:  jwt.ClaimStrings{"signup-confirm"},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
+	})
+	if err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	renderSignupConfirmPage(email, confirmToken, callbackURI).Render(r.Context(), w)
+}
+
+// handleConfirmSignup handles the signup confirmation form submission.
+// It verifies the confirmation token, creates the member, and completes
+// the appropriate login flow based on the provider encoded in the token.
+func (s *Module) handleConfirmSignup(w http.ResponseWriter, r *http.Request) {
+	confirmToken := r.FormValue("confirm_token")
+	callbackURI := r.FormValue("callback_uri")
+
+	claims, err := s.tokens.Verify(confirmToken)
+	if err != nil || len(claims.Audience) == 0 || claims.Audience[0] != "signup-confirm" {
+		engine.ClientError(w, "Expired", "This confirmation has expired. Please start the login process again.", 400)
+		return
+	}
+
+	email := claims.Subject
+	provider := claims.Issuer
+
+	// Create the member
+	var memberID int64
+	err = s.db.QueryRowContext(r.Context(),
+		"INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id",
+		email).Scan(&memberID)
+	if err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	// Complete the login flow based on the provider
+	if strings.HasPrefix(provider, "discord:") {
+		// Discord login: link the Discord user ID and complete login directly
+		discordUserID := strings.TrimPrefix(provider, "discord:")
+		_, err = s.db.ExecContext(r.Context(),
+			"UPDATE members SET discord_user_id = ?, discord_email = ?, discord_last_synced = NULL WHERE id = ?",
+			discordUserID, email, memberID)
+		if err != nil {
+			slog.Error("failed to link discord account during signup confirmation", "error", err, "memberID", memberID)
+		}
+		s.CompleteLoginForMember(w, r, memberID, callbackURI)
+		return
+	}
+
+	if provider == "google" {
+		// Google login: complete login directly (no extra fields to link)
+		s.CompleteLoginForMember(w, r, memberID, callbackURI)
+		return
+	}
+
+	// Email login: send a login code
+	s.sendLoginCode(w, r, memberID, email, callbackURI)
+}
+
+// RenderSignupConfirmation renders the signup confirmation page.
+// This is exported so that OAuth login modules can use it when they detect a new account.
+func (s *Module) RenderSignupConfirmation(w http.ResponseWriter, r *http.Request, email, provider, callbackURI string) {
+	s.renderSignupConfirmation(w, r, email, provider, callbackURI)
 }
 
 // generateLoginCode generates a cryptographically secure 5-digit code.
