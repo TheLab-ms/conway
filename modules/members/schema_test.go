@@ -329,6 +329,85 @@ func eventsToStrings(t *testing.T, db *sql.DB) []string {
 	return all
 }
 
+// TestTrialingNormalization verifies the app-layer strategy for treating Stripe
+// "trialing" subscriptions as active members. The DB schema's payment_status
+// generated column only recognizes stripe_subscription_state = 'active', so the
+// webhook handler normalizes "trialing" to "active" before writing. These tests
+// confirm both the normalized path and the legacy (un-normalized) path.
+func TestTrialingNormalization(t *testing.T) {
+	t.Run("normalized trialing stored as active gets ActiveStripe", func(t *testing.T) {
+		db := NewTestDB(t)
+
+		// Simulate what the webhook handler now does: normalize "trialing" -> "active"
+		_, err := db.Exec("INSERT INTO members (email, stripe_subscription_state, confirmed) VALUES ('trial@test.com', 'active', 1)")
+		require.NoError(t, err)
+
+		var paymentStatus *string
+		err = db.QueryRow("SELECT payment_status FROM members WHERE email = 'trial@test.com'").Scan(&paymentStatus)
+		require.NoError(t, err)
+		require.NotNil(t, paymentStatus)
+		assert.Equal(t, "ActiveStripe", *paymentStatus)
+	})
+
+	t.Run("legacy trialing row is not recognized by DB schema", func(t *testing.T) {
+		db := NewTestDB(t)
+
+		// A row written before the normalization fix would have literal "trialing"
+		_, err := db.Exec("INSERT INTO members (email, stripe_subscription_state, confirmed) VALUES ('legacy@test.com', 'trialing', 1)")
+		require.NoError(t, err)
+
+		var paymentStatus *string
+		err = db.QueryRow("SELECT payment_status FROM members WHERE email = 'legacy@test.com'").Scan(&paymentStatus)
+		require.NoError(t, err)
+		// The DB schema does NOT recognize "trialing", so payment_status is NULL.
+		// This documents why app-layer normalization is necessary.
+		assert.Nil(t, paymentStatus)
+	})
+
+	t.Run("normalized trialing member gets full building access", func(t *testing.T) {
+		db := NewTestDB(t)
+
+		// Set up a waiver first
+		_, err := db.Exec("INSERT INTO waivers (name, email, version) VALUES ('Test', 'access@test.com', 1)")
+		require.NoError(t, err)
+
+		// Insert a fully onboarded member with normalized trialing (stored as "active")
+		_, err = db.Exec("INSERT INTO members (email, stripe_subscription_state, confirmed, fob_id) VALUES ('access@test.com', 'active', 1, 999)")
+		require.NoError(t, err)
+
+		var paymentStatus *string
+		var accessStatus string
+		err = db.QueryRow("SELECT payment_status, access_status FROM members WHERE email = 'access@test.com'").Scan(&paymentStatus, &accessStatus)
+		require.NoError(t, err)
+		require.NotNil(t, paymentStatus)
+		assert.Equal(t, "ActiveStripe", *paymentStatus)
+		assert.Equal(t, "Ready", accessStatus)
+
+		// Verify they appear in the active_keyfobs view (used by fob reader API)
+		var fobID int64
+		err = db.QueryRow("SELECT fob_id FROM active_keyfobs WHERE fob_id = 999").Scan(&fobID)
+		require.NoError(t, err)
+		assert.Equal(t, int64(999), fobID)
+	})
+
+	t.Run("normalized trialing propagates to family members", func(t *testing.T) {
+		db := NewTestDB(t)
+
+		// Root member with normalized trialing (stored as "active")
+		_, err := db.Exec("INSERT INTO members (id, email, stripe_subscription_state, confirmed) VALUES (1, 'root@family.com', 'active', 1)")
+		require.NoError(t, err)
+
+		// Family member linked to root
+		_, err = db.Exec("INSERT INTO members (email, non_billable, confirmed, fob_id, root_family_member) VALUES ('child@family.com', 1, 1, 50, 1)")
+		require.NoError(t, err)
+
+		var rootActive bool
+		err = db.QueryRow("SELECT root_family_member_active FROM members WHERE email = 'child@family.com'").Scan(&rootActive)
+		require.NoError(t, err)
+		assert.True(t, rootActive, "family member should see root as active")
+	})
+}
+
 func TestWaiverUniqueness(t *testing.T) {
 	db := NewTestDB(t)
 
