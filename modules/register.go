@@ -20,6 +20,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/metrics"
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
+	"github.com/TheLab-ms/conway/modules/voicemail"
 	"github.com/TheLab-ms/conway/modules/waiver"
 )
 
@@ -76,6 +77,9 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	webhookSender := discordwebhook.NewHTTPSender()
 	discordWebhookMod := discordwebhook.New(opts.Database, webhookSender)
 	a.Add(discordWebhookMod)
+
+	// Twilio voicemail module (registered after discord webhook so queue table exists)
+	a.Add(voicemail.New(opts.Database, opts.Self, engine.NewEventLogger(opts.Database, "twilio")))
 
 	// Discord OAuth/role sync module
 	discordMod := discord.New(opts.Database, opts.Self, opts.DiscordIssuer, engine.NewEventLogger(opts.Database, "discord"))
