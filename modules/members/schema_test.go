@@ -20,6 +20,9 @@ func TestMemberActive(t *testing.T) {
 	_, err = db.Exec("INSERT INTO members (email, stripe_subscription_state, confirmed) VALUES ('stripe_active', 'active', 1)")
 	require.NoError(t, err)
 
+	_, err = db.Exec("INSERT INTO members (email, stripe_subscription_state, confirmed) VALUES ('stripe_trialing', 'trialing', 1)")
+	require.NoError(t, err)
+
 	_, err = db.Exec("INSERT INTO members (email, stripe_subscription_state, confirmed) VALUES ('stripe_inactive', 'foobar', 1)")
 	require.NoError(t, err)
 

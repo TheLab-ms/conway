@@ -598,7 +598,7 @@ func (m *Module) getStripeConfigData(r *http.Request) *stripeConfigData {
 
 	// Fetch status counts
 	m.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) FROM members WHERE stripe_subscription_state = 'active'").Scan(&data.ActiveSubscriptions)
+		"SELECT COUNT(*) FROM members WHERE stripe_subscription_state IN ('active', 'trialing')").Scan(&data.ActiveSubscriptions)
 	m.db.QueryRowContext(r.Context(),
 		"SELECT COUNT(*) FROM members WHERE stripe_customer_id IS NOT NULL").Scan(&data.TotalCustomers)
 

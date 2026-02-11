@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS members (
     payment_status TEXT GENERATED ALWAYS AS ( CASE
             WHEN (confirmed != 1) THEN NULL
             WHEN (paypal_subscription_id IS NOT NULL) THEN 'ActivePaypal'
-            WHEN (stripe_subscription_state = 'active') THEN 'ActiveStripe'
+            WHEN (stripe_subscription_state IN ('active', 'trialing')) THEN 'ActiveStripe'
             WHEN (non_billable = 1) THEN 'ActiveNonBillable'
         ELSE NULL END) VIRTUAL,
 
