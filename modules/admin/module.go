@@ -17,6 +17,8 @@ import (
 	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/skip2/go-qrcode"
+	"github.com/stripe/stripe-go/v78"
+	"github.com/stripe/stripe-go/v78/customer"
 )
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
@@ -73,7 +75,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	for _, view := range listViews {
 		router.HandleFunc("GET /admin"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
-			renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath, view.ExportTable, view.Searchable, view.FilterParam, view.Filters).Render(r.Context(), w)
+			renderAdminList(m.nav, view.Title, "/admin/search"+view.RelPath, view.ExportTable, view.NewItemURL, view.Searchable, view.FilterParam, view.Filters).Render(r.Context(), w)
 		}))
 
 		router.HandleFunc("POST /admin/search"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +190,61 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 	router.HandleFunc("GET /admin", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, m.nav[0].Path, http.StatusSeeOther)
+	}))
+
+	router.HandleFunc("POST /admin/members/new", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
+		email := strings.TrimSpace(strings.ToLower(r.FormValue("email")))
+		if email == "" {
+			engine.ClientError(w, "Invalid Input", "Email address is required", 400)
+			return
+		}
+
+		var id int64
+		err := m.db.QueryRowContext(r.Context(),
+			"INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id", email).Scan(&id)
+		if engine.HandleError(w, err) {
+			return
+		}
+
+		http.Redirect(w, r, fmt.Sprintf("/admin/members/%d", id), http.StatusSeeOther)
+	}))
+
+	router.HandleFunc("POST /admin/members/{id}/stripe-customer", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
+		memberID := r.PathValue("id")
+
+		// Load Stripe API key
+		var apiKey string
+		err := m.db.QueryRowContext(r.Context(),
+			"SELECT api_key FROM stripe_config ORDER BY version DESC LIMIT 1").Scan(&apiKey)
+		if err != nil || apiKey == "" {
+			engine.ClientError(w, "Configuration Error", "Stripe API key is not configured", 400)
+			return
+		}
+		stripe.Key = apiKey
+
+		// Query member email
+		var email string
+		err = m.db.QueryRowContext(r.Context(), "SELECT email FROM members WHERE id = $1", memberID).Scan(&email)
+		if engine.HandleError(w, err) {
+			return
+		}
+
+		// Create Stripe customer
+		cust, err := customer.New(&stripe.CustomerParams{
+			Email: &email,
+		})
+		if engine.HandleError(w, err) {
+			return
+		}
+
+		// Store customer ID
+		_, err = m.db.ExecContext(r.Context(),
+			"UPDATE members SET stripe_customer_id = $1 WHERE id = $2", cust.ID, memberID)
+		if engine.HandleError(w, err) {
+			return
+		}
+
+		http.Redirect(w, r, fmt.Sprintf("/admin/members/%s", memberID), http.StatusSeeOther)
 	}))
 
 	router.HandleFunc("GET /admin/members/{id}", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {

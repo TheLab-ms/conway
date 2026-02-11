@@ -16,6 +16,7 @@ type listView struct {
 	RelPath     string
 	Searchable  bool
 	ExportTable string   // If set, shows a CSV export link for this table
+	NewItemURL  string   // If set, shows a "New" button that posts to this URL
 	FilterParam string   // The form parameter name for filters (e.g., "event_type", "access_status")
 	Filters     []string // If set, shows a filter dropdown with these options
 	Rows        []*tableRowMeta
@@ -29,6 +30,7 @@ var listViews = []listView{
 		RelPath:     "/members",
 		Searchable:  true,
 		ExportTable: "members",
+		NewItemURL:  "/admin/members/new",
 		FilterParam: "access_status",
 		Filters: []string{
 			"Ready",

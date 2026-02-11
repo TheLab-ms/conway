@@ -544,6 +544,35 @@ func TestAdmin_MembersListAndSearch(t *testing.T) {
 	})
 }
 
+// TestAdmin_NewMemberButton verifies that an admin can create a new member
+// using the "New Member" button on the members list page.
+func TestAdmin_NewMemberButton(t *testing.T) {
+	_, page := setupAdminTest(t)
+
+	adminPage := NewAdminMembersListPage(t, page)
+	adminPage.Navigate()
+
+	// Click "New Member" to reveal the form
+	err := page.Locator("button:has-text('New Member')").Click()
+	require.NoError(t, err)
+
+	// Fill in an email and submit
+	err = page.Locator("#new-item-form input[name='email']").Fill("newmember@example.com")
+	require.NoError(t, err)
+	err = page.Locator("#new-item-form button[type='submit']").Click()
+	require.NoError(t, err)
+
+	// Should redirect to the new member's detail page
+	err = page.WaitForURL("**/admin/members/*")
+	require.NoError(t, err)
+
+	// Verify the member was created in the database
+	var email string
+	err = testDB.QueryRow("SELECT email FROM members WHERE email = ?", "newmember@example.com").Scan(&email)
+	require.NoError(t, err)
+	assert.Equal(t, "newmember@example.com", email)
+}
+
 // TestAdmin_EditDesignations verifies that an admin can toggle member
 // leadership status through the designations form.
 func TestAdmin_EditDesignations(t *testing.T) {

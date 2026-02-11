@@ -68,7 +68,7 @@ templ (t tableCell) Render(row *tableRow) {
 	}
 }
 
-templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string, showSearch bool, filterParam string, filters []string) {
+templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable, newItemURL string, showSearch bool, filterParam string, filters []string) {
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
@@ -82,7 +82,22 @@ templ renderAdminList(tabs []*navbarTab, typeName, searchURL, exportTable string
 						</svg>
 					</a>
 				}
+				if newItemURL != "" {
+					<button type="button" class="btn btn-primary btn-sm ms-auto" onclick="document.getElementById('new-item-form').style.display='flex'">
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+							<path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+						</svg>
+						New Member
+					</button>
+				}
 			</div>
+			if newItemURL != "" {
+				<form method="post" action={ templ.URL(newItemURL) } id="new-item-form" class="input-group mb-4" style="display:none;">
+					<input type="email" class="form-control" name="email" placeholder="Email address" required/>
+					<button type="submit" class="btn btn-success">Create</button>
+					<button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('new-item-form').style.display='none'">Cancel</button>
+				</form>
+			}
 			<div class="card">
 				if showSearch || len(filters) > 0 {
 					<div class="card-header">

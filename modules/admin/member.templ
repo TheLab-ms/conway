@@ -24,6 +24,7 @@ type member struct {
 	Leadership      bool
 	NonBillable     bool
 	FobID           *int64
+	StripeCustomerID *string
 	StripeSubID     *string
 	StripeStatus    *string
 	PaypalSubID     *string
@@ -45,11 +46,11 @@ type memberEvent struct {
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
 	mem := member{}
 	err := db.QueryRowContext(ctx, `
-		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
+		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_customer_id, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, id).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeCustomerID, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -260,6 +261,13 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 						<a href="#" class="btn btn-secondary disabled" aria-disabled="true">View subscription in Stripe</a>
 					} else {
 						<a href={ templ.URL("https://dashboard.stripe.com/subscriptions/" + *member.StripeSubID) } target="_blank" class="btn btn-primary">View subscription in Stripe</a>
+					}
+					if member.StripeCustomerID != nil && *member.StripeCustomerID != "" {
+						<a href={ templ.URL("https://dashboard.stripe.com/customers/" + *member.StripeCustomerID) } target="_blank" class="btn btn-outline-primary ms-2">View customer in Stripe</a>
+					} else {
+						<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/stripe-customer", member.ID)) } class="d-inline">
+							<button type="submit" class="btn btn-outline-success ms-2">Create Stripe Customer</button>
+						</form>
 					}
 				</div>
 			</div>
