@@ -319,6 +319,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /admin/config/bambu", router.WithLeadership(m.renderBambuConfigPage))
 	router.HandleFunc("POST /admin/config/bambu", router.WithLeadership(m.handleBambuConfigSave))
 	router.HandleFunc("GET /admin/config/fobapi", router.WithLeadership(m.renderFobAPIConfigPage))
+	router.HandleFunc("GET /admin/config/oauth2", router.WithLeadership(m.renderOAuth2ConfigPage))
 
 	// Generic config routes for registered modules
 	if m.configRegistry != nil {
@@ -900,6 +901,11 @@ func (m *Module) getRecentBambuEvents(ctx context.Context) []*bambuEvent {
 func (m *Module) renderFobAPIConfigPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	renderConfigPage(m.nav, "Fob API", renderFobAPIConfigContent(m.self.String())).Render(r.Context(), w)
+}
+
+func (m *Module) renderOAuth2ConfigPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	renderConfigPage(m.nav, "OAuth2 Provider", renderOAuth2ConfigContent(m.self.String())).Render(r.Context(), w)
 }
 
 // handleGenericConfigPage renders a configuration page for a registered module.

@@ -41,6 +41,7 @@ var configSections = []*configSection{
 	{Name: "Stripe", Path: "/admin/config/stripe"},
 	{Name: "Bambu", Path: "/admin/config/bambu"},
 	{Name: "Fob API", Path: "/admin/config/fobapi"},
+	{Name: "OAuth2 Provider", Path: "/admin/config/oauth2"},
 }
 
 func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Component) templ.Component {
@@ -93,7 +94,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var3 templ.SafeURL
 					templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(section.Path))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 51, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 52, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 					if templ_7745c5c3_Err != nil {
@@ -106,7 +107,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(section.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 51, Col: 117}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 52, Col: 117}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {
@@ -124,7 +125,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var5 templ.SafeURL
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(section.Path))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 53, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 54, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
@@ -137,7 +138,7 @@ func renderConfigPage(tabs []*navbarTab, activeSection string, content templ.Com
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(section.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 53, Col: 110}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 54, Col: 110}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -205,7 +206,7 @@ func renderWaiverConfigContent(data *waiverConfigData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 77, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 78, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -228,7 +229,7 @@ func renderWaiverConfigContent(data *waiverConfigData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(data.Content)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 88, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 89, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -302,7 +303,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 139, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 140, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -331,7 +332,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(data.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 150, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 151, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -349,7 +350,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 167, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 168, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -362,7 +363,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(data.ClientID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 171, Col: 113}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 172, Col: 113}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -375,7 +376,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasClientSecret))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 177, Col: 158}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 178, Col: 158}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -388,7 +389,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasClientSecret))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 179, Col: 116}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 180, Col: 116}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -401,7 +402,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasBotToken))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 190, Col: 146}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 191, Col: 146}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -414,7 +415,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasBotToken))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 192, Col: 131}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 193, Col: 131}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -427,7 +428,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(data.GuildID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 196, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 197, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -440,7 +441,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(data.RoleID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 201, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 202, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -453,7 +454,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasPrintWebhookURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 212, Col: 169}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 213, Col: 169}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
@@ -466,7 +467,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasPrintWebhookURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 214, Col: 134}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 215, Col: 134}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -479,7 +480,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.SyncIntervalHours))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 219, Col: 143}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 220, Col: 143}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -492,7 +493,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.TotalLinkedMembers))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 237, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 238, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -505,7 +506,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.PendingSyncs))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 241, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 242, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
@@ -518,7 +519,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.SyncIntervalHours))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 245, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 246, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
@@ -531,7 +532,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.RecentEvents)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 255, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 256, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
@@ -554,7 +555,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var28 string
 				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 273, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 274, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 				if templ_7745c5c3_Err != nil {
@@ -567,7 +568,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var29 string
 				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(event.EventType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 274, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 275, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
@@ -595,7 +596,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var30 string
 				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(event.MemberName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 282, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 283, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
@@ -608,7 +609,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var31 string
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 283, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 284, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {
@@ -621,7 +622,7 @@ func renderDiscordConfigContent(data *discordConfigData, selfURL string) templ.C
 				var templ_7745c5c3_Var32 string
 				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 283, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 284, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 				if templ_7745c5c3_Err != nil {
@@ -705,7 +706,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 325, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 326, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -734,7 +735,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(data.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 336, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 337, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -752,7 +753,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasAPIKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 357, Col: 140}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 358, Col: 140}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -765,7 +766,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasAPIKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 359, Col: 141}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 360, Col: 141}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -778,7 +779,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 365, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 366, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -791,7 +792,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(data.HasWebhookKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 371, Col: 152}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 372, Col: 152}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -804,7 +805,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(data.HasWebhookKey))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 373, Col: 163}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 374, Col: 163}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {
@@ -817,7 +818,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.ActiveSubscriptions))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 390, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 391, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -830,7 +831,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.TotalCustomers))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 394, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 395, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -843,7 +844,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.RecentEvents)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 404, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 405, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -866,7 +867,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 422, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 423, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 				if templ_7745c5c3_Err != nil {
@@ -879,7 +880,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var45 string
 				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(event.EventType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 423, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 424, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 				if templ_7745c5c3_Err != nil {
@@ -907,7 +908,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var46 string
 				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(event.MemberName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 431, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 432, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 				if templ_7745c5c3_Err != nil {
@@ -920,7 +921,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var47 string
 				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 432, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 433, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 				if templ_7745c5c3_Err != nil {
@@ -933,7 +934,7 @@ func renderStripeConfigContent(data *stripeConfigData, selfURL string) templ.Com
 				var templ_7745c5c3_Var48 string
 				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 432, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 433, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 				if templ_7745c5c3_Err != nil {
@@ -1019,7 +1020,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 477, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 478, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 		if templ_7745c5c3_Err != nil {
@@ -1033,7 +1034,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(printer.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 481, Col: 19}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 482, Col: 19}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -1052,7 +1053,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var52 string
 		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][name]", index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 494, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 495, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 		if templ_7745c5c3_Err != nil {
@@ -1065,7 +1066,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var53 string
 		templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(printer.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 494, Col: 133}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 495, Col: 133}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 		if templ_7745c5c3_Err != nil {
@@ -1078,7 +1079,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var54 string
 		templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][host]", index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 498, Col: 91}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 499, Col: 91}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 		if templ_7745c5c3_Err != nil {
@@ -1091,7 +1092,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var55 string
 		templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(printer.Host)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 498, Col: 114}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 499, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 		if templ_7745c5c3_Err != nil {
@@ -1104,7 +1105,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var56 string
 		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][access_code]", index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 502, Col: 117}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 503, Col: 117}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 		if templ_7745c5c3_Err != nil {
@@ -1117,7 +1118,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var57 string
 		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(secretPlaceholder(printer.HasAccessCode))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 502, Col: 174}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 503, Col: 174}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 		if templ_7745c5c3_Err != nil {
@@ -1130,7 +1131,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(secretHelpText(printer.HasAccessCode))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 503, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 504, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -1143,7 +1144,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var59 string
 		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("printer[%d][serial_number]", index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 507, Col: 115}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 508, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 		if templ_7745c5c3_Err != nil {
@@ -1156,7 +1157,7 @@ func renderPrinterCard(printer *bambuPrinterFormData, index int) templ.Component
 		var templ_7745c5c3_Var60 string
 		templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(printer.SerialNumber)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 507, Col: 146}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 508, Col: 146}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 		if templ_7745c5c3_Err != nil {
@@ -1203,7 +1204,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 			var templ_7745c5c3_Var62 string
 			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Version %d", data.Version))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 529, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 530, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 			if templ_7745c5c3_Err != nil {
@@ -1232,7 +1233,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(data.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 540, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 541, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 			if templ_7745c5c3_Err != nil {
@@ -1250,7 +1251,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var64 string
 		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs("@username")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 548, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 549, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 		if templ_7745c5c3_Err != nil {
@@ -1263,7 +1264,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var65 string
 		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.Printers)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 558, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 559, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 		if templ_7745c5c3_Err != nil {
@@ -1294,7 +1295,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var66 string
 		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.PollIntervalSecs))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 574, Col: 146}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 575, Col: 146}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 		if templ_7745c5c3_Err != nil {
@@ -1307,7 +1308,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var67 string
 		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.ConfiguredPrinters))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 668, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 669, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 		if templ_7745c5c3_Err != nil {
@@ -1320,7 +1321,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var68 string
 		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.PollIntervalSecs))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 672, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 673, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 		if templ_7745c5c3_Err != nil {
@@ -1333,7 +1334,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 		var templ_7745c5c3_Var69 string
 		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(data.RecentEvents)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 682, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 683, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 		if templ_7745c5c3_Err != nil {
@@ -1356,7 +1357,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				var templ_7745c5c3_Var70 string
 				templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 700, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 701, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 				if templ_7745c5c3_Err != nil {
@@ -1369,7 +1370,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				var templ_7745c5c3_Var71 string
 				templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(event.EventType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 701, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 702, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 				if templ_7745c5c3_Err != nil {
@@ -1397,7 +1398,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				var templ_7745c5c3_Var72 string
 				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(event.PrinterName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 709, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 710, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 				if templ_7745c5c3_Err != nil {
@@ -1410,7 +1411,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				var templ_7745c5c3_Var73 string
 				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 710, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 711, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 				if templ_7745c5c3_Err != nil {
@@ -1423,7 +1424,7 @@ func renderBambuConfigContent(data *bambuConfigData) templ.Component {
 				var templ_7745c5c3_Var74 string
 				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 710, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 711, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 				if templ_7745c5c3_Err != nil {
@@ -1480,13 +1481,224 @@ func renderFobAPIConfigContent(selfURL string) templ.Component {
 		var templ_7745c5c3_Var76 string
 		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 741, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 742, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "/api/fobs</code></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Authentication</h6><p class=\"text-muted small mb-3\">No API key is required. Instead, the endpoint uses network-level authentication:</p><ul class=\"mb-4\"><li>Requests must originate from the <strong>local network</strong></li><li>Requests from the internet are automatically blocked (HTTP 403)</li><li>This is enforced by checking for the <code>CF-Connecting-IP</code> header set by Cloudflare</li></ul><h6 class=\"text-muted border-bottom pb-2 mb-3\">Request Format</h6><p class=\"text-muted small mb-3\">Send a JSON array of fob swipe events. This can be an empty array if you just want to fetch the authorized fob list.</p><div class=\"bg-light p-3 rounded mb-3\"><div class=\"mb-2\"><strong class=\"text-primary\">POST</strong> <code>/api/fobs</code></div><div class=\"mb-2 ps-3 border-start border-2\"><small class=\"text-muted d-block\">Headers:</small> <code>Content-Type: application/json</code><br><code>If-None-Match: &lt;etag&gt;</code> <span class=\"text-muted small\">(optional, for caching)</span></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Body:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>[ &#123; \"fob\": 12345678, \"allowed\": true &#125;, &#123; \"fob\": 87654321, \"allowed\": false &#125; ]</code></pre></div></div><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead> <tbody><tr><td><code>fob</code></td><td>integer</td><td>The fob ID that was scanned</td></tr><tr><td><code>allowed</code></td><td>boolean</td><td>Whether access was granted (based on controller's cached list)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Response Format</h6><p class=\"text-muted small mb-3\">Returns a JSON array of all currently authorized fob IDs, sorted numerically.</p><div class=\"bg-light p-3 rounded mb-3\"><div class=\"mb-2\"><strong class=\"text-success\">HTTP/1.1 200 OK</strong></div><div class=\"mb-2 ps-3 border-start border-2\"><small class=\"text-muted d-block\">Headers:</small> <code>Content-Type: application/json</code><br><code>ETag: a1b2c3d4e5f6...</code></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Body:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>[12345678, 23456789, 34567890]</code></pre></div></div><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Response</th><th>Description</th></tr></thead> <tbody><tr><td><code>200 OK</code></td><td>Returns JSON array of authorized fob IDs</td></tr><tr><td><code>304 Not Modified</code></td><td>ETag matches; client should use cached list</td></tr><tr><td><code>403 Forbidden</code></td><td>Request originated from the internet (blocked)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">ETag Caching</h6><p class=\"text-muted small mb-3\">The API uses HTTP ETag caching to minimize bandwidth. Controllers should:</p><ol class=\"mb-4\"><li>Store the <code>ETag</code> header from the response</li><li>Send <code>If-None-Match: &lt;etag&gt;</code> on subsequent requests</li><li>If response is <code>304</code>, continue using the cached fob list</li><li>If response is <code>200</code>, update the cached list and ETag</li></ol><h6 class=\"text-muted border-bottom pb-2 mb-3\">Client Implementation</h6><p class=\"text-muted small mb-0\">Reference implementation for ESP32 MicroPython controllers is available in the <code>access-controller/</code> directory of the Conway repository.</p></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func renderOAuth2ConfigContent(selfURL string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var77 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var77 == nil {
+			templ_7745c5c3_Var77 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "<div class=\"card mb-4\"><div class=\"card-header\"><h5 class=\"mb-0\">OAuth2 Provider</h5></div><div class=\"card-body\"><div class=\"alert alert-info\" role=\"alert\"><strong>How the Built-in OAuth2 Provider Works</strong><ul class=\"mb-0 mt-2\"><li><strong>Single Sign-On:</strong> Conway acts as an OAuth2/OpenID Connect provider, allowing other applications on your network to authenticate members using their Conway accounts.</li><li><strong>No Configuration Required:</strong> The OAuth2 provider is always active. There are no secrets or API keys to configure &mdash; any application on the same root domain can integrate.</li><li><strong>Domain Restriction:</strong> Redirect URIs are restricted to the same root domain as Conway. External domains are rejected.</li><li><strong>Standard Protocol:</strong> Implements the standard Authorization Code flow with OpenID Connect Discovery, JWKS, and UserInfo endpoints.</li></ul></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Discovery</h6><p class=\"text-muted small mb-3\">Most OAuth2/OIDC client libraries support automatic discovery. Point your client at the OpenID Configuration URL and it will find all endpoints automatically.</p><div class=\"bg-light p-3 rounded mb-4\"><div class=\"mb-2\"><strong class=\"text-primary\">GET</strong> <code>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var78 string
+		templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 879, Col: 62}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "/.well-known/openid-configuration</code></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Response:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>&#123; \"issuer\": \"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var79 string
+		templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 884, Col: 22}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "\", \"authorization_endpoint\": \"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var80 string
+		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 885, Col: 38}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "/oauth2/authorize\", \"token_endpoint\": \"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var81 string
+		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 886, Col: 30}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "/oauth2/token\", \"userinfo_endpoint\": \"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var82 string
+		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 887, Col: 33}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "/oauth2/userinfo\", \"jwks_uri\": \"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var83 string
+		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 888, Col: 24}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "/oauth2/jwks\", \"id_token_signing_alg_values_supported\": [\"RS256\"] &#125;</code></pre></div></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Endpoints</h6><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Endpoint</th><th>URL</th><th>Description</th></tr></thead> <tbody><tr><td><strong>Authorization</strong></td><td><code>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var84 string
+		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 906, Col: 26}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "/oauth2/authorize</code></td><td>Redirects the user to Conway login, then back with an authorization code</td></tr><tr><td><strong>Token</strong></td><td><code>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var85 string
+		templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 911, Col: 26}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "/oauth2/token</code></td><td>Exchanges an authorization code for access and ID tokens</td></tr><tr><td><strong>UserInfo</strong></td><td><code>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var86 string
+		templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 916, Col: 26}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "/oauth2/userinfo</code></td><td>Returns user profile data for a valid bearer token</td></tr><tr><td><strong>JWKS</strong></td><td><code>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var87 string
+		templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 921, Col: 26}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "/oauth2/jwks</code></td><td>Public keys for verifying JWT signatures (RS256)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Authorization Code Flow</h6><p class=\"text-muted small mb-3\">Conway implements the standard OAuth2 Authorization Code flow. Here is the step-by-step process:</p><ol class=\"mb-4\"><li><strong>Redirect to authorize:</strong> Your application redirects the user to the authorization endpoint with a <code>redirect_uri</code> and optional <code>state</code> parameter.<div class=\"bg-light p-2 rounded mt-1 mb-2\"><code>GET ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var88 string
+		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 935, Col: 25}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "/oauth2/authorize?redirect_uri=https://app.example.com/callback&amp;state=random123</code></div></li><li><strong>User logs in:</strong> If not already authenticated, Conway prompts the user to log in.</li><li><strong>Callback with code:</strong> Conway redirects back to your <code>redirect_uri</code> with a short-lived <code>code</code> and the <code>state</code>.<div class=\"bg-light p-2 rounded mt-1 mb-2\"><code>https://app.example.com/callback?code=eyJhbG...&amp;state=random123</code></div></li><li><strong>Exchange code for token:</strong> Your server exchanges the code for tokens using the token endpoint. Authenticate with HTTP Basic Auth using your <code>client_id</code> (any string except <code>\"conway\"</code>) as the username.<div class=\"bg-light p-2 rounded mt-1 mb-2\"><code>POST ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var89 string
+		templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 948, Col: 26}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "/oauth2/token</code><br><code>Authorization: Basic base64(client_id:)</code><br><code>Content-Type: application/x-www-form-urlencoded</code><br><code>code=eyJhbG...</code></div></li><li><strong>Use the token:</strong> The response includes an <code>access_token</code> and <code>id_token</code> (both JWTs). Use the access token to call the UserInfo endpoint or verify it locally using the JWKS keys.</li></ol><h6 class=\"text-muted border-bottom pb-2 mb-3\">Token Response</h6><p class=\"text-muted small mb-3\">The token endpoint returns a JSON response with both an access token and ID token.</p><div class=\"bg-light p-3 rounded mb-3\"><div class=\"mb-2\"><strong class=\"text-success\">HTTP/1.1 200 OK</strong></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Body:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>&#123; \"id_token\": \"eyJhbGciOiJSUzI1NiIs...\", \"access_token\": \"eyJhbGciOiJSUzI1NiIs...\", \"token_type\": \"Bearer\", \"expires_in\": 28800 &#125;</code></pre></div></div><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Field</th><th>Description</th></tr></thead> <tbody><tr><td><code>id_token</code></td><td>JWT containing the member's numeric ID as the <code>sub</code> claim and the <code>client_id</code> as the audience</td></tr><tr><td><code>access_token</code></td><td>Same JWT; use as a Bearer token to call the UserInfo endpoint</td></tr><tr><td><code>token_type</code></td><td>Always <code>\"Bearer\"</code></td></tr><tr><td><code>expires_in</code></td><td>Token validity in seconds (8 hours)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">UserInfo Response</h6><p class=\"text-muted small mb-3\">Call the UserInfo endpoint with a valid bearer token to get the member's profile.</p><div class=\"bg-light p-3 rounded mb-3\"><div class=\"mb-2\"><strong class=\"text-primary\">GET</strong> <code>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var90 string
+		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 1008, Col: 62}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "/oauth2/userinfo</code></div><div class=\"mb-2 ps-3 border-start border-2\"><small class=\"text-muted d-block\">Headers:</small> <code>Authorization: Bearer eyJhbGciOiJSUzI1NiIs...</code></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Response:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>&#123; \"id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\", \"name\": \"Jane Doe\", \"email\": \"jane@example.com\", \"groups\": [\"member\", \"admin\"] &#125;</code></pre></div></div><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead> <tbody><tr><td><code>id</code></td><td>string</td><td>A stable UUID derived from the member's internal ID</td></tr><tr><td><code>name</code></td><td>string</td><td>The member's display name</td></tr><tr><td><code>email</code></td><td>string</td><td>The member's email address</td></tr><tr><td><code>groups</code></td><td>array</td><td>Group memberships: <code>\"member\"</code> (active subscription) and/or <code>\"admin\"</code> (leadership)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Client Configuration</h6><p class=\"text-muted small mb-3\">When configuring an OAuth2/OIDC client application to use Conway, use these settings:</p><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Setting</th><th>Value</th></tr></thead> <tbody><tr><td><strong>Issuer / Provider URL</strong></td><td><code>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var91 string
+		templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 1072, Col: 26}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "</code></td></tr><tr><td><strong>Client ID</strong></td><td>Any string that identifies your app (e.g., <code>\"wiki\"</code>, <code>\"gitea\"</code>). Must not be <code>\"conway\"</code>.</td></tr><tr><td><strong>Client Secret</strong></td><td>Not required (pass empty string or any value for Basic Auth)</td></tr><tr><td><strong>Redirect URI</strong></td><td>Must be on the same root domain as Conway</td></tr><tr><td><strong>Scopes</strong></td><td><code>openid</code> (standard; Conway returns full profile regardless)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Important Notes</h6><ul class=\"mb-0\"><li>The <code>client_id</code> <code>\"conway\"</code> is reserved for internal use and will be rejected by the token endpoint.</li><li>Authorization codes expire after <strong>1 minute</strong>. Exchange them promptly.</li><li>Access tokens are valid for <strong>8 hours</strong>.</li><li>Tokens are signed with RS256. Use the JWKS endpoint to get the public key for local verification.</li><li>The <code>sub</code> claim in the JWT is the member's numeric ID (as a string). The UserInfo endpoint returns a UUID representation of this ID.</li></ul></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
