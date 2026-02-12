@@ -997,9 +997,10 @@ func (m *Module) getConfigSections() []*configSection {
 	if m.configRegistry != nil {
 		for _, spec := range m.configRegistry.List() {
 			// Check if this module already has a hardcoded section
+			path := "/admin/config/" + spec.Module
 			exists := false
 			for _, s := range sections {
-				if s.Name == spec.Title {
+				if s.Path == path {
 					exists = true
 					break
 				}
