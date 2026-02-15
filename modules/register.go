@@ -69,20 +69,19 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(fobapi.New(opts.Database, opts.Self))
 	a.Add(directory.New(opts.Database))
 
-	a.Add(machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu")))
-
-	// Discord modules - always register, they check config dynamically
-	// Discord webhook module for notifications
+	// Discord modules registered before machines, since the machines
+	// migration creates triggers that reference discord tables.
 	webhookSender := discordwebhook.NewHTTPSender()
 	discordWebhookMod := discordwebhook.New(opts.Database, webhookSender)
 	a.Add(discordWebhookMod)
 
-	// Discord OAuth/role sync module
 	discordMod := discord.New(opts.Database, opts.Self, opts.DiscordIssuer, engine.NewEventLogger(opts.Database, "discord"))
 	discordMod.SetLoginCompleter(authModule.CompleteLoginForMember)
 	discordMod.SetSignupConfirm(authModule.RenderSignupConfirmation)
 	authModule.DiscordLoginEnabled = discordMod.IsLoginEnabled
 	a.Add(discordMod)
+
+	a.Add(machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu")))
 
 	// Google OAuth login module
 	googleMod := google.New(opts.Database, opts.Self, opts.GoogleIssuer)

@@ -25,6 +25,15 @@ import (
 	"github.com/stripe/stripe-go/v78/webhook"
 )
 
+const migration = `
+CREATE TABLE IF NOT EXISTS stripe_config (
+    version INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    api_key TEXT NOT NULL DEFAULT '',
+    webhook_key TEXT NOT NULL DEFAULT ''
+) STRICT;
+`
+
 // stripeConfig holds Stripe-related configuration.
 type stripeConfig struct {
 	apiKey     string
@@ -38,6 +47,7 @@ type Module struct {
 }
 
 func New(db *sql.DB, self *url.URL, eventLogger *engine.EventLogger) *Module {
+	engine.MustMigrate(db, migration)
 	return &Module{db: db, self: self, eventLogger: eventLogger}
 }
 

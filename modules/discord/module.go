@@ -23,6 +23,18 @@ import (
 const maxRPS = 3
 
 const migration = `
+CREATE TABLE IF NOT EXISTS discord_config (
+    version INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    client_id TEXT NOT NULL DEFAULT '',
+    client_secret TEXT NOT NULL DEFAULT '',
+    bot_token TEXT NOT NULL DEFAULT '',
+    guild_id TEXT NOT NULL DEFAULT '',
+    role_id TEXT NOT NULL DEFAULT '',
+    print_webhook_url TEXT NOT NULL DEFAULT '',
+    signup_webhook_url TEXT NOT NULL DEFAULT ''
+) STRICT;
+
 -- Add sync_interval_hours column to discord_config if it doesn't exist
 -- SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we use a workaround
 CREATE TABLE IF NOT EXISTS _discord_migration_check (id INTEGER PRIMARY KEY);
