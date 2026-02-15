@@ -267,18 +267,34 @@ func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) 
 
 	memberID := auth.GetUserMeta(r.Context()).ID
 
-	// Load the member's Stripe customer ID
+	// Load the member's email and Stripe customer ID
+	var email string
 	var existingCustomerID *string
-	err = m.db.QueryRowContext(r.Context(), "SELECT stripe_customer_id FROM members WHERE id = ?", memberID).Scan(&existingCustomerID)
+	err = m.db.QueryRowContext(r.Context(), "SELECT email, stripe_customer_id FROM members WHERE id = ?", memberID).Scan(&email, &existingCustomerID)
 	if err != nil {
 		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", "", "", false, "db query: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
 
+	// Create a Stripe customer if one doesn't exist yet
 	if existingCustomerID == nil || *existingCustomerID == "" {
-		http.Error(w, "payment method not configured", http.StatusBadRequest)
-		return
+		cust, err := customer.New(&stripe.CustomerParams{
+			Email: &email,
+		})
+		if err != nil {
+			m.eventLogger.LogEvent(r.Context(), memberID, "APIError", "", "", false, "customer.New: "+err.Error())
+			engine.SystemError(w, err.Error())
+			return
+		}
+		existingCustomerID = &cust.ID
+
+		_, err = m.db.ExecContext(r.Context(), "UPDATE members SET stripe_customer_id = ? WHERE id = ?", cust.ID, memberID)
+		if err != nil {
+			m.eventLogger.LogEvent(r.Context(), memberID, "APIError", cust.ID, "", false, "db update: "+err.Error())
+			engine.SystemError(w, err.Error())
+			return
+		}
 	}
 
 	// Create a Price with custom_unit_amount so the customer can choose their donation amount
