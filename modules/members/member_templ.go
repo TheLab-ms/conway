@@ -13,13 +13,14 @@ import (
 )
 
 type member struct {
-	ID            int64
-	Email         string
-	AccessStatus  string
-	DiscordLinked bool
-	WaiverSigned  bool
-	PaymentActive bool
-	HasKeyFob     bool
+	ID               int64
+	Email            string
+	AccessStatus     string
+	DiscordLinked    bool
+	WaiverSigned     bool
+	PaymentActive    bool
+	HasKeyFob        bool
+	StripeConfigured bool
 }
 
 func renderMember(member *member) templ.Component {
@@ -99,9 +100,11 @@ func renderMember(member *member) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = renderDonationCard().Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
+			if member.StripeConfigured && member.HasKeyFob {
+				templ_7745c5c3_Err = renderDonationCard().Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
 			templ_7745c5c3_Err = renderActions(member).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
@@ -391,7 +394,7 @@ func renderStep(number string, title string, description string, complete bool, 
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(number)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 123, Col: 14}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 126, Col: 14}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -409,7 +412,7 @@ func renderStep(number string, title string, description string, complete bool, 
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(number)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 127, Col: 14}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 130, Col: 14}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -449,7 +452,7 @@ func renderStep(number string, title string, description string, complete bool, 
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 134, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 137, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -462,7 +465,7 @@ func renderStep(number string, title string, description string, complete bool, 
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 135, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 138, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -485,7 +488,7 @@ func renderStep(number string, title string, description string, complete bool, 
 			var templ_7745c5c3_Var17 templ.SafeURL
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinURLErrs(actionUrl)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 141, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 144, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -498,7 +501,7 @@ func renderStep(number string, title string, description string, complete bool, 
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(actionText)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 141, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 144, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -548,7 +551,7 @@ func renderDonationCard() templ.Component {
 			templ_7745c5c3_Var19 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"card mb-4\"><div class=\"card-body text-center\"><p class=\"text-muted small mb-3\">Need to pay for consumables, or other usage costs? You can make a one-time payment here.</p><a href=\"/donations/checkout\" class=\"btn btn-outline-success btn-sm\">Make a Payment</a></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"card mb-4\"><div class=\"card-body text-center\"><p class=\"text-muted small mb-3\">Need to pay for consumables, or other usage costs? You can make a one-time payment here.</p><a href=\"/donations/checkout\" class=\"btn btn-outline-success btn-sm\">Donate</a></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

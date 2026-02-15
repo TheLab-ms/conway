@@ -53,6 +53,14 @@ func (m *Module) renderMemberView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if Stripe is configured by an admin
+	var apiKey string
+	err = m.db.QueryRowContext(r.Context(),
+		`SELECT api_key FROM stripe_config ORDER BY version DESC LIMIT 1`).Scan(&apiKey)
+	if err == nil && apiKey != "" {
+		mem.StripeConfigured = true
+	}
+
 	w.Header().Set("Content-Type", "text/html")
 	renderMember(&mem).Render(r.Context(), w)
 }

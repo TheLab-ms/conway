@@ -5,13 +5,14 @@ import (
 )
 
 type member struct {
-	ID           int64
-	Email        string
-	AccessStatus string
-	DiscordLinked bool
-	WaiverSigned  bool
-	PaymentActive bool
-	HasKeyFob     bool
+	ID              int64
+	Email           string
+	AccessStatus    string
+	DiscordLinked   bool
+	WaiverSigned    bool
+	PaymentActive   bool
+	HasKeyFob       bool
+	StripeConfigured bool
 }
 
 templ renderMember(member *member) {
@@ -27,7 +28,9 @@ templ renderMember(member *member) {
 				@renderWelcome(member)
 				@renderOnboardingChecklist(member)
 			}
-			@renderDonationCard()
+			if member.StripeConfigured && member.HasKeyFob {
+				@renderDonationCard()
+			}
 			@renderActions(member)
 		</div>
 	}
@@ -155,7 +158,7 @@ templ renderDonationCard() {
 	<div class="card mb-4">
 		<div class="card-body text-center">
 			<p class="text-muted small mb-3">Need to pay for consumables, or other usage costs? You can make a one-time payment here.</p>
-			<a href="/donations/checkout" class="btn btn-outline-success btn-sm">Make a Payment</a>
+			<a href="/donations/checkout" class="btn btn-outline-success btn-sm">Donate</a>
 		</div>
 	</div>
 }
