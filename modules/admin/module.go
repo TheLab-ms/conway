@@ -337,7 +337,22 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 }
 
 func (m *Module) exportCSV(w http.ResponseWriter, r *http.Request) {
-	rows, err := m.db.QueryContext(r.Context(), fmt.Sprintf("SELECT * FROM %s", r.PathValue("table")))
+	table := r.PathValue("table")
+
+	// Whitelist: only allow table names registered in listViews as ExportTable
+	allowed := false
+	for _, view := range listViews {
+		if view.ExportTable != "" && view.ExportTable == table {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		engine.ClientError(w, "Forbidden", "Export is not allowed for this table", http.StatusForbidden)
+		return
+	}
+
+	rows, err := m.db.QueryContext(r.Context(), fmt.Sprintf("SELECT * FROM %s", table))
 	if engine.HandleError(w, err) {
 		return
 	}
