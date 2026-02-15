@@ -29,7 +29,7 @@ func configDescription() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<strong>How Stripe Integration Works</strong><ul class=\"mb-0 mt-2\"><li><strong>Subscriptions:</strong> Members pay for membership via Stripe Checkout. Conway receives webhooks when subscription status changes.</li><li><strong>Billing Portal:</strong> Active members can manage their subscription (update payment method, cancel) via Stripe's billing portal.</li><li><strong>Discounts:</strong> Coupons configured in Stripe with matching <code>discountTypes</code> metadata are automatically applied.</li></ul>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<strong>How Stripe Integration Works</strong><ul class=\"mb-0 mt-2\"><li><strong>Subscriptions:</strong> Members pay for membership via Stripe Checkout. Conway receives webhooks when subscription status changes.</li><li><strong>Billing Portal:</strong> Active members can manage their subscription (update payment method, cancel) via Stripe's billing portal.</li><li><strong>Discounts:</strong> Coupons configured in Stripe with matching <code>discountTypes</code> metadata are automatically applied.</li><li><strong>Donations:</strong> Members with a linked Stripe customer can make one-time payments for materials and usage costs via Stripe Checkout.</li></ul>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -94,7 +94,7 @@ func webhookSectionDescription(selfURL string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 17, Col: 175}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 18, Col: 175}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {

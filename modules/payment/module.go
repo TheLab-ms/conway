@@ -60,6 +60,7 @@ func (m *Module) loadConfig(ctx context.Context) (*stripeConfig, error) {
 func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("POST /webhooks/stripe", m.handleStripeWebhook)
 	router.HandleFunc("GET /payment/checkout", router.WithAuthn(m.handleCheckoutForm))
+	router.HandleFunc("GET /donations/checkout", router.WithAuthn(m.handleDonationCheckout))
 }
 
 func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
@@ -247,5 +248,83 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.eventLogger.LogEvent(r.Context(), memberID, "CheckoutCreated", custID, "", true, fmt.Sprintf("freq=%s", freq))
+	http.Redirect(w, r, s.URL, http.StatusSeeOther)
+}
+
+// handleDonationCheckout creates a one-time Stripe Checkout Session for a donation.
+// The customer chooses their own amount on the Stripe-hosted checkout page.
+func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) {
+	cfg, err := m.loadConfig(r.Context())
+	if err != nil {
+		m.eventLogger.LogEvent(r.Context(), auth.GetUserMeta(r.Context()).ID, "APIError", "", "", false, "config load: "+err.Error())
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	if cfg.apiKey != "" {
+		stripe.Key = cfg.apiKey
+	}
+
+	memberID := auth.GetUserMeta(r.Context()).ID
+
+	// Load the member's Stripe customer ID
+	var existingCustomerID *string
+	err = m.db.QueryRowContext(r.Context(), "SELECT stripe_customer_id FROM members WHERE id = ?", memberID).Scan(&existingCustomerID)
+	if err != nil {
+		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", "", "", false, "db query: "+err.Error())
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	if existingCustomerID == nil || *existingCustomerID == "" {
+		http.Error(w, "payment method not configured", http.StatusBadRequest)
+		return
+	}
+
+	// Create a Price with custom_unit_amount so the customer can choose their donation amount
+	priceParams := &stripe.PriceParams{
+		Currency: stripe.String("usd"),
+		CustomUnitAmount: &stripe.PriceCustomUnitAmountParams{
+			Enabled: stripe.Bool(true),
+			Minimum: stripe.Int64(100),  // $1.00 minimum
+			Preset:  stripe.Int64(2500), // $25.00 default
+		},
+		ProductData: &stripe.PriceProductDataParams{
+			Name: stripe.String("Donation - Materials & Usage Costs"),
+		},
+	}
+	priceParams.Context = r.Context()
+
+	p, err := price.New(priceParams)
+	if err != nil {
+		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", *existingCustomerID, "", false, "price.New: "+err.Error())
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	// Create a one-time payment Checkout Session
+	checkoutParams := &stripe.CheckoutSessionParams{
+		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
+		SuccessURL: stripe.String(m.self.String()),
+		CancelURL:  stripe.String(m.self.String()),
+		Customer:   existingCustomerID,
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				Price:    &p.ID,
+				Quantity: stripe.Int64(1),
+			},
+		},
+		SubmitType: stripe.String("donate"),
+	}
+	checkoutParams.Context = r.Context()
+
+	s, err := session.New(checkoutParams)
+	if err != nil {
+		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", *existingCustomerID, "", false, "donation checkout.session.New: "+err.Error())
+		engine.SystemError(w, err.Error())
+		return
+	}
+
+	m.eventLogger.LogEvent(r.Context(), memberID, "DonationCheckout", *existingCustomerID, "", true, "redirected to donation checkout")
 	http.Redirect(w, r, s.URL, http.StatusSeeOther)
 }

@@ -5,13 +5,14 @@ import (
 )
 
 type member struct {
-	ID            int64
-	Email         string
-	AccessStatus  string
-	DiscordLinked bool
-	WaiverSigned  bool
-	PaymentActive bool
-	HasKeyFob     bool
+	ID                int64
+	Email             string
+	AccessStatus      string
+	DiscordLinked     bool
+	WaiverSigned      bool
+	PaymentActive     bool
+	HasKeyFob         bool
+	HasStripeCustomer bool
 }
 
 templ renderMember(member *member) {
@@ -27,6 +28,7 @@ templ renderMember(member *member) {
 				@renderWelcome(member)
 				@renderOnboardingChecklist(member)
 			}
+			@renderDonationCard(member)
 			@renderActions(member)
 		</div>
 	}
