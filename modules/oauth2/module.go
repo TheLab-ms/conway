@@ -111,8 +111,12 @@ func (m *Module) handleOauthToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims, err := m.issuer.Verify(code)
-	if err != nil || len(claims.Audience) == 0 || claims.Audience[0] != "conway-oauth" {
+	if err != nil {
 		engine.SystemError(w, err.Error())
+		return
+	}
+	if len(claims.Audience) == 0 || claims.Audience[0] != "conway-oauth" {
+		engine.ClientError(w, "Invalid Code", "The authorization code is invalid", http.StatusBadRequest)
 		return
 	}
 
