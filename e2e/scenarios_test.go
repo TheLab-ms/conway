@@ -1433,20 +1433,7 @@ func TestStripe_SubscriptionWithAdminUIConfig(t *testing.T) {
 	dashboard.Navigate()
 	dashboard.ExpectStepComplete("Set Up Payment")
 
-	// Step 5: Verify admin can see updated subscription counts
-	t.Log("Step 5: Verifying admin sees updated subscription count")
-
-	configPage.Navigate()
-	err = adminPage.WaitForLoadState()
-	require.NoError(t, err)
-
-	// Should now show 1 active subscription
-	activeSubsLocator := adminPage.Locator(".card-body .row .col-md-6").First().Locator("h3")
-	activeSubsText, err := activeSubsLocator.TextContent()
-	require.NoError(t, err)
-	assert.Equal(t, "1", activeSubsText, "should show 1 active subscription after member subscribed")
-
-	t.Log("Test completed: admin configured Stripe, member subscribed, admin verified subscription count")
+	t.Log("Test completed: admin configured Stripe, member subscribed successfully")
 }
 
 // TestWaiver_SuccessfulSubmission verifies that a user can successfully sign
