@@ -18,7 +18,8 @@ type Config struct {
 	RoleID   string `json:"role_id" config:"label=Member Role ID,section=bot,help=The role to assign to paying members. Right-click the role in Server Settings > Roles and select \"Copy Role ID\"."`
 
 	// Notifications
-	PrintWebhookURL string `json:"print_webhook_url" config:"label=3D Print Notification Webhook URL,secret,section=webhooks,help=Webhook URL for 3D printer completion and failure notifications."`
+	PrintWebhookURL  string `json:"print_webhook_url" config:"label=3D Print Notification Webhook URL,secret,section=webhooks,help=Webhook URL for 3D printer completion and failure notifications."`
+	SignupWebhookURL string `json:"signup_webhook_url" config:"label=New Member Signup Webhook URL,secret,section=webhooks,help=Webhook URL to notify when a new member signs up. Messages include a link to the member's admin profile."`
 
 	// Sync Settings
 	SyncIntervalHours int `json:"sync_interval_hours" config:"label=Full Reconciliation Interval (hours),section=sync,default=24,min=1,max=168,help=How often to fully reconcile all Discord role assignments. Default: 24 hours."`

@@ -229,7 +229,8 @@ CREATE TABLE IF NOT EXISTS discord_config (
     bot_token TEXT NOT NULL DEFAULT '',
     guild_id TEXT NOT NULL DEFAULT '',
     role_id TEXT NOT NULL DEFAULT '',
-    print_webhook_url TEXT NOT NULL DEFAULT ''
+    print_webhook_url TEXT NOT NULL DEFAULT '',
+    signup_webhook_url TEXT NOT NULL DEFAULT ''
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS stripe_config (

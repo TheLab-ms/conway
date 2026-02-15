@@ -339,15 +339,14 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 func (m *Module) exportCSV(w http.ResponseWriter, r *http.Request) {
 	table := r.PathValue("table")
 
-	// Whitelist: only allow table names registered in listViews as ExportTable
-	allowed := false
-	for _, view := range listViews {
-		if view.ExportTable != "" && view.ExportTable == table {
-			allowed = true
-			break
-		}
+	// Whitelist of tables that may be exported as CSV.
+	allowedExports := map[string]bool{
+		"members":       true,
+		"waivers":       true,
+		"fob_swipes":    true,
+		"member_events": true,
 	}
-	if !allowed {
+	if !allowedExports[table] {
 		engine.ClientError(w, "Forbidden", "Export is not allowed for this table", http.StatusForbidden)
 		return
 	}

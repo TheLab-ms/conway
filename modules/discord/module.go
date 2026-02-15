@@ -30,6 +30,21 @@ INSERT OR IGNORE INTO _discord_migration_check (id) VALUES (1);
 
 -- Clean up old discord metrics samplings (now using direct event queries)
 DELETE FROM metrics_samplings WHERE name IN ('discord-sync-successes', 'discord-sync-errors', 'discord-api-requests');
+
+-- Notify via Discord webhook when a new member signs up
+CREATE TRIGGER IF NOT EXISTS members_signup_notification AFTER INSERT ON members
+WHEN NEW.email != ''
+BEGIN
+    INSERT INTO discord_webhook_queue (webhook_url, payload)
+    SELECT
+        (SELECT signup_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1),
+        json_object(
+            'content', 'New member signed up: **' || NEW.email || '** (member ID: ' || NEW.id || ')',
+            'username', 'Conway'
+        )
+    FROM (SELECT 1) dummy
+    WHERE (SELECT COALESCE(signup_webhook_url, '') FROM discord_config ORDER BY version DESC LIMIT 1) != '';
+END;
 `
 
 var endpoint = oauth2.Endpoint{
