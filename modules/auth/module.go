@@ -338,12 +338,16 @@ func (s *Module) verifyTurnstileResponse(r *http.Request) bool {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil || resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		slog.Warn("unable to verify turnstile response - failing open", "error", err, "status", resp.StatusCode, "body", string(body))
+	if err != nil {
+		slog.Warn("unable to verify turnstile response - failing open", "error", err)
 		return true
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		slog.Warn("unable to verify turnstile response - failing open", "status", resp.StatusCode, "body", string(body))
+		return true
+	}
 
 	result := &struct {
 		Success bool `json:"success"`
