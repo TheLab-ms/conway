@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/TheLab-ms/conway/modules"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/playwright-community/playwright-go"
@@ -20,19 +22,18 @@ import (
 )
 
 var (
-	pw       *playwright.Playwright
-	browser  playwright.Browser
-	baseURL  string
-	testDB   *sql.DB
-	appCtx   context.Context
-	cancelFn context.CancelFunc
-
-	// authIssuer is used to generate auth/magic link tokens for tests
-	authIssuer *engine.TokenIssuer
-
-	// testKeyDir stores generated key files for tests
-	testKeyDir string
+	pw      *playwright.Playwright
+	browser playwright.Browser
 )
+
+// TestEnv holds an isolated test environment with its own database, server, and auth.
+// Each test gets its own TestEnv, enabling full parallel execution.
+type TestEnv struct {
+	baseURL    string
+	db         *sql.DB
+	authIssuer *engine.TokenIssuer
+	cancel     context.CancelFunc
+}
 
 func TestMain(m *testing.M) {
 	// 1. Install Playwright browsers if needed
@@ -51,7 +52,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// 3. Launch browser
+	// 3. Launch browser (shared across all tests - Playwright browser is thread-safe)
 	headless := os.Getenv("HEADED") != "true"
 	browser, err = pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(headless),
@@ -61,92 +62,112 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// 4. Setup test database and start server
-	if err := setupTestServer(); err != nil {
-		fmt.Printf("could not setup test server: %v\n", err)
-		os.Exit(1)
+	// 4. Configure Stripe test mode (global, but read-only after set)
+	if key := os.Getenv("STRIPE_TEST_KEY"); key != "" {
+		stripe.Key = key
 	}
 
 	// 5. Run tests
 	code := m.Run()
 
 	// 6. Cleanup
-	cancelFn()
 	browser.Close()
 	pw.Stop()
 	os.Exit(code)
 }
 
-func setupTestServer() error {
-	// Create temp directory for test database and key files
-	tmpDir, err := os.MkdirTemp("", "conway-e2e-*")
-	if err != nil {
-		return fmt.Errorf("could not create temp dir: %w", err)
-	}
-	testKeyDir = tmpDir
+// NewTestEnv creates a fully isolated test environment with its own database,
+// HTTP server on an ephemeral port, and token issuers. The environment is
+// automatically cleaned up when the test completes.
+func NewTestEnv(t *testing.T) *TestEnv {
+	t.Helper()
+
+	// Create temp directory for this test's database and key files
+	tmpDir := t.TempDir()
 
 	dbPath := filepath.Join(tmpDir, "test.db")
-	testDB, err = engine.OpenDB(dbPath)
+	db, err := engine.OpenDB(dbPath)
 	if err != nil {
-		return fmt.Errorf("could not open test database: %w", err)
+		t.Fatalf("could not open test database: %v", err)
 	}
 
-	// Configure Stripe test mode
-	if key := os.Getenv("STRIPE_TEST_KEY"); key != "" {
-		stripe.Key = key
-	}
+	// Create token issuers with unique key files
+	authIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "auth.pem"))
+	oauthIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "oauth2.pem"))
+	fobIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "fobs.pem"))
 
-	// Create app with test config
-	baseURL = "http://localhost:18080"
+	// Listen on an ephemeral port
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("could not listen on ephemeral port: %v", err)
+	}
+	addr := listener.Addr().String()
+	baseURL := "http://" + addr
+
 	self, err := url.Parse(baseURL)
 	if err != nil {
-		return fmt.Errorf("could not parse base URL: %w", err)
+		t.Fatalf("could not parse base URL: %v", err)
 	}
 
-	app, err := createTestApp(testDB, self, tmpDir)
-	if err != nil {
-		return fmt.Errorf("could not create test app: %w", err)
-	}
-
-	// Start server in background
-	appCtx, cancelFn = context.WithCancel(context.Background())
-	go app.Run(appCtx)
-
-	// Wait for server to be ready
-	return waitForServer(baseURL + "/login")
-}
-
-func createTestApp(database *sql.DB, self *url.URL, keyDir string) (*engine.App, error) {
+	// Create app
 	router := engine.NewRouter()
+	a := engine.NewApp(addr, router, db)
 
-	// Create token issuers in test directory
-	authIssuer = engine.NewTokenIssuer(filepath.Join(keyDir, "auth.pem"))
-	oauthIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "oauth2.pem"))
-	fobIssuer := engine.NewTokenIssuer(filepath.Join(keyDir, "fobs.pem"))
-
-	a := engine.NewApp(":18080", router, database)
-
-	// Create the auth module first and set it as the authenticator BEFORE registering other modules.
-	// This ensures that when modules call router.WithAuthn(), they get the real authenticator
-	// instead of the noopAuthenticator default.
-	authModule := auth.New(database, self, nil, authIssuer)
+	authModule := auth.New(db, self, nil, authIssuer)
 	a.Router.Authenticator = authModule
 
 	modules.Register(a, modules.Options{
-		Database:    database,
+		Database:    db,
 		Self:        self,
 		AuthIssuer:  authIssuer,
 		OAuthIssuer: oauthIssuer,
 		FobIssuer:   fobIssuer,
-		Turnstile:   nil, // No Turnstile for tests
-		EmailSender: nil, // Emails stored in outbound_mail table
-		SpaceHost:   "localhost",
+		Turnstile:   nil,
+		EmailSender: nil,
+		SpaceHost:   "127.0.0.1",
 	})
 
-	// Seed printer state directly into the database for e2e tests
-	seedPrinterState(database)
+	// Seed printer state
+	seedPrinterState(db)
 
-	return a, nil
+	// Start server on the listener (not using app.Run since we need the listener)
+	ctx, cancel := context.WithCancel(context.Background())
+	svr := &http.Server{Handler: router}
+	go func() {
+		svr.Serve(listener)
+	}()
+	go func() {
+		<-ctx.Done()
+		svr.Shutdown(context.Background())
+	}()
+
+	// Start any background workers from modules (config watchers, etc.)
+	// We run the app's ProcMgr minus the HTTP server (which we handle manually).
+	// Since we used NewApp which already added Serve, and we're serving separately,
+	// we skip ProcMgr.Run to avoid double-binding.
+
+	env := &TestEnv{
+		baseURL:    baseURL,
+		db:         db,
+		authIssuer: authIssuer,
+		cancel:     cancel,
+	}
+
+	// Wait for server to be ready
+	if err := waitForServer(baseURL + "/login"); err != nil {
+		t.Fatalf("test server did not become ready: %v", err)
+	}
+
+	// Register cleanup
+	t.Cleanup(func() {
+		cancel()
+		db.Close()
+	})
+
+	// Seed default waiver content for this environment
+	seedDefaultWaiverContent(t, env)
+
+	return env
 }
 
 // seedPrinterState inserts mock printer data for e2e tests.
@@ -189,4 +210,76 @@ func getEnvWithFallback(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// NewTestEnvForStripe creates a test environment specifically for Stripe tests.
+// It uses a fixed port (18080) because the Stripe CLI forwards webhooks to a fixed URL.
+// Stripe tests must not run in parallel with each other.
+func NewTestEnvForStripe(t *testing.T) *TestEnv {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+
+	dbPath := filepath.Join(tmpDir, "test.db")
+	db, err := engine.OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("could not open test database: %v", err)
+	}
+
+	authIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "auth.pem"))
+	oauthIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "oauth2.pem"))
+	fobIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "fobs.pem"))
+
+	baseURL := "http://localhost:18080"
+	self, err := url.Parse(baseURL)
+	if err != nil {
+		t.Fatalf("could not parse base URL: %v", err)
+	}
+
+	router := engine.NewRouter()
+
+	// For Stripe tests we need the config registry to be functional
+	reg := config.NewRegistry(db)
+	_ = reg
+
+	a := engine.NewApp(":18080", router, db)
+
+	authModule := auth.New(db, self, nil, authIssuer)
+	a.Router.Authenticator = authModule
+
+	modules.Register(a, modules.Options{
+		Database:    db,
+		Self:        self,
+		AuthIssuer:  authIssuer,
+		OAuthIssuer: oauthIssuer,
+		FobIssuer:   fobIssuer,
+		Turnstile:   nil,
+		EmailSender: nil,
+		SpaceHost:   "localhost",
+	})
+
+	seedPrinterState(db)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go a.Run(ctx)
+
+	env := &TestEnv{
+		baseURL:    baseURL,
+		db:         db,
+		authIssuer: authIssuer,
+		cancel:     cancel,
+	}
+
+	if err := waitForServer(baseURL + "/login"); err != nil {
+		t.Fatalf("test server did not become ready: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cancel()
+		db.Close()
+	})
+
+	seedDefaultWaiverContent(t, env)
+
+	return env
 }

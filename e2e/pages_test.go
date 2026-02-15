@@ -11,21 +11,22 @@ import (
 
 // LoginPage represents the login page.
 type LoginPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewLoginPage(t *testing.T, page playwright.Page) *LoginPage {
-	return &LoginPage{page: page, t: t}
+func NewLoginPage(t *testing.T, page playwright.Page, baseURL string) *LoginPage {
+	return &LoginPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *LoginPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/login")
+	_, err := p.page.Goto(p.baseURL + "/login")
 	require.NoError(p.t, err)
 }
 
 func (p *LoginPage) NavigateWithCallback(callback string) {
-	_, err := p.page.Goto(baseURL + "/login?callback_uri=" + url.QueryEscape(callback))
+	_, err := p.page.Goto(p.baseURL + "/login?callback_uri=" + url.QueryEscape(callback))
 	require.NoError(p.t, err)
 }
 
@@ -62,21 +63,22 @@ func (p *LoginPage) ExpectEmailSentMessage() {
 
 // WaiverPage represents the waiver signing page.
 type WaiverPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewWaiverPage(t *testing.T, page playwright.Page) *WaiverPage {
-	return &WaiverPage{page: page, t: t}
+func NewWaiverPage(t *testing.T, page playwright.Page, baseURL string) *WaiverPage {
+	return &WaiverPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *WaiverPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/waiver")
+	_, err := p.page.Goto(p.baseURL + "/waiver")
 	require.NoError(p.t, err)
 }
 
 func (p *WaiverPage) NavigateWithRedirect(redirect string) {
-	_, err := p.page.Goto(baseURL + "/waiver?r=" + url.QueryEscape(redirect))
+	_, err := p.page.Goto(p.baseURL + "/waiver?r=" + url.QueryEscape(redirect))
 	require.NoError(p.t, err)
 }
 
@@ -117,16 +119,17 @@ func (p *WaiverPage) ExpectWaiverText() {
 
 // MemberDashboardPage represents the member dashboard.
 type MemberDashboardPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewMemberDashboardPage(t *testing.T, page playwright.Page) *MemberDashboardPage {
-	return &MemberDashboardPage{page: page, t: t}
+func NewMemberDashboardPage(t *testing.T, page playwright.Page, baseURL string) *MemberDashboardPage {
+	return &MemberDashboardPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *MemberDashboardPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/")
+	_, err := p.page.Goto(p.baseURL + "/")
 	require.NoError(p.t, err)
 }
 
@@ -201,16 +204,17 @@ func (p *MemberDashboardPage) ClickLogout() {
 
 // AdminMembersListPage represents the admin members list page.
 type AdminMembersListPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewAdminMembersListPage(t *testing.T, page playwright.Page) *AdminMembersListPage {
-	return &AdminMembersListPage{page: page, t: t}
+func NewAdminMembersListPage(t *testing.T, page playwright.Page, baseURL string) *AdminMembersListPage {
+	return &AdminMembersListPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *AdminMembersListPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/admin/members")
+	_, err := p.page.Goto(p.baseURL + "/admin/members")
 	require.NoError(p.t, err)
 }
 
@@ -256,16 +260,17 @@ func (p *AdminMembersListPage) ExpectPageNumber(pageNum int) {
 
 // AdminMemberDetailPage represents the admin member detail page.
 type AdminMemberDetailPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewAdminMemberDetailPage(t *testing.T, page playwright.Page) *AdminMemberDetailPage {
-	return &AdminMemberDetailPage{page: page, t: t}
+func NewAdminMemberDetailPage(t *testing.T, page playwright.Page, baseURL string) *AdminMemberDetailPage {
+	return &AdminMemberDetailPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *AdminMemberDetailPage) NavigateToMember(memberID int64) {
-	_, err := p.page.Goto(baseURL + "/admin/members/" + string(rune(memberID)))
+	_, err := p.page.Goto(p.baseURL + "/admin/members/" + string(rune(memberID)))
 	require.NoError(p.t, err)
 }
 
@@ -329,17 +334,18 @@ func (p *AdminMemberDetailPage) ConfirmDelete() {
 
 // AdminDataListPage represents generic admin data list pages (fobs, events, waivers).
 type AdminDataListPage struct {
-	page playwright.Page
-	t    *testing.T
-	path string
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
+	path    string
 }
 
-func NewAdminEventsPage(t *testing.T, page playwright.Page) *AdminDataListPage {
-	return &AdminDataListPage{page: page, t: t, path: "/admin/events"}
+func NewAdminEventsPage(t *testing.T, page playwright.Page, baseURL string) *AdminDataListPage {
+	return &AdminDataListPage{page: page, t: t, baseURL: baseURL, path: "/admin/events"}
 }
 
 func (p *AdminDataListPage) Navigate() {
-	_, err := p.page.Goto(baseURL + p.path)
+	_, err := p.page.Goto(p.baseURL + p.path)
 	require.NoError(p.t, err)
 }
 
@@ -359,16 +365,17 @@ func (p *AdminDataListPage) ExpectRowWithText(text string) {
 
 // AdminMetricsPage represents the admin metrics page.
 type AdminMetricsPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewAdminMetricsPage(t *testing.T, page playwright.Page) *AdminMetricsPage {
-	return &AdminMetricsPage{page: page, t: t}
+func NewAdminMetricsPage(t *testing.T, page playwright.Page, baseURL string) *AdminMetricsPage {
+	return &AdminMetricsPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *AdminMetricsPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/admin/metrics")
+	_, err := p.page.Goto(p.baseURL + "/admin/metrics")
 	require.NoError(p.t, err)
 }
 
@@ -386,16 +393,17 @@ func (p *AdminMetricsPage) ExpectChartForSeries(series string) {
 
 // KioskPage represents the kiosk page.
 type KioskPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewKioskPage(t *testing.T, page playwright.Page) *KioskPage {
-	return &KioskPage{page: page, t: t}
+func NewKioskPage(t *testing.T, page playwright.Page, baseURL string) *KioskPage {
+	return &KioskPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *KioskPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/kiosk")
+	_, err := p.page.Goto(p.baseURL + "/kiosk")
 	require.NoError(p.t, err)
 }
 
@@ -407,16 +415,17 @@ func (p *KioskPage) ExpectKioskInterface() {
 
 // MachinesPage represents the machines/printers status page.
 type MachinesPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewMachinesPage(t *testing.T, page playwright.Page) *MachinesPage {
-	return &MachinesPage{page: page, t: t}
+func NewMachinesPage(t *testing.T, page playwright.Page, baseURL string) *MachinesPage {
+	return &MachinesPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *MachinesPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/machines")
+	_, err := p.page.Goto(p.baseURL + "/machines")
 	require.NoError(p.t, err)
 }
 
@@ -476,16 +485,17 @@ func (p *MachinesPage) ExpectErrorCode(printerName, errorCode string) {
 
 // AdminWaiverConfigPage represents the admin waiver configuration page.
 type AdminWaiverConfigPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewAdminWaiverConfigPage(t *testing.T, page playwright.Page) *AdminWaiverConfigPage {
-	return &AdminWaiverConfigPage{page: page, t: t}
+func NewAdminWaiverConfigPage(t *testing.T, page playwright.Page, baseURL string) *AdminWaiverConfigPage {
+	return &AdminWaiverConfigPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *AdminWaiverConfigPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/admin/config/waiver")
+	_, err := p.page.Goto(p.baseURL + "/admin/config/waiver")
 	require.NoError(p.t, err)
 }
 
@@ -522,16 +532,17 @@ func (p *AdminWaiverConfigPage) ExpectSyntaxGuide() {
 
 // DirectoryPage represents the member directory page.
 type DirectoryPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewDirectoryPage(t *testing.T, page playwright.Page) *DirectoryPage {
-	return &DirectoryPage{page: page, t: t}
+func NewDirectoryPage(t *testing.T, page playwright.Page, baseURL string) *DirectoryPage {
+	return &DirectoryPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *DirectoryPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/directory")
+	_, err := p.page.Goto(p.baseURL + "/directory")
 	require.NoError(p.t, err)
 }
 
@@ -615,16 +626,17 @@ func (p *DirectoryPage) ExpectMemberCardFirst(displayName string) {
 
 // ProfilePage represents the profile editing page.
 type ProfilePage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewProfilePage(t *testing.T, page playwright.Page) *ProfilePage {
-	return &ProfilePage{page: page, t: t}
+func NewProfilePage(t *testing.T, page playwright.Page, baseURL string) *ProfilePage {
+	return &ProfilePage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *ProfilePage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/directory/profile")
+	_, err := p.page.Goto(p.baseURL + "/directory/profile")
 	require.NoError(p.t, err)
 }
 
@@ -660,16 +672,17 @@ func (p *ProfilePage) ExpectDiscordUsername(username string) {
 
 // AdminStripeConfigPage represents the admin Stripe configuration page.
 type AdminStripeConfigPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewAdminStripeConfigPage(t *testing.T, page playwright.Page) *AdminStripeConfigPage {
-	return &AdminStripeConfigPage{page: page, t: t}
+func NewAdminStripeConfigPage(t *testing.T, page playwright.Page, baseURL string) *AdminStripeConfigPage {
+	return &AdminStripeConfigPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *AdminStripeConfigPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/admin/config/stripe")
+	_, err := p.page.Goto(p.baseURL + "/admin/config/stripe")
 	require.NoError(p.t, err)
 }
 
@@ -724,16 +737,17 @@ func (p *AdminStripeConfigPage) ExpectWebhookURLInstruction() {
 
 // AdminBambuConfigPage represents the admin Bambu configuration page.
 type AdminBambuConfigPage struct {
-	page playwright.Page
-	t    *testing.T
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
 }
 
-func NewAdminBambuConfigPage(t *testing.T, page playwright.Page) *AdminBambuConfigPage {
-	return &AdminBambuConfigPage{page: page, t: t}
+func NewAdminBambuConfigPage(t *testing.T, page playwright.Page, baseURL string) *AdminBambuConfigPage {
+	return &AdminBambuConfigPage{page: page, t: t, baseURL: baseURL}
 }
 
 func (p *AdminBambuConfigPage) Navigate() {
-	_, err := p.page.Goto(baseURL + "/admin/config/bambu")
+	_, err := p.page.Goto(p.baseURL + "/admin/config/bambu")
 	require.NoError(p.t, err)
 }
 
@@ -753,62 +767,62 @@ func (p *AdminBambuConfigPage) ClickAddPrinter() {
 }
 
 func (p *AdminBambuConfigPage) PrinterCardCount() int {
-	count, err := p.page.Locator("#printers-container .printer-card").Count()
+	count, err := p.page.Locator("#printers-container .array-item-card").Count()
 	require.NoError(p.t, err)
 	return count
 }
 
 func (p *AdminBambuConfigPage) PrinterCard(index int) playwright.Locator {
-	return p.page.Locator(fmt.Sprintf("#printers-container .printer-card[data-printer-index='%d']", index))
+	return p.page.Locator(fmt.Sprintf("#printers-container .array-item-card[data-item-index='%d']", index))
 }
 
 func (p *AdminBambuConfigPage) FillPrinterName(index int, name string) {
-	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][name]']", index))
+	locator := p.page.Locator(fmt.Sprintf("input[name='printers[%d][name]']", index))
 	err := locator.Fill(name)
 	require.NoError(p.t, err)
 }
 
 func (p *AdminBambuConfigPage) FillPrinterHost(index int, host string) {
-	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][host]']", index))
+	locator := p.page.Locator(fmt.Sprintf("input[name='printers[%d][host]']", index))
 	err := locator.Fill(host)
 	require.NoError(p.t, err)
 }
 
 func (p *AdminBambuConfigPage) FillPrinterAccessCode(index int, code string) {
-	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][access_code]']", index))
+	locator := p.page.Locator(fmt.Sprintf("input[name='printers[%d][access_code]']", index))
 	err := locator.Fill(code)
 	require.NoError(p.t, err)
 }
 
 func (p *AdminBambuConfigPage) FillPrinterSerial(index int, serial string) {
-	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][serial_number]']", index))
+	locator := p.page.Locator(fmt.Sprintf("input[name='printers[%d][serial_number]']", index))
 	err := locator.Fill(serial)
 	require.NoError(p.t, err)
 }
 
 func (p *AdminBambuConfigPage) GetPrinterName(index int) string {
-	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][name]']", index))
+	locator := p.page.Locator(fmt.Sprintf("input[name='printers[%d][name]']", index))
 	value, err := locator.InputValue()
 	require.NoError(p.t, err)
 	return value
 }
 
 func (p *AdminBambuConfigPage) GetPrinterHost(index int) string {
-	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][host]']", index))
+	locator := p.page.Locator(fmt.Sprintf("input[name='printers[%d][host]']", index))
 	value, err := locator.InputValue()
 	require.NoError(p.t, err)
 	return value
 }
 
 func (p *AdminBambuConfigPage) GetPrinterSerial(index int) string {
-	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][serial_number]']", index))
+	locator := p.page.Locator(fmt.Sprintf("input[name='printers[%d][serial_number]']", index))
 	value, err := locator.InputValue()
 	require.NoError(p.t, err)
 	return value
 }
 
 func (p *AdminBambuConfigPage) ExpectPrinterAccessCodePlaceholder(index int, expectedPlaceholder string) {
-	locator := p.page.Locator(fmt.Sprintf("input[name='printer[%d][access_code]']", index))
+	locator := p.page.Locator(fmt.Sprintf("input[name='printers[%d][access_code]']", index))
 	placeholder, err := locator.GetAttribute("placeholder")
 	require.NoError(p.t, err)
 	require.Contains(p.t, placeholder, expectedPlaceholder)
@@ -816,7 +830,7 @@ func (p *AdminBambuConfigPage) ExpectPrinterAccessCodePlaceholder(index int, exp
 
 func (p *AdminBambuConfigPage) ClickDeletePrinter(index int) {
 	card := p.PrinterCard(index)
-	err := card.Locator("button.delete-printer-btn").Click()
+	err := card.Locator("button.delete-item-btn").Click()
 	require.NoError(p.t, err)
 }
 
@@ -869,27 +883,203 @@ func (p *AdminBambuConfigPage) ExpectSaveSuccessMessage() {
 }
 
 func (p *AdminBambuConfigPage) ExpectConfiguredPrintersCount(count int) {
-	// Target the Status card specifically (contains "Configured Printers" text)
-	statusCard := p.page.Locator(".card:has-text('Configured Printers')")
-	locator := statusCard.Locator(".col-md-6").First().Locator("h3")
-	text, err := locator.TextContent()
+	// Count the array item cards on the page (each represents a configured printer)
+	actual, err := p.page.Locator("#printers-container .array-item-card").Count()
 	require.NoError(p.t, err)
-	require.Equal(p.t, fmt.Sprintf("%d", count), text)
+	require.Equal(p.t, count, actual)
 }
 
 func (p *AdminBambuConfigPage) ExpectPollIntervalDisplay(seconds int) {
-	// Target the Status card specifically (contains "Poll Interval" text)
-	statusCard := p.page.Locator(".card:has-text('Poll Interval')")
-	locator := statusCard.Locator(".col-md-6").Last().Locator("h3")
-	text, err := locator.TextContent()
+	// Verify the poll interval input has the expected value
+	value, err := p.page.Locator("#poll_interval_seconds").InputValue()
 	require.NoError(p.t, err)
-	require.Equal(p.t, fmt.Sprintf("%ds", seconds), text)
+	require.Equal(p.t, fmt.Sprintf("%d", seconds), value)
 }
 
 func (p *AdminBambuConfigPage) ExpectPrinterCardHeaderText(index int, expectedText string) {
 	card := p.PrinterCard(index)
-	header := card.Locator(".printer-name-display")
+	header := card.Locator(".item-name-display")
 	text, err := header.TextContent()
 	require.NoError(p.t, err)
 	require.Equal(p.t, expectedText, text)
+}
+
+// AdminDiscordConfigPage represents the admin Discord configuration page.
+type AdminDiscordConfigPage struct {
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
+}
+
+func NewAdminDiscordConfigPage(t *testing.T, page playwright.Page, baseURL string) *AdminDiscordConfigPage {
+	return &AdminDiscordConfigPage{page: page, t: t, baseURL: baseURL}
+}
+
+func (p *AdminDiscordConfigPage) Navigate() {
+	_, err := p.page.Goto(p.baseURL + "/admin/config/discord")
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) FillClientID(value string) {
+	err := p.page.Locator("#client_id").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) FillClientSecret(value string) {
+	err := p.page.Locator("#client_secret").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) FillBotToken(value string) {
+	err := p.page.Locator("#bot_token").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) FillGuildID(value string) {
+	err := p.page.Locator("#guild_id").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) FillRoleID(value string) {
+	err := p.page.Locator("#role_id").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) FillPrintWebhookURL(value string) {
+	err := p.page.Locator("#print_webhook_url").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) FillSyncIntervalHours(value string) {
+	err := p.page.Locator("#sync_interval_hours").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) Submit() {
+	err := p.page.Locator("button[type='submit']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) ExpectVersionBadge(version int) {
+	locator := p.page.Locator(".badge", playwright.PageLocatorOptions{HasText: fmt.Sprintf("Version %d", version)})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminDiscordConfigPage) ExpectSaveSuccessMessage() {
+	locator := p.page.Locator(".alert-success", playwright.PageLocatorOptions{HasText: "saved successfully"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminDiscordConfigPage) ExpectValidationError() {
+	locator := p.page.Locator(".alert-danger")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminDiscordConfigPage) ExpectHasClientSecret() {
+	locator := p.page.Locator("#client_secret")
+	placeholder, err := locator.GetAttribute("placeholder")
+	require.NoError(p.t, err)
+	require.Contains(p.t, placeholder, "secret is set")
+}
+
+func (p *AdminDiscordConfigPage) ExpectHasBotToken() {
+	locator := p.page.Locator("#bot_token")
+	placeholder, err := locator.GetAttribute("placeholder")
+	require.NoError(p.t, err)
+	require.Contains(p.t, placeholder, "secret is set")
+}
+
+func (p *AdminDiscordConfigPage) ExpectHasPrintWebhookURL() {
+	locator := p.page.Locator("#print_webhook_url")
+	placeholder, err := locator.GetAttribute("placeholder")
+	require.NoError(p.t, err)
+	require.Contains(p.t, placeholder, "secret is set")
+}
+
+// AdminGoogleConfigPage represents the admin Google configuration page.
+type AdminGoogleConfigPage struct {
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
+}
+
+func NewAdminGoogleConfigPage(t *testing.T, page playwright.Page, baseURL string) *AdminGoogleConfigPage {
+	return &AdminGoogleConfigPage{page: page, t: t, baseURL: baseURL}
+}
+
+func (p *AdminGoogleConfigPage) Navigate() {
+	_, err := p.page.Goto(p.baseURL + "/admin/config/google")
+	require.NoError(p.t, err)
+}
+
+func (p *AdminGoogleConfigPage) FillClientID(value string) {
+	err := p.page.Locator("#client_id").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminGoogleConfigPage) FillClientSecret(value string) {
+	err := p.page.Locator("#client_secret").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminGoogleConfigPage) Submit() {
+	err := p.page.Locator("button[type='submit']").Click()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminGoogleConfigPage) ExpectVersionBadge(version int) {
+	locator := p.page.Locator(".badge", playwright.PageLocatorOptions{HasText: fmt.Sprintf("Version %d", version)})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminGoogleConfigPage) ExpectSaveSuccessMessage() {
+	locator := p.page.Locator(".alert-success", playwright.PageLocatorOptions{HasText: "saved successfully"})
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminGoogleConfigPage) ExpectHasClientSecret() {
+	locator := p.page.Locator("#client_secret")
+	placeholder, err := locator.GetAttribute("placeholder")
+	require.NoError(p.t, err)
+	require.Contains(p.t, placeholder, "secret is set")
+}
+
+// AdminConfigPage represents a generic admin config page (for read-only pages and sidebar tests).
+type AdminConfigPage struct {
+	page    playwright.Page
+	t       *testing.T
+	baseURL string
+	path    string
+}
+
+func NewAdminConfigPage(t *testing.T, page playwright.Page, baseURL, path string) *AdminConfigPage {
+	return &AdminConfigPage{page: page, t: t, baseURL: baseURL, path: path}
+}
+
+func (p *AdminConfigPage) Navigate() {
+	_, err := p.page.Goto(p.baseURL + p.path)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminConfigPage) ExpectTextVisible(text string) {
+	locator := p.page.GetByText(text)
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminConfigPage) ExpectSidebarLink(name, href string) {
+	locator := p.page.Locator(fmt.Sprintf("a.list-group-item[href='%s']", href))
+	expect(p.t).Locator(locator).ToBeVisible()
+	text, err := locator.TextContent()
+	require.NoError(p.t, err)
+	require.Contains(p.t, text, name)
+}
+
+func (p *AdminConfigPage) ExpectSidebarActiveLink(href string) {
+	locator := p.page.Locator(fmt.Sprintf("a.list-group-item.active[href='%s']", href))
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *AdminConfigPage) ClickSidebarLink(href string) {
+	err := p.page.Locator(fmt.Sprintf("a.list-group-item[href='%s']", href)).Click()
+	require.NoError(p.t, err)
 }

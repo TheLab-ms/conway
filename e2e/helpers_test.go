@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -56,37 +57,46 @@ func newPageInContext(t *testing.T, ctx playwright.BrowserContext) playwright.Pa
 	return page
 }
 
+// cookieDomain extracts the hostname from the env's baseURL for cookie setting.
+func cookieDomain(env *TestEnv) string {
+	u, err := url.Parse(env.baseURL)
+	if err != nil {
+		return "localhost"
+	}
+	return u.Hostname()
+}
+
 // loginAs authenticates a browser context by setting a valid JWT cookie.
-func loginAs(t *testing.T, ctx playwright.BrowserContext, memberID int64) {
+func loginAs(t *testing.T, env *TestEnv, ctx playwright.BrowserContext, memberID int64) {
 	t.Helper()
-	token := generateAuthToken(t, memberID)
+	token := generateAuthToken(t, env, memberID)
 	err := ctx.AddCookies([]playwright.OptionalCookie{{
 		Name:   "token",
 		Value:  token,
-		Domain: playwright.String("localhost"),
+		Domain: playwright.String(cookieDomain(env)),
 		Path:   playwright.String("/"),
 	}})
 	require.NoError(t, err, "could not add auth cookie")
 }
 
 // loginPageAs authenticates a page by setting a valid JWT cookie on its context.
-func loginPageAs(t *testing.T, page playwright.Page, memberID int64) {
+func loginPageAs(t *testing.T, env *TestEnv, page playwright.Page, memberID int64) {
 	t.Helper()
-	token := generateAuthToken(t, memberID)
+	token := generateAuthToken(t, env, memberID)
 	err := page.Context().AddCookies([]playwright.OptionalCookie{{
 		Name:   "token",
 		Value:  token,
-		Domain: playwright.String("localhost"),
+		Domain: playwright.String(cookieDomain(env)),
 		Path:   playwright.String("/"),
 	}})
 	require.NoError(t, err, "could not add auth cookie")
 }
 
 // generateAuthToken creates a valid JWT token for the given member ID.
-func generateAuthToken(t *testing.T, memberID int64) string {
+func generateAuthToken(t *testing.T, env *TestEnv, memberID int64) string {
 	t.Helper()
 	exp := time.Now().Add(time.Hour * 24)
-	token, err := authIssuer.Sign(&jwt.RegisteredClaims{
+	token, err := env.authIssuer.Sign(&jwt.RegisteredClaims{
 		Issuer:    "conway",
 		Subject:   strconv.FormatInt(memberID, 10),
 		Audience:  jwt.ClaimStrings{"conway"},
@@ -97,9 +107,9 @@ func generateAuthToken(t *testing.T, memberID int64) string {
 }
 
 // generateLoginToken creates a valid login token for testing.
-func generateLoginToken(t *testing.T, memberID int64) string {
+func generateLoginToken(t *testing.T, env *TestEnv, memberID int64) string {
 	t.Helper()
-	token, err := authIssuer.Sign(&jwt.RegisteredClaims{
+	token, err := env.authIssuer.Sign(&jwt.RegisteredClaims{
 		Subject:   strconv.FormatInt(memberID, 10),
 		ExpiresAt: &jwt.NumericDate{Time: time.Now().Add(time.Minute * 5)},
 	})
@@ -226,7 +236,7 @@ func WithReadyAccess() MemberOption {
 }
 
 // seedMember creates a test member and returns their ID.
-func seedMember(t *testing.T, email string, opts ...MemberOption) int64 {
+func seedMember(t *testing.T, env *TestEnv, email string, opts ...MemberOption) int64 {
 	t.Helper()
 
 	cfg := &memberConfig{email: email}
@@ -235,7 +245,7 @@ func seedMember(t *testing.T, email string, opts ...MemberOption) int64 {
 	}
 
 	// Insert member
-	result, err := testDB.Exec(`
+	result, err := env.db.Exec(`
 		INSERT INTO members (email, name, name_override, bio, profile_picture, confirmed, leadership, non_billable, fob_id, fob_last_seen, stripe_subscription_state, stripe_customer_id, discount_type, discord_user_id, discord_username, discord_avatar)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cfg.email,
@@ -260,23 +270,23 @@ func seedMember(t *testing.T, email string, opts ...MemberOption) int64 {
 
 	// Optionally sign a waiver
 	if cfg.hasWaiver {
-		seedWaiver(t, cfg.email)
+		seedWaiver(t, env, cfg.email)
 	}
 
 	return memberID
 }
 
 // seedWaiver creates a signed waiver for the given email.
-func seedWaiver(t *testing.T, email string) {
+func seedWaiver(t *testing.T, env *TestEnv, email string) {
 	t.Helper()
-	_, err := testDB.Exec(`INSERT INTO waivers (version, name, email) VALUES (1, 'Test User', ?)`, email)
+	_, err := env.db.Exec(`INSERT INTO waivers (version, name, email) VALUES (1, 'Test User', ?)`, email)
 	require.NoError(t, err, "could not insert waiver")
 }
 
 // seedWaiverContent creates waiver content in the database.
-func seedWaiverContent(t *testing.T, content string) int {
+func seedWaiverContent(t *testing.T, env *TestEnv, content string) int {
 	t.Helper()
-	result, err := testDB.Exec(`INSERT INTO waiver_content (content) VALUES (?)`, content)
+	result, err := env.db.Exec(`INSERT INTO waiver_content (content) VALUES (?)`, content)
 	require.NoError(t, err, "could not insert waiver content")
 	version, err := result.LastInsertId()
 	require.NoError(t, err, "could not get waiver content version")
@@ -284,50 +294,50 @@ func seedWaiverContent(t *testing.T, content string) int {
 }
 
 // clearWaiverContent removes all waiver content from the database.
-func clearWaiverContent(t *testing.T) {
+func clearWaiverContent(t *testing.T, env *TestEnv) {
 	t.Helper()
-	_, err := testDB.Exec(`DELETE FROM waiver_content`)
+	_, err := env.db.Exec(`DELETE FROM waiver_content`)
 	if err != nil {
 		t.Logf("warning: could not clear waiver_content: %v", err)
 	}
 }
 
 // seedFobSwipes creates fob swipe history for a member.
-func seedFobSwipes(t *testing.T, fobID int64, count int) {
+func seedFobSwipes(t *testing.T, env *TestEnv, fobID int64, count int) {
 	t.Helper()
 	baseTime := time.Now().Unix()
 	for i := 0; i < count; i++ {
-		_, err := testDB.Exec(`INSERT INTO fob_swipes (uid, timestamp, fob_id) VALUES (?, ?, ?)`,
+		_, err := env.db.Exec(`INSERT INTO fob_swipes (uid, timestamp, fob_id) VALUES (?, ?, ?)`,
 			fmt.Sprintf("swipe-%d-%d", fobID, i), baseTime-int64(i*60), fobID)
 		require.NoError(t, err, "could not insert fob swipe")
 	}
 }
 
 // seedMemberEvents creates member events for testing.
-func seedMemberEvents(t *testing.T, memberID int64, count int) {
+func seedMemberEvents(t *testing.T, env *TestEnv, memberID int64, count int) {
 	t.Helper()
 	for i := 0; i < count; i++ {
-		_, err := testDB.Exec(`INSERT INTO member_events (member, event, details) VALUES (?, ?, ?)`,
+		_, err := env.db.Exec(`INSERT INTO member_events (member, event, details) VALUES (?, ?, ?)`,
 			memberID, fmt.Sprintf("TestEvent%d", i), fmt.Sprintf("Test event details %d", i))
 		require.NoError(t, err, "could not insert member event")
 	}
 }
 
 // seedMetrics creates test metrics data.
-func seedMetrics(t *testing.T, series string, count int) {
+func seedMetrics(t *testing.T, env *TestEnv, series string, count int) {
 	t.Helper()
 	baseTime := time.Now().Unix()
 	for i := 0; i < count; i++ {
-		_, err := testDB.Exec(`INSERT INTO metrics (timestamp, series, value) VALUES (?, ?, ?)`,
+		_, err := env.db.Exec(`INSERT INTO metrics (timestamp, series, value) VALUES (?, ?, ?)`,
 			float64(baseTime-int64(i*3600)), series, float64(i*10))
 		require.NoError(t, err, "could not insert metric")
 	}
 }
 
 // getLastEmail retrieves the most recent email sent to a recipient.
-func getLastEmail(t *testing.T, recipient string) (subject, body string, found bool) {
+func getLastEmail(t *testing.T, env *TestEnv, recipient string) (subject, body string, found bool) {
 	t.Helper()
-	err := testDB.QueryRow(`SELECT subject, body FROM outbound_mail WHERE recipient = ? ORDER BY id DESC LIMIT 1`, recipient).Scan(&subject, &body)
+	err := env.db.QueryRow(`SELECT subject, body FROM outbound_mail WHERE recipient = ? ORDER BY id DESC LIMIT 1`, recipient).Scan(&subject, &body)
 	if err == sql.ErrNoRows {
 		return "", "", false
 	}
@@ -378,37 +388,23 @@ func extractLoginCodeLinkFromEmail(t *testing.T, body string) string {
 }
 
 // seedLoginCode creates a login code in the database for testing.
-func seedLoginCode(t *testing.T, code string, memberID int64, callback string, expiresAt time.Time) {
+func seedLoginCode(t *testing.T, env *TestEnv, code string, memberID int64, callback string, expiresAt time.Time) {
 	t.Helper()
-	token := generateLoginToken(t, memberID)
+	token := generateLoginToken(t, env, memberID)
 	var email string
-	err := testDB.QueryRow("SELECT email FROM members WHERE id = ?", memberID).Scan(&email)
+	err := env.db.QueryRow("SELECT email FROM members WHERE id = ?", memberID).Scan(&email)
 	require.NoError(t, err, "could not get member email")
 
-	_, err = testDB.Exec(
+	_, err = env.db.Exec(
 		"INSERT INTO login_codes (code, token, email, callback, expires_at) VALUES (?, ?, ?, ?, ?)",
 		code, token, email, callback, expiresAt.Unix())
 	require.NoError(t, err, "could not insert login code")
 }
 
-// clearTestData removes all test data from the database between tests.
-func clearTestData(t *testing.T) {
-	t.Helper()
-	tables := []string{"members", "waivers", "waiver_content", "fob_swipes", "member_events", "outbound_mail", "metrics", "login_codes", "stripe_config", "stripe_events", "bambu_config", "bambu_events"}
-	for _, table := range tables {
-		_, err := testDB.Exec(fmt.Sprintf("DELETE FROM %s", table))
-		if err != nil {
-			t.Logf("warning: could not clear table %s: %v", table, err)
-		}
-	}
-	// Re-seed default waiver content
-	seedDefaultWaiverContent(t)
-}
-
 // seedDefaultWaiverContent inserts the default waiver content for tests.
-func seedDefaultWaiverContent(t *testing.T) {
+func seedDefaultWaiverContent(t *testing.T, env *TestEnv) {
 	t.Helper()
-	_, err := testDB.Exec(`INSERT INTO waiver_content (content) VALUES ('# Liability Waiver
+	_, err := env.db.Exec(`INSERT INTO waiver_content (content) VALUES ('# Liability Waiver
 
 This is a sample liability waiver for testing.
 
@@ -437,17 +433,17 @@ func stripeTestEnabled() bool {
 }
 
 // seedStripeConfig inserts Stripe configuration into the database for testing.
-func seedStripeConfig(t *testing.T, apiKey, webhookKey string) {
+func seedStripeConfig(t *testing.T, env *TestEnv, apiKey, webhookKey string) {
 	t.Helper()
-	_, err := testDB.Exec(`INSERT INTO stripe_config (api_key, webhook_key) VALUES (?, ?)`, apiKey, webhookKey)
+	_, err := env.db.Exec(`INSERT INTO stripe_config (api_key, webhook_key) VALUES (?, ?)`, apiKey, webhookKey)
 	require.NoError(t, err, "could not insert stripe config")
 }
 
 // getStripeConfigVersion returns the current version of the stripe config.
-func getStripeConfigVersion(t *testing.T) int {
+func getStripeConfigVersion(t *testing.T, env *TestEnv) int {
 	t.Helper()
 	var version int
-	err := testDB.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM stripe_config`).Scan(&version)
+	err := env.db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM stripe_config`).Scan(&version)
 	require.NoError(t, err, "could not get stripe config version")
 	return version
 }
@@ -538,12 +534,12 @@ func startStripeCLI(t *testing.T, forwardURL string) {
 
 // waitForMemberState polls the database until the member's fields match the expected values or times out.
 // The check function receives the current stripe_subscription_state and name, and returns true if the condition is met.
-func waitForMemberState(t *testing.T, email string, timeout time.Duration, check func(subState, name string) bool) {
+func waitForMemberState(t *testing.T, env *TestEnv, email string, timeout time.Duration, check func(subState, name string) bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		var subState, name sql.NullString
-		err := testDB.QueryRow("SELECT stripe_subscription_state, name FROM members WHERE email = ?", email).Scan(&subState, &name)
+		err := env.db.QueryRow("SELECT stripe_subscription_state, name FROM members WHERE email = ?", email).Scan(&subState, &name)
 		if err == nil && check(subState.String, name.String) {
 			return
 		}
@@ -552,65 +548,69 @@ func waitForMemberState(t *testing.T, email string, timeout time.Duration, check
 	t.Fatalf("timeout waiting for member state: email=%s", email)
 }
 
-// setupAdminTest creates an admin, logs in, and returns the admin ID and page.
-func setupAdminTest(t *testing.T) (adminID int64, page playwright.Page) {
+// setupAdminTest creates an isolated test environment, seeds an admin, logs in,
+// and returns the environment, admin ID, and page.
+func setupAdminTest(t *testing.T) (env *TestEnv, adminID int64, page playwright.Page) {
 	t.Helper()
-	clearTestData(t)
-	adminID = seedMember(t, "admin@example.com", WithConfirmed(), WithLeadership())
+	env = NewTestEnv(t)
+	adminID = seedMember(t, env, "admin@example.com", WithConfirmed(), WithLeadership())
 	ctx := newContext(t)
-	loginAs(t, ctx, adminID)
+	loginAs(t, env, ctx, adminID)
 	page = newPageInContext(t, ctx)
-	return adminID, page
+	return env, adminID, page
 }
 
-// setupMemberTest creates a member with given options, logs in, and returns the member ID and page.
-func setupMemberTest(t *testing.T, email string, opts ...MemberOption) (memberID int64, page playwright.Page) {
+// setupMemberTest creates an isolated test environment, seeds a member with
+// given options, logs in, and returns the environment, member ID, and page.
+func setupMemberTest(t *testing.T, email string, opts ...MemberOption) (env *TestEnv, memberID int64, page playwright.Page) {
 	t.Helper()
-	clearTestData(t)
-	memberID = seedMember(t, email, opts...)
+	env = NewTestEnv(t)
+	memberID = seedMember(t, env, email, opts...)
 	ctx := newContext(t)
-	loginAs(t, ctx, memberID)
+	loginAs(t, env, ctx, memberID)
 	page = newPageInContext(t, ctx)
-	return memberID, page
+	return env, memberID, page
 }
 
-// setupUnauthenticatedTest clears data and returns an unauthenticated page.
-func setupUnauthenticatedTest(t *testing.T) playwright.Page {
+// setupUnauthenticatedTest creates an isolated test environment and returns
+// the environment and an unauthenticated page.
+func setupUnauthenticatedTest(t *testing.T) (env *TestEnv, page playwright.Page) {
 	t.Helper()
-	clearTestData(t)
-	return newPage(t)
+	env = NewTestEnv(t)
+	page = newPage(t)
+	return env, page
 }
 
 // seedBambuConfig inserts Bambu printer configuration into the database for testing.
-func seedBambuConfig(t *testing.T, printersJSON string, pollIntervalSecs int) {
+func seedBambuConfig(t *testing.T, env *TestEnv, printersJSON string, pollIntervalSecs int) {
 	t.Helper()
-	_, err := testDB.Exec(`INSERT INTO bambu_config (printers_json, poll_interval_seconds) VALUES (?, ?)`, printersJSON, pollIntervalSecs)
+	_, err := env.db.Exec(`INSERT INTO bambu_config (printers_json, poll_interval_seconds) VALUES (?, ?)`, printersJSON, pollIntervalSecs)
 	require.NoError(t, err, "could not insert bambu config")
 }
 
 // clearBambuConfig removes all Bambu configuration from the database.
-func clearBambuConfig(t *testing.T) {
+func clearBambuConfig(t *testing.T, env *TestEnv) {
 	t.Helper()
-	_, err := testDB.Exec(`DELETE FROM bambu_config`)
+	_, err := env.db.Exec(`DELETE FROM bambu_config`)
 	if err != nil {
 		t.Logf("warning: could not clear bambu_config: %v", err)
 	}
 }
 
 // getBambuConfigVersion returns the current version of the bambu config.
-func getBambuConfigVersion(t *testing.T) int {
+func getBambuConfigVersion(t *testing.T, env *TestEnv) int {
 	t.Helper()
 	var version int
-	err := testDB.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM bambu_config`).Scan(&version)
+	err := env.db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM bambu_config`).Scan(&version)
 	require.NoError(t, err, "could not get bambu config version")
 	return version
 }
 
 // getBambuPrintersJSON returns the printers_json from the latest bambu config.
-func getBambuPrintersJSON(t *testing.T) string {
+func getBambuPrintersJSON(t *testing.T, env *TestEnv) string {
 	t.Helper()
 	var printersJSON string
-	err := testDB.QueryRow(`SELECT printers_json FROM bambu_config ORDER BY version DESC LIMIT 1`).Scan(&printersJSON)
+	err := env.db.QueryRow(`SELECT printers_json FROM bambu_config ORDER BY version DESC LIMIT 1`).Scan(&printersJSON)
 	if err == sql.ErrNoRows {
 		return "[]"
 	}
@@ -619,10 +619,10 @@ func getBambuPrintersJSON(t *testing.T) string {
 }
 
 // getBambuPollInterval returns the poll_interval_seconds from the latest bambu config.
-func getBambuPollInterval(t *testing.T) int {
+func getBambuPollInterval(t *testing.T, env *TestEnv) int {
 	t.Helper()
 	var pollInterval int
-	err := testDB.QueryRow(`SELECT poll_interval_seconds FROM bambu_config ORDER BY version DESC LIMIT 1`).Scan(&pollInterval)
+	err := env.db.QueryRow(`SELECT poll_interval_seconds FROM bambu_config ORDER BY version DESC LIMIT 1`).Scan(&pollInterval)
 	if err == sql.ErrNoRows {
 		return 5 // default
 	}
@@ -630,12 +630,27 @@ func getBambuPollInterval(t *testing.T) int {
 	return pollInterval
 }
 
+// seedDiscordConfig inserts Discord configuration into the database for testing.
+func seedDiscordConfig(t *testing.T, env *TestEnv, clientID, clientSecret, botToken, guildID, roleID, printWebhookURL string, syncIntervalHours int) {
+	t.Helper()
+	_, err := env.db.Exec(`INSERT INTO discord_config (client_id, client_secret, bot_token, guild_id, role_id, print_webhook_url, sync_interval_hours) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		clientID, clientSecret, botToken, guildID, roleID, printWebhookURL, syncIntervalHours)
+	require.NoError(t, err, "could not insert discord config")
+}
+
+// seedGoogleConfig inserts Google configuration into the database for testing.
+func seedGoogleConfig(t *testing.T, env *TestEnv, clientID, clientSecret string) {
+	t.Helper()
+	_, err := env.db.Exec(`INSERT INTO google_config (client_id, client_secret) VALUES (?, ?)`, clientID, clientSecret)
+	require.NoError(t, err, "could not insert google config")
+}
+
 // refreshPrinterStateTimestamps updates the updated_at timestamp on all printer states
 // to ensure they don't expire during long test runs. The machines module only shows
 // printers where updated_at > now - (pollInterval * 3).
-func refreshPrinterStateTimestamps(t *testing.T) {
+func refreshPrinterStateTimestamps(t *testing.T, env *TestEnv) {
 	t.Helper()
-	_, err := testDB.Exec(`UPDATE bambu_printer_state SET updated_at = strftime('%s', 'now')`)
+	_, err := env.db.Exec(`UPDATE bambu_printer_state SET updated_at = strftime('%s', 'now')`)
 	if err != nil {
 		t.Logf("warning: could not refresh printer state timestamps: %v", err)
 	}
