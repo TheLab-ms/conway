@@ -12,6 +12,11 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
+type donationItem struct {
+	Name    string
+	PriceID string
+}
+
 type member struct {
 	ID               int64
 	Email            string
@@ -21,6 +26,7 @@ type member struct {
 	PaymentActive    bool
 	HasKeyFob        bool
 	StripeConfigured bool
+	DonationItems    []donationItem
 }
 
 func renderMember(member *member) templ.Component {
@@ -100,8 +106,8 @@ func renderMember(member *member) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			if member.StripeConfigured && member.HasKeyFob {
-				templ_7745c5c3_Err = renderDonationCard().Render(ctx, templ_7745c5c3_Buffer)
+			if member.StripeConfigured && member.HasKeyFob && len(member.DonationItems) > 0 {
+				templ_7745c5c3_Err = renderDonationCard(member.DonationItems).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -394,7 +400,7 @@ func renderStep(number string, title string, description string, complete bool, 
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(number)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 126, Col: 14}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 132, Col: 14}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -412,7 +418,7 @@ func renderStep(number string, title string, description string, complete bool, 
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(number)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 130, Col: 14}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 136, Col: 14}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -452,7 +458,7 @@ func renderStep(number string, title string, description string, complete bool, 
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 137, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 143, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -465,7 +471,7 @@ func renderStep(number string, title string, description string, complete bool, 
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 138, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 144, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -488,7 +494,7 @@ func renderStep(number string, title string, description string, complete bool, 
 			var templ_7745c5c3_Var17 templ.SafeURL
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinURLErrs(actionUrl)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 144, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 150, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -501,7 +507,7 @@ func renderStep(number string, title string, description string, complete bool, 
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(actionText)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 144, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 150, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -530,7 +536,7 @@ func renderStep(number string, title string, description string, complete bool, 
 	})
 }
 
-func renderDonationCard() templ.Component {
+func renderDonationCard(items []donationItem) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -551,7 +557,43 @@ func renderDonationCard() templ.Component {
 			templ_7745c5c3_Var19 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"card mb-4\"><div class=\"card-body text-center\"><p class=\"text-muted small mb-3\">Need to pay for consumables, or other usage costs? You can make a one-time payment here.</p><a href=\"/donations/checkout\" class=\"btn btn-outline-success btn-sm\">Donate</a></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"card mb-4\"><div class=\"card-body text-center\"><p class=\"text-muted small mb-3\">Need to pay for consumables or other usage costs? Select an item and make a one-time payment.</p><div class=\"d-flex justify-content-center gap-2\"><select id=\"donation-select\" class=\"form-select form-select-sm\" style=\"max-width: 250px;\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, item := range items {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<option value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var20 string
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(item.PriceID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 170, Col: 34}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var21 string
+			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(item.Name)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 170, Col: 48}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</option>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</select> <button type=\"button\" class=\"btn btn-outline-success btn-sm\" onclick=\"window.location.href='/donations/checkout?price_id='+document.getElementById('donation-select').value\">Donate</button></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -575,12 +617,12 @@ func renderActions(member *member) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var20 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var20 == nil {
-			templ_7745c5c3_Var20 = templ.NopComponent
+		templ_7745c5c3_Var22 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var22 == nil {
+			templ_7745c5c3_Var22 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<div class=\"d-flex gap-2\"><a href=\"/logout\" class=\"btn btn-outline-secondary\">Logout</a></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<div class=\"d-flex gap-2\"><a href=\"/logout\" class=\"btn btn-outline-secondary\">Logout</a></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

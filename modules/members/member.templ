@@ -4,15 +4,21 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
+type donationItem struct {
+	Name    string
+	PriceID string
+}
+
 type member struct {
-	ID              int64
-	Email           string
-	AccessStatus    string
-	DiscordLinked   bool
-	WaiverSigned    bool
-	PaymentActive   bool
-	HasKeyFob       bool
+	ID               int64
+	Email            string
+	AccessStatus     string
+	DiscordLinked    bool
+	WaiverSigned     bool
+	PaymentActive    bool
+	HasKeyFob        bool
 	StripeConfigured bool
+	DonationItems    []donationItem
 }
 
 templ renderMember(member *member) {
@@ -28,9 +34,9 @@ templ renderMember(member *member) {
 				@renderWelcome(member)
 				@renderOnboardingChecklist(member)
 			}
-			if member.StripeConfigured && member.HasKeyFob {
-				@renderDonationCard()
-			}
+		if member.StripeConfigured && member.HasKeyFob && len(member.DonationItems) > 0 {
+			@renderDonationCard(member.DonationItems)
+		}
 			@renderActions(member)
 		</div>
 	}
@@ -154,11 +160,20 @@ templ renderStep(number string, title string, description string, complete bool,
 	</li>
 }
 
-templ renderDonationCard() {
+templ renderDonationCard(items []donationItem) {
 	<div class="card mb-4">
 		<div class="card-body text-center">
-			<p class="text-muted small mb-3">Need to pay for consumables, or other usage costs? You can make a one-time payment here.</p>
-			<a href="/donations/checkout" class="btn btn-outline-success btn-sm">Donate</a>
+			<p class="text-muted small mb-3">Need to pay for consumables or other usage costs? Select an item and make a one-time payment.</p>
+			<div class="d-flex justify-content-center gap-2">
+				<select id="donation-select" class="form-select form-select-sm" style="max-width: 250px;">
+					for _, item := range items {
+						<option value={ item.PriceID }>{ item.Name }</option>
+					}
+				</select>
+				<button type="button" class="btn btn-outline-success btn-sm" onclick="window.location.href='/donations/checkout?price_id='+document.getElementById('donation-select').value">
+					Donate
+				</button>
+			</div>
 		</div>
 	</div>
 }

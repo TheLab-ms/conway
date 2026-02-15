@@ -5,6 +5,7 @@ package payment
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -30,14 +31,20 @@ CREATE TABLE IF NOT EXISTS stripe_config (
     version INTEGER PRIMARY KEY AUTOINCREMENT,
     created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     api_key TEXT NOT NULL DEFAULT '',
-    webhook_key TEXT NOT NULL DEFAULT ''
+    webhook_key TEXT NOT NULL DEFAULT '',
+    donation_items_json TEXT NOT NULL DEFAULT '[]'
 ) STRICT;
+`
+
+const migrationDonationItems = `
+ALTER TABLE stripe_config ADD COLUMN donation_items_json TEXT NOT NULL DEFAULT '[]';
 `
 
 // stripeConfig holds Stripe-related configuration.
 type stripeConfig struct {
-	apiKey     string
-	webhookKey string
+	apiKey        string
+	webhookKey    string
+	donationItems []DonationItem
 }
 
 type Module struct {
@@ -48,21 +55,27 @@ type Module struct {
 
 func New(db *sql.DB, self *url.URL, eventLogger *engine.EventLogger) *Module {
 	engine.MustMigrate(db, migration)
+	// Add donation_items_json column if it doesn't exist (for existing databases)
+	db.Exec(migrationDonationItems)
 	return &Module{db: db, self: self, eventLogger: eventLogger}
 }
 
 // loadConfig loads Stripe configuration from the database.
 func (m *Module) loadConfig(ctx context.Context) (*stripeConfig, error) {
 	row := m.db.QueryRowContext(ctx,
-		`SELECT api_key, webhook_key FROM stripe_config ORDER BY version DESC LIMIT 1`)
+		`SELECT api_key, webhook_key, donation_items_json FROM stripe_config ORDER BY version DESC LIMIT 1`)
 
 	cfg := &stripeConfig{}
-	err := row.Scan(&cfg.apiKey, &cfg.webhookKey)
+	var donationItemsJSON string
+	err := row.Scan(&cfg.apiKey, &cfg.webhookKey, &donationItemsJSON)
 	if err == sql.ErrNoRows {
 		return &stripeConfig{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("loading stripe config: %w", err)
+	}
+	if donationItemsJSON != "" {
+		json.Unmarshal([]byte(donationItemsJSON), &cfg.donationItems)
 	}
 	return cfg, nil
 }
@@ -262,7 +275,7 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDonationCheckout creates a one-time Stripe Checkout Session for a donation.
-// The customer chooses their own amount on the Stripe-hosted checkout page.
+// The price_id query parameter selects which configured donation item to use.
 func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) {
 	cfg, err := m.loadConfig(r.Context())
 	if err != nil {
@@ -276,6 +289,27 @@ func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) 
 	}
 
 	memberID := auth.GetUserMeta(r.Context()).ID
+
+	// Validate the requested price ID against configured donation items
+	requestedPriceID := r.URL.Query().Get("price_id")
+	if requestedPriceID == "" {
+		engine.ClientError(w, "Invalid Request", "No donation item selected", http.StatusBadRequest)
+		return
+	}
+
+	var itemName string
+	found := false
+	for _, item := range cfg.donationItems {
+		if item.PriceID == requestedPriceID {
+			found = true
+			itemName = item.Name
+			break
+		}
+	}
+	if !found {
+		engine.ClientError(w, "Invalid Request", "Invalid donation item selected", http.StatusBadRequest)
+		return
+	}
 
 	// Load the member's email and Stripe customer ID
 	var email string
@@ -307,28 +341,7 @@ func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Create a Price with custom_unit_amount so the customer can choose their donation amount
-	priceParams := &stripe.PriceParams{
-		Currency: stripe.String("usd"),
-		CustomUnitAmount: &stripe.PriceCustomUnitAmountParams{
-			Enabled: stripe.Bool(true),
-			Minimum: stripe.Int64(100),  // $1.00 minimum
-			Preset:  stripe.Int64(2500), // $25.00 default
-		},
-		ProductData: &stripe.PriceProductDataParams{
-			Name: stripe.String("Donation - Materials & Usage Costs"),
-		},
-	}
-	priceParams.Context = r.Context()
-
-	p, err := price.New(priceParams)
-	if err != nil {
-		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", *existingCustomerID, "", false, "price.New: "+err.Error())
-		engine.SystemError(w, err.Error())
-		return
-	}
-
-	// Create a one-time payment Checkout Session
+	// Create a one-time payment Checkout Session using the configured Stripe Price
 	checkoutParams := &stripe.CheckoutSessionParams{
 		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
 		SuccessURL: stripe.String(m.self.String()),
@@ -336,7 +349,7 @@ func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) 
 		Customer:   existingCustomerID,
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
-				Price:    &p.ID,
+				Price:    stripe.String(requestedPriceID),
 				Quantity: stripe.Int64(1),
 			},
 		},
@@ -351,6 +364,6 @@ func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	m.eventLogger.LogEvent(r.Context(), memberID, "DonationCheckout", *existingCustomerID, "", true, "redirected to donation checkout")
+	m.eventLogger.LogEvent(r.Context(), memberID, "DonationCheckout", *existingCustomerID, "", true, fmt.Sprintf("item=%s price=%s", itemName, requestedPriceID))
 	http.Redirect(w, r, s.URL, http.StatusSeeOther)
 }

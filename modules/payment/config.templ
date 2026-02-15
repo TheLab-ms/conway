@@ -6,7 +6,7 @@ templ configDescription() {
 		<li><strong>Subscriptions:</strong> Members pay for membership via Stripe Checkout. Conway receives webhooks when subscription status changes.</li>
 		<li><strong>Billing Portal:</strong> Active members can manage their subscription (update payment method, cancel) via Stripe's billing portal.</li>
 		<li><strong>Discounts:</strong> Coupons configured in Stripe with matching <code>discountTypes</code> metadata are automatically applied.</li>
-		<li><strong>Donations:</strong> Members can make one-time payments for materials and usage costs via Stripe Checkout. A Stripe customer is created automatically if needed.</li>
+		<li><strong>Donations:</strong> Members can make one-time payments for materials and usage costs. Configure donation items below, each referencing an existing Stripe Price ID.</li>
 	</ul>
 }
 

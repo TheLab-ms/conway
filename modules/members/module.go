@@ -5,6 +5,7 @@ package members
 import (
 	"database/sql"
 	_ "embed"
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -53,12 +54,19 @@ func (m *Module) renderMemberView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if Stripe is configured by an admin
+	// Check if Stripe is configured by an admin and load donation items
 	var apiKey string
+	var donationItemsJSON string
 	err = m.db.QueryRowContext(r.Context(),
-		`SELECT api_key FROM stripe_config ORDER BY version DESC LIMIT 1`).Scan(&apiKey)
+		`SELECT api_key, donation_items_json FROM stripe_config ORDER BY version DESC LIMIT 1`).Scan(&apiKey, &donationItemsJSON)
 	if err == nil && apiKey != "" {
 		mem.StripeConfigured = true
+		if donationItemsJSON != "" {
+			var items []donationItem
+			if json.Unmarshal([]byte(donationItemsJSON), &items) == nil {
+				mem.DonationItems = items
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "text/html")
