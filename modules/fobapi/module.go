@@ -1,5 +1,7 @@
 package fobapi
 
+//go:generate go run github.com/a-h/templ/cmd/templ generate
+
 import (
 	"crypto/sha256"
 	"database/sql"
@@ -9,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
@@ -16,11 +19,12 @@ import (
 )
 
 type Module struct {
-	db *sql.DB
+	db   *sql.DB
+	self *url.URL
 }
 
-func New(db *sql.DB) *Module {
-	return &Module{db: db}
+func New(db *sql.DB, self *url.URL) *Module {
+	return &Module{db: db, self: self}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {

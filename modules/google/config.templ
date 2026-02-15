@@ -1,0 +1,13 @@
+package google
+
+templ configDescription() {
+	<strong>How Google Login Works</strong>
+	<ul class="mb-0 mt-2">
+		<li><strong>OAuth2 Login:</strong> Members can sign in with their Google account instead of using email-based passwordless login.</li>
+		<li><strong>Account Linking:</strong> On first login, the member's Google account is linked to their Conway member record by email address.</li>
+	</ul>
+}
+
+templ oauthSectionDescription(selfURL string) {
+	Create an OAuth2 application at the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>. Set the authorized redirect URI to: <code>{ selfURL }/login/google/callback</code>
+}

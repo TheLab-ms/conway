@@ -1,5 +1,7 @@
 package oauth2
 
+//go:generate go run github.com/a-h/templ/cmd/templ generate
+
 import (
 	"crypto/sha256"
 	"database/sql"

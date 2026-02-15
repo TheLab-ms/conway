@@ -12,7 +12,8 @@ import (
 func parseSpec(spec Spec) (*ParsedSpec, error) {
 	t := reflect.TypeOf(spec.Type)
 	if t == nil {
-		return nil, fmt.Errorf("spec.Type is nil")
+		// ReadOnly/info-only specs may have no Type; return a ParsedSpec with no fields.
+		return &ParsedSpec{Spec: spec}, nil
 	}
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()

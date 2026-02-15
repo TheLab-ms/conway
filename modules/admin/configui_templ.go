@@ -18,7 +18,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
-func renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, version int, events []*config.Event, configSections []*configSection, saved bool, errMsg string, selfURL string) templ.Component {
+func renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, version int, events []*config.Event, configSections []*configSection, saved bool, errMsg string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -134,7 +134,7 @@ func renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = renderConfigCard(spec, cfg, version, saved, errMsg, selfURL).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = renderConfigCard(spec, cfg, version, saved, errMsg).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -197,12 +197,12 @@ func renderReadOnlyConfigCard(spec *config.ParsedSpec) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if spec.Description != "" {
+		if spec.Description != nil {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"alert alert-info\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templ.Raw(spec.Description).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = spec.Description.Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -211,8 +211,8 @@ func renderReadOnlyConfigCard(spec *config.ParsedSpec) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		if spec.InfoContent != "" {
-			templ_7745c5c3_Err = templ.Raw(spec.InfoContent).Render(ctx, templ_7745c5c3_Buffer)
+		if spec.InfoContent != nil {
+			templ_7745c5c3_Err = spec.InfoContent.Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -225,7 +225,7 @@ func renderReadOnlyConfigCard(spec *config.ParsedSpec) templ.Component {
 	})
 }
 
-func renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool, errMsg string, selfURL string) templ.Component {
+func renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool, errMsg string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -311,12 +311,12 @@ func renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool,
 				return templ_7745c5c3_Err
 			}
 		}
-		if spec.Description != "" {
+		if spec.Description != nil {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"alert alert-info\" role=\"alert\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templ.Raw(spec.Description).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = spec.Description.Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -330,7 +330,7 @@ func renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool,
 			return templ_7745c5c3_Err
 		}
 		for _, section := range spec.Sections {
-			templ_7745c5c3_Err = renderGenericFormSection(section, cfg, selfURL).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = renderGenericFormSection(section, cfg).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -359,7 +359,7 @@ func renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool,
 	})
 }
 
-func renderGenericFormSection(section config.Section, cfg any, selfURL string) templ.Component {
+func renderGenericFormSection(section config.Section, cfg any) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -399,12 +399,12 @@ func renderGenericFormSection(section config.Section, cfg any, selfURL string) t
 				return templ_7745c5c3_Err
 			}
 		}
-		if section.Description != "" {
+		if section.Description != nil {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<p class=\"text-muted small mb-3\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templ.Raw(section.Description).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = section.Description.Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -414,7 +414,7 @@ func renderGenericFormSection(section config.Section, cfg any, selfURL string) t
 			}
 		}
 		for _, field := range section.Fields {
-			templ_7745c5c3_Err = renderGenericFormField(field, cfg, selfURL).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = renderGenericFormField(field, cfg).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -423,7 +423,7 @@ func renderGenericFormSection(section config.Section, cfg any, selfURL string) t
 	})
 }
 
-func renderGenericFormField(field config.Field, cfg any, selfURL string) templ.Component {
+func renderGenericFormField(field config.Field, cfg any) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1386,8 +1386,8 @@ func renderArrayItemTemplate(af config.ArrayField) templ.Component {
 
 func addArrayItem(jsonName string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_addArrayItem_5d96`,
-		Function: `function __templ_addArrayItem_5d96(jsonName){var containerId = jsonName + '-container';
+		Name: `__templ_addArrayItem_19a2`,
+		Function: `function __templ_addArrayItem_19a2(jsonName){var containerId = jsonName + '-container';
 	var templateId = jsonName + '-template';
 	var container = document.getElementById(containerId);
 	var template = document.getElementById(templateId);
@@ -1404,6 +1404,18 @@ func addArrayItem(jsonName string) templ.ComponentScript {
 		}
 	});
 
+	// Wire up the first text input (name field) to update the card header in real-time
+	var nameInput = card.querySelector('.item-field');
+	if (nameInput) {
+		var nameDisplay = card.querySelector('.item-name-display');
+		var itemLabel = nameDisplay ? nameDisplay.textContent.replace('New ', '') : '';
+		nameInput.addEventListener('input', function() {
+			if (nameDisplay) {
+				nameDisplay.textContent = this.value || ('New ' + itemLabel);
+			}
+		});
+	}
+
 	container.appendChild(clone);
 	container.setAttribute('data-next-index', nextIndex + 1);
 
@@ -1412,8 +1424,8 @@ func addArrayItem(jsonName string) templ.ComponentScript {
 		firstInput.focus();
 	}
 }`,
-		Call:       templ.SafeScript(`__templ_addArrayItem_5d96`, jsonName),
-		CallInline: templ.SafeScriptInline(`__templ_addArrayItem_5d96`, jsonName),
+		Call:       templ.SafeScript(`__templ_addArrayItem_19a2`, jsonName),
+		CallInline: templ.SafeScriptInline(`__templ_addArrayItem_19a2`, jsonName),
 	}
 }
 
@@ -1474,7 +1486,7 @@ func renderGenericEventLog(events []*config.Event) templ.Component {
 		var templ_7745c5c3_Var69 string
 		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(events)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 338, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 350, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 		if templ_7745c5c3_Err != nil {
@@ -1492,7 +1504,7 @@ func renderGenericEventLog(events []*config.Event) templ.Component {
 			var templ_7745c5c3_Var70 string
 			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 355, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 367, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 			if templ_7745c5c3_Err != nil {
@@ -1505,7 +1517,7 @@ func renderGenericEventLog(events []*config.Event) templ.Component {
 			var templ_7745c5c3_Var71 string
 			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(event.EventType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 356, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 368, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 			if templ_7745c5c3_Err != nil {
@@ -1533,7 +1545,7 @@ func renderGenericEventLog(events []*config.Event) templ.Component {
 			var templ_7745c5c3_Var72 string
 			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(event.EntityName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 364, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 376, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 			if templ_7745c5c3_Err != nil {
@@ -1546,7 +1558,7 @@ func renderGenericEventLog(events []*config.Event) templ.Component {
 			var templ_7745c5c3_Var73 string
 			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 365, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 377, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 			if templ_7745c5c3_Err != nil {
@@ -1559,7 +1571,7 @@ func renderGenericEventLog(events []*config.Event) templ.Component {
 			var templ_7745c5c3_Var74 string
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 365, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `configui.templ`, Line: 377, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 			if templ_7745c5c3_Err != nil {

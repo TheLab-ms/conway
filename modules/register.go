@@ -66,7 +66,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(waiver.New(opts.Database))
 	a.Add(kiosk.New(opts.Database, opts.Self, opts.FobIssuer, opts.SpaceHost))
 	a.Add(metrics.New(opts.Database))
-	a.Add(fobapi.New(opts.Database))
+	a.Add(fobapi.New(opts.Database, opts.Self))
 	a.Add(directory.New(opts.Database))
 
 	a.Add(machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu")))

@@ -10,7 +10,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
-templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, version int, events []*config.Event, configSections []*configSection, saved bool, errMsg string, selfURL string) {
+templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, version int, events []*config.Event, configSections []*configSection, saved bool, errMsg string) {
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
@@ -35,7 +35,7 @@ templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg an
 					if spec.ReadOnly {
 						@renderReadOnlyConfigCard(spec)
 					} else {
-						@renderConfigCard(spec, cfg, version, saved, errMsg, selfURL)
+						@renderConfigCard(spec, cfg, version, saved, errMsg)
 					}
 					if len(events) > 0 {
 						@renderGenericEventLog(events)
@@ -52,19 +52,19 @@ templ renderReadOnlyConfigCard(spec *config.ParsedSpec) {
 			<h5 class="mb-0">{ spec.Title }</h5>
 		</div>
 		<div class="card-body">
-			if spec.Description != "" {
+			if spec.Description != nil {
 				<div class="alert alert-info">
-					@templ.Raw(spec.Description)
+					@spec.Description
 				</div>
 			}
-			if spec.InfoContent != "" {
-				@templ.Raw(spec.InfoContent)
+			if spec.InfoContent != nil {
+				@spec.InfoContent
 			}
 		</div>
 	</div>
 }
 
-templ renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool, errMsg string, selfURL string) {
+templ renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool, errMsg string) {
 	<div class="card mb-4">
 		<div class="card-header d-flex justify-content-between align-items-center">
 			<h5 class="mb-0">{ spec.Title }</h5>
@@ -83,14 +83,14 @@ templ renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool
 					{ errMsg }
 				</div>
 			}
-			if spec.Description != "" {
+			if spec.Description != nil {
 				<div class="alert alert-info" role="alert">
-					@templ.Raw(spec.Description)
+					@spec.Description
 				</div>
 			}
 			<form method="post">
 				for _, section := range spec.Sections {
-					@renderGenericFormSection(section, cfg, selfURL)
+					@renderGenericFormSection(section, cfg)
 				}
 				for _, af := range spec.ArrayFields {
 					@renderArrayField(af, cfg)
@@ -107,21 +107,21 @@ templ renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool
 	</div>
 }
 
-templ renderGenericFormSection(section config.Section, cfg any, selfURL string) {
+templ renderGenericFormSection(section config.Section, cfg any) {
 	if section.Title != "" {
 		<h6 class="text-muted border-bottom pb-2 mb-3 mt-4">{ section.Title }</h6>
 	}
-	if section.Description != "" {
+	if section.Description != nil {
 		<p class="text-muted small mb-3">
-			@templ.Raw(section.Description)
+			@section.Description
 		</p>
 	}
 	for _, field := range section.Fields {
-		@renderGenericFormField(field, cfg, selfURL)
+		@renderGenericFormField(field, cfg)
 	}
 }
 
-templ renderGenericFormField(field config.Field, cfg any, selfURL string) {
+templ renderGenericFormField(field config.Field, cfg any) {
 	<div class="mb-3">
 		<label for={ field.JSONName } class="form-label">{ field.Label }</label>
 		switch field.Type {
@@ -297,6 +297,18 @@ script addArrayItem(jsonName string) {
 			input.setAttribute('name', name.replace('[-1]', '[' + nextIndex + ']'));
 		}
 	});
+
+	// Wire up the first text input (name field) to update the card header in real-time
+	var nameInput = card.querySelector('.item-field');
+	if (nameInput) {
+		var nameDisplay = card.querySelector('.item-name-display');
+		var itemLabel = nameDisplay ? nameDisplay.textContent.replace('New ', '') : '';
+		nameInput.addEventListener('input', function() {
+			if (nameDisplay) {
+				nameDisplay.textContent = this.value || ('New ' + itemLabel);
+			}
+		});
+	}
 
 	container.appendChild(clone);
 	container.setAttribute('data-next-index', nextIndex + 1);

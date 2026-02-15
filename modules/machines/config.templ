@@ -1,0 +1,10 @@
+package machines
+
+templ configDescription() {
+	<strong>How Bambu Integration Works</strong>
+	<ul class="mb-0 mt-2">
+		<li><strong>Status Monitoring:</strong> Conway polls each Bambu printer via MQTT to display real-time status, progress, and camera feeds.</li>
+		<li><strong>Notifications:</strong> Print completion and failure notifications are sent to Discord (configure the webhook URL in Discord settings).</li>
+		<li><strong>User Mentions:</strong> Include <code>{"@username"}</code> in your plate name in Bambu Studio to get mentioned in Discord notifications.</li>
+	</ul>
+}

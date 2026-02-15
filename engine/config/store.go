@@ -47,7 +47,7 @@ func (s *Store) Load(ctx context.Context, module string) (any, int, error) {
 	// deadlock when MaxOpenConns is 1: QueryRowContext holds the single
 	// connection until Scan is called, so a nested query inside scanRow
 	// would block forever waiting for a connection.
-	tableName := module + "_config"
+	tableName := spec.tableName()
 	columns, err := s.getTableColumns(ctx, tableName)
 	if err != nil {
 		return nil, 0, err
@@ -255,6 +255,10 @@ func (s *Store) Save(ctx context.Context, module string, config any, preserveSec
 				existingVal = existingVal.Elem()
 			}
 			mergeSecrets(configVal, existingVal, spec)
+			filterNewArrayItemsWithoutSecrets(configVal, existingVal, spec)
+		} else {
+			// No existing config — filter new items with empty secrets
+			filterNewArrayItemsWithoutSecrets(configVal, reflect.Value{}, spec)
 		}
 	}
 
@@ -267,7 +271,7 @@ func (s *Store) Save(ctx context.Context, module string, config any, preserveSec
 
 	// Build INSERT statement
 	columns, values := s.buildInsertParams(configVal, spec)
-	tableName := module + "_config"
+	tableName := spec.tableName()
 
 	placeholders := make([]string, len(columns))
 	for i := range placeholders {
@@ -396,6 +400,82 @@ func preserveArraySecrets(newSlice, oldSlice reflect.Value, af ArrayField) {
 				}
 			}
 		}
+	}
+}
+
+// filterNewArrayItemsWithoutSecrets removes new array items that have empty secret fields.
+// A "new" item is one whose KeyField value doesn't match any existing item.
+// This prevents saving incomplete array items (e.g., printers without access codes).
+func filterNewArrayItemsWithoutSecrets(newVal, existingVal reflect.Value, spec *ParsedSpec) {
+	for _, af := range spec.ArrayFields {
+		if af.KeyField == "" {
+			continue
+		}
+		// Check if any fields are secret
+		hasSecrets := false
+		for _, field := range af.Fields {
+			if field.Secret {
+				hasSecrets = true
+				break
+			}
+		}
+		if !hasSecrets {
+			continue
+		}
+
+		newSlice := newVal.FieldByName(af.Name)
+		if !newSlice.IsValid() || newSlice.Kind() != reflect.Slice {
+			continue
+		}
+
+		// Build set of existing keys
+		existingKeys := make(map[string]bool)
+		if existingVal.IsValid() {
+			oldSlice := existingVal.FieldByName(af.Name)
+			if oldSlice.IsValid() && oldSlice.Kind() == reflect.Slice {
+				for i := 0; i < oldSlice.Len(); i++ {
+					keyField := oldSlice.Index(i).FieldByName(af.KeyField)
+					if keyField.IsValid() {
+						existingKeys[fmt.Sprintf("%v", keyField.Interface())] = true
+					}
+				}
+			}
+		}
+
+		// Filter: keep items that are existing OR have non-empty secrets
+		filtered := reflect.MakeSlice(newSlice.Type(), 0, newSlice.Len())
+		for i := 0; i < newSlice.Len(); i++ {
+			item := newSlice.Index(i)
+			keyField := item.FieldByName(af.KeyField)
+			key := ""
+			if keyField.IsValid() {
+				key = fmt.Sprintf("%v", keyField.Interface())
+			}
+
+			// Keep existing items (they already have secrets preserved)
+			if existingKeys[key] {
+				filtered = reflect.Append(filtered, item)
+				continue
+			}
+
+			// For new items, check that all secret fields are non-empty
+			allSecretsSet := true
+			for _, field := range af.Fields {
+				if !field.Secret {
+					continue
+				}
+				secretField := item.FieldByName(field.Name)
+				if secretField.IsValid() && secretField.IsZero() {
+					allSecretsSet = false
+					break
+				}
+			}
+			if allSecretsSet {
+				filtered = reflect.Append(filtered, item)
+			}
+		}
+
+		newSlice.Set(filtered)
 	}
 }
 

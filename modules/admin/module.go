@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -23,17 +22,6 @@ import (
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
-// migration ensures the bambu tables exist for the admin config pages,
-// even if the machines module is not enabled.
-const migration = `
-CREATE TABLE IF NOT EXISTS bambu_config (
-    version INTEGER PRIMARY KEY AUTOINCREMENT,
-    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    printers_json TEXT NOT NULL DEFAULT '[]',
-    poll_interval_seconds INTEGER NOT NULL DEFAULT 5
-) STRICT;
-`
-
 type Module struct {
 	db             *sql.DB
 	self           *url.URL
@@ -45,8 +33,6 @@ type Module struct {
 }
 
 func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer, eventLogger *engine.EventLogger) *Module {
-	engine.MustMigrate(db, migration)
-
 	nav := []*navbarTab{}
 	for _, view := range listViews {
 		nav = append(nav, &navbarTab{Title: view.Title, Path: "/admin" + view.RelPath})
@@ -308,18 +294,16 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 
 	// Configuration routes
 	router.HandleFunc("GET /admin/config", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/admin/config/waiver", http.StatusSeeOther)
+		// Redirect to the first config section from the registry
+		if m.configRegistry != nil {
+			specs := m.configRegistry.List()
+			if len(specs) > 0 {
+				http.Redirect(w, r, "/admin/config/"+specs[0].Module, http.StatusSeeOther)
+				return
+			}
+		}
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 	}))
-	router.HandleFunc("GET /admin/config/waiver", router.WithLeadership(m.renderWaiverConfigPage))
-	router.HandleFunc("POST /admin/config/waiver", router.WithLeadership(m.handleWaiverConfigSave))
-	router.HandleFunc("GET /admin/config/discord", router.WithLeadership(m.renderDiscordConfigPage))
-	router.HandleFunc("POST /admin/config/discord", router.WithLeadership(m.handleDiscordConfigSave))
-	router.HandleFunc("GET /admin/config/stripe", router.WithLeadership(m.renderStripeConfigPage))
-	router.HandleFunc("POST /admin/config/stripe", router.WithLeadership(m.handleStripeConfigSave))
-	router.HandleFunc("GET /admin/config/bambu", router.WithLeadership(m.renderBambuConfigPage))
-	router.HandleFunc("POST /admin/config/bambu", router.WithLeadership(m.handleBambuConfigSave))
-	router.HandleFunc("GET /admin/config/fobapi", router.WithLeadership(m.renderFobAPIConfigPage))
-	router.HandleFunc("GET /admin/config/oauth2", router.WithLeadership(m.renderOAuth2ConfigPage))
 
 	// Generic config routes for registered modules
 	if m.configRegistry != nil {
@@ -458,456 +442,6 @@ func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request
 	renderMetricsAdminPage(m.nav, metrics, selected).Render(r.Context(), w)
 }
 
-func (m *Module) renderWaiverConfigPage(w http.ResponseWriter, r *http.Request) {
-	data := m.getWaiverConfigData(r)
-	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Waiver", renderWaiverConfigContent(data)).Render(r.Context(), w)
-}
-
-func (m *Module) handleWaiverConfigSave(w http.ResponseWriter, r *http.Request) {
-	content := r.FormValue("content")
-
-	if content == "" {
-		engine.ClientError(w, "Invalid Input", "Content is required", 400)
-		return
-	}
-
-	_, err := m.db.ExecContext(r.Context(),
-		"INSERT INTO waiver_content (content) VALUES ($1)",
-		content)
-	if engine.HandleError(w, err) {
-		return
-	}
-
-	data := m.getWaiverConfigData(r)
-	data.Saved = true
-	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Waiver", renderWaiverConfigContent(data)).Render(r.Context(), w)
-}
-
-func (m *Module) getWaiverConfigData(r *http.Request) *waiverConfigData {
-	row := m.db.QueryRowContext(r.Context(),
-		"SELECT version, content FROM waiver_content ORDER BY version DESC LIMIT 1")
-
-	data := &waiverConfigData{}
-	err := row.Scan(&data.Version, &data.Content)
-	if err != nil {
-		return &waiverConfigData{Version: 1}
-	}
-	return data
-}
-
-func (m *Module) renderDiscordConfigPage(w http.ResponseWriter, r *http.Request) {
-	data := m.getDiscordConfigData(r)
-	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Discord", renderDiscordConfigContent(data, m.self.String())).Render(r.Context(), w)
-}
-
-func (m *Module) handleDiscordConfigSave(w http.ResponseWriter, r *http.Request) {
-	clientID := r.FormValue("client_id")
-	clientSecret := r.FormValue("client_secret")
-	botToken := r.FormValue("bot_token")
-	guildID := r.FormValue("guild_id")
-	roleID := r.FormValue("role_id")
-	printWebhookURL := r.FormValue("print_webhook_url")
-	syncIntervalStr := r.FormValue("sync_interval_hours")
-
-	syncIntervalHours := 24 // default
-	if syncIntervalStr != "" {
-		if parsed, err := strconv.Atoi(syncIntervalStr); err == nil && parsed >= 1 && parsed <= 168 {
-			syncIntervalHours = parsed
-		}
-	}
-
-	// Preserve existing secrets if the user didn't provide new values
-	var existingClientSecret, existingBotToken, existingPrintWebhookURL string
-	m.db.QueryRowContext(r.Context(),
-		`SELECT client_secret, bot_token, print_webhook_url
-		 FROM discord_config ORDER BY version DESC LIMIT 1`).
-		Scan(&existingClientSecret, &existingBotToken, &existingPrintWebhookURL)
-
-	if clientSecret == "" {
-		clientSecret = existingClientSecret
-	}
-	if botToken == "" {
-		botToken = existingBotToken
-	}
-	if printWebhookURL == "" {
-		printWebhookURL = existingPrintWebhookURL
-	}
-
-	// Insert new version
-	_, err := m.db.ExecContext(r.Context(),
-		`INSERT INTO discord_config
-		 (client_id, client_secret, bot_token, guild_id, role_id, print_webhook_url, sync_interval_hours)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		clientID, clientSecret, botToken, guildID, roleID, printWebhookURL, syncIntervalHours)
-	if engine.HandleError(w, err) {
-		return
-	}
-
-	data := m.getDiscordConfigData(r)
-	data.Saved = true
-	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Discord", renderDiscordConfigContent(data, m.self.String())).Render(r.Context(), w)
-}
-
-func (m *Module) getDiscordConfigData(r *http.Request) *discordConfigData {
-	row := m.db.QueryRowContext(r.Context(),
-		`SELECT version, client_id, client_secret != '', bot_token != '',
-				guild_id, role_id, print_webhook_url != '', COALESCE(sync_interval_hours, 24)
-		 FROM discord_config ORDER BY version DESC LIMIT 1`)
-
-	data := &discordConfigData{SyncIntervalHours: 24}
-	err := row.Scan(&data.Version, &data.ClientID, &data.HasClientSecret,
-		&data.HasBotToken, &data.GuildID, &data.RoleID,
-		&data.HasPrintWebhookURL, &data.SyncIntervalHours)
-	if err != nil && err != sql.ErrNoRows {
-		data.Error = "Error loading configuration: " + err.Error()
-	}
-
-	// Fetch status counts
-	m.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) FROM members WHERE discord_user_id IS NOT NULL").Scan(&data.TotalLinkedMembers)
-	m.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) FROM members WHERE discord_user_id IS NOT NULL AND discord_last_synced IS NULL").Scan(&data.PendingSyncs)
-
-	// Fetch recent events
-	data.RecentEvents = m.getRecentDiscordEvents(r.Context())
-
-	return data
-}
-
-func (m *Module) getRecentDiscordEvents(ctx context.Context) []*discordEvent {
-	rows, err := m.db.QueryContext(ctx, `
-		SELECT e.created, e.event_type, COALESCE(e.entity_id, ''), e.success, e.details,
-			   COALESCE(mem.name_override, mem.identifier, 'Unknown') AS member_name
-		FROM module_events e
-		LEFT JOIN members mem ON e.member = mem.id
-		WHERE e.module = 'discord'
-		ORDER BY e.created DESC
-		LIMIT 20`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var events []*discordEvent
-	for rows.Next() {
-		var created int64
-		var successInt int
-		event := &discordEvent{}
-		if rows.Scan(&created, &event.EventType, &event.DiscordUserID, &successInt, &event.Details, &event.MemberName) == nil {
-			event.Created = time.Unix(created, 0)
-			event.Success = successInt == 1
-			events = append(events, event)
-		}
-	}
-	return events
-}
-
-func (m *Module) renderStripeConfigPage(w http.ResponseWriter, r *http.Request) {
-	data := m.getStripeConfigData(r)
-	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Stripe", renderStripeConfigContent(data, m.self.String())).Render(r.Context(), w)
-}
-
-func (m *Module) handleStripeConfigSave(w http.ResponseWriter, r *http.Request) {
-	apiKey := r.FormValue("api_key")
-	webhookKey := r.FormValue("webhook_key")
-
-	// Preserve existing secrets if the user didn't provide new values
-	var existingAPIKey, existingWebhookKey string
-	m.db.QueryRowContext(r.Context(),
-		`SELECT api_key, webhook_key FROM stripe_config ORDER BY version DESC LIMIT 1`).
-		Scan(&existingAPIKey, &existingWebhookKey)
-
-	if apiKey == "" {
-		apiKey = existingAPIKey
-	}
-	if webhookKey == "" {
-		webhookKey = existingWebhookKey
-	}
-
-	// Insert new version
-	_, err := m.db.ExecContext(r.Context(),
-		`INSERT INTO stripe_config (api_key, webhook_key) VALUES ($1, $2)`,
-		apiKey, webhookKey)
-	if engine.HandleError(w, err) {
-		return
-	}
-
-	data := m.getStripeConfigData(r)
-	data.Saved = true
-	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Stripe", renderStripeConfigContent(data, m.self.String())).Render(r.Context(), w)
-}
-
-func (m *Module) getStripeConfigData(r *http.Request) *stripeConfigData {
-	row := m.db.QueryRowContext(r.Context(),
-		`SELECT version, api_key != '', webhook_key != ''
-		 FROM stripe_config ORDER BY version DESC LIMIT 1`)
-
-	data := &stripeConfigData{}
-	err := row.Scan(&data.Version, &data.HasAPIKey, &data.HasWebhookKey)
-	if err != nil && err != sql.ErrNoRows {
-		data.Error = "Error loading configuration: " + err.Error()
-	}
-
-	// Fetch status counts
-	m.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) FROM members WHERE stripe_subscription_state IN ('active', 'trialing')").Scan(&data.ActiveSubscriptions)
-	m.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) FROM members WHERE stripe_customer_id IS NOT NULL").Scan(&data.TotalCustomers)
-
-	// Fetch recent events
-	data.RecentEvents = m.getRecentStripeEvents(r.Context())
-
-	return data
-}
-
-func (m *Module) getRecentStripeEvents(ctx context.Context) []*stripeEvent {
-	rows, err := m.db.QueryContext(ctx, `
-		SELECT e.created, e.event_type, COALESCE(e.entity_id, ''), e.success, e.details,
-			   COALESCE(mem.name_override, mem.identifier, 'Unknown') AS member_name
-		FROM module_events e
-		LEFT JOIN members mem ON e.member = mem.id
-		WHERE e.module = 'stripe'
-		ORDER BY e.created DESC
-		LIMIT 20`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var events []*stripeEvent
-	for rows.Next() {
-		var created int64
-		var successInt int
-		event := &stripeEvent{}
-		if rows.Scan(&created, &event.EventType, &event.StripeCustomerID, &successInt, &event.Details, &event.MemberName) == nil {
-			event.Created = time.Unix(created, 0)
-			event.Success = successInt == 1
-			events = append(events, event)
-		}
-	}
-	return events
-}
-
-func (m *Module) renderBambuConfigPage(w http.ResponseWriter, r *http.Request) {
-	data := m.getBambuConfigData(r)
-	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
-}
-
-func (m *Module) handleBambuConfigSave(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		data := m.getBambuConfigData(r)
-		data.Error = "Failed to parse form: " + err.Error()
-		w.Header().Set("Content-Type", "text/html")
-		renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
-		return
-	}
-
-	// Parse poll interval
-	pollIntervalSecs := 5
-	if pollIntervalStr := r.FormValue("poll_interval_seconds"); pollIntervalStr != "" {
-		if parsed, err := strconv.Atoi(pollIntervalStr); err == nil && parsed >= 1 && parsed <= 60 {
-			pollIntervalSecs = parsed
-		}
-	}
-
-	// Load existing config to get current access codes
-	existingPrinters := m.getExistingPrinters(r.Context())
-
-	// Find all printer indices submitted
-	seenIndices := make(map[int]bool)
-	for key := range r.Form {
-		// Match printer[N][field] pattern
-		if strings.HasPrefix(key, "printer[") {
-			// Extract index
-			idxEnd := strings.Index(key[8:], "]")
-			if idxEnd > 0 {
-				if idx, err := strconv.Atoi(key[8 : 8+idxEnd]); err == nil {
-					seenIndices[idx] = true
-				}
-			}
-		}
-	}
-
-	// Sort indices to maintain order
-	indices := make([]int, 0, len(seenIndices))
-	for idx := range seenIndices {
-		indices = append(indices, idx)
-	}
-	sort.Ints(indices)
-
-	// Build printer list
-	type printerJSON struct {
-		Name         string `json:"name"`
-		Host         string `json:"host"`
-		AccessCode   string `json:"access_code"`
-		SerialNumber string `json:"serial_number"`
-	}
-	printers := []printerJSON{}
-
-	for _, idx := range indices {
-		prefix := fmt.Sprintf("printer[%d]", idx)
-		name := r.FormValue(prefix + "[name]")
-		host := r.FormValue(prefix + "[host]")
-		accessCode := r.FormValue(prefix + "[access_code]")
-		serialNumber := r.FormValue(prefix + "[serial_number]")
-
-		// Skip if required fields are empty
-		if name == "" || host == "" || serialNumber == "" {
-			continue
-		}
-
-		// Preserve existing access code if not provided
-		if accessCode == "" {
-			if existing, ok := existingPrinters[serialNumber]; ok {
-				accessCode = existing
-			}
-		}
-
-		// Skip new printers without access code
-		if accessCode == "" {
-			continue
-		}
-
-		printers = append(printers, printerJSON{
-			Name:         name,
-			Host:         host,
-			AccessCode:   accessCode,
-			SerialNumber: serialNumber,
-		})
-	}
-
-	// Convert to JSON
-	printersJSONBytes, err := json.Marshal(printers)
-	if err != nil {
-		data := m.getBambuConfigData(r)
-		data.Error = "Failed to encode printers: " + err.Error()
-		w.Header().Set("Content-Type", "text/html")
-		renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
-		return
-	}
-
-	// Insert new version
-	_, err = m.db.ExecContext(r.Context(),
-		`INSERT INTO bambu_config (printers_json, poll_interval_seconds) VALUES ($1, $2)`,
-		string(printersJSONBytes), pollIntervalSecs)
-	if engine.HandleError(w, err) {
-		return
-	}
-
-	data := m.getBambuConfigData(r)
-	data.Saved = true
-	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Bambu", renderBambuConfigContent(data)).Render(r.Context(), w)
-}
-
-// getExistingPrinters returns existing printer access codes keyed by serial number
-func (m *Module) getExistingPrinters(ctx context.Context) map[string]string {
-	result := make(map[string]string)
-
-	row := m.db.QueryRowContext(ctx,
-		`SELECT printers_json FROM bambu_config ORDER BY version DESC LIMIT 1`)
-
-	var printersJSON string
-	if row.Scan(&printersJSON) != nil {
-		return result
-	}
-
-	var printers []struct {
-		AccessCode   string `json:"access_code"`
-		SerialNumber string `json:"serial_number"`
-	}
-	if json.Unmarshal([]byte(printersJSON), &printers) == nil {
-		for _, p := range printers {
-			result[p.SerialNumber] = p.AccessCode
-		}
-	}
-
-	return result
-}
-
-func (m *Module) getBambuConfigData(r *http.Request) *bambuConfigData {
-	row := m.db.QueryRowContext(r.Context(),
-		`SELECT version, printers_json, COALESCE(poll_interval_seconds, 5)
-		 FROM bambu_config ORDER BY version DESC LIMIT 1`)
-
-	var printersJSON string
-	data := &bambuConfigData{PollIntervalSecs: 5, Printers: []*bambuPrinterFormData{}}
-	err := row.Scan(&data.Version, &printersJSON, &data.PollIntervalSecs)
-	if err != nil && err != sql.ErrNoRows {
-		data.Error = "Error loading configuration: " + err.Error()
-		return data
-	}
-
-	// Parse printers JSON into structured form data
-	if printersJSON != "" && printersJSON != "[]" {
-		var printers []struct {
-			Name         string `json:"name"`
-			Host         string `json:"host"`
-			AccessCode   string `json:"access_code"`
-			SerialNumber string `json:"serial_number"`
-		}
-		if json.Unmarshal([]byte(printersJSON), &printers) == nil {
-			for i, p := range printers {
-				data.Printers = append(data.Printers, &bambuPrinterFormData{
-					Index:         i,
-					Name:          p.Name,
-					Host:          p.Host,
-					HasAccessCode: p.AccessCode != "",
-					SerialNumber:  p.SerialNumber,
-				})
-			}
-		}
-	}
-
-	data.ConfiguredPrinters = len(data.Printers)
-	data.RecentEvents = m.getRecentBambuEvents(r.Context())
-
-	return data
-}
-
-func (m *Module) getRecentBambuEvents(ctx context.Context) []*bambuEvent {
-	rows, err := m.db.QueryContext(ctx, `
-		SELECT created, event_type, COALESCE(entity_name, ''), COALESCE(entity_id, ''), success, details
-		FROM module_events
-		WHERE module = 'bambu'
-		ORDER BY created DESC
-		LIMIT 20`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var events []*bambuEvent
-	for rows.Next() {
-		var created int64
-		var successInt int
-		event := &bambuEvent{}
-		if rows.Scan(&created, &event.EventType, &event.PrinterName, &event.PrinterSerial, &successInt, &event.Details) == nil {
-			event.Created = time.Unix(created, 0)
-			event.Success = successInt == 1
-			events = append(events, event)
-		}
-	}
-	return events
-}
-
-func (m *Module) renderFobAPIConfigPage(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "Fob API", renderFobAPIConfigContent(m.self.String())).Render(r.Context(), w)
-}
-
-func (m *Module) renderOAuth2ConfigPage(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	renderConfigPage(m.nav, "OAuth2 Provider", renderOAuth2ConfigContent(m.self.String())).Render(r.Context(), w)
-}
-
 // handleGenericConfigPage renders a configuration page for a registered module.
 func (m *Module) handleGenericConfigPage(w http.ResponseWriter, r *http.Request) {
 	moduleName := r.PathValue("module")
@@ -949,25 +483,35 @@ func (m *Module) handleGenericConfigSave(w http.ResponseWriter, r *http.Request)
 
 // renderGenericConfig renders a generic config page.
 func (m *Module) renderGenericConfig(w http.ResponseWriter, r *http.Request, spec *config.ParsedSpec, saved bool, errMsg string) {
-	cfg, version, err := m.configStore.Load(r.Context(), spec.Module)
-	if err != nil {
-		engine.SystemError(w, err.Error())
-		return
+	var cfg any
+	var version int
+
+	// ReadOnly specs (like oauth2, fobapi) have no Type and no database table,
+	// so skip loading config data for them.
+	if !spec.ReadOnly {
+		var err error
+		cfg, version, err = m.configStore.Load(r.Context(), spec.Module)
+		if err != nil {
+			engine.SystemError(w, err.Error())
+			return
+		}
 	}
 
 	events := m.loadModuleEvents(r.Context(), spec.Module)
 
 	w.Header().Set("Content-Type", "text/html")
-	renderGenericConfigPage(m.nav, spec, cfg, version, events, m.getConfigSections(), saved, errMsg, m.self.String()).Render(r.Context(), w)
+	renderGenericConfigPage(m.nav, spec, cfg, version, events, m.getConfigSections(), saved, errMsg).Render(r.Context(), w)
 }
 
 // loadModuleEvents loads recent events for a module.
 func (m *Module) loadModuleEvents(ctx context.Context, module string) []*config.Event {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT id, created, module, member, event_type, COALESCE(entity_id, ''), COALESCE(entity_name, ''), success, COALESCE(details, '')
-		FROM module_events
-		WHERE module = $1
-		ORDER BY created DESC
+		SELECT e.id, e.created, e.module, e.member, e.event_type, COALESCE(e.entity_id, ''), COALESCE(e.entity_name, ''), e.success, COALESCE(e.details, ''),
+			   COALESCE(mem.name_override, mem.identifier, '') AS member_name
+		FROM module_events e
+		LEFT JOIN members mem ON e.member = mem.id
+		WHERE e.module = $1
+		ORDER BY e.created DESC
 		LIMIT 20`, module)
 	if err != nil {
 		return nil
@@ -978,41 +522,34 @@ func (m *Module) loadModuleEvents(ctx context.Context, module string) []*config.
 	for rows.Next() {
 		var created int64
 		var successInt int
+		var memberName string
 		event := &config.Event{}
-		if rows.Scan(&event.ID, &created, &event.Module, &event.MemberID, &event.EventType, &event.EntityID, &event.EntityName, &successInt, &event.Details) == nil {
+		if rows.Scan(&event.ID, &created, &event.Module, &event.MemberID, &event.EventType, &event.EntityID, &event.EntityName, &successInt, &event.Details, &memberName) == nil {
 			event.Created = time.Unix(created, 0)
 			event.Success = successInt == 1
+			// Use member name when available, fall back to entity name
+			if memberName != "" {
+				event.EntityName = memberName
+			}
 			events = append(events, event)
 		}
 	}
 	return events
 }
 
-// getConfigSections returns the list of config sections for the sidebar.
-// This combines the hardcoded sections with any dynamically registered modules.
+// getConfigSections returns the list of config sections for the sidebar,
+// built entirely from the config registry.
 func (m *Module) getConfigSections() []*configSection {
-	sections := make([]*configSection, len(configSections))
-	copy(sections, configSections)
-
-	if m.configRegistry != nil {
-		for _, spec := range m.configRegistry.List() {
-			// Check if this module already has a hardcoded section
-			path := "/admin/config/" + spec.Module
-			exists := false
-			for _, s := range sections {
-				if s.Path == path {
-					exists = true
-					break
-				}
-			}
-			if !exists {
-				sections = append(sections, &configSection{
-					Name: spec.Title,
-					Path: "/admin/config/" + spec.Module,
-				})
-			}
-		}
+	if m.configRegistry == nil {
+		return nil
 	}
 
+	var sections []*configSection
+	for _, spec := range m.configRegistry.List() {
+		sections = append(sections, &configSection{
+			Name: spec.Title,
+			Path: "/admin/config/" + spec.Module,
+		})
+	}
 	return sections
 }

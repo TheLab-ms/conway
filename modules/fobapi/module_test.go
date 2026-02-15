@@ -37,7 +37,7 @@ func TestListing(t *testing.T) {
 	_, err := db.Exec(migration)
 	require.NoError(t, err)
 
-	m := New(db)
+	m := New(db, nil)
 	const etag = "3ac3b3f37064c09f3be2a0b733d93964ef41657dcabd00029149920e1d3939c4"
 
 	// Happy path
@@ -63,7 +63,7 @@ func TestEvents(t *testing.T) {
 	_, err := db.Exec(migration)
 	require.NoError(t, err)
 
-	m := New(db)
+	m := New(db, nil)
 
 	r := httptest.NewRequest("GET", "/", bytes.NewBufferString(`[{ "fob": 123, "ts": 1000 }, { "fob": 123, "ts": 1000 }, { "fob": 123, "ts": 1001 }, { "fob": 345, "ts": 10001 }]`))
 	w := httptest.NewRecorder()

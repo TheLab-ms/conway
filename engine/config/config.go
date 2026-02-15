@@ -6,6 +6,8 @@ package config
 import (
 	"reflect"
 	"time"
+
+	"github.com/a-h/templ"
 )
 
 // FieldType defines the UI input type for a config field.
@@ -47,18 +49,18 @@ type Option struct {
 
 // Section groups related fields together in the UI.
 type Section struct {
-	Name        string  // Section identifier
-	Title       string  // Display title
-	Description string  // Section description/help text
-	Fields      []Field // Fields in this section
+	Name        string          // Section identifier
+	Title       string          // Display title
+	Description templ.Component // Section description/help text (rendered as HTML)
+	Fields      []Field         // Fields in this section
 }
 
 // SectionDef defines a section in the Spec.
 type SectionDef struct {
-	Name        string   // Section identifier
-	Title       string   // Display title
-	Description string   // Help text for the section
-	Fields      []string // Optional: explicit field names (in order) belonging to this section
+	Name        string          // Section identifier
+	Title       string          // Display title
+	Description templ.Component // Help text for the section (rendered as HTML)
+	Fields      []string        // Optional: explicit field names (in order) belonging to this section
 }
 
 // ArrayFieldDef defines a dynamic array field.
@@ -80,8 +82,8 @@ type Spec struct {
 	// Display title for the admin UI
 	Title string
 
-	// Description/help text shown at the top of the config page
-	Description string
+	// Description/help text shown at the top of the config page (rendered as HTML)
+	Description templ.Component
 
 	// Type is a zero value of the config struct.
 	// Must be a struct or pointer to struct.
@@ -95,15 +97,19 @@ type Spec struct {
 	// These require special form handling (add/remove items).
 	ArrayFields []ArrayFieldDef
 
-	// InfoContent is an optional HTML string for read-only informational content.
+	// InfoContent is an optional component for read-only informational content.
 	// Used for pages like the Fob API documentation.
-	InfoContent string
+	InfoContent templ.Component
 
 	// ReadOnly means this config page is informational only (no form).
 	ReadOnly bool
 
 	// Order controls display order in the config sidebar (lower = first).
 	Order int
+
+	// TableName overrides the default table name ({Module}_config).
+	// Use this when the config is stored in a table with a non-standard name.
+	TableName string
 }
 
 // ParsedSpec is a Spec with all fields parsed from struct tags.
@@ -113,17 +119,25 @@ type ParsedSpec struct {
 	ArrayFields []ArrayField // Parsed array field definitions
 }
 
+// tableName returns the database table name for this module's config.
+func (s *ParsedSpec) tableName() string {
+	if s.TableName != "" {
+		return s.TableName
+	}
+	return s.Module + "_config"
+}
+
 // ArrayField represents a parsed dynamic array field.
 type ArrayField struct {
-	Name      string    // Go struct field name
-	JSONName  string    // JSON field name
-	Label     string    // Display label (e.g., "Printers")
-	ItemLabel string    // Label for each item (e.g., "Printer")
-	Help      string    // Help text
-	KeyField  string    // Field name used for secret preservation matching
-	MinItems  int       // Minimum required items
-	MaxItems  int       // Maximum allowed items (0 = unlimited)
-	Fields    []Field   // Fields within each array item
+	Name      string  // Go struct field name
+	JSONName  string  // JSON field name
+	Label     string  // Display label (e.g., "Printers")
+	ItemLabel string  // Label for each item (e.g., "Printer")
+	Help      string  // Help text
+	KeyField  string  // Field name used for secret preservation matching
+	MinItems  int     // Minimum required items
+	MaxItems  int     // Maximum allowed items (0 = unlimited)
+	Fields    []Field // Fields within each array item
 	GoType    reflect.Type
 }
 

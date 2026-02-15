@@ -13,17 +13,13 @@ func (m *Module) ConfigSpec() config.Spec {
 	return config.Spec{
 		Module:      "google",
 		Title:       "Google Login",
-		Description: `<strong>How Google Login Works</strong>
-<ul class="mb-0 mt-2">
-	<li><strong>OAuth2 Login:</strong> Members can sign in with their Google account instead of using email-based passwordless login.</li>
-	<li><strong>Account Linking:</strong> On first login, the member's Google account is linked to their Conway member record by email address.</li>
-</ul>`,
-		Type: Config{},
+		Description: configDescription(),
+		Type:        Config{},
 		Sections: []config.SectionDef{
 			{
 				Name:        "oauth",
 				Title:       "OAuth2 Configuration",
-				Description: `Create an OAuth2 application at the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>. Set the authorized redirect URI to <code>[your-domain]/login/google/callback</code>.`,
+				Description: oauthSectionDescription(m.self.String()),
 			},
 		},
 		Order: 11,

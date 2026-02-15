@@ -1,8 +1,6 @@
 package machines
 
-import (
-	"github.com/TheLab-ms/conway/engine/config"
-)
+import "github.com/TheLab-ms/conway/engine/config"
 
 // PrinterConfig holds configuration for a single Bambu printer.
 type PrinterConfig struct {
@@ -23,13 +21,8 @@ func (m *Module) ConfigSpec() config.Spec {
 	return config.Spec{
 		Module:      "bambu",
 		Title:       "Bambu 3D Printer Integration",
-		Description: `<strong>How Bambu Integration Works</strong>
-<ul class="mb-0 mt-2">
-	<li><strong>Status Monitoring:</strong> Conway polls each Bambu printer via MQTT to display real-time status, progress, and camera feeds.</li>
-	<li><strong>Notifications:</strong> Print completion and failure notifications are sent to Discord (configure the webhook URL in Discord settings).</li>
-	<li><strong>User Mentions:</strong> Include <code>@username</code> in your plate name in Bambu Studio to get mentioned in Discord notifications.</li>
-</ul>`,
-		Type: Config{},
+		Description: configDescription(),
+		Type:        Config{},
 		ArrayFields: []config.ArrayFieldDef{
 			{
 				FieldName: "Printers",
