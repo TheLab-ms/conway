@@ -44,7 +44,7 @@ func (r *Router) Serve(addr string) Proc {
 			slog.Warn("gracefully shutting down http server...")
 			svr.Shutdown(context.Background())
 		}()
-		if err := svr.ListenAndServe(); err != nil {
+		if err := svr.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			return err
 		}
 		slog.Info("the http server has shut down")
