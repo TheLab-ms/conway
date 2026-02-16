@@ -45,6 +45,43 @@ DELETE FROM metrics_samplings WHERE name IN ('discord-sync-successes', 'discord-
 
 -- Drop the old hardcoded signup notification trigger (replaced by Go template-based notifications)
 DROP TRIGGER IF EXISTS members_signup_notification;
+
+-- Webhook configuration table: each row defines a webhook with its trigger event,
+-- message template (using {placeholder} syntax), and Discord username.
+CREATE TABLE IF NOT EXISTS discord_webhooks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    webhook_url TEXT NOT NULL,
+    trigger_event TEXT NOT NULL,
+    message_template TEXT NOT NULL DEFAULT '',
+    username TEXT NOT NULL DEFAULT 'Conway',
+    enabled INTEGER NOT NULL DEFAULT 1
+) STRICT;
+
+-- Trigger that fires when a member_events row is inserted.
+-- For each matching enabled webhook, it renders the template using REPLACE()
+-- with values from the members table and the event, then inserts the rendered
+-- JSON payload directly into the discord_webhook_queue.
+DROP TRIGGER IF EXISTS discord_webhook_on_member_event;
+CREATE TRIGGER IF NOT EXISTS discord_webhook_on_member_event AFTER INSERT ON member_events
+BEGIN
+    INSERT INTO discord_webhook_queue (webhook_url, payload)
+    SELECT
+        w.webhook_url,
+        json_object(
+            'content', REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                w.message_template,
+                '{event}', NEW.event),
+                '{details}', NEW.details),
+                '{email}', COALESCE(m.email, '')),
+                '{name}', COALESCE(m.name, m.email, '')),
+                '{member_id}', CAST(COALESCE(NEW.member, 0) AS TEXT)),
+                '{access_status}', COALESCE(m.access_status, '')),
+            'username', w.username
+        )
+    FROM discord_webhooks w
+    LEFT JOIN members m ON m.id = NEW.member
+    WHERE w.trigger_event = NEW.event AND w.enabled = 1;
+END;
 `
 
 var endpoint = oauth2.Endpoint{
@@ -209,6 +246,9 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	// Discord-based login (unauthenticated)
 	router.HandleFunc("GET /login/discord", m.handleLoginStart)
 	router.HandleFunc("GET /login/discord/callback", m.handleLoginCallback)
+
+	// Admin webhook CRUD
+	m.attachWebhookRoutes(router)
 }
 
 func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {

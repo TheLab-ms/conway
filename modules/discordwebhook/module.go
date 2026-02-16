@@ -30,7 +30,7 @@ type Sender func(ctx context.Context, webhookURL, payload string) error
 // Implemented by *Module.
 type MessageQueuer interface {
 	QueueMessage(ctx context.Context, webhookURL, payload string) error
-	QueueTemplateMessage(ctx context.Context, webhookURL, tmpl string, data any, username string) error
+	QueueTemplateMessage(ctx context.Context, webhookURL, tmpl string, replacements map[string]string, username string) error
 }
 
 type Module struct {
@@ -99,9 +99,9 @@ func (m *Module) QueueMessage(ctx context.Context, webhookURL, payload string) e
 	return err
 }
 
-// QueueTemplateMessage renders a Go template with the given data and queues the result.
-func (m *Module) QueueTemplateMessage(ctx context.Context, webhookURL, tmpl string, data any, username string) error {
-	payload, err := RenderMessage(tmpl, data, username)
+// QueueTemplateMessage renders a message template with placeholder substitution and queues the result.
+func (m *Module) QueueTemplateMessage(ctx context.Context, webhookURL, tmpl string, replacements map[string]string, username string) error {
+	payload, err := RenderMessage(tmpl, replacements, username)
 	if err != nil {
 		return fmt.Errorf("rendering template: %w", err)
 	}
