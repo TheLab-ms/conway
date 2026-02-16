@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -11,52 +12,44 @@ import (
 type webhookRow struct {
 	ID              int64
 	WebhookURL      string
-	TriggerEvent    string
+	TriggerEvent    string // Legacy: event name for app-level notifications (Signup, Print*).
 	MessageTemplate string
 	Username        string
 	Enabled         bool
+	TriggerTable    string // SQL trigger: the table to watch.
+	TriggerOp       string // SQL trigger: INSERT, UPDATE, or DELETE.
 }
 
-// triggerEvents is the list of all supported trigger events for webhook configuration.
-var triggerEvents = []string{
-	"EmailConfirmed",
-	"AccessStatusChanged",
-	"WaiverSigned",
-	"DiscountTypeModified",
-	"LeadershipStatusAdded",
-	"LeadershipStatusRemoved",
-	"NonBillableStatusAdded",
-	"NonBillableStatusRemoved",
-	"FobChanged",
+// IsSQLTrigger returns true if this webhook is driven by a SQL trigger
+// rather than an application-level event.
+func (w *webhookRow) IsSQLTrigger() bool {
+	return w.TriggerTable != "" && w.TriggerOp != ""
+}
+
+// appLevelEvents are events dispatched by Go code (not by SQL triggers).
+// These remain as options in the trigger_event dropdown.
+var appLevelEvents = []string{
 	"Signup",
 	"PrintCompleted",
 	"PrintFailed",
 }
 
-// placeholderHelp maps trigger events to the available placeholders.
+// placeholderHelp maps app-level trigger events to their available placeholders.
 var placeholderHelp = map[string]string{
-	"EmailConfirmed":           "{event}, {details}, {email}, {name}, {member_id}, {access_status}",
-	"AccessStatusChanged":      "{event}, {details}, {email}, {name}, {member_id}, {access_status}",
-	"WaiverSigned":             "{event}, {details}, {email}, {name}, {member_id}, {access_status}",
-	"DiscountTypeModified":     "{event}, {details}, {email}, {name}, {member_id}, {access_status}",
-	"LeadershipStatusAdded":    "{event}, {details}, {email}, {name}, {member_id}, {access_status}",
-	"LeadershipStatusRemoved":  "{event}, {details}, {email}, {name}, {member_id}, {access_status}",
-	"NonBillableStatusAdded":   "{event}, {details}, {email}, {name}, {member_id}, {access_status}",
-	"NonBillableStatusRemoved": "{event}, {details}, {email}, {name}, {member_id}, {access_status}",
-	"FobChanged":               "{event}, {details}, {email}, {name}, {member_id}, {access_status}",
-	"Signup":                   "{event}, {email}, {member_id}, {details}",
-	"PrintCompleted":           "{event}, {mention}, {printer_name}, {file_name}",
-	"PrintFailed":              "{event}, {mention}, {printer_name}, {file_name}, {error_code}",
+	"Signup":         "{event}, {email}, {member_id}, {details}",
+	"PrintCompleted": "{event}, {mention}, {printer_name}, {file_name}",
+	"PrintFailed":    "{event}, {mention}, {printer_name}, {file_name}, {error_code}",
 }
 
 func (m *Module) attachWebhookRoutes(router *engine.Router) {
 	router.HandleFunc("POST /admin/discord/webhooks/new", router.WithLeadership(m.handleWebhookCreate))
 	router.HandleFunc("POST /admin/discord/webhooks/{id}/edit", router.WithLeadership(m.handleWebhookUpdate))
 	router.HandleFunc("POST /admin/discord/webhooks/{id}/delete", router.WithLeadership(m.handleWebhookDelete))
+	router.HandleFunc("GET /admin/discord/webhooks/columns", router.WithLeadership(m.handleTableColumns))
 }
 
 func (m *Module) loadAllWebhooks() ([]webhookRow, error) {
-	rows, err := m.db.Query("SELECT id, webhook_url, trigger_event, message_template, username, enabled FROM discord_webhooks ORDER BY id")
+	rows, err := m.db.Query("SELECT id, webhook_url, trigger_event, message_template, username, enabled, trigger_table, trigger_op FROM discord_webhooks ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +59,7 @@ func (m *Module) loadAllWebhooks() ([]webhookRow, error) {
 	for rows.Next() {
 		var wh webhookRow
 		var enabled int
-		if err := rows.Scan(&wh.ID, &wh.WebhookURL, &wh.TriggerEvent, &wh.MessageTemplate, &wh.Username, &enabled); err != nil {
+		if err := rows.Scan(&wh.ID, &wh.WebhookURL, &wh.TriggerEvent, &wh.MessageTemplate, &wh.Username, &enabled, &wh.TriggerTable, &wh.TriggerOp); err != nil {
 			return nil, err
 		}
 		wh.Enabled = enabled == 1
@@ -77,7 +70,12 @@ func (m *Module) loadAllWebhooks() ([]webhookRow, error) {
 
 func (m *Module) handleWebhookCreate(w http.ResponseWriter, r *http.Request) {
 	wh := parseWebhookForm(r)
-	if wh.WebhookURL == "" || wh.TriggerEvent == "" {
+	if wh.WebhookURL == "" {
+		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
+		return
+	}
+	// Require either a SQL trigger config or an app-level event.
+	if !wh.IsSQLTrigger() && wh.TriggerEvent == "" {
 		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 		return
 	}
@@ -87,11 +85,25 @@ func (m *Module) handleWebhookCreate(w http.ResponseWriter, r *http.Request) {
 		enabled = 1
 	}
 
-	_, err := m.db.ExecContext(r.Context(),
-		"INSERT INTO discord_webhooks (webhook_url, trigger_event, message_template, username, enabled) VALUES (?, ?, ?, ?, ?)",
-		wh.WebhookURL, wh.TriggerEvent, wh.MessageTemplate, wh.Username, enabled)
+	result, err := m.db.ExecContext(r.Context(),
+		`INSERT INTO discord_webhooks (webhook_url, trigger_event, message_template, username, enabled, trigger_table, trigger_op)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		wh.WebhookURL, wh.TriggerEvent, wh.MessageTemplate, wh.Username, enabled, wh.TriggerTable, wh.TriggerOp)
 	if engine.HandleError(w, err) {
 		return
+	}
+
+	id, err := result.LastInsertId()
+	if engine.HandleError(w, err) {
+		return
+	}
+	wh.ID = id
+
+	// Create the SQL trigger if this is a table-based webhook.
+	if wh.IsSQLTrigger() {
+		if err := m.createTrigger(&wh); err != nil {
+			slog.Error("failed to create webhook trigger", "error", err, "webhookID", wh.ID)
+		}
 	}
 
 	http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
@@ -105,8 +117,13 @@ func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wh := parseWebhookForm(r)
+	wh.ID = id
 
-	if wh.WebhookURL == "" || wh.TriggerEvent == "" {
+	if wh.WebhookURL == "" {
+		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
+		return
+	}
+	if !wh.IsSQLTrigger() && wh.TriggerEvent == "" {
 		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 		return
 	}
@@ -117,8 +134,8 @@ func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := m.db.ExecContext(r.Context(),
-		"UPDATE discord_webhooks SET webhook_url = ?, trigger_event = ?, message_template = ?, username = ?, enabled = ? WHERE id = ?",
-		wh.WebhookURL, wh.TriggerEvent, wh.MessageTemplate, wh.Username, enabled, id)
+		`UPDATE discord_webhooks SET webhook_url = ?, trigger_event = ?, message_template = ?, username = ?, enabled = ?, trigger_table = ?, trigger_op = ? WHERE id = ?`,
+		wh.WebhookURL, wh.TriggerEvent, wh.MessageTemplate, wh.Username, enabled, wh.TriggerTable, wh.TriggerOp, id)
 	if engine.HandleError(w, err) {
 		return
 	}
@@ -127,6 +144,15 @@ func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
 	if rowsAffected == 0 {
 		engine.ClientError(w, "Not Found", "Webhook not found.", 404)
 		return
+	}
+
+	// Recreate or drop the SQL trigger.
+	if wh.IsSQLTrigger() {
+		if err := m.createTrigger(&wh); err != nil {
+			slog.Error("failed to recreate webhook trigger", "error", err, "webhookID", wh.ID)
+		}
+	} else {
+		m.dropTrigger(id)
 	}
 
 	http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
@@ -139,6 +165,9 @@ func (m *Module) handleWebhookDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Drop the SQL trigger first.
+	m.dropTrigger(id)
+
 	_, err = m.db.ExecContext(r.Context(), "DELETE FROM discord_webhooks WHERE id = ?", id)
 	if engine.HandleError(w, err) {
 		return
@@ -147,12 +176,62 @@ func (m *Module) handleWebhookDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 }
 
-func parseWebhookForm(r *http.Request) *webhookRow {
-	return &webhookRow{
+// handleTableColumns returns the column names for a given table as JSON.
+// Used by the admin UI to dynamically show available placeholders.
+func (m *Module) handleTableColumns(w http.ResponseWriter, r *http.Request) {
+	table := r.URL.Query().Get("table")
+	if table == "" {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte(""))
+		return
+	}
+
+	cols, err := tableColumns(m.db, table)
+	if err != nil {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte(""))
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte("{" + joinPlaceholders(cols) + "}"))
+}
+
+// joinPlaceholders formats column names as {col1}, {col2}, ... for display.
+func joinPlaceholders(cols []string) string {
+	parts := make([]string, len(cols))
+	for i, c := range cols {
+		parts[i] = c + "}"
+	}
+	result := ""
+	for i, p := range parts {
+		if i > 0 {
+			result += ", {"
+		}
+		result += p
+	}
+	return result
+}
+
+func parseWebhookForm(r *http.Request) webhookRow {
+	triggerType := r.FormValue("trigger_type")
+
+	wh := webhookRow{
 		WebhookURL:      r.FormValue("webhook_url"),
-		TriggerEvent:    r.FormValue("trigger_event"),
 		MessageTemplate: r.FormValue("message_template"),
 		Username:        r.FormValue("username"),
 		Enabled:         r.FormValue("enabled") == "on" || r.FormValue("enabled") == "1",
 	}
+
+	if triggerType == "sql" {
+		wh.TriggerTable = r.FormValue("trigger_table")
+		wh.TriggerOp = r.FormValue("trigger_op")
+		wh.TriggerEvent = "" // Clear app-level event when using SQL trigger.
+	} else {
+		wh.TriggerEvent = r.FormValue("trigger_event")
+		wh.TriggerTable = "" // Clear SQL trigger fields when using app-level event.
+		wh.TriggerOp = ""
+	}
+
+	return wh
 }

@@ -64,7 +64,12 @@ func (m *Module) ConfigSpec() config.Spec {
 				slog.Error("failed to load webhooks for config page", "error", err)
 				webhooks = nil
 			}
-			return renderWebhooksCard(webhooks)
+			tables, err := availableTables(m.db)
+			if err != nil {
+				slog.Error("failed to load tables for config page", "error", err)
+				tables = nil
+			}
+			return renderWebhooksCard(webhooks, tables)
 		},
 		Order: 10,
 	}

@@ -7,7 +7,7 @@ import (
 
 // renderWebhooksCard renders the webhooks management UI as an inline card
 // for embedding in the Discord config page.
-templ renderWebhooksCard(webhooks []webhookRow) {
+templ renderWebhooksCard(webhooks []webhookRow, tables []string) {
 	<div class="card mb-4">
 		<div class="card-header d-flex justify-content-between align-items-center">
 			<h5 class="mb-0">Webhooks</h5>
@@ -16,7 +16,8 @@ templ renderWebhooksCard(webhooks []webhookRow) {
 		<div class="card-body">
 			<p class="text-muted small mb-3">
 				Webhook notifications are sent to Discord channels when events occur.
-				Each webhook fires on a specific trigger event and sends a customized message.
+				Use <strong>SQL Trigger</strong> to fire on any database table change, or
+				<strong>App Event</strong> { "for" } application-level events like signups and prints.
 			</p>
 
 			<!-- New webhook form (hidden by default) -->
@@ -28,7 +29,7 @@ templ renderWebhooksCard(webhooks []webhookRow) {
 					</div>
 					<div class="card-body">
 						<form method="post" action="/admin/discord/webhooks/new">
-							@webhookInlineFormFields(&webhookRow{Username: "Conway", Enabled: true}, "new")
+							@webhookInlineFormFields(&webhookRow{Username: "Conway", Enabled: true}, "new", tables)
 							<button type="submit" class="btn btn-primary btn-sm">Create Webhook</button>
 						</form>
 					</div>
@@ -44,7 +45,7 @@ templ renderWebhooksCard(webhooks []webhookRow) {
 					<table class="table table-hover table-sm mb-0">
 						<thead class="table-light">
 							<tr>
-								<th>Trigger Event</th>
+								<th>Trigger</th>
 								<th>Username</th>
 								<th>Status</th>
 								<th class="text-end">Actions</th>
@@ -53,7 +54,15 @@ templ renderWebhooksCard(webhooks []webhookRow) {
 						<tbody>
 							for _, wh := range webhooks {
 								<tr>
-									<td>{ wh.TriggerEvent }</td>
+									<td>
+										if wh.IsSQLTrigger() {
+											<span class="badge bg-info text-dark me-1">SQL</span>
+											<code>{ wh.TriggerOp }</code> on <code>{ wh.TriggerTable }</code>
+										} else {
+											<span class="badge bg-warning text-dark me-1">App</span>
+											{ wh.TriggerEvent }
+										}
+									</td>
 									<td>{ wh.Username }</td>
 									<td>
 										if wh.Enabled {
@@ -74,7 +83,7 @@ templ renderWebhooksCard(webhooks []webhookRow) {
 										<div class="card border-secondary">
 											<div class="card-body">
 												<form method="post" action={ templ.SafeURL(fmt.Sprintf("/admin/discord/webhooks/%d/edit", wh.ID)) }>
-													@webhookInlineFormFields(&wh, strconv.FormatInt(wh.ID, 10))
+													@webhookInlineFormFields(&wh, strconv.FormatInt(wh.ID, 10), tables)
 													<button type="submit" class="btn btn-primary btn-sm me-1">Save Changes</button>
 													<button type="button" class="btn btn-outline-secondary btn-sm" onclick={ toggleEdit(wh.ID) }>Cancel</button>
 												</form>
@@ -93,26 +102,68 @@ templ renderWebhooksCard(webhooks []webhookRow) {
 	@webhookScripts()
 }
 
-templ webhookInlineFormFields(wh *webhookRow, suffix string) {
+templ webhookInlineFormFields(wh *webhookRow, suffix string, tables []string) {
 	<div class="row g-3 mb-3">
 		<div class="col-md-6">
 			<label for={ "webhook_url_" + suffix } class="form-label">Webhook URL</label>
 			<input type="url" class="form-control form-control-sm font-monospace" id={ "webhook_url_" + suffix } name="webhook_url" value={ wh.WebhookURL } placeholder="https://discord.com/api/webhooks/..." required/>
 		</div>
 		<div class="col-md-6">
-			<label for={ "trigger_event_" + suffix } class="form-label">Trigger Event</label>
-			<select class="form-select form-select-sm" id={ "trigger_event_" + suffix } name="trigger_event" required>
+			<label class="form-label">Trigger Type</label>
+			<div class="form-check">
+				<input class="form-check-input" type="radio" name="trigger_type" value="sql" id={ "trigger_type_sql_" + suffix } checked?={ wh.IsSQLTrigger() || (wh.TriggerEvent == "" && wh.TriggerTable == "") } onchange={ showTriggerType(suffix) }/>
+				<label class="form-check-label" for={ "trigger_type_sql_" + suffix }>SQL Trigger (any table)</label>
+			</div>
+			<div class="form-check">
+				<input class="form-check-input" type="radio" name="trigger_type" value="app" id={ "trigger_type_app_" + suffix } checked?={ !wh.IsSQLTrigger() && wh.TriggerEvent != "" } onchange={ showTriggerType(suffix) }/>
+				<label class="form-check-label" for={ "trigger_type_app_" + suffix }>App Event (Signup, Print)</label>
+			</div>
+		</div>
+	</div>
+
+	<!-- SQL Trigger fields -->
+	<div id={ "sql_trigger_fields_" + suffix } class={ "row g-3 mb-3", templ.KV("d-none", !wh.IsSQLTrigger() && wh.TriggerEvent != "") }>
+		<div class="col-md-6">
+			<label for={ "trigger_table_" + suffix } class="form-label">Table</label>
+			<select class="form-select form-select-sm" id={ "trigger_table_" + suffix } name="trigger_table" onchange={ fetchColumns(suffix) }>
+				<option value="" disabled selected?={ wh.TriggerTable == "" }>Select table...</option>
+				for _, t := range tables {
+					<option value={ t } selected?={ wh.TriggerTable == t }>{ t }</option>
+				}
+			</select>
+		</div>
+		<div class="col-md-6">
+			<label for={ "trigger_op_" + suffix } class="form-label">Operation</label>
+			<select class="form-select form-select-sm" id={ "trigger_op_" + suffix } name="trigger_op">
+				<option value="" disabled selected?={ wh.TriggerOp == "" }>Select operation...</option>
+				<option value="INSERT" selected?={ wh.TriggerOp == "INSERT" }>INSERT</option>
+				<option value="UPDATE" selected?={ wh.TriggerOp == "UPDATE" }>UPDATE</option>
+				<option value="DELETE" selected?={ wh.TriggerOp == "DELETE" }>DELETE</option>
+			</select>
+		</div>
+		<div class="col-12">
+			<div id={ "columns_help_" + suffix } class="text-muted small"></div>
+		</div>
+	</div>
+
+	<!-- App Event fields -->
+	<div id={ "app_event_fields_" + suffix } class={ "row g-3 mb-3", templ.KV("d-none", wh.IsSQLTrigger() || wh.TriggerEvent == "") }>
+		<div class="col-md-6">
+			<label for={ "trigger_event_" + suffix } class="form-label">App Event</label>
+			<select class="form-select form-select-sm" id={ "trigger_event_" + suffix } name="trigger_event">
 				<option value="" disabled selected?={ wh.TriggerEvent == "" }>Select event...</option>
-				for _, te := range triggerEvents {
+				for _, te := range appLevelEvents {
 					<option value={ te } selected?={ wh.TriggerEvent == te }>{ te }</option>
 				}
 			</select>
 		</div>
 	</div>
+
 	<div class="row g-3 mb-3">
 		<div class="col-md-8">
 			<label for={ "message_template_" + suffix } class="form-label">Message Template</label>
-			<textarea class="form-control form-control-sm font-monospace" id={ "message_template_" + suffix } name="message_template" rows="3" placeholder="e.g. New member signed up: {email}">{ wh.MessageTemplate }</textarea>
+			<textarea class="form-control form-control-sm font-monospace" id={ "message_template_" + suffix } name="message_template" rows="3" placeholder="e.g. New row in {table}: {column_name}">{ wh.MessageTemplate }</textarea>
+			<div class="form-text">Use <code>{"{"}</code>column_name<code>{"}"}</code> placeholders matching the table's column names.</div>
 		</div>
 		<div class="col-md-4">
 			<label for={ "username_" + suffix } class="form-label">Bot Username</label>
@@ -137,14 +188,14 @@ templ webhookPlaceholderReference() {
 			<table class="table table-sm mb-0">
 				<thead>
 					<tr>
-						<th>Trigger Event</th>
+						<th>Trigger Type</th>
 						<th>Placeholders</th>
 					</tr>
 				</thead>
 				<tbody>
 					<tr>
-						<td><strong>Member Events</strong><br/><span class="text-muted small">EmailConfirmed, AccessStatusChanged, WaiverSigned, DiscountTypeModified, LeadershipStatus*, NonBillableStatus*, FobChanged</span></td>
-						<td><code>{"{event}"}, {"{details}"}, {"{email}"}, {"{name}"}, {"{member_id}"}, {"{access_status}"}</code></td>
+						<td><strong>SQL Trigger</strong></td>
+						<td>Any <code>{"{"}</code>column_name<code>{"}"}</code> from the selected table. Select a table above to see available columns.</td>
 					</tr>
 					<tr>
 						<td><strong>Signup</strong></td>
@@ -169,6 +220,36 @@ script toggleEdit(id int64) {
 	if (row) {
 		row.classList.toggle('d-none');
 	}
+}
+
+script showTriggerType(suffix string) {
+	var sqlRadio = document.getElementById('trigger_type_sql_' + suffix);
+	var sqlFields = document.getElementById('sql_trigger_fields_' + suffix);
+	var appFields = document.getElementById('app_event_fields_' + suffix);
+	if (sqlRadio && sqlRadio.checked) {
+		sqlFields.classList.remove('d-none');
+		appFields.classList.add('d-none');
+	} else {
+		sqlFields.classList.add('d-none');
+		appFields.classList.remove('d-none');
+	}
+}
+
+script fetchColumns(suffix string) {
+	var sel = document.getElementById('trigger_table_' + suffix);
+	var helpDiv = document.getElementById('columns_help_' + suffix);
+	if (!sel || !helpDiv) return;
+	var table = sel.value;
+	if (!table) { helpDiv.textContent = ''; return; }
+	fetch('/admin/discord/webhooks/columns?table=' + encodeURIComponent(table))
+		.then(function(r) { return r.text(); })
+		.then(function(text) {
+			if (text) {
+				helpDiv.innerHTML = '<strong>Available placeholders:</strong> <code>' + text + '</code>';
+			} else {
+				helpDiv.textContent = 'No columns found for this table.';
+			}
+		});
 }
 
 templ webhookScripts() {

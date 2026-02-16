@@ -981,7 +981,7 @@ func (p *AdminDiscordConfigPage) FillSyncIntervalHours(value string) {
 }
 
 func (p *AdminDiscordConfigPage) Submit() {
-	err := p.page.Locator("button[type='submit']").Click()
+	err := p.page.Locator("button[type='submit']:has-text('Save Changes')").Click()
 	require.NoError(p.t, err)
 }
 

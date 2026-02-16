@@ -46,42 +46,21 @@ DELETE FROM metrics_samplings WHERE name IN ('discord-sync-successes', 'discord-
 -- Drop the old hardcoded signup notification trigger (replaced by Go template-based notifications)
 DROP TRIGGER IF EXISTS members_signup_notification;
 
--- Webhook configuration table: each row defines a webhook with its trigger event,
--- message template (using {placeholder} syntax), and Discord username.
+-- Webhook configuration table: each row defines a webhook with its trigger event
+-- or SQL trigger, message template (using {placeholder} syntax), and Discord username.
 CREATE TABLE IF NOT EXISTS discord_webhooks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     webhook_url TEXT NOT NULL,
-    trigger_event TEXT NOT NULL,
+    trigger_event TEXT NOT NULL DEFAULT '',
     message_template TEXT NOT NULL DEFAULT '',
     username TEXT NOT NULL DEFAULT 'Conway',
-    enabled INTEGER NOT NULL DEFAULT 1
+    enabled INTEGER NOT NULL DEFAULT 1,
+    trigger_table TEXT NOT NULL DEFAULT '',
+    trigger_op TEXT NOT NULL DEFAULT ''
 ) STRICT;
 
--- Trigger that fires when a member_events row is inserted.
--- For each matching enabled webhook, it renders the template using REPLACE()
--- with values from the members table and the event, then inserts the rendered
--- JSON payload directly into the discord_webhook_queue.
+-- Drop the old hardcoded member_events trigger (replaced by per-webhook dynamic triggers).
 DROP TRIGGER IF EXISTS discord_webhook_on_member_event;
-CREATE TRIGGER IF NOT EXISTS discord_webhook_on_member_event AFTER INSERT ON member_events
-BEGIN
-    INSERT INTO discord_webhook_queue (webhook_url, payload)
-    SELECT
-        w.webhook_url,
-        json_object(
-            'content', REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                w.message_template,
-                '{event}', NEW.event),
-                '{details}', NEW.details),
-                '{email}', COALESCE(m.email, '')),
-                '{name}', COALESCE(m.name, m.email, '')),
-                '{member_id}', CAST(COALESCE(NEW.member, 0) AS TEXT)),
-                '{access_status}', COALESCE(m.access_status, '')),
-            'username', w.username
-        )
-    FROM discord_webhooks w
-    LEFT JOIN members m ON m.id = NEW.member
-    WHERE w.trigger_event = NEW.event AND w.enabled = 1;
-END;
 `
 
 var endpoint = oauth2.Endpoint{
@@ -125,13 +104,25 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine
 	db.Exec("ALTER TABLE discord_config ADD COLUMN signup_message_template TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE discord_config ADD COLUMN print_completed_message_template TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE discord_config ADD COLUMN print_failed_message_template TEXT NOT NULL DEFAULT ''")
-	return &Module{
+	db.Exec("ALTER TABLE discord_webhooks ADD COLUMN trigger_table TEXT NOT NULL DEFAULT ''")
+	db.Exec("ALTER TABLE discord_webhooks ADD COLUMN trigger_op TEXT NOT NULL DEFAULT ''")
+
+	// Migrate legacy trigger_event-based webhooks that used the old member_events trigger.
+	// These become SQL triggers on the member_events table with INSERT operation.
+	migrateLegacyWebhooks(db)
+
+	m := &Module{
 		db:             db,
 		self:           self,
 		stateTokIssuer: iss,
 		httpClient:     &http.Client{Timeout: time.Second * 10},
 		eventLogger:    eventLogger,
 	}
+
+	// Recreate all SQL triggers for existing webhooks on startup.
+	m.recreateAllTriggers()
+
+	return m
 }
 
 // SetLoginCompleter configures the function used to complete Discord-based logins.
