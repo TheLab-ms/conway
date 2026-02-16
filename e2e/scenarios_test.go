@@ -3123,3 +3123,162 @@ func TestAdmin_EventsPageFiltering(t *testing.T) {
 	// Waiver should still be visible
 	eventsPage.ExpectRowWithText("filteredwaiver@example.com")
 }
+
+// TestDonation_CardHiddenWithoutStripeConfig verifies that the donation card
+// is not shown when Stripe is not configured.
+func TestDonation_CardHiddenWithoutStripeConfig(t *testing.T) {
+	t.Parallel()
+	env, _, page := setupMemberTest(t, "nostripe@example.com",
+		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
+
+	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+	dashboard.Navigate()
+	dashboard.ExpectActiveStatus()
+	dashboard.ExpectNoDonationCard()
+}
+
+// TestDonation_CardHiddenWithoutKeyFob verifies that the donation card
+// is not shown when the member does not have a key fob.
+func TestDonation_CardHiddenWithoutKeyFob(t *testing.T) {
+	t.Parallel()
+	env, _, page := setupMemberTest(t, "nofob@example.com",
+		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription())
+
+	donationItems := `[{"name":"Laser Cutting","price_id":"price_laser"},{"name":"3D Printing","price_id":"price_3d"}]`
+	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
+
+	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+	dashboard.Navigate()
+	dashboard.ExpectNoDonationCard()
+}
+
+// TestDonation_CardHiddenWithoutDonationItems verifies that the donation card
+// is not shown when no donation items are configured.
+func TestDonation_CardHiddenWithoutDonationItems(t *testing.T) {
+	t.Parallel()
+	env, _, page := setupMemberTest(t, "noitems@example.com",
+		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
+
+	seedStripeConfig(t, env, "sk_test_fake", "whsec_fake")
+
+	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+	dashboard.Navigate()
+	dashboard.ExpectActiveStatus()
+	dashboard.ExpectNoDonationCard()
+}
+
+// TestDonation_CardRendersWithItems verifies that the donation card is shown
+// with correct dropdown options when all conditions are met.
+func TestDonation_CardRendersWithItems(t *testing.T) {
+	t.Parallel()
+	env, _, page := setupMemberTest(t, "donation@example.com",
+		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
+
+	donationItems := `[{"name":"Laser Cutting","price_id":"price_laser_123"},{"name":"3D Printing","price_id":"price_3d_456"}]`
+	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
+
+	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+	dashboard.Navigate()
+	dashboard.ExpectActiveStatus()
+	dashboard.ExpectDonationCard()
+
+	// Verify dropdown has correct number of options
+	assert.Equal(t, 2, dashboard.DonationOptionCount(), "should have 2 donation items")
+
+	// Verify option text and values
+	assert.Equal(t, "Laser Cutting", dashboard.DonationOptionText(0))
+	assert.Equal(t, "price_laser_123", dashboard.DonationOptionValue(0))
+	assert.Equal(t, "3D Printing", dashboard.DonationOptionText(1))
+	assert.Equal(t, "price_3d_456", dashboard.DonationOptionValue(1))
+}
+
+// TestDonation_CardSingleItem verifies that the donation card works correctly
+// with a single donation item.
+func TestDonation_CardSingleItem(t *testing.T) {
+	t.Parallel()
+	env, _, page := setupMemberTest(t, "singledonation@example.com",
+		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
+
+	donationItems := `[{"name":"Workshop Fee","price_id":"price_workshop_789"}]`
+	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
+
+	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+	dashboard.Navigate()
+	dashboard.ExpectDonationCard()
+
+	assert.Equal(t, 1, dashboard.DonationOptionCount(), "should have 1 donation item")
+	assert.Equal(t, "Workshop Fee", dashboard.DonationOptionText(0))
+	assert.Equal(t, "price_workshop_789", dashboard.DonationOptionValue(0))
+}
+
+// TestDonation_CheckoutEmptyPriceID verifies that the donation checkout endpoint
+// returns a 400 error when no price_id is provided.
+func TestDonation_CheckoutEmptyPriceID(t *testing.T) {
+	t.Parallel()
+	env, _, page := setupMemberTest(t, "emptyprice@example.com",
+		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
+
+	donationItems := `[{"name":"Laser Cutting","price_id":"price_laser"}]`
+	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
+
+	resp, err := page.Goto(env.baseURL + "/donations/checkout")
+	require.NoError(t, err)
+	assert.Equal(t, 400, resp.Status(), "should return 400 for empty price_id")
+}
+
+// TestDonation_CheckoutInvalidPriceID verifies that the donation checkout endpoint
+// returns a 400 error when an invalid price_id is provided.
+func TestDonation_CheckoutInvalidPriceID(t *testing.T) {
+	t.Parallel()
+	env, _, page := setupMemberTest(t, "invalidprice@example.com",
+		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
+
+	donationItems := `[{"name":"Laser Cutting","price_id":"price_laser"}]`
+	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
+
+	resp, err := page.Goto(env.baseURL + "/donations/checkout?price_id=price_nonexistent")
+	require.NoError(t, err)
+	assert.Equal(t, 400, resp.Status(), "should return 400 for invalid price_id")
+}
+
+// TestDonation_CheckoutRequiresAuth verifies that the donation checkout endpoint
+// requires authentication.
+func TestDonation_CheckoutRequiresAuth(t *testing.T) {
+	t.Parallel()
+	env, page := setupUnauthenticatedTest(t)
+
+	_, err := page.Goto(env.baseURL + "/donations/checkout?price_id=price_test")
+	require.NoError(t, err)
+
+	// Should redirect to login
+	err = page.WaitForURL("**/login**")
+	require.NoError(t, err)
+}
+
+// TestDonation_DonateButtonNavigation verifies that clicking the Donate button
+// navigates to the checkout endpoint with the selected price_id.
+func TestDonation_DonateButtonNavigation(t *testing.T) {
+	t.Parallel()
+	env, _, page := setupMemberTest(t, "donatenav@example.com",
+		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
+
+	donationItems := `[{"name":"Laser Cutting","price_id":"price_laser_nav"},{"name":"3D Printing","price_id":"price_3d_nav"}]`
+	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
+
+	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+	dashboard.Navigate()
+	dashboard.ExpectDonationCard()
+
+	// Select the second item and click Donate
+	dashboard.SelectDonationItem("price_3d_nav")
+	dashboard.ClickDonate()
+
+	// The checkout endpoint will return 500 because Stripe API key is fake,
+	// but we can verify the URL contains the correct price_id
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	currentURL := page.URL()
+	assert.Contains(t, currentURL, "/donations/checkout")
+	assert.Contains(t, currentURL, "price_id=price_3d_nav")
+}

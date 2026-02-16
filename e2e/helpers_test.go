@@ -645,6 +645,13 @@ func seedGoogleConfig(t *testing.T, env *TestEnv, clientID, clientSecret string)
 	require.NoError(t, err, "could not insert google config")
 }
 
+// seedStripeConfigWithDonations inserts Stripe configuration with donation items into the database.
+func seedStripeConfigWithDonations(t *testing.T, env *TestEnv, apiKey, webhookKey, donationItemsJSON string) {
+	t.Helper()
+	_, err := env.db.Exec(`INSERT INTO stripe_config (api_key, webhook_key, donation_items_json) VALUES (?, ?, ?)`, apiKey, webhookKey, donationItemsJSON)
+	require.NoError(t, err, "could not insert stripe config with donations")
+}
+
 // refreshPrinterStateTimestamps updates the updated_at timestamp on all printer states
 // to ensure they don't expire during long test runs. The machines module only shows
 // printers where updated_at > now - (pollInterval * 3).

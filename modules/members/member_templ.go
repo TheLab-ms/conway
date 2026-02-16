@@ -13,8 +13,8 @@ import (
 )
 
 type donationItem struct {
-	Name    string
-	PriceID string
+	Name    string `json:"name"`
+	PriceID string `json:"price_id"`
 }
 
 type member struct {

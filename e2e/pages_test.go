@@ -202,6 +202,46 @@ func (p *MemberDashboardPage) ClickLogout() {
 	require.NoError(p.t, err)
 }
 
+func (p *MemberDashboardPage) ExpectDonationCard() {
+	locator := p.page.Locator("#donation-select")
+	expect(p.t).Locator(locator).ToBeVisible()
+}
+
+func (p *MemberDashboardPage) ExpectNoDonationCard() {
+	locator := p.page.Locator("#donation-select")
+	expect(p.t).Locator(locator).ToBeHidden()
+}
+
+func (p *MemberDashboardPage) DonationOptionCount() int {
+	count, err := p.page.Locator("#donation-select option").Count()
+	require.NoError(p.t, err)
+	return count
+}
+
+func (p *MemberDashboardPage) DonationOptionValue(index int) string {
+	value, err := p.page.Locator("#donation-select option").Nth(index).GetAttribute("value")
+	require.NoError(p.t, err)
+	return value
+}
+
+func (p *MemberDashboardPage) DonationOptionText(index int) string {
+	text, err := p.page.Locator("#donation-select option").Nth(index).TextContent()
+	require.NoError(p.t, err)
+	return text
+}
+
+func (p *MemberDashboardPage) SelectDonationItem(value string) {
+	_, err := p.page.Locator("#donation-select").SelectOption(playwright.SelectOptionValues{
+		Values: &[]string{value},
+	})
+	require.NoError(p.t, err)
+}
+
+func (p *MemberDashboardPage) ClickDonate() {
+	err := p.page.Locator("button:has-text('Donate')").Click()
+	require.NoError(p.t, err)
+}
+
 // AdminMembersListPage represents the admin members list page.
 type AdminMembersListPage struct {
 	page    playwright.Page
