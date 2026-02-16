@@ -5,15 +5,6 @@ import (
 	"strconv"
 )
 
-templ triggersDescription() {
-	<strong>SQL Triggers</strong>
-	<p class="mb-0 mt-2">
-		Triggers execute SQL statements automatically when database changes occur.
-		Use them to log member events, send Discord notifications, or perform any custom SQL action.
-		Data integrity triggers (family cascading, waiver linking, etc.) are managed by the system and not shown here.
-	</p>
-}
-
 templ renderTriggersCard(triggers []triggerRow, tables []string) {
 	<div class="card mb-4">
 		<div class="card-header d-flex justify-content-between align-items-center">

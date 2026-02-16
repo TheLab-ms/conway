@@ -75,57 +75,6 @@ func TestBuildTriggerSQL_ActionSQLPreserved(t *testing.T) {
 	}
 }
 
-func TestBuildDiscordActionSQL(t *testing.T) {
-	actionSQL := buildDiscordActionSQL(
-		"https://discord.com/api/webhooks/123/abc",
-		"New member: {email}",
-		"members",
-		"INSERT",
-		nil, // no db needed for this test
-	)
-	if !strings.Contains(actionSQL, "discord_webhook_queue") {
-		t.Errorf("expected INSERT INTO discord_webhook_queue, got:\n%s", actionSQL)
-	}
-	if !strings.Contains(actionSQL, "https://discord.com/api/webhooks/123/abc") {
-		t.Errorf("expected webhook URL to be inlined, got:\n%s", actionSQL)
-	}
-	if !strings.Contains(actionSQL, "REPLACE(") {
-		t.Errorf("expected REPLACE() call for placeholder substitution, got:\n%s", actionSQL)
-	}
-	if !strings.Contains(actionSQL, "NEW.email") {
-		t.Errorf("expected NEW.email reference, got:\n%s", actionSQL)
-	}
-}
-
-func TestBuildDiscordActionSQL_Delete(t *testing.T) {
-	actionSQL := buildDiscordActionSQL(
-		"https://discord.com/api/webhooks/456/def",
-		"Deleted: {name}",
-		"members",
-		"DELETE",
-		nil,
-	)
-	if !strings.Contains(actionSQL, "OLD.name") {
-		t.Errorf("expected OLD.name reference for DELETE, got:\n%s", actionSQL)
-	}
-}
-
-func TestBuildDiscordActionSQL_NoPlaceholders(t *testing.T) {
-	actionSQL := buildDiscordActionSQL(
-		"https://discord.com/api/webhooks/789/ghi",
-		"Static message with no placeholders",
-		"members",
-		"INSERT",
-		nil,
-	)
-	if !strings.Contains(actionSQL, "discord_webhook_queue") {
-		t.Errorf("expected INSERT INTO discord_webhook_queue, got:\n%s", actionSQL)
-	}
-	if strings.Contains(actionSQL, "REPLACE(") {
-		t.Errorf("expected no REPLACE() calls with no placeholders, got:\n%s", actionSQL)
-	}
-}
-
 func TestTriggerName(t *testing.T) {
 	name := triggerName(42)
 	if name != "user_trigger_42" {

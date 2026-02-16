@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/TheLab-ms/conway/engine"
@@ -63,19 +62,6 @@ func tableColumnsInfo(db *sql.DB, table string) ([]columnInfo, error) {
 	return cols, rows.Err()
 }
 
-// tableColumns returns the column names for the given table.
-func tableColumns(db *sql.DB, table string) ([]string, error) {
-	infos, err := tableColumnsInfo(db, table)
-	if err != nil {
-		return nil, err
-	}
-	cols := make([]string, len(infos))
-	for i, c := range infos {
-		cols[i] = c.Name
-	}
-	return cols, nil
-}
-
 // availableTables returns tables suitable for triggers, filtering out
 // internal/trigger-related tables.
 func availableTables(db *sql.DB) ([]string, error) {
@@ -120,52 +106,6 @@ func buildTriggerSQL(id int64, table, op, whenClause, actionSQL string) (string,
 END`, name, op, table, whenLine, action)
 
 	return trigSQL, nil
-}
-
-// placeholderPattern matches {placeholder} tokens in message templates.
-var placeholderPattern = regexp.MustCompile(`\{(\w+)\}`)
-
-// buildDiscordActionSQL constructs a self-contained action SQL string for
-// inserting into discord_webhook_queue with template placeholder substitution.
-// This is used both during migration and by the UI preset.
-func buildDiscordActionSQL(webhookURL, messageTemplate, table, op string, db *sql.DB) string {
-	op = strings.ToUpper(op)
-	rowRef := "NEW"
-	if op == "DELETE" {
-		rowRef = "OLD"
-	}
-
-	// Build column set for this table.
-	var colSet map[string]bool
-	if db != nil {
-		cols, err := tableColumns(db, table)
-		if err == nil {
-			colSet = make(map[string]bool, len(cols))
-			for _, c := range cols {
-				colSet[c] = true
-			}
-		}
-	}
-
-	// Build nested REPLACE() calls.
-	matches := placeholderPattern.FindAllStringSubmatch(messageTemplate, -1)
-	expr := fmt.Sprintf("'%s'", strings.ReplaceAll(messageTemplate, "'", "''"))
-	for _, m := range matches {
-		placeholder := m[0]
-		colName := m[1]
-
-		if colSet == nil || colSet[colName] {
-			escaped := strings.ReplaceAll(placeholder, "'", "''")
-			expr = fmt.Sprintf("REPLACE(%s, '%s', COALESCE(CAST(%s.%s AS TEXT), ''))",
-				expr, escaped, rowRef, colName)
-		}
-	}
-
-	// Escape the webhook URL for SQL.
-	escapedURL := strings.ReplaceAll(webhookURL, "'", "''")
-
-	return fmt.Sprintf(`INSERT INTO discord_webhook_queue (webhook_url, payload)
-    VALUES ('%s', json_object('content', %s, 'username', 'Conway'));`, escapedURL, expr)
 }
 
 // createTrigger creates (or recreates) the SQLite trigger for a trigger row.
