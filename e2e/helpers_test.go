@@ -638,13 +638,6 @@ func seedDiscordConfig(t *testing.T, env *TestEnv, clientID, clientSecret, botTo
 	require.NoError(t, err, "could not insert discord config")
 }
 
-// seedGoogleConfig inserts Google configuration into the database for testing.
-func seedGoogleConfig(t *testing.T, env *TestEnv, clientID, clientSecret string) {
-	t.Helper()
-	_, err := env.db.Exec(`INSERT INTO google_config (client_id, client_secret) VALUES (?, ?)`, clientID, clientSecret)
-	require.NoError(t, err, "could not insert google config")
-}
-
 // seedStripeConfigWithDonations inserts Stripe configuration with donation items into the database.
 func seedStripeConfigWithDonations(t *testing.T, env *TestEnv, apiKey, webhookKey, donationItemsJSON string) {
 	t.Helper()

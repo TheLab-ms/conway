@@ -33,29 +33,27 @@ func TestLogin_CodeLinkValid(t *testing.T) {
 	dashboard.ExpectMissingWaiverAlert()
 }
 
-// TestLogin_CodeLinkExpired verifies that an expired code returns a 400 error.
-func TestLogin_CodeLinkExpired(t *testing.T) {
+// TestLogin_CodeLinkUnusable verifies that expired and non-existent codes
+// both return a 400 error.
+func TestLogin_CodeLinkUnusable(t *testing.T) {
 	t.Parallel()
 	env := NewTestEnv(t)
 	memberID := seedMember(t, env, "expiredcode@example.com", WithConfirmed())
 	seedLoginCode(t, env, "99999", memberID, "/", time.Now().Add(-1*time.Minute))
 
 	page := newPage(t)
-	resp, err := page.Goto(env.baseURL + "/login/code?code=99999")
-	require.NoError(t, err)
 
-	assert.Equal(t, 400, resp.Status())
-}
+	t.Run("expired_code", func(t *testing.T) {
+		resp, err := page.Goto(env.baseURL + "/login/code?code=99999")
+		require.NoError(t, err)
+		assert.Equal(t, 400, resp.Status())
+	})
 
-// TestLogin_CodeLinkInvalid verifies that a non-existent code returns a 400 error.
-func TestLogin_CodeLinkInvalid(t *testing.T) {
-	t.Parallel()
-	env, page := setupUnauthenticatedTest(t)
-
-	resp, err := page.Goto(env.baseURL + "/login/code?code=00000")
-	require.NoError(t, err)
-
-	assert.Equal(t, 400, resp.Status())
+	t.Run("nonexistent_code", func(t *testing.T) {
+		resp, err := page.Goto(env.baseURL + "/login/code?code=00000")
+		require.NoError(t, err)
+		assert.Equal(t, 400, resp.Status())
+	})
 }
 
 // TestLogin_CodeFormEntry verifies that entering a code on the sent page
@@ -126,82 +124,82 @@ func TestLogin_SentPageShowsEmail(t *testing.T) {
 	assert.Equal(t, 5, count, "should have 5 code digit inputs")
 }
 
-// TestLoginFlow_TypeCode tests the full login flow where the user types
-// the login code from their email into the code entry form.
-func TestLoginFlow_TypeCode(t *testing.T) {
+// TestLoginFlow tests the full login flow via both methods: typing the code
+// from the email and clicking the login link from the email.
+func TestLoginFlow(t *testing.T) {
 	t.Parallel()
-	env, page := setupUnauthenticatedTest(t)
-	email := "typeflow@example.com"
 
-	// Step 1: Navigate to login page and submit email
-	loginPage := NewLoginPage(t, page, env.baseURL)
-	loginPage.Navigate()
-	loginPage.FillEmail(email)
-	loginPage.Submit()
-	loginPage.ConfirmSignup()
-	loginPage.ExpectSentPage()
+	t.Run("type_code", func(t *testing.T) {
+		env, page := setupUnauthenticatedTest(t)
+		email := "typeflow@example.com"
 
-	// Step 2: Verify email was queued
-	subject, body, found := getLastEmail(t, env, email)
-	require.True(t, found, "login email should be queued in outbound_mail")
-	assert.Equal(t, "Makerspace Login", subject)
+		// Navigate to login page and submit email
+		loginPage := NewLoginPage(t, page, env.baseURL)
+		loginPage.Navigate()
+		loginPage.FillEmail(email)
+		loginPage.Submit()
+		loginPage.ConfirmSignup()
+		loginPage.ExpectSentPage()
 
-	// Step 3: Extract the code from the email body
-	code := extractLoginCodeFromEmail(t, body)
-	require.Len(t, code, 5, "login code should be 5 digits")
+		// Verify email was queued
+		subject, body, found := getLastEmail(t, env, email)
+		require.True(t, found, "login email should be queued in outbound_mail")
+		assert.Equal(t, "Makerspace Login", subject)
 
-	// Step 4: Enter the code digit-by-digit on the sent page
-	digits := page.Locator(".code-digit")
-	for i, digit := range code {
-		err := digits.Nth(i).Fill(string(digit))
+		// Extract the code from the email body
+		code := extractLoginCodeFromEmail(t, body)
+		require.Len(t, code, 5, "login code should be 5 digits")
+
+		// Enter the code digit-by-digit on the sent page
+		digits := page.Locator(".code-digit")
+		for i, digit := range code {
+			err := digits.Nth(i).Fill(string(digit))
+			require.NoError(t, err)
+		}
+
+		// Auto-submit should trigger, wait for redirect to dashboard
+		err := page.WaitForURL("**/")
 		require.NoError(t, err)
-	}
 
-	// Step 5: Auto-submit should trigger, wait for redirect to dashboard
-	err := page.WaitForURL("**/")
-	require.NoError(t, err)
+		// Verify we're logged in and on the dashboard
+		dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+		dashboard.ExpectMissingWaiverAlert()
+	})
 
-	// Step 6: Verify we're logged in and on the dashboard
-	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
-	dashboard.ExpectMissingWaiverAlert() // New member won't have waiver
-}
+	t.Run("click_email_link", func(t *testing.T) {
+		env, page := setupUnauthenticatedTest(t)
+		email := "linkflow@example.com"
 
-// TestLoginFlow_ClickEmailLink tests the full login flow where the user
-// clicks the login link from their email.
-func TestLoginFlow_ClickEmailLink(t *testing.T) {
-	t.Parallel()
-	env, page := setupUnauthenticatedTest(t)
-	email := "linkflow@example.com"
+		// Navigate to login page and submit email
+		loginPage := NewLoginPage(t, page, env.baseURL)
+		loginPage.Navigate()
+		loginPage.FillEmail(email)
+		loginPage.Submit()
+		loginPage.ConfirmSignup()
+		loginPage.ExpectSentPage()
 
-	// Step 1: Navigate to login page and submit email
-	loginPage := NewLoginPage(t, page, env.baseURL)
-	loginPage.Navigate()
-	loginPage.FillEmail(email)
-	loginPage.Submit()
-	loginPage.ConfirmSignup()
-	loginPage.ExpectSentPage()
+		// Verify email was queued
+		subject, body, found := getLastEmail(t, env, email)
+		require.True(t, found, "login email should be queued in outbound_mail")
+		assert.Equal(t, "Makerspace Login", subject)
 
-	// Step 2: Verify email was queued
-	subject, body, found := getLastEmail(t, env, email)
-	require.True(t, found, "login email should be queued in outbound_mail")
-	assert.Equal(t, "Makerspace Login", subject)
+		// Extract the login link from the email body
+		link := extractLoginCodeLinkFromEmail(t, body)
+		require.NotEmpty(t, link, "email should contain login link")
+		assert.Contains(t, link, "/login/code?code=")
 
-	// Step 3: Extract the login link from the email body
-	link := extractLoginCodeLinkFromEmail(t, body)
-	require.NotEmpty(t, link, "email should contain login link")
-	assert.Contains(t, link, "/login/code?code=")
+		// Click the link (navigate to it)
+		_, err := page.Goto(link)
+		require.NoError(t, err)
 
-	// Step 4: Click the link (navigate to it)
-	_, err := page.Goto(link)
-	require.NoError(t, err)
+		// Wait for redirect to dashboard
+		err = page.WaitForURL("**/")
+		require.NoError(t, err)
 
-	// Step 5: Wait for redirect to dashboard
-	err = page.WaitForURL("**/")
-	require.NoError(t, err)
-
-	// Step 6: Verify we're logged in and on the dashboard
-	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
-	dashboard.ExpectMissingWaiverAlert() // New member won't have waiver
+		// Verify we're logged in and on the dashboard
+		dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+		dashboard.ExpectMissingWaiverAlert()
+	})
 }
 
 // TestLogout verifies that logging out clears the session and redirects
@@ -255,9 +253,10 @@ func TestAuth_CallbackPreservation(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestWaiver_Display verifies that the waiver page renders with all required
-// form elements including checkboxes, name, and email fields.
-func TestWaiver_Display(t *testing.T) {
+// TestWaiver_DisplayAndValidation verifies that the waiver page renders with
+// all required form elements and that submitting without checking agreement
+// boxes fails HTML5 validation and prevents waiver creation.
+func TestWaiver_DisplayAndValidation(t *testing.T) {
 	t.Parallel()
 	env, page := setupUnauthenticatedTest(t)
 	waiverPage := NewWaiverPage(t, page, env.baseURL)
@@ -270,16 +269,8 @@ func TestWaiver_Display(t *testing.T) {
 	expect(t).Locator(page.Locator("#agree1")).ToBeVisible()
 	expect(t).Locator(page.Locator("#name")).ToBeVisible()
 	expect(t).Locator(page.Locator("#email")).ToBeVisible()
-}
 
-// TestWaiver_CheckboxValidation verifies that submitting without checking
-// agreement boxes fails HTML5 validation and prevents waiver creation.
-func TestWaiver_CheckboxValidation(t *testing.T) {
-	t.Parallel()
-	env, page := setupUnauthenticatedTest(t)
-	waiverPage := NewWaiverPage(t, page, env.baseURL)
-
-	waiverPage.Navigate()
+	// Fill name and email but skip checkboxes
 	waiverPage.FillName("No Checkboxes")
 	waiverPage.FillEmail("nocheckbox@example.com")
 
@@ -296,9 +287,10 @@ func TestWaiver_CheckboxValidation(t *testing.T) {
 	assert.Equal(t, 0, count, "waiver should not be created without checkboxes")
 }
 
-// TestWaiver_WithRedirect verifies that signing a waiver with a redirect
-// parameter shows the success message and displays a done link.
-func TestWaiver_WithRedirect(t *testing.T) {
+// TestWaiver_SuccessfulSubmission verifies that a user can successfully sign
+// the waiver by filling all required fields and checking all checkboxes,
+// and that using a redirect parameter shows a done link.
+func TestWaiver_SuccessfulSubmission(t *testing.T) {
 	t.Parallel()
 	env, page := setupUnauthenticatedTest(t)
 	waiverPage := NewWaiverPage(t, page, env.baseURL)
@@ -306,12 +298,19 @@ func TestWaiver_WithRedirect(t *testing.T) {
 	waiverPage.NavigateWithRedirect("/")
 	waiverPage.CheckAgree1()
 	waiverPage.CheckAgree2()
-	waiverPage.FillName("Redirect Test")
-	waiverPage.FillEmail("redirect@example.com")
+	waiverPage.FillName("Test Signer")
+	waiverPage.FillEmail("testsigner@example.com")
 	waiverPage.Submit()
 
 	waiverPage.ExpectSuccessMessage()
 	expect(t).Locator(page.Locator("a:has-text('Done')")).ToBeVisible()
+
+	// Verify waiver was created in database
+	var name, email string
+	err := env.db.QueryRow("SELECT name, email FROM waivers WHERE email = ?", "testsigner@example.com").Scan(&name, &email)
+	require.NoError(t, err, "waiver should be created in database")
+	assert.Equal(t, "Test Signer", name)
+	assert.Equal(t, "testsigner@example.com", email)
 }
 
 // TestDashboard_OnboardingStates verifies that the dashboard correctly displays
@@ -401,17 +400,28 @@ func TestDashboard_DiscordLinking(t *testing.T) {
 	})
 }
 
-// TestDashboard_RequiresAuthentication verifies that unauthenticated access to
-// the dashboard redirects to the login page.
-func TestDashboard_RequiresAuthentication(t *testing.T) {
+// TestProtectedRoutes_RequireAuthentication verifies that unauthenticated
+// access to protected routes redirects to the login page.
+func TestProtectedRoutes_RequireAuthentication(t *testing.T) {
 	t.Parallel()
 	env, page := setupUnauthenticatedTest(t)
 
-	_, err := page.Goto(env.baseURL + "/")
-	require.NoError(t, err)
+	routes := []string{
+		"/",
+		"/machines",
+		"/directory",
+		"/donations/checkout?price_id=price_test",
+	}
 
-	err = page.WaitForURL("**/login**")
-	require.NoError(t, err)
+	for _, route := range routes {
+		t.Run(route, func(t *testing.T) {
+			_, err := page.Goto(env.baseURL + route)
+			require.NoError(t, err)
+
+			err = page.WaitForURL("**/login**")
+			require.NoError(t, err)
+		})
+	}
 }
 
 // TestJourney_NewMemberOnboarding tests the complete new member signup flow:
@@ -530,6 +540,8 @@ func TestAdmin_RequiresLeadership(t *testing.T) {
 		"/admin/members",
 		"/admin/metrics",
 		"/admin/events",
+		"/admin/config/waiver",
+		"/admin/config/bambu",
 	}
 
 	for _, endpoint := range endpoints {
@@ -978,6 +990,12 @@ func TestOAuth2_Discovery(t *testing.T) {
 		assert.Contains(t, key, "n")
 		assert.Contains(t, key, "e")
 	})
+
+	t.Run("userinfo_requires_auth", func(t *testing.T) {
+		resp, err := page.Goto(env.baseURL + "/oauth2/userinfo")
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, resp.Status(), 400)
+	})
 }
 
 // TestOAuth2_AuthorizeFlow verifies the OAuth2 authorization code flow
@@ -1010,31 +1028,6 @@ func TestOAuth2_AuthorizeFlow(t *testing.T) {
 	if strings.Contains(finalURL, "code=") {
 		assert.Contains(t, finalURL, "state=teststate")
 	}
-}
-
-// TestOAuth2_UserInfo_RequiresAuth verifies the userinfo endpoint requires
-// authentication and returns an error for unauthenticated requests.
-func TestOAuth2_UserInfo_RequiresAuth(t *testing.T) {
-	t.Parallel()
-	env, page := setupUnauthenticatedTest(t)
-
-	resp, err := page.Goto(env.baseURL + "/oauth2/userinfo")
-	require.NoError(t, err)
-
-	assert.GreaterOrEqual(t, resp.Status(), 400)
-}
-
-// TestMachines_RequiresAuth verifies that unauthenticated access to the
-// machines page redirects to login.
-func TestMachines_RequiresAuth(t *testing.T) {
-	t.Parallel()
-	env, page := setupUnauthenticatedTest(t)
-
-	_, err := page.Goto(env.baseURL + "/machines")
-	require.NoError(t, err)
-
-	err = page.WaitForURL("**/login**")
-	require.NoError(t, err)
 }
 
 // TestMachines_AllPrinterStatuses verifies the printers page displays all
@@ -1436,30 +1429,6 @@ func TestStripe_SubscriptionWithAdminUIConfig(t *testing.T) {
 	t.Log("Test completed: admin configured Stripe, member subscribed successfully")
 }
 
-// TestWaiver_SuccessfulSubmission verifies that a user can successfully sign
-// the waiver by filling all required fields and checking all checkboxes.
-func TestWaiver_SuccessfulSubmission(t *testing.T) {
-	t.Parallel()
-	env, page := setupUnauthenticatedTest(t)
-	waiverPage := NewWaiverPage(t, page, env.baseURL)
-
-	waiverPage.Navigate()
-	waiverPage.CheckAgree1()
-	waiverPage.CheckAgree2()
-	waiverPage.FillName("Test Signer")
-	waiverPage.FillEmail("testsigner@example.com")
-	waiverPage.Submit()
-
-	waiverPage.ExpectSuccessMessage()
-
-	// Verify waiver was created in database
-	var name, email string
-	err := env.db.QueryRow("SELECT name, email FROM waivers WHERE email = ?", "testsigner@example.com").Scan(&name, &email)
-	require.NoError(t, err, "waiver should be created in database")
-	assert.Equal(t, "Test Signer", name)
-	assert.Equal(t, "testsigner@example.com", email)
-}
-
 // TestWaiver_PrefilledEmail verifies that the email field can be prefilled
 // via query parameter.
 func TestWaiver_PrefilledEmail(t *testing.T) {
@@ -1474,9 +1443,10 @@ func TestWaiver_PrefilledEmail(t *testing.T) {
 	assert.Equal(t, "prefilled@example.com", emailValue)
 }
 
-// TestWaiver_CustomContent verifies that custom waiver content set by admin
-// is displayed correctly on the waiver page.
-func TestWaiver_CustomContent(t *testing.T) {
+// TestWaiver_CustomContentAndDynamicCheckboxes verifies that custom waiver
+// content set by admin is displayed correctly, checkboxes are generated
+// dynamically from markdown content, and all must be checked to submit.
+func TestWaiver_CustomContentAndDynamicCheckboxes(t *testing.T) {
 	t.Parallel()
 	env, page := setupUnauthenticatedTest(t)
 	clearWaiverContent(t, env)
@@ -1489,52 +1459,23 @@ Another paragraph here.
 
 - [ ] I agree to the first custom term
 - [ ] I agree to the second custom term
-- [ ] I agree to the third custom term`
+- [ ] I agree to the third custom term
+- [ ] I agree to the fourth custom term`
 
 	seedWaiverContent(t, env, customContent)
 
 	waiverPage := NewWaiverPage(t, page, env.baseURL)
 	waiverPage.Navigate()
 
-	// Verify custom title is displayed
+	// Verify custom title and paragraph are displayed
 	expect(t).Locator(page.GetByText("Custom Waiver Title")).ToBeVisible()
-
-	// Verify custom paragraph is displayed
 	expect(t).Locator(page.GetByText("This is a custom waiver paragraph")).ToBeVisible()
-
-	// Verify three checkboxes are present (custom waiver has 3)
-	checkboxes := page.Locator("input[type='checkbox']")
-	count, err := checkboxes.Count()
-	require.NoError(t, err)
-	assert.Equal(t, 3, count, "should have 3 checkboxes for custom waiver")
-}
-
-// TestWaiver_DynamicCheckboxes verifies that waiver checkboxes are generated
-// dynamically from markdown content and all must be checked.
-func TestWaiver_DynamicCheckboxes(t *testing.T) {
-	t.Parallel()
-	env, page := setupUnauthenticatedTest(t)
-	clearWaiverContent(t, env)
-
-	customContent := `# Test Waiver
-
-Test paragraph.
-
-- [ ] First checkbox
-- [ ] Second checkbox
-- [ ] Third checkbox
-- [ ] Fourth checkbox`
-
-	seedWaiverContent(t, env, customContent)
-
-	waiverPage := NewWaiverPage(t, page, env.baseURL)
-	waiverPage.Navigate()
 
 	// Verify 4 checkboxes are present
 	checkboxes := page.Locator("input[type='checkbox']")
 	count, err := checkboxes.Count()
 	require.NoError(t, err)
-	assert.Equal(t, 4, count, "should have 4 checkboxes")
+	assert.Equal(t, 4, count, "should have 4 checkboxes for custom waiver")
 
 	// Fill form but only check 2 of 4 checkboxes
 	err = page.Locator("#agree0").Check()
@@ -1617,9 +1558,10 @@ func TestAdmin_WaiverConfigPage(t *testing.T) {
 	expect(t).Locator(textarea).ToBeEditable()
 }
 
-// TestAdmin_WaiverConfigSave verifies that saving waiver content creates a
-// new version and shows a success message.
-func TestAdmin_WaiverConfigSave(t *testing.T) {
+// TestAdmin_WaiverConfigSaveAndVersioning verifies that saving waiver content
+// creates a new version with success message, and subsequent saves increment
+// the version number.
+func TestAdmin_WaiverConfigSaveAndVersioning(t *testing.T) {
 	t.Parallel()
 	env, _, page := setupAdminTest(t)
 	clearWaiverContent(t, env)
@@ -1630,13 +1572,14 @@ func TestAdmin_WaiverConfigSave(t *testing.T) {
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
 
-	newContent := `# Updated Waiver
+	// Save first version
+	firstContent := `# Updated Waiver
 
 This is the updated waiver content.
 
 - [ ] I agree to the updated terms`
 
-	configPage.SetContent(newContent)
+	configPage.SetContent(firstContent)
 	configPage.Submit()
 
 	err = page.WaitForLoadState()
@@ -1649,34 +1592,7 @@ This is the updated waiver content.
 	var savedContent string
 	err = env.db.QueryRow("SELECT content FROM waiver_content ORDER BY version DESC LIMIT 1").Scan(&savedContent)
 	require.NoError(t, err)
-	assert.Equal(t, newContent, strings.ReplaceAll(savedContent, "\r\n", "\n"))
-}
-
-// TestAdmin_WaiverConfigVersionIncrement verifies that each save creates a
-// new version with incrementing version number.
-func TestAdmin_WaiverConfigVersionIncrement(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupAdminTest(t)
-	clearWaiverContent(t, env)
-
-	configPage := NewAdminWaiverConfigPage(t, page, env.baseURL)
-	configPage.Navigate()
-
-	err := page.WaitForLoadState()
-	require.NoError(t, err)
-
-	// Save first version
-	firstContent := `# First Version
-
-- [ ] First agreement`
-
-	configPage.SetContent(firstContent)
-	configPage.Submit()
-
-	err = page.WaitForLoadState()
-	require.NoError(t, err)
-
-	configPage.ExpectVersionBadge(1)
+	assert.Equal(t, firstContent, strings.ReplaceAll(savedContent, "\r\n", "\n"))
 
 	// Save second version
 	secondContent := `# Second Version
@@ -1696,22 +1612,6 @@ func TestAdmin_WaiverConfigVersionIncrement(t *testing.T) {
 	err = env.db.QueryRow("SELECT COUNT(*) FROM waiver_content").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 2, count, "should have 2 waiver versions")
-}
-
-// TestAdmin_WaiverConfigRequiresLeadership verifies that non-leadership
-// members cannot access the waiver configuration page.
-func TestAdmin_WaiverConfigRequiresLeadership(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupMemberTest(t, "regular@example.com",
-		WithConfirmed(),
-		WithWaiver(),
-		WithActiveStripeSubscription(),
-		WithFobID(12345),
-	)
-
-	resp, err := page.Goto(env.baseURL + "/admin/config/waiver")
-	require.NoError(t, err)
-	assert.Equal(t, 403, resp.Status(), "non-leadership should get 403")
 }
 
 // TestAdmin_WaiverListPage verifies the admin events page displays
@@ -1954,43 +1854,6 @@ func TestAdmin_StripeConfigVersioning(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "sk_test_first", apiKey, "API key should be preserved when not updated")
 	assert.Equal(t, "whsec_second", webhookKey, "webhook key should be updated")
-}
-
-// TestAdmin_StripeConfigStatusCounts verifies that the Stripe config page
-// displays correct configuration elements after seeding data.
-func TestAdmin_StripeConfigStatusCounts(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupAdminTest(t)
-
-	// Seed some members with Stripe data
-	seedMember(t, env, "active1@example.com", WithConfirmed(), WithActiveStripeSubscription())
-	seedMember(t, env, "active2@example.com", WithConfirmed(), WithActiveStripeSubscription())
-	seedMember(t, env, "customer-only@example.com", WithConfirmed(), WithStripeCustomerID("cus_test_no_sub"))
-
-	configPage := NewAdminStripeConfigPage(t, page, env.baseURL)
-	configPage.Navigate()
-
-	err := page.WaitForLoadState()
-	require.NoError(t, err)
-
-	// Verify the page renders with the config form elements
-	expect(t).Locator(page.GetByText("Stripe Payment Integration")).ToBeVisible()
-	expect(t).Locator(page.Locator("#api_key")).ToBeVisible()
-	expect(t).Locator(page.Locator("#webhook_key")).ToBeVisible()
-	expect(t).Locator(page.Locator("button[type='submit']")).ToBeVisible()
-}
-
-// TestDirectory_RequiresAuth verifies that unauthenticated access to the
-// directory page redirects to login.
-func TestDirectory_RequiresAuth(t *testing.T) {
-	t.Parallel()
-	env, page := setupUnauthenticatedTest(t)
-
-	_, err := page.Goto(env.baseURL + "/directory")
-	require.NoError(t, err)
-
-	err = page.WaitForURL("**/login**")
-	require.NoError(t, err)
 }
 
 // TestDirectory_DisplaysReadyMembers verifies that the directory page only
@@ -2343,32 +2206,16 @@ func TestAdmin_BambuConfigAddPrinter(t *testing.T) {
 	serial := configPage.GetPrinterSerial(0)
 	assert.Equal(t, "", serial, "new printer should have empty serial")
 
+	// Fill in name and verify header updates in real-time
+	configPage.FillPrinterName(0, "Lab Printer 1")
+	configPage.ExpectPrinterCardHeaderText(0, "Lab Printer 1")
+
 	// Add second printer
 	configPage.ClickAddPrinter()
 	assert.Equal(t, 2, configPage.PrinterCardCount())
 
 	// Verify second printer has correct index (1)
 	configPage.ExpectPrinterCardHeaderText(1, "New Printer")
-}
-
-// TestAdmin_BambuConfigAddPrinterNameUpdate verifies that updating the name
-// field updates the card header in real-time.
-func TestAdmin_BambuConfigAddPrinterNameUpdate(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupAdminTest(t)
-
-	configPage := NewAdminBambuConfigPage(t, page, env.baseURL)
-	configPage.Navigate()
-
-	err := page.WaitForLoadState()
-	require.NoError(t, err)
-
-	configPage.ClickAddPrinter()
-	configPage.ExpectPrinterCardHeaderText(0, "New Printer")
-
-	// Fill in name and verify header updates
-	configPage.FillPrinterName(0, "Lab Printer 1")
-	configPage.ExpectPrinterCardHeaderText(0, "Lab Printer 1")
 }
 
 // TestAdmin_BambuConfigSaveNewPrinter verifies that a new printer can be
@@ -2603,22 +2450,6 @@ func TestAdmin_BambuConfigVersioning(t *testing.T) {
 
 	// Verify version incremented by 1 after the second save
 	assert.Equal(t, firstVersion+1, secondVersion, "second save should increment version by 1")
-}
-
-// TestAdmin_BambuConfigRequiresLeadership verifies that non-leadership
-// members cannot access the Bambu configuration page.
-func TestAdmin_BambuConfigRequiresLeadership(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupMemberTest(t, "regular@example.com",
-		WithConfirmed(),
-		WithWaiver(),
-		WithActiveStripeSubscription(),
-		WithFobID(12345),
-	)
-
-	resp, err := page.Goto(env.baseURL + "/admin/config/bambu")
-	require.NoError(t, err)
-	assert.Equal(t, 403, resp.Status(), "non-leadership should get 403")
 }
 
 // TestAdmin_BambuConfigNewPrinterWithoutAccessCodeSkipped verifies that
@@ -2933,23 +2764,8 @@ func TestAdmin_GoogleConfigPage(t *testing.T) {
 	clientID, err := page.Locator("#client_id").InputValue()
 	require.NoError(t, err)
 	assert.Equal(t, "test-google-client-id", clientID)
-}
 
-// TestAdmin_GoogleConfigSecretPreservation verifies that saving Google config
-// without changing the secret field preserves its existing value.
-func TestAdmin_GoogleConfigSecretPreservation(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupAdminTest(t)
-
-	seedGoogleConfig(t, env, "original-client-id", "original-secret")
-
-	configPage := NewAdminGoogleConfigPage(t, page, env.baseURL)
-	configPage.Navigate()
-
-	err := page.WaitForLoadState()
-	require.NoError(t, err)
-
-	// Update only the client ID, leave secret empty
+	// Verify secret preservation: update only client ID, leave secret empty
 	configPage.FillClientID("updated-client-id")
 	configPage.Submit()
 
@@ -2962,7 +2778,7 @@ func TestAdmin_GoogleConfigSecretPreservation(t *testing.T) {
 	var clientSecret string
 	err = env.db.QueryRow("SELECT client_secret FROM google_config ORDER BY version DESC LIMIT 1").Scan(&clientSecret)
 	require.NoError(t, err)
-	assert.Equal(t, "original-secret", clientSecret)
+	assert.Equal(t, "test-google-client-secret", clientSecret)
 }
 
 // TestJourney_GoogleConfigEnablesLoginButton verifies the scenario: admin
@@ -3005,36 +2821,40 @@ func TestJourney_GoogleConfigEnablesLoginButton(t *testing.T) {
 
 // TestAdmin_FobAPIConfigPage verifies that the Fob API read-only documentation
 // page loads and displays all key content sections.
-func TestAdmin_FobAPIConfigPage(t *testing.T) {
+func TestAdmin_ReadOnlyConfigPages(t *testing.T) {
 	t.Parallel()
 	env, _, page := setupAdminTest(t)
 
-	configPage := NewAdminConfigPage(t, page, env.baseURL, "/admin/config/fobapi")
-	configPage.Navigate()
+	tests := []struct {
+		name         string
+		path         string
+		expectedText []string
+	}{
+		{
+			name:         "fob_api",
+			path:         "/admin/config/fobapi",
+			expectedText: []string{"Fob API", "/api/fobs", "ETag"},
+		},
+		{
+			name:         "oauth2",
+			path:         "/admin/config/oauth2",
+			expectedText: []string{"OAuth2 Provider", "Discovery", "Authorization Code Flow"},
+		},
+	}
 
-	err := page.WaitForLoadState()
-	require.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			configPage := NewAdminConfigPage(t, page, env.baseURL, tc.path)
+			configPage.Navigate()
 
-	configPage.ExpectTextVisible("Fob API")
-	configPage.ExpectTextVisible("/api/fobs")
-	configPage.ExpectTextVisible("ETag")
-}
+			err := page.WaitForLoadState()
+			require.NoError(t, err)
 
-// TestAdmin_OAuth2ConfigPage verifies that the OAuth2 Provider read-only
-// documentation page loads and displays all key content sections.
-func TestAdmin_OAuth2ConfigPage(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupAdminTest(t)
-
-	configPage := NewAdminConfigPage(t, page, env.baseURL, "/admin/config/oauth2")
-	configPage.Navigate()
-
-	err := page.WaitForLoadState()
-	require.NoError(t, err)
-
-	configPage.ExpectTextVisible("OAuth2 Provider")
-	configPage.ExpectTextVisible("Discovery")
-	configPage.ExpectTextVisible("Authorization Code Flow")
+			for _, text := range tc.expectedText {
+				configPage.ExpectTextVisible(text)
+			}
+		})
+	}
 }
 
 // TestAdmin_ConfigSidebarNavigation verifies that the config sidebar lists all
@@ -3126,133 +2946,121 @@ func TestAdmin_EventsPageFiltering(t *testing.T) {
 
 // TestDonation_CardHiddenWithoutStripeConfig verifies that the donation card
 // is not shown when Stripe is not configured.
-func TestDonation_CardHiddenWithoutStripeConfig(t *testing.T) {
+func TestDonation_CardHiddenConditions(t *testing.T) {
 	t.Parallel()
-	env, _, page := setupMemberTest(t, "nostripe@example.com",
-		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
 
-	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
-	dashboard.Navigate()
-	dashboard.ExpectActiveStatus()
-	dashboard.ExpectNoDonationCard()
-}
+	tests := []struct {
+		name         string
+		email        string
+		opts         []MemberOption
+		seedStripe   bool
+		donationJSON string
+	}{
+		{
+			name:  "without_stripe_config",
+			email: "nostripe@example.com",
+			opts:  []MemberOption{WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345)},
+		},
+		{
+			name:         "without_key_fob",
+			email:        "nofob@example.com",
+			opts:         []MemberOption{WithConfirmed(), WithWaiver(), WithActiveStripeSubscription()},
+			seedStripe:   true,
+			donationJSON: `[{"name":"Laser Cutting","price_id":"price_laser"},{"name":"3D Printing","price_id":"price_3d"}]`,
+		},
+		{
+			name:       "without_donation_items",
+			email:      "noitems@example.com",
+			opts:       []MemberOption{WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345)},
+			seedStripe: true,
+		},
+	}
 
-// TestDonation_CardHiddenWithoutKeyFob verifies that the donation card
-// is not shown when the member does not have a key fob.
-func TestDonation_CardHiddenWithoutKeyFob(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupMemberTest(t, "nofob@example.com",
-		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription())
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			env, _, page := setupMemberTest(t, tc.email, tc.opts...)
 
-	donationItems := `[{"name":"Laser Cutting","price_id":"price_laser"},{"name":"3D Printing","price_id":"price_3d"}]`
-	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
+			if tc.seedStripe && tc.donationJSON != "" {
+				seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", tc.donationJSON)
+			} else if tc.seedStripe {
+				seedStripeConfig(t, env, "sk_test_fake", "whsec_fake")
+			}
 
-	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
-	dashboard.Navigate()
-	dashboard.ExpectNoDonationCard()
-}
-
-// TestDonation_CardHiddenWithoutDonationItems verifies that the donation card
-// is not shown when no donation items are configured.
-func TestDonation_CardHiddenWithoutDonationItems(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupMemberTest(t, "noitems@example.com",
-		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
-
-	seedStripeConfig(t, env, "sk_test_fake", "whsec_fake")
-
-	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
-	dashboard.Navigate()
-	dashboard.ExpectActiveStatus()
-	dashboard.ExpectNoDonationCard()
+			dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+			dashboard.Navigate()
+			dashboard.ExpectNoDonationCard()
+		})
+	}
 }
 
 // TestDonation_CardRendersWithItems verifies that the donation card is shown
 // with correct dropdown options when all conditions are met.
 func TestDonation_CardRendersWithItems(t *testing.T) {
 	t.Parallel()
-	env, _, page := setupMemberTest(t, "donation@example.com",
-		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
 
-	donationItems := `[{"name":"Laser Cutting","price_id":"price_laser_123"},{"name":"3D Printing","price_id":"price_3d_456"}]`
-	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
+	t.Run("multiple_items", func(t *testing.T) {
+		t.Parallel()
+		env, _, page := setupMemberTest(t, "donation@example.com",
+			WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
 
-	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
-	dashboard.Navigate()
-	dashboard.ExpectActiveStatus()
-	dashboard.ExpectDonationCard()
+		donationItems := `[{"name":"Laser Cutting","price_id":"price_laser_123"},{"name":"3D Printing","price_id":"price_3d_456"}]`
+		seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
 
-	// Verify dropdown has correct number of options
-	assert.Equal(t, 2, dashboard.DonationOptionCount(), "should have 2 donation items")
+		dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+		dashboard.Navigate()
+		dashboard.ExpectActiveStatus()
+		dashboard.ExpectDonationCard()
 
-	// Verify option text and values
-	assert.Equal(t, "Laser Cutting", dashboard.DonationOptionText(0))
-	assert.Equal(t, "price_laser_123", dashboard.DonationOptionValue(0))
-	assert.Equal(t, "3D Printing", dashboard.DonationOptionText(1))
-	assert.Equal(t, "price_3d_456", dashboard.DonationOptionValue(1))
-}
+		// Verify dropdown has correct number of options
+		assert.Equal(t, 2, dashboard.DonationOptionCount(), "should have 2 donation items")
 
-// TestDonation_CardSingleItem verifies that the donation card works correctly
-// with a single donation item.
-func TestDonation_CardSingleItem(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupMemberTest(t, "singledonation@example.com",
-		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
+		// Verify option text and values
+		assert.Equal(t, "Laser Cutting", dashboard.DonationOptionText(0))
+		assert.Equal(t, "price_laser_123", dashboard.DonationOptionValue(0))
+		assert.Equal(t, "3D Printing", dashboard.DonationOptionText(1))
+		assert.Equal(t, "price_3d_456", dashboard.DonationOptionValue(1))
+	})
 
-	donationItems := `[{"name":"Workshop Fee","price_id":"price_workshop_789"}]`
-	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
+	t.Run("single_item", func(t *testing.T) {
+		t.Parallel()
+		env, _, page := setupMemberTest(t, "singledonation@example.com",
+			WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
 
-	dashboard := NewMemberDashboardPage(t, page, env.baseURL)
-	dashboard.Navigate()
-	dashboard.ExpectDonationCard()
+		donationItems := `[{"name":"Workshop Fee","price_id":"price_workshop_789"}]`
+		seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
 
-	assert.Equal(t, 1, dashboard.DonationOptionCount(), "should have 1 donation item")
-	assert.Equal(t, "Workshop Fee", dashboard.DonationOptionText(0))
-	assert.Equal(t, "price_workshop_789", dashboard.DonationOptionValue(0))
+		dashboard := NewMemberDashboardPage(t, page, env.baseURL)
+		dashboard.Navigate()
+		dashboard.ExpectDonationCard()
+
+		assert.Equal(t, 1, dashboard.DonationOptionCount(), "should have 1 donation item")
+		assert.Equal(t, "Workshop Fee", dashboard.DonationOptionText(0))
+		assert.Equal(t, "price_workshop_789", dashboard.DonationOptionValue(0))
+	})
 }
 
 // TestDonation_CheckoutEmptyPriceID verifies that the donation checkout endpoint
 // returns a 400 error when no price_id is provided.
-func TestDonation_CheckoutEmptyPriceID(t *testing.T) {
+func TestDonation_CheckoutBadPriceID(t *testing.T) {
 	t.Parallel()
-	env, _, page := setupMemberTest(t, "emptyprice@example.com",
+	env, _, page := setupMemberTest(t, "badprice@example.com",
 		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
 
 	donationItems := `[{"name":"Laser Cutting","price_id":"price_laser"}]`
 	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
 
-	resp, err := page.Goto(env.baseURL + "/donations/checkout")
-	require.NoError(t, err)
-	assert.Equal(t, 400, resp.Status(), "should return 400 for empty price_id")
-}
+	t.Run("empty", func(t *testing.T) {
+		resp, err := page.Goto(env.baseURL + "/donations/checkout")
+		require.NoError(t, err)
+		assert.Equal(t, 400, resp.Status(), "should return 400 for empty price_id")
+	})
 
-// TestDonation_CheckoutInvalidPriceID verifies that the donation checkout endpoint
-// returns a 400 error when an invalid price_id is provided.
-func TestDonation_CheckoutInvalidPriceID(t *testing.T) {
-	t.Parallel()
-	env, _, page := setupMemberTest(t, "invalidprice@example.com",
-		WithConfirmed(), WithWaiver(), WithActiveStripeSubscription(), WithFobID(12345))
-
-	donationItems := `[{"name":"Laser Cutting","price_id":"price_laser"}]`
-	seedStripeConfigWithDonations(t, env, "sk_test_fake", "whsec_fake", donationItems)
-
-	resp, err := page.Goto(env.baseURL + "/donations/checkout?price_id=price_nonexistent")
-	require.NoError(t, err)
-	assert.Equal(t, 400, resp.Status(), "should return 400 for invalid price_id")
-}
-
-// TestDonation_CheckoutRequiresAuth verifies that the donation checkout endpoint
-// requires authentication.
-func TestDonation_CheckoutRequiresAuth(t *testing.T) {
-	t.Parallel()
-	env, page := setupUnauthenticatedTest(t)
-
-	_, err := page.Goto(env.baseURL + "/donations/checkout?price_id=price_test")
-	require.NoError(t, err)
-
-	// Should redirect to login
-	err = page.WaitForURL("**/login**")
-	require.NoError(t, err)
+	t.Run("invalid", func(t *testing.T) {
+		resp, err := page.Goto(env.baseURL + "/donations/checkout?price_id=price_nonexistent")
+		require.NoError(t, err)
+		assert.Equal(t, 400, resp.Status(), "should return 400 for invalid price_id")
+	})
 }
 
 // TestDonation_DonateButtonNavigation verifies that clicking the Donate button
