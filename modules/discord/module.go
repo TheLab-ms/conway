@@ -126,9 +126,6 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine
 		eventLogger:    eventLogger,
 	}
 
-	// Recreate all SQL triggers for existing webhooks on startup.
-	m.recreateAllTriggers()
-
 	return m
 }
 
@@ -244,9 +241,6 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	// Discord-based login (unauthenticated)
 	router.HandleFunc("GET /login/discord", m.handleLoginStart)
 	router.HandleFunc("GET /login/discord/callback", m.handleLoginCallback)
-
-	// Admin webhook CRUD
-	m.attachWebhookRoutes(router)
 }
 
 func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {

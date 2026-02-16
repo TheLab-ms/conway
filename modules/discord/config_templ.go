@@ -29,7 +29,7 @@ func configDescription() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<strong>How Discord Integration Works</strong><ul class=\"mb-0 mt-2\"><li><strong>Account Linking:</strong> Members can link their Discord accounts via OAuth2. This stores their Discord user ID, email, and avatar.</li><li><strong>Role Sync:</strong> A background worker automatically assigns/removes a Discord role based on payment status. Paying members get the role; when payment lapses, it's removed.</li><li><strong>Notifications:</strong> Webhook messages are sent to configured Discord channels. Manage webhooks below to configure notification triggers and templates.</li></ul>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<strong>How Discord Integration Works</strong><ul class=\"mb-0 mt-2\"><li><strong>Account Linking:</strong> Members can link their Discord accounts via OAuth2. This stores their Discord user ID, email, and avatar.</li><li><strong>Role Sync:</strong> A background worker automatically assigns/removes a Discord role based on payment status. Paying members get the role; when payment lapses, it's removed.</li><li><strong>Notifications:</strong> Discord webhook notifications are managed on the <a href=\"/admin/config/triggers\">Triggers</a> settings page.</li></ul>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -1,12 +1,9 @@
 package discord
 
 import (
-	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/TheLab-ms/conway/engine/config"
-	"github.com/a-h/templ"
 )
 
 // Config holds Discord-related configuration.
@@ -57,19 +54,6 @@ func (m *Module) ConfigSpec() config.Spec {
 				Name:  "sync",
 				Title: "Sync Settings",
 			},
-		},
-		ExtraContent: func(ctx context.Context) templ.Component {
-			webhooks, err := m.loadAllWebhooks()
-			if err != nil {
-				slog.Error("failed to load webhooks for config page", "error", err)
-				webhooks = nil
-			}
-			tables, err := availableTables(m.db)
-			if err != nil {
-				slog.Error("failed to load tables for config page", "error", err)
-				tables = nil
-			}
-			return renderWebhooksCard(webhooks, tables)
 		},
 		Order: 10,
 	}

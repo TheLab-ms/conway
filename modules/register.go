@@ -20,6 +20,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/metrics"
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
+	"github.com/TheLab-ms/conway/modules/triggers"
 	"github.com/TheLab-ms/conway/modules/waiver"
 )
 
@@ -91,6 +92,11 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	googleMod.SetSignupConfirm(authModule.RenderSignupConfirmation)
 	authModule.GoogleLoginEnabled = googleMod.IsLoginEnabled
 	a.Add(googleMod)
+
+	// Triggers module: unified SQL trigger management. Registered after
+	// discordwebhook (needs discord_webhook_queue table) and after machines
+	// (which may reference discord tables), but before admin.
+	a.Add(triggers.New(opts.Database))
 
 	// Admin module added last so it can access the fully-populated config registry
 	adminMod := admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin"))

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/TheLab-ms/conway/modules/triggers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -211,6 +212,10 @@ func TestMemberFamilyDiscountPropagation(t *testing.T) {
 
 func TestMemberEvents(t *testing.T) {
 	db := NewTestDB(t)
+
+	// Initialize the triggers module so that the member_events triggers
+	// (which were moved from hardcoded SQL to the unified triggers system) exist.
+	triggers.New(db)
 
 	_, err := db.Exec("INSERT INTO members (id, email, confirmed, non_billable) VALUES (1, 'root@family.com', 1, 1)")
 	require.NoError(t, err)
