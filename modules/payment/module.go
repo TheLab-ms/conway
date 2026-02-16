@@ -341,7 +341,10 @@ func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Create a one-time payment Checkout Session using the configured Stripe Price
+	// Create a one-time payment Checkout Session using the configured Stripe Price.
+	// SetupFutureUsage is set to "on_session" so that the payment method is saved
+	// on the Customer, allowing Stripe to pre-fill it in future Checkout Sessions
+	// (e.g. for members with active subscriptions making donations).
 	checkoutParams := &stripe.CheckoutSessionParams{
 		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
 		SuccessURL: stripe.String(m.self.String()),
@@ -354,6 +357,9 @@ func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) 
 			},
 		},
 		SubmitType: stripe.String("donate"),
+		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{
+			SetupFutureUsage: stripe.String("on_session"),
+		},
 	}
 	checkoutParams.Context = r.Context()
 
