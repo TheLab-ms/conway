@@ -970,11 +970,6 @@ func (p *AdminDiscordConfigPage) FillRoleID(value string) {
 	require.NoError(p.t, err)
 }
 
-func (p *AdminDiscordConfigPage) FillPrintWebhookURL(value string) {
-	err := p.page.Locator("#print_webhook_url").Fill(value)
-	require.NoError(p.t, err)
-}
-
 func (p *AdminDiscordConfigPage) FillSyncIntervalHours(value string) {
 	err := p.page.Locator("#sync_interval_hours").Fill(value)
 	require.NoError(p.t, err)
@@ -1004,13 +999,6 @@ func (p *AdminDiscordConfigPage) ExpectHasClientSecret() {
 
 func (p *AdminDiscordConfigPage) ExpectHasBotToken() {
 	locator := p.page.Locator("#bot_token")
-	placeholder, err := locator.GetAttribute("placeholder")
-	require.NoError(p.t, err)
-	require.Contains(p.t, placeholder, "secret is set")
-}
-
-func (p *AdminDiscordConfigPage) ExpectHasPrintWebhookURL() {
-	locator := p.page.Locator("#print_webhook_url")
 	placeholder, err := locator.GetAttribute("placeholder")
 	require.NoError(p.t, err)
 	require.Contains(p.t, placeholder, "secret is set")

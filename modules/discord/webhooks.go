@@ -12,33 +12,10 @@ import (
 type webhookRow struct {
 	ID              int64
 	WebhookURL      string
-	TriggerEvent    string // Legacy: event name for app-level notifications (Signup, Print*).
 	MessageTemplate string
-	Username        string
 	Enabled         bool
 	TriggerTable    string // SQL trigger: the table to watch.
 	TriggerOp       string // SQL trigger: INSERT, UPDATE, or DELETE.
-}
-
-// IsSQLTrigger returns true if this webhook is driven by a SQL trigger
-// rather than an application-level event.
-func (w *webhookRow) IsSQLTrigger() bool {
-	return w.TriggerTable != "" && w.TriggerOp != ""
-}
-
-// appLevelEvents are events dispatched by Go code (not by SQL triggers).
-// These remain as options in the trigger_event dropdown.
-var appLevelEvents = []string{
-	"Signup",
-	"PrintCompleted",
-	"PrintFailed",
-}
-
-// placeholderHelp maps app-level trigger events to their available placeholders.
-var placeholderHelp = map[string]string{
-	"Signup":         "{event}, {email}, {member_id}, {details}",
-	"PrintCompleted": "{event}, {mention}, {printer_name}, {file_name}",
-	"PrintFailed":    "{event}, {mention}, {printer_name}, {file_name}, {error_code}",
 }
 
 func (m *Module) attachWebhookRoutes(router *engine.Router) {
@@ -49,7 +26,7 @@ func (m *Module) attachWebhookRoutes(router *engine.Router) {
 }
 
 func (m *Module) loadAllWebhooks() ([]webhookRow, error) {
-	rows, err := m.db.Query("SELECT id, webhook_url, trigger_event, message_template, username, enabled, trigger_table, trigger_op FROM discord_webhooks ORDER BY id")
+	rows, err := m.db.Query("SELECT id, webhook_url, message_template, enabled, trigger_table, trigger_op FROM discord_webhooks ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +36,7 @@ func (m *Module) loadAllWebhooks() ([]webhookRow, error) {
 	for rows.Next() {
 		var wh webhookRow
 		var enabled int
-		if err := rows.Scan(&wh.ID, &wh.WebhookURL, &wh.TriggerEvent, &wh.MessageTemplate, &wh.Username, &enabled, &wh.TriggerTable, &wh.TriggerOp); err != nil {
+		if err := rows.Scan(&wh.ID, &wh.WebhookURL, &wh.MessageTemplate, &enabled, &wh.TriggerTable, &wh.TriggerOp); err != nil {
 			return nil, err
 		}
 		wh.Enabled = enabled == 1
@@ -70,12 +47,7 @@ func (m *Module) loadAllWebhooks() ([]webhookRow, error) {
 
 func (m *Module) handleWebhookCreate(w http.ResponseWriter, r *http.Request) {
 	wh := parseWebhookForm(r)
-	if wh.WebhookURL == "" {
-		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
-		return
-	}
-	// Require either a SQL trigger config or an app-level event.
-	if !wh.IsSQLTrigger() && wh.TriggerEvent == "" {
+	if wh.WebhookURL == "" || wh.TriggerTable == "" || wh.TriggerOp == "" {
 		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 		return
 	}
@@ -86,9 +58,9 @@ func (m *Module) handleWebhookCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := m.db.ExecContext(r.Context(),
-		`INSERT INTO discord_webhooks (webhook_url, trigger_event, message_template, username, enabled, trigger_table, trigger_op)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		wh.WebhookURL, wh.TriggerEvent, wh.MessageTemplate, wh.Username, enabled, wh.TriggerTable, wh.TriggerOp)
+		`INSERT INTO discord_webhooks (webhook_url, message_template, enabled, trigger_table, trigger_op)
+		 VALUES (?, ?, ?, ?, ?)`,
+		wh.WebhookURL, wh.MessageTemplate, enabled, wh.TriggerTable, wh.TriggerOp)
 	if engine.HandleError(w, err) {
 		return
 	}
@@ -99,11 +71,8 @@ func (m *Module) handleWebhookCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	wh.ID = id
 
-	// Create the SQL trigger if this is a table-based webhook.
-	if wh.IsSQLTrigger() {
-		if err := m.createTrigger(&wh); err != nil {
-			slog.Error("failed to create webhook trigger", "error", err, "webhookID", wh.ID)
-		}
+	if err := m.createTrigger(&wh); err != nil {
+		slog.Error("failed to create webhook trigger", "error", err, "webhookID", wh.ID)
 	}
 
 	http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
@@ -119,11 +88,7 @@ func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
 	wh := parseWebhookForm(r)
 	wh.ID = id
 
-	if wh.WebhookURL == "" {
-		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
-		return
-	}
-	if !wh.IsSQLTrigger() && wh.TriggerEvent == "" {
+	if wh.WebhookURL == "" || wh.TriggerTable == "" || wh.TriggerOp == "" {
 		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 		return
 	}
@@ -134,8 +99,8 @@ func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := m.db.ExecContext(r.Context(),
-		`UPDATE discord_webhooks SET webhook_url = ?, trigger_event = ?, message_template = ?, username = ?, enabled = ?, trigger_table = ?, trigger_op = ? WHERE id = ?`,
-		wh.WebhookURL, wh.TriggerEvent, wh.MessageTemplate, wh.Username, enabled, wh.TriggerTable, wh.TriggerOp, id)
+		`UPDATE discord_webhooks SET webhook_url = ?, message_template = ?, enabled = ?, trigger_table = ?, trigger_op = ? WHERE id = ?`,
+		wh.WebhookURL, wh.MessageTemplate, enabled, wh.TriggerTable, wh.TriggerOp, id)
 	if engine.HandleError(w, err) {
 		return
 	}
@@ -146,13 +111,9 @@ func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Recreate or drop the SQL trigger.
-	if wh.IsSQLTrigger() {
-		if err := m.createTrigger(&wh); err != nil {
-			slog.Error("failed to recreate webhook trigger", "error", err, "webhookID", wh.ID)
-		}
-	} else {
-		m.dropTrigger(id)
+	// Recreate the SQL trigger.
+	if err := m.createTrigger(&wh); err != nil {
+		slog.Error("failed to recreate webhook trigger", "error", err, "webhookID", wh.ID)
 	}
 
 	http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
@@ -214,24 +175,11 @@ func joinPlaceholders(cols []string) string {
 }
 
 func parseWebhookForm(r *http.Request) webhookRow {
-	triggerType := r.FormValue("trigger_type")
-
-	wh := webhookRow{
+	return webhookRow{
 		WebhookURL:      r.FormValue("webhook_url"),
 		MessageTemplate: r.FormValue("message_template"),
-		Username:        r.FormValue("username"),
 		Enabled:         r.FormValue("enabled") == "on" || r.FormValue("enabled") == "1",
+		TriggerTable:    r.FormValue("trigger_table"),
+		TriggerOp:       r.FormValue("trigger_op"),
 	}
-
-	if triggerType == "sql" {
-		wh.TriggerTable = r.FormValue("trigger_table")
-		wh.TriggerOp = r.FormValue("trigger_op")
-		wh.TriggerEvent = "" // Clear app-level event when using SQL trigger.
-	} else {
-		wh.TriggerEvent = r.FormValue("trigger_event")
-		wh.TriggerTable = "" // Clear SQL trigger fields when using app-level event.
-		wh.TriggerOp = ""
-	}
-
-	return wh
 }

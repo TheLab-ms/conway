@@ -13,7 +13,6 @@ func TestRenderMessage(t *testing.T) {
 		name         string
 		tmpl         string
 		replacements map[string]string
-		username     string
 		wantErr      bool
 		wantMsg      string
 	}{
@@ -24,8 +23,7 @@ func TestRenderMessage(t *testing.T) {
 				"email":     "test@example.com",
 				"member_id": "42",
 			},
-			username: "Conway",
-			wantMsg:  `New member signed up: **test@example.com** (member ID: 42)`,
+			wantMsg: `New member signed up: **test@example.com** (member ID: 42)`,
 		},
 		{
 			name: "print completed with mention",
@@ -35,8 +33,7 @@ func TestRenderMessage(t *testing.T) {
 				"printer_name": "Bambu X1C",
 				"file_name":    "model.gcode",
 			},
-			username: "Conway Print Bot",
-			wantMsg:  `<@123456>: your print has completed successfully on Bambu X1C.`,
+			wantMsg: `<@123456>: your print has completed successfully on Bambu X1C.`,
 		},
 		{
 			name: "print failed with all fields",
@@ -47,8 +44,7 @@ func TestRenderMessage(t *testing.T) {
 				"error_code":   "0700 8002",
 				"file_name":    "model.gcode",
 			},
-			username: "Conway Print Bot",
-			wantMsg:  `<@123456>: your print on Bambu X1C has failed with error code: 0700 8002. File: model.gcode`,
+			wantMsg: `<@123456>: your print on Bambu X1C has failed with error code: 0700 8002. File: model.gcode`,
 		},
 		{
 			name: "print failed without mention",
@@ -59,14 +55,12 @@ func TestRenderMessage(t *testing.T) {
 				"error_code":   "0300 1001",
 				"file_name":    "model.gcode",
 			},
-			username: "Conway Print Bot",
-			wantMsg:  `A print on Bambu P1P has failed with error code: 0300 1001.`,
+			wantMsg: `A print on Bambu P1P has failed with error code: 0300 1001.`,
 		},
 		{
 			name:         "empty template produces error",
 			tmpl:         ``,
 			replacements: map[string]string{"email": "test@example.com"},
-			username:     "Conway",
 			wantErr:      true,
 		},
 		{
@@ -76,8 +70,7 @@ func TestRenderMessage(t *testing.T) {
 				"email":     "user@test.com",
 				"member_id": "100",
 			},
-			username: "Conway",
-			wantMsg:  `Welcome user@test.com! Your ID is 100.`,
+			wantMsg: `Welcome user@test.com! Your ID is 100.`,
 		},
 		{
 			name: "template with no matching placeholders left as-is",
@@ -85,21 +78,19 @@ func TestRenderMessage(t *testing.T) {
 			replacements: map[string]string{
 				"email": "test@example.com",
 			},
-			username: "Conway",
-			wantMsg:  `Hello {unknown_placeholder}!`,
+			wantMsg: `Hello {unknown_placeholder}!`,
 		},
 		{
 			name:         "nil replacements with content",
 			tmpl:         `Static message with no placeholders`,
 			replacements: nil,
-			username:     "Conway",
 			wantMsg:      `Static message with no placeholders`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := RenderMessage(tt.tmpl, tt.replacements, tt.username)
+			result, err := RenderMessage(tt.tmpl, tt.replacements)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -112,7 +103,7 @@ func TestRenderMessage(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantMsg, payload["content"])
-			assert.Equal(t, tt.username, payload["username"])
+			assert.Equal(t, "Conway", payload["username"])
 		})
 	}
 }

@@ -1,12 +1,91 @@
 package fobapi
 
+import (
+	"fmt"
+	"time"
+)
+
 templ configDescription() {
 	<strong>How the Fob API Works</strong>
 	<ul class="mb-0 mt-2">
 		<li><strong>Polling:</strong> Access controllers (ESP32 devices) poll this endpoint to get the list of authorized fob IDs.</li>
 		<li><strong>Event Logging:</strong> Controllers report fob swipe events back to Conway for audit logging.</li>
 		<li><strong>LAN Only:</strong> This endpoint is only accessible from the local network. Internet requests are blocked.</li>
+		<li><strong>Door Tracking:</strong> Controllers are automatically tracked by IP address. Assign door names below.</li>
 	</ul>
+}
+
+templ renderControllersCard(clients []*fobClient) {
+	<div class="card mb-4">
+		<div class="card-header d-flex justify-content-between align-items-center">
+			<h5 class="mb-0">Access Controllers</h5>
+			<span class="badge bg-secondary">{ fmt.Sprintf("%d", len(clients)) }</span>
+		</div>
+		<div class="card-body">
+			if len(clients) == 0 {
+				<p class="text-muted mb-0">
+					No access controllers have been seen yet. Controllers will appear here automatically when they poll the fob API.
+				</p>
+			} else {
+				<p class="text-muted small mb-3">
+					Controllers are tracked automatically when they access the fob API. Assign a door name to identify which entrance each controller manages.
+				</p>
+				<div class="table-responsive">
+					<table class="table table-hover table-sm mb-0">
+						<thead class="table-light">
+							<tr>
+								<th>IP Address</th>
+								<th>Door Name</th>
+								<th>Last Seen</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, client := range clients {
+								<tr>
+									<td><code>{ client.IPAddress }</code></td>
+								<td>
+									<form method="post" action={ templ.URL(fmt.Sprintf("/admin/doors/%d", client.ID)) } class="d-flex align-items-center gap-2">
+										<input type="text" class="form-control form-control-sm" name="door_name"
+											value={ client.DoorName } placeholder="e.g. Front Door, Side Entrance"
+											style="max-width: 250px;"/>
+										<button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">Save</button>
+									</form>
+								</td>
+								<td class="text-muted text-nowrap small">{ formatLastSeen(client.LastSeen.Time) }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		</div>
+	</div>
+}
+
+func formatLastSeen(ts time.Time) string {
+	dur := time.Since(ts)
+	switch {
+	case dur < time.Minute:
+		return "just now"
+	case dur < time.Hour:
+		mins := int(dur / time.Minute)
+		if mins == 1 {
+			return "1 min ago"
+		}
+		return fmt.Sprintf("%d mins ago", mins)
+	case dur < 24*time.Hour:
+		hours := int(dur / time.Hour)
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	default:
+		days := int(dur / (24 * time.Hour))
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	}
 }
 
 templ configInfoContent(selfURL string) {

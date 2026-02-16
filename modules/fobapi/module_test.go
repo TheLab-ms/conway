@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const migration = `
+const testMigration = `
 CREATE TABLE members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fob_id INTEGER
@@ -34,7 +34,7 @@ CREATE UNIQUE INDEX fob_swipes_uniq ON fob_swipes (fob_id, timestamp);
 
 func TestListing(t *testing.T) {
 	db := engine.OpenTestDB(t)
-	_, err := db.Exec(migration)
+	_, err := db.Exec(testMigration)
 	require.NoError(t, err)
 
 	m := New(db, nil)
@@ -60,7 +60,7 @@ func TestListing(t *testing.T) {
 
 func TestEvents(t *testing.T) {
 	db := engine.OpenTestDB(t)
-	_, err := db.Exec(migration)
+	_, err := db.Exec(testMigration)
 	require.NoError(t, err)
 
 	m := New(db, nil)

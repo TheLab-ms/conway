@@ -2576,13 +2576,12 @@ func TestAdmin_DiscordConfigPage(t *testing.T) {
 	expect(t).Locator(page.GetByText("Notifications")).ToBeVisible()
 	expect(t).Locator(page.GetByText("Sync Settings")).ToBeVisible()
 
-	// Fill in all 7 fields across 4 sections
+	// Fill in all 6 fields across 3 sections
 	configPage.FillClientID("test-discord-client-id")
 	configPage.FillClientSecret("test-discord-client-secret")
 	configPage.FillBotToken("test-bot-token")
 	configPage.FillGuildID("123456789012345678")
 	configPage.FillRoleID("987654321098765432")
-	configPage.FillPrintWebhookURL("https://discord.com/api/webhooks/test")
 	configPage.FillSyncIntervalHours("12")
 	configPage.Submit()
 
@@ -2598,7 +2597,6 @@ func TestAdmin_DiscordConfigPage(t *testing.T) {
 
 	configPage.ExpectHasClientSecret()
 	configPage.ExpectHasBotToken()
-	configPage.ExpectHasPrintWebhookURL()
 
 	// Verify non-secret fields retain their values
 	clientID, err := page.Locator("#client_id").InputValue()
@@ -2625,7 +2623,7 @@ func TestAdmin_DiscordConfigSecretPreservation(t *testing.T) {
 	env, _, page := setupAdminTest(t)
 
 	// Seed initial config
-	seedDiscordConfig(t, env, "cid", "original-secret", "original-bot-token", "gid", "rid", "https://original-webhook.com", 24)
+	seedDiscordConfig(t, env, "cid", "original-secret", "original-bot-token", "gid", "rid", 24)
 
 	configPage := NewAdminDiscordConfigPage(t, page, env.baseURL)
 	configPage.Navigate()
@@ -2643,12 +2641,11 @@ func TestAdmin_DiscordConfigSecretPreservation(t *testing.T) {
 	configPage.ExpectSaveSuccessMessage()
 
 	// Verify secrets were preserved in database
-	var clientSecret, botToken, webhookURL string
-	err = env.db.QueryRow("SELECT client_secret, bot_token, print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1").Scan(&clientSecret, &botToken, &webhookURL)
+	var clientSecret, botToken string
+	err = env.db.QueryRow("SELECT client_secret, bot_token FROM discord_config ORDER BY version DESC LIMIT 1").Scan(&clientSecret, &botToken)
 	require.NoError(t, err)
 	assert.Equal(t, "original-secret", clientSecret)
 	assert.Equal(t, "original-bot-token", botToken)
-	assert.Equal(t, "https://original-webhook.com", webhookURL)
 }
 
 // TestAdmin_DiscordConfigValidation verifies that the sync_interval_hours
@@ -2658,7 +2655,7 @@ func TestAdmin_DiscordConfigValidation(t *testing.T) {
 	env, _, page := setupAdminTest(t)
 
 	// Seed initial config so we have something to save
-	seedDiscordConfig(t, env, "cid", "secret", "token", "gid", "rid", "", 24)
+	seedDiscordConfig(t, env, "cid", "secret", "token", "gid", "rid", 24)
 
 	configPage := NewAdminDiscordConfigPage(t, page, env.baseURL)
 	configPage.Navigate()

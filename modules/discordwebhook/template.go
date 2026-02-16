@@ -6,9 +6,13 @@ import (
 	"strings"
 )
 
+// botUsername is the hardcoded Discord webhook bot username.
+const botUsername = "Conway"
+
 // RenderMessage renders a message template by substituting {placeholder} values
-// from the replacements map, then wraps the result in a Discord webhook JSON payload.
-func RenderMessage(tmpl string, replacements map[string]string, username string) (string, error) {
+// from the replacements map, then wraps the result in a Discord webhook JSON payload
+// with the hardcoded bot username "Conway".
+func RenderMessage(tmpl string, replacements map[string]string) (string, error) {
 	content := tmpl
 	for key, val := range replacements {
 		content = strings.ReplaceAll(content, "{"+key+"}", val)
@@ -20,7 +24,7 @@ func RenderMessage(tmpl string, replacements map[string]string, username string)
 
 	payload := map[string]string{
 		"content":  content,
-		"username": username,
+		"username": botUsername,
 	}
 	jsonBytes, err := json.Marshal(payload)
 	if err != nil {

@@ -77,7 +77,7 @@ func availableTables(db *sql.DB) ([]string, error) {
 //
 // For INSERT/UPDATE triggers, column references use NEW.<col>.
 // For DELETE triggers, column references use OLD.<col>.
-func buildTriggerSQL(webhookID int64, table, op, messageTemplate, webhookURL, username string, tableCols []string) (string, error) {
+func buildTriggerSQL(webhookID int64, table, op, messageTemplate string, tableCols []string) (string, error) {
 	op = strings.ToUpper(op)
 	if !validOps[op] {
 		return "", fmt.Errorf("invalid trigger operation: %s", op)
@@ -123,7 +123,7 @@ BEGIN
         w.webhook_url,
         json_object(
             'content', %s,
-            'username', w.username
+            'username', 'Conway'
         )
     FROM discord_webhooks w
     WHERE w.id = %d AND w.enabled = 1;
@@ -146,7 +146,7 @@ func (m *Module) createTrigger(wh *webhookRow) error {
 		return fmt.Errorf("table %s has no columns or does not exist", wh.TriggerTable)
 	}
 
-	trigSQL, err := buildTriggerSQL(wh.ID, wh.TriggerTable, wh.TriggerOp, wh.MessageTemplate, wh.WebhookURL, wh.Username, cols)
+	trigSQL, err := buildTriggerSQL(wh.ID, wh.TriggerTable, wh.TriggerOp, wh.MessageTemplate, cols)
 	if err != nil {
 		return err
 	}
@@ -172,24 +172,36 @@ func (m *Module) dropTrigger(webhookID int64) {
 // recreateAllTriggers drops and recreates SQL triggers for all webhooks that have
 // a trigger_table configured. Called on startup to ensure triggers are in sync.
 func (m *Module) recreateAllTriggers() {
-	rows, err := m.db.Query("SELECT id, webhook_url, trigger_event, message_template, username, enabled, trigger_table, trigger_op FROM discord_webhooks WHERE trigger_table != ''")
+	rows, err := m.db.Query("SELECT id, webhook_url, message_template, enabled, trigger_table, trigger_op FROM discord_webhooks WHERE trigger_table != ''")
 	if err != nil {
 		slog.Error("failed to load webhooks for trigger recreation", "error", err)
 		return
 	}
 	defer rows.Close()
 
+	// Collect all webhooks first so the rows iterator is fully consumed before
+	// createTrigger issues additional queries. With MaxOpenConns=1 (SQLite),
+	// interleaving queries while rows is open causes a deadlock.
+	var webhooks []webhookRow
 	for rows.Next() {
 		var wh webhookRow
 		var enabled int
-		if err := rows.Scan(&wh.ID, &wh.WebhookURL, &wh.TriggerEvent, &wh.MessageTemplate, &wh.Username, &enabled, &wh.TriggerTable, &wh.TriggerOp); err != nil {
+		if err := rows.Scan(&wh.ID, &wh.WebhookURL, &wh.MessageTemplate, &enabled, &wh.TriggerTable, &wh.TriggerOp); err != nil {
 			slog.Error("failed to scan webhook for trigger recreation", "error", err)
 			continue
 		}
 		wh.Enabled = enabled == 1
+		webhooks = append(webhooks, wh)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("error iterating webhooks for trigger recreation", "error", err)
+		return
+	}
+	rows.Close()
 
-		if err := m.createTrigger(&wh); err != nil {
-			slog.Error("failed to recreate webhook trigger", "error", err, "webhookID", wh.ID)
+	for i := range webhooks {
+		if err := m.createTrigger(&webhooks[i]); err != nil {
+			slog.Error("failed to recreate webhook trigger", "error", err, "webhookID", webhooks[i].ID)
 		}
 	}
 }

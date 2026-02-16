@@ -631,10 +631,10 @@ func getBambuPollInterval(t *testing.T, env *TestEnv) int {
 }
 
 // seedDiscordConfig inserts Discord configuration into the database for testing.
-func seedDiscordConfig(t *testing.T, env *TestEnv, clientID, clientSecret, botToken, guildID, roleID, printWebhookURL string, syncIntervalHours int) {
+func seedDiscordConfig(t *testing.T, env *TestEnv, clientID, clientSecret, botToken, guildID, roleID string, syncIntervalHours int) {
 	t.Helper()
-	_, err := env.db.Exec(`INSERT INTO discord_config (client_id, client_secret, bot_token, guild_id, role_id, print_webhook_url, sync_interval_hours) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		clientID, clientSecret, botToken, guildID, roleID, printWebhookURL, syncIntervalHours)
+	_, err := env.db.Exec(`INSERT INTO discord_config (client_id, client_secret, bot_token, guild_id, role_id, sync_interval_hours) VALUES (?, ?, ?, ?, ?, ?)`,
+		clientID, clientSecret, botToken, guildID, roleID, syncIntervalHours)
 	require.NoError(t, err, "could not insert discord config")
 }
 

@@ -149,9 +149,10 @@ var listViews = []listView{
 					'Fob Swipe' AS event_type,
 					f.member AS member_id,
 					COALESCE(m.name_override, m.identifier, 'Unknown') AS member_name,
-					CAST(f.fob_id AS TEXT) AS details
+					CAST(f.fob_id AS TEXT) || COALESCE(' (' || NULLIF(fc.door_name, '') || ')', '') AS details
 				FROM fob_swipes f
 				LEFT JOIN members m ON f.member = m.id
+				LEFT JOIN fob_clients fc ON f.fob_client = fc.id
 
 				UNION ALL
 

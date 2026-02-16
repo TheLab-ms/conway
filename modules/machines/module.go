@@ -88,16 +88,6 @@ type Module struct {
 
 	// configVersion tracks the current loaded config version to detect changes
 	configVersion int64
-
-	// printNotifier is called when print state transitions occur (completion or failure).
-	// Set via SetPrintNotifier.
-	printNotifier PrintNotifier
-}
-
-// PrintNotifier handles Discord notifications for print state transitions.
-type PrintNotifier interface {
-	NotifyPrintCompleted(ctx context.Context, discordUserID, printerName, fileName string)
-	NotifyPrintFailed(ctx context.Context, discordUserID, printerName, fileName, errorCode string)
 }
 
 func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
@@ -121,31 +111,13 @@ func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
 	return m
 }
 
-// SetPrintNotifier configures the notification handler for print state transitions.
-func (m *Module) SetPrintNotifier(n PrintNotifier) {
-	m.printNotifier = n
-}
-
-// savePrinterState upserts a printer's state to the database and sends
-// notifications on state transitions (print completed, print failed).
+// savePrinterState upserts a printer's state to the database.
 func (m *Module) savePrinterState(ctx context.Context, status PrinterStatus) error {
 	if m.db == nil {
 		return nil
 	}
 
-	// Load old state before upserting to detect transitions
-	var oldErrorCode string
-	var oldJobFinished *int64
-	var oldSubtaskName string
-	err := m.db.QueryRowContext(ctx,
-		`SELECT error_code, job_finished_timestamp, subtask_name FROM bambu_printer_state WHERE serial_number = $1`,
-		status.SerialNumber).Scan(&oldErrorCode, &oldJobFinished, &oldSubtaskName)
-	isNew := err == sql.ErrNoRows
-	if err != nil && !isNew {
-		return err
-	}
-
-	_, err = m.db.ExecContext(ctx, `
+	_, err := m.db.ExecContext(ctx, `
 		INSERT INTO bambu_printer_state (
 			serial_number, printer_name, gcode_file, subtask_name, gcode_state,
 			error_code, remaining_print_time, print_percent_done, job_finished_timestamp, updated_at
@@ -162,58 +134,7 @@ func (m *Module) savePrinterState(ctx context.Context, status PrinterStatus) err
 			updated_at = strftime('%s', 'now')`,
 		status.SerialNumber, status.PrinterName, status.GcodeFile, status.SubtaskName, status.GcodeState,
 		status.ErrorCode, status.RemainingPrintTime, status.PrintPercentDone, status.JobFinishedTimestamp)
-	if err != nil {
-		return err
-	}
-
-	// Detect state transitions and send notifications
-	if m.printNotifier != nil && !isNew {
-		subtaskForLookup := oldSubtaskName
-
-		// Print completed: had a finish timestamp, now doesn't, no error, in finished state
-		if oldJobFinished != nil && status.JobFinishedTimestamp == nil &&
-			(status.ErrorCode == "") &&
-			(status.GcodeState == "FINISH" || status.GcodeState == "IDLE") {
-			discordUserID := m.lookupDiscordUserID(ctx, subtaskForLookup)
-			if discordUserID != "" {
-				m.printNotifier.NotifyPrintCompleted(ctx, discordUserID, status.PrinterName, status.GcodeFile)
-			}
-		}
-
-		// Print failed: error code went from empty to non-empty
-		if (oldErrorCode == "") && status.ErrorCode != "" {
-			discordUserID := m.lookupDiscordUserID(ctx, status.SubtaskName)
-			m.printNotifier.NotifyPrintFailed(ctx, discordUserID, status.PrinterName, status.GcodeFile, status.ErrorCode)
-		}
-	}
-
-	return nil
-}
-
-// lookupDiscordUserID extracts a discord handle from the subtask name (e.g. "@username")
-// and looks up the corresponding discord_user_id from the members table.
-func (m *Module) lookupDiscordUserID(ctx context.Context, subtaskName string) string {
-	handle := extractDiscordHandle(subtaskName)
-	if handle == "" {
-		return ""
-	}
-	var userID string
-	err := m.db.QueryRowContext(ctx,
-		`SELECT discord_user_id FROM members WHERE discord_username = $1 AND discord_user_id IS NOT NULL`,
-		handle).Scan(&userID)
-	if err != nil {
-		return ""
-	}
-	return userID
-}
-
-// extractDiscordHandle extracts a discord handle from a subtask name.
-func extractDiscordHandle(subtaskName string) string {
-	match := discordHandleRegex.FindStringSubmatch(subtaskName)
-	if len(match) >= 2 {
-		return match[1]
-	}
-	return ""
+	return err
 }
 
 // loadPrinterStates loads all non-stale printer states from the database.

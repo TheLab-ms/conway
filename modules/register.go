@@ -83,13 +83,6 @@ func Register(a *engine.App, opts Options) *auth.Module {
 
 	machinesMod := machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu"))
 
-	// Create Discord notifier for webhook messages.
-	// The notifier queries the discord_webhooks table directly and is shared
-	// by the machines module (print notifications) and auth module (signup notifications).
-	notifier := discord.NewNotifier(opts.Database, discordWebhookMod)
-	machinesMod.SetPrintNotifier(notifier)
-	authModule.OnSignup = notifier.NotifySignup
-
 	a.Add(machinesMod)
 
 	// Google OAuth login module

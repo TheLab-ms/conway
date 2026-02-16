@@ -8,6 +8,11 @@ package fobapi
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
+import (
+	"fmt"
+	"time"
+)
+
 func configDescription() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -29,7 +34,7 @@ func configDescription() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<strong>How the Fob API Works</strong><ul class=\"mb-0 mt-2\"><li><strong>Polling:</strong> Access controllers (ESP32 devices) poll this endpoint to get the list of authorized fob IDs.</li><li><strong>Event Logging:</strong> Controllers report fob swipe events back to Conway for audit logging.</li><li><strong>LAN Only:</strong> This endpoint is only accessible from the local network. Internet requests are blocked.</li></ul>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<strong>How the Fob API Works</strong><ul class=\"mb-0 mt-2\"><li><strong>Polling:</strong> Access controllers (ESP32 devices) poll this endpoint to get the list of authorized fob IDs.</li><li><strong>Event Logging:</strong> Controllers report fob swipe events back to Conway for audit logging.</li><li><strong>LAN Only:</strong> This endpoint is only accessible from the local network. Internet requests are blocked.</li><li><strong>Door Tracking:</strong> Controllers are automatically tracked by IP address. Assign door names below.</li></ul>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -37,7 +42,7 @@ func configDescription() templ.Component {
 	})
 }
 
-func configInfoContent(selfURL string) templ.Component {
+func renderControllersCard(clients []*fobClient) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -58,20 +63,165 @@ func configInfoContent(selfURL string) templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<h6 class=\"text-muted border-bottom pb-2 mb-3\">Endpoint</h6><div class=\"mb-4\"><code class=\"fs-5\">POST ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"card mb-4\"><div class=\"card-header d-flex justify-content-between align-items-center\"><h5 class=\"mb-0\">Access Controllers</h5><span class=\"badge bg-secondary\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(clients)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 15, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 22, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "/api/fobs</code></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Authentication</h6><p class=\"text-muted small mb-3\">No API key is required. Instead, the endpoint uses network-level authentication:</p><ul class=\"mb-4\"><li>Requests must originate from the <strong>local network</strong></li><li>Requests from the internet are automatically blocked (HTTP 403)</li><li>This is enforced by checking for the <code>CF-Connecting-IP</code> header set by Cloudflare</li></ul><h6 class=\"text-muted border-bottom pb-2 mb-3\">Request Format</h6><p class=\"text-muted small mb-3\">Send a JSON array of fob swipe events. This can be an empty array if you just want to fetch the authorized fob list.</p><div class=\"bg-light p-3 rounded mb-3\"><div class=\"mb-2\"><strong class=\"text-primary\">POST</strong> <code>/api/fobs</code></div><div class=\"mb-2 ps-3 border-start border-2\"><small class=\"text-muted d-block\">Headers:</small> <code>Content-Type: application/json</code><br><code>If-None-Match: &lt;etag&gt;</code> <span class=\"text-muted small\">(optional, for caching)</span></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Body:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>[ &#123; \"fob\": 12345678, \"allowed\": true &#125;, &#123; \"fob\": 87654321, \"allowed\": false &#125; ]</code></pre></div></div><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead> <tbody><tr><td><code>fob</code></td><td>integer</td><td>The fob ID that was scanned</td></tr><tr><td><code>allowed</code></td><td>boolean</td><td>Whether access was granted (based on controller's cached list)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Response Format</h6><p class=\"text-muted small mb-3\">Returns a JSON array of all currently authorized fob IDs, sorted numerically.</p><div class=\"bg-light p-3 rounded mb-3\"><div class=\"mb-2\"><strong class=\"text-success\">HTTP/1.1 200 OK</strong></div><div class=\"mb-2 ps-3 border-start border-2\"><small class=\"text-muted d-block\">Headers:</small> <code>Content-Type: application/json</code><br><code>ETag: a1b2c3d4e5f6...</code></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Body:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>[12345678, 23456789, 34567890]</code></pre></div></div><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Response</th><th>Description</th></tr></thead> <tbody><tr><td><code>200 OK</code></td><td>Returns JSON array of authorized fob IDs</td></tr><tr><td><code>304 Not Modified</code></td><td>ETag matches; client should use cached list</td></tr><tr><td><code>403 Forbidden</code></td><td>Request originated from the internet (blocked)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">ETag Caching</h6><p class=\"text-muted small mb-3\">The API uses HTTP ETag caching to minimize bandwidth. Controllers should:</p><ol class=\"mb-4\"><li>Store the <code>ETag</code> header from the response</li><li>Send <code>If-None-Match: &lt;etag&gt;</code> on subsequent requests</li><li>If response is <code>304</code>, continue using the cached fob list</li><li>If response is <code>200</code>, update the cached list and ETag</li></ol><h6 class=\"text-muted border-bottom pb-2 mb-3\">Client Implementation</h6><p class=\"text-muted small mb-0\">Reference implementation for ESP32 MicroPython controllers is available in the <code>access-controller/</code> directory of the Conway repository.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</span></div><div class=\"card-body\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(clients) == 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<p class=\"text-muted mb-0\">No access controllers have been seen yet. Controllers will appear here automatically when they poll the fob API.</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p class=\"text-muted small mb-3\">Controllers are tracked automatically when they access the fob API. Assign a door name to identify which entrance each controller manages.</p><div class=\"table-responsive\"><table class=\"table table-hover table-sm mb-0\"><thead class=\"table-light\"><tr><th>IP Address</th><th>Door Name</th><th>Last Seen</th></tr></thead> <tbody>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, client := range clients {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<tr><td><code>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var4 string
+				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(client.IPAddress)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 45, Col: 37}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</code></td><td><form method=\"post\" action=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var5 templ.SafeURL
+				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/doors/%d", client.ID)))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 47, Col: 90}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" class=\"d-flex align-items-center gap-2\"><input type=\"text\" class=\"form-control form-control-sm\" name=\"door_name\" value=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var6 string
+				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(client.DoorName)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 49, Col: 34}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" placeholder=\"e.g. Front Door, Side Entrance\" style=\"max-width: 250px;\"> <button type=\"submit\" class=\"btn btn-sm btn-outline-primary text-nowrap\">Save</button></form></td><td class=\"text-muted text-nowrap small\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var7 string
+				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(formatLastSeen(client.LastSeen.Time))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 54, Col: 87}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</td></tr>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</tbody></table></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func formatLastSeen(ts time.Time) string {
+	dur := time.Since(ts)
+	switch {
+	case dur < time.Minute:
+		return "just now"
+	case dur < time.Hour:
+		mins := int(dur / time.Minute)
+		if mins == 1 {
+			return "1 min ago"
+		}
+		return fmt.Sprintf("%d mins ago", mins)
+	case dur < 24*time.Hour:
+		hours := int(dur / time.Hour)
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	default:
+		days := int(dur / (24 * time.Hour))
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	}
+}
+
+func configInfoContent(selfURL string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var8 == nil {
+			templ_7745c5c3_Var8 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<h6 class=\"text-muted border-bottom pb-2 mb-3\">Endpoint</h6><div class=\"mb-4\"><code class=\"fs-5\">POST ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var9 string
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 94, Col: 35}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "/api/fobs</code></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Authentication</h6><p class=\"text-muted small mb-3\">No API key is required. Instead, the endpoint uses network-level authentication:</p><ul class=\"mb-4\"><li>Requests must originate from the <strong>local network</strong></li><li>Requests from the internet are automatically blocked (HTTP 403)</li><li>This is enforced by checking for the <code>CF-Connecting-IP</code> header set by Cloudflare</li></ul><h6 class=\"text-muted border-bottom pb-2 mb-3\">Request Format</h6><p class=\"text-muted small mb-3\">Send a JSON array of fob swipe events. This can be an empty array if you just want to fetch the authorized fob list.</p><div class=\"bg-light p-3 rounded mb-3\"><div class=\"mb-2\"><strong class=\"text-primary\">POST</strong> <code>/api/fobs</code></div><div class=\"mb-2 ps-3 border-start border-2\"><small class=\"text-muted d-block\">Headers:</small> <code>Content-Type: application/json</code><br><code>If-None-Match: &lt;etag&gt;</code> <span class=\"text-muted small\">(optional, for caching)</span></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Body:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>[ &#123; \"fob\": 12345678, \"allowed\": true &#125;, &#123; \"fob\": 87654321, \"allowed\": false &#125; ]</code></pre></div></div><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead> <tbody><tr><td><code>fob</code></td><td>integer</td><td>The fob ID that was scanned</td></tr><tr><td><code>allowed</code></td><td>boolean</td><td>Whether access was granted (based on controller's cached list)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">Response Format</h6><p class=\"text-muted small mb-3\">Returns a JSON array of all currently authorized fob IDs, sorted numerically.</p><div class=\"bg-light p-3 rounded mb-3\"><div class=\"mb-2\"><strong class=\"text-success\">HTTP/1.1 200 OK</strong></div><div class=\"mb-2 ps-3 border-start border-2\"><small class=\"text-muted d-block\">Headers:</small> <code>Content-Type: application/json</code><br><code>ETag: a1b2c3d4e5f6...</code></div><div class=\"ps-3 border-start border-2\"><small class=\"text-muted d-block\">Body:</small><pre class=\"mb-0 bg-white p-2 rounded border\"><code>[12345678, 23456789, 34567890]</code></pre></div></div><div class=\"mb-4\"><table class=\"table table-sm\"><thead class=\"table-light\"><tr><th>Response</th><th>Description</th></tr></thead> <tbody><tr><td><code>200 OK</code></td><td>Returns JSON array of authorized fob IDs</td></tr><tr><td><code>304 Not Modified</code></td><td>ETag matches; client should use cached list</td></tr><tr><td><code>403 Forbidden</code></td><td>Request originated from the internet (blocked)</td></tr></tbody></table></div><h6 class=\"text-muted border-bottom pb-2 mb-3\">ETag Caching</h6><p class=\"text-muted small mb-3\">The API uses HTTP ETag caching to minimize bandwidth. Controllers should:</p><ol class=\"mb-4\"><li>Store the <code>ETag</code> header from the response</li><li>Send <code>If-None-Match: &lt;etag&gt;</code> on subsequent requests</li><li>If response is <code>304</code>, continue using the cached fob list</li><li>If response is <code>200</code>, update the cached list and ETag</li></ol><h6 class=\"text-muted border-bottom pb-2 mb-3\">Client Implementation</h6><p class=\"text-muted small mb-0\">Reference implementation for ESP32 MicroPython controllers is available in the <code>access-controller/</code> directory of the Conway repository.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

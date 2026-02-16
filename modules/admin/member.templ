@@ -72,9 +72,11 @@ func queryMemberEvents(ctx context.Context, db *sql.DB, memberID int64, limit, o
 
 			UNION ALL
 
-			SELECT timestamp, 'Fob Swipe' AS event, CAST(fob_id AS TEXT) AS details
-			FROM fob_swipes
-			WHERE member = $1
+			SELECT f.timestamp, 'Fob Swipe' AS event,
+				CAST(f.fob_id AS TEXT) || COALESCE(' (' || NULLIF(fc.door_name, '') || ')', '') AS details
+			FROM fob_swipes f
+			LEFT JOIN fob_clients fc ON f.fob_client = fc.id
+			WHERE f.member = $1
 		) AS unified_events
 		ORDER BY timestamp DESC
 		LIMIT $2 OFFSET $3`, memberID, limit, offset)

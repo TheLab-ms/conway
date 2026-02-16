@@ -58,10 +58,6 @@ type Module struct {
 	// GoogleLoginEnabled is set by the google module to indicate whether
 	// Google-based login is available. If nil, the Google login button is hidden.
 	GoogleLoginEnabled func(ctx context.Context) bool
-
-	// OnSignup is called when a new member account is created.
-	// Set by external modules (e.g., discord) to send notifications.
-	OnSignup func(ctx context.Context, email string, memberID int64)
 }
 
 func New(d *sql.DB, self *url.URL, tso *TurnstileOptions, tokens *engine.TokenIssuer) *Module {
@@ -239,11 +235,6 @@ func (s *Module) handleConfirmSignup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return
-	}
-
-	// Notify about new signup
-	if s.OnSignup != nil {
-		s.OnSignup(r.Context(), email, memberID)
 	}
 
 	// Complete the login flow based on the provider
