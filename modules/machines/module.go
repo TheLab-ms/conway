@@ -41,79 +41,9 @@ CREATE TABLE IF NOT EXISTS bambu_printer_state (
 
 CREATE INDEX IF NOT EXISTS bambu_printer_state_updated_idx ON bambu_printer_state (updated_at);
 
-/* Trigger: Send Discord notification when a print job completes successfully */
-CREATE TRIGGER IF NOT EXISTS bambu_print_completed
-AFTER UPDATE ON bambu_printer_state
-WHEN OLD.job_finished_timestamp IS NOT NULL
-     AND NEW.job_finished_timestamp IS NULL
-     AND (NEW.error_code = '' OR NEW.error_code IS NULL)
-     AND NEW.gcode_state IN ('FINISH', 'IDLE')
-BEGIN
-    INSERT INTO discord_webhook_queue (webhook_url, payload)
-    SELECT
-        (SELECT print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1),
-        json_object(
-            'content', '<@' || m.discord_user_id || '>: your print has completed successfully on ' || NEW.printer_name || '.',
-            'username', 'Conway Print Bot'
-        )
-    FROM members m
-    WHERE m.discord_username = (
-        CASE
-            WHEN INSTR(OLD.subtask_name, '@') > 0
-            THEN SUBSTR(
-                OLD.subtask_name,
-                INSTR(OLD.subtask_name, '@') + 1,
-                COALESCE(
-                    NULLIF(INSTR(SUBSTR(OLD.subtask_name, INSTR(OLD.subtask_name, '@') + 1), ' '), 0) - 1,
-                    LENGTH(OLD.subtask_name) - INSTR(OLD.subtask_name, '@')
-                )
-            )
-            ELSE NULL
-        END
-    )
-    AND m.discord_user_id IS NOT NULL
-    AND (SELECT print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1) != '';
-END;
-
-/* Trigger: Send Discord notification when a print job fails */
-CREATE TRIGGER IF NOT EXISTS bambu_print_failed
-AFTER UPDATE ON bambu_printer_state
-WHEN (OLD.error_code = '' OR OLD.error_code IS NULL)
-     AND NEW.error_code != ''
-     AND NEW.error_code IS NOT NULL
-BEGIN
-    INSERT INTO discord_webhook_queue (webhook_url, payload)
-    SELECT
-        (SELECT print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1),
-        CASE
-            WHEN m.discord_user_id IS NOT NULL THEN
-                json_object(
-                    'content', '<@' || m.discord_user_id || '>: your print on ' || NEW.printer_name || ' has failed with error code: ' || NEW.error_code || '.',
-                    'username', 'Conway Print Bot'
-                )
-            ELSE
-                json_object(
-                    'content', 'A print on ' || NEW.printer_name || ' has failed with error code: ' || NEW.error_code,
-                    'username', 'Conway Print Bot'
-                )
-        END
-    FROM (SELECT 1) dummy
-    LEFT JOIN members m ON m.discord_username = (
-        CASE
-            WHEN INSTR(NEW.subtask_name, '@') > 0
-            THEN SUBSTR(
-                NEW.subtask_name,
-                INSTR(NEW.subtask_name, '@') + 1,
-                COALESCE(
-                    NULLIF(INSTR(SUBSTR(NEW.subtask_name, INSTR(NEW.subtask_name, '@') + 1), ' '), 0) - 1,
-                    LENGTH(NEW.subtask_name) - INSTR(NEW.subtask_name, '@')
-                )
-            )
-            ELSE NULL
-        END
-    )
-    WHERE (SELECT print_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1) != '';
-END;
+/* Drop old hardcoded notification triggers (replaced by Go template-based notifications) */
+DROP TRIGGER IF EXISTS bambu_print_completed;
+DROP TRIGGER IF EXISTS bambu_print_failed;
 `
 
 var discordHandleRegex = regexp.MustCompile(`@([a-zA-Z0-9_.]+)`)
@@ -158,6 +88,16 @@ type Module struct {
 
 	// configVersion tracks the current loaded config version to detect changes
 	configVersion int64
+
+	// printNotifier is called when print state transitions occur (completion or failure).
+	// Set via SetPrintNotifier.
+	printNotifier PrintNotifier
+}
+
+// PrintNotifier handles Discord notifications for print state transitions.
+type PrintNotifier interface {
+	NotifyPrintCompleted(ctx context.Context, discordUserID, printerName, fileName string)
+	NotifyPrintFailed(ctx context.Context, discordUserID, printerName, fileName, errorCode string)
 }
 
 func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
@@ -181,12 +121,31 @@ func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
 	return m
 }
 
-// savePrinterState upserts a printer's state to the database.
+// SetPrintNotifier configures the notification handler for print state transitions.
+func (m *Module) SetPrintNotifier(n PrintNotifier) {
+	m.printNotifier = n
+}
+
+// savePrinterState upserts a printer's state to the database and sends
+// notifications on state transitions (print completed, print failed).
 func (m *Module) savePrinterState(ctx context.Context, status PrinterStatus) error {
 	if m.db == nil {
 		return nil
 	}
-	_, err := m.db.ExecContext(ctx, `
+
+	// Load old state before upserting to detect transitions
+	var oldErrorCode string
+	var oldJobFinished *int64
+	var oldSubtaskName string
+	err := m.db.QueryRowContext(ctx,
+		`SELECT error_code, job_finished_timestamp, subtask_name FROM bambu_printer_state WHERE serial_number = $1`,
+		status.SerialNumber).Scan(&oldErrorCode, &oldJobFinished, &oldSubtaskName)
+	isNew := err == sql.ErrNoRows
+	if err != nil && !isNew {
+		return err
+	}
+
+	_, err = m.db.ExecContext(ctx, `
 		INSERT INTO bambu_printer_state (
 			serial_number, printer_name, gcode_file, subtask_name, gcode_state,
 			error_code, remaining_print_time, print_percent_done, job_finished_timestamp, updated_at
@@ -203,7 +162,58 @@ func (m *Module) savePrinterState(ctx context.Context, status PrinterStatus) err
 			updated_at = strftime('%s', 'now')`,
 		status.SerialNumber, status.PrinterName, status.GcodeFile, status.SubtaskName, status.GcodeState,
 		status.ErrorCode, status.RemainingPrintTime, status.PrintPercentDone, status.JobFinishedTimestamp)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Detect state transitions and send notifications
+	if m.printNotifier != nil && !isNew {
+		subtaskForLookup := oldSubtaskName
+
+		// Print completed: had a finish timestamp, now doesn't, no error, in finished state
+		if oldJobFinished != nil && status.JobFinishedTimestamp == nil &&
+			(status.ErrorCode == "") &&
+			(status.GcodeState == "FINISH" || status.GcodeState == "IDLE") {
+			discordUserID := m.lookupDiscordUserID(ctx, subtaskForLookup)
+			if discordUserID != "" {
+				m.printNotifier.NotifyPrintCompleted(ctx, discordUserID, status.PrinterName, status.GcodeFile)
+			}
+		}
+
+		// Print failed: error code went from empty to non-empty
+		if (oldErrorCode == "") && status.ErrorCode != "" {
+			discordUserID := m.lookupDiscordUserID(ctx, status.SubtaskName)
+			m.printNotifier.NotifyPrintFailed(ctx, discordUserID, status.PrinterName, status.GcodeFile, status.ErrorCode)
+		}
+	}
+
+	return nil
+}
+
+// lookupDiscordUserID extracts a discord handle from the subtask name (e.g. "@username")
+// and looks up the corresponding discord_user_id from the members table.
+func (m *Module) lookupDiscordUserID(ctx context.Context, subtaskName string) string {
+	handle := extractDiscordHandle(subtaskName)
+	if handle == "" {
+		return ""
+	}
+	var userID string
+	err := m.db.QueryRowContext(ctx,
+		`SELECT discord_user_id FROM members WHERE discord_username = $1 AND discord_user_id IS NOT NULL`,
+		handle).Scan(&userID)
+	if err != nil {
+		return ""
+	}
+	return userID
+}
+
+// extractDiscordHandle extracts a discord handle from a subtask name.
+func extractDiscordHandle(subtaskName string) string {
+	match := discordHandleRegex.FindStringSubmatch(subtaskName)
+	if len(match) >= 2 {
+		return match[1]
+	}
+	return ""
 }
 
 // loadPrinterStates loads all non-stale printer states from the database.

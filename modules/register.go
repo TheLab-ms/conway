@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/directory"
@@ -81,7 +82,18 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	authModule.DiscordLoginEnabled = discordMod.IsLoginEnabled
 	a.Add(discordMod)
 
-	a.Add(machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu")))
+	machinesMod := machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu"))
+
+	// Create Discord notifier for template-based webhook messages.
+	// The notifier reads templates and webhook URLs from the discord config
+	// and is shared by the machines module (print notifications) and auth
+	// module (signup notifications).
+	configStore := config.NewStore(opts.Database, a.Configs())
+	notifier := discord.NewNotifier(configStore, discordWebhookMod)
+	machinesMod.SetPrintNotifier(notifier)
+	authModule.OnSignup = notifier.NotifySignup
+
+	a.Add(machinesMod)
 
 	// Google OAuth login module
 	googleMod := google.New(opts.Database, opts.Self, opts.GoogleIssuer)

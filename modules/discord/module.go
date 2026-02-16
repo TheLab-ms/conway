@@ -43,20 +43,8 @@ INSERT OR IGNORE INTO _discord_migration_check (id) VALUES (1);
 -- Clean up old discord metrics samplings (now using direct event queries)
 DELETE FROM metrics_samplings WHERE name IN ('discord-sync-successes', 'discord-sync-errors', 'discord-api-requests');
 
--- Notify via Discord webhook when a new member signs up
-CREATE TRIGGER IF NOT EXISTS members_signup_notification AFTER INSERT ON members
-WHEN NEW.email != ''
-BEGIN
-    INSERT INTO discord_webhook_queue (webhook_url, payload)
-    SELECT
-        (SELECT signup_webhook_url FROM discord_config ORDER BY version DESC LIMIT 1),
-        json_object(
-            'content', 'New member signed up: **' || NEW.email || '** (member ID: ' || NEW.id || ')',
-            'username', 'Conway'
-        )
-    FROM (SELECT 1) dummy
-    WHERE (SELECT COALESCE(signup_webhook_url, '') FROM discord_config ORDER BY version DESC LIMIT 1) != '';
-END;
+-- Drop the old hardcoded signup notification trigger (replaced by Go template-based notifications)
+DROP TRIGGER IF EXISTS members_signup_notification;
 `
 
 var endpoint = oauth2.Endpoint{
@@ -95,8 +83,11 @@ type Module struct {
 
 func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine.EventLogger) *Module {
 	engine.MustMigrate(db, migration)
-	// Add sync_interval_hours column if it doesn't exist (ALTER TABLE can't use IF NOT EXISTS)
+	// Add columns that can't use IF NOT EXISTS with ALTER TABLE
 	db.Exec("ALTER TABLE discord_config ADD COLUMN sync_interval_hours INTEGER NOT NULL DEFAULT 24")
+	db.Exec("ALTER TABLE discord_config ADD COLUMN signup_message_template TEXT NOT NULL DEFAULT ''")
+	db.Exec("ALTER TABLE discord_config ADD COLUMN print_completed_message_template TEXT NOT NULL DEFAULT ''")
+	db.Exec("ALTER TABLE discord_config ADD COLUMN print_failed_message_template TEXT NOT NULL DEFAULT ''")
 	return &Module{
 		db:             db,
 		self:           self,

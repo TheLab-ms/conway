@@ -30,6 +30,7 @@ type Sender func(ctx context.Context, webhookURL, payload string) error
 // Implemented by *Module.
 type MessageQueuer interface {
 	QueueMessage(ctx context.Context, webhookURL, payload string) error
+	QueueTemplateMessage(ctx context.Context, webhookURL, tmpl string, data any, username string) error
 }
 
 type Module struct {
@@ -96,6 +97,15 @@ func (m *Module) UpdateItem(ctx context.Context, item message, success bool) (er
 func (m *Module) QueueMessage(ctx context.Context, webhookURL, payload string) error {
 	_, err := m.db.ExecContext(ctx, "INSERT INTO discord_webhook_queue (webhook_url, payload) VALUES ($1, $2);", webhookURL, payload)
 	return err
+}
+
+// QueueTemplateMessage renders a Go template with the given data and queues the result.
+func (m *Module) QueueTemplateMessage(ctx context.Context, webhookURL, tmpl string, data any, username string) error {
+	payload, err := RenderMessage(tmpl, data, username)
+	if err != nil {
+		return fmt.Errorf("rendering template: %w", err)
+	}
+	return m.QueueMessage(ctx, webhookURL, payload)
 }
 
 type message struct {

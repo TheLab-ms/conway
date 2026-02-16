@@ -19,10 +19,46 @@ type Config struct {
 
 	// Notifications
 	PrintWebhookURL  string `json:"print_webhook_url" config:"label=3D Print Notification Webhook URL,secret,section=webhooks,help=Webhook URL for 3D printer completion and failure notifications."`
-	SignupWebhookURL string `json:"signup_webhook_url" config:"label=New Member Signup Webhook URL,secret,section=webhooks,help=Webhook URL to notify when a new member signs up. Messages include a link to the member's admin profile."`
+	SignupWebhookURL string `json:"signup_webhook_url" config:"label=New Member Signup Webhook URL,secret,section=webhooks,help=Webhook URL to notify when a new member signs up."`
+
+	// Message Templates (Go text/template syntax)
+	SignupMessageTemplate         string `json:"signup_message_template" config:"label=Signup Message Template,section=templates,multiline,rows=3,help=Template for new member signup notifications. Available fields: {{.Email}} {{.MemberID}}"`
+	PrintCompletedMessageTemplate string `json:"print_completed_message_template" config:"label=Print Completed Template,section=templates,multiline,rows=3,help=Template for print completion notifications. Available fields: {{.Mention}} {{.PrinterName}} {{.FileName}}"`
+	PrintFailedMessageTemplate    string `json:"print_failed_message_template" config:"label=Print Failed Template,section=templates,multiline,rows=3,help=Template for print failure notifications. Available fields: {{.Mention}} {{.PrinterName}} {{.FileName}} {{.ErrorCode}}"`
 
 	// Sync Settings
 	SyncIntervalHours int `json:"sync_interval_hours" config:"label=Full Reconciliation Interval (hours),section=sync,default=24,min=1,max=168,help=How often to fully reconcile all Discord role assignments. Default: 24 hours."`
+}
+
+// Default message templates used when no custom template is configured.
+const (
+	DefaultSignupTemplate         = `New member signed up: **{{.Email}}** (member ID: {{.MemberID}})`
+	DefaultPrintCompletedTemplate = `{{.Mention}}: your print has completed successfully on {{.PrinterName}}.`
+	DefaultPrintFailedTemplate    = `{{if .Mention}}{{.Mention}}: your{{else}}A{{end}} print on {{.PrinterName}} has failed with error code: {{.ErrorCode}}.`
+)
+
+// SignupTemplate returns the configured signup template or the default.
+func (c *Config) SignupTemplate() string {
+	if c.SignupMessageTemplate != "" {
+		return c.SignupMessageTemplate
+	}
+	return DefaultSignupTemplate
+}
+
+// PrintCompletedTemplate returns the configured print completed template or the default.
+func (c *Config) PrintCompletedTmpl() string {
+	if c.PrintCompletedMessageTemplate != "" {
+		return c.PrintCompletedMessageTemplate
+	}
+	return DefaultPrintCompletedTemplate
+}
+
+// PrintFailedTemplate returns the configured print failed template or the default.
+func (c *Config) PrintFailedTmpl() string {
+	if c.PrintFailedMessageTemplate != "" {
+		return c.PrintFailedMessageTemplate
+	}
+	return DefaultPrintFailedTemplate
 }
 
 // Validate validates the Discord configuration.
@@ -58,6 +94,11 @@ func (m *Module) ConfigSpec() config.Spec {
 				Name:        "webhooks",
 				Title:       "Notifications",
 				Description: webhooksSectionDescription(),
+			},
+			{
+				Name:        "templates",
+				Title:       "Message Templates",
+				Description: templatesSectionDescription(),
 			},
 			{
 				Name:  "sync",

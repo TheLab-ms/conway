@@ -20,3 +20,12 @@ templ botSectionDescription() {
 templ webhooksSectionDescription() {
 	Configure webhooks for Discord notifications. Create a webhook in Discord: Channel Settings &gt; Integrations &gt; Webhooks.
 }
+
+templ templatesSectionDescription() {
+	Customize the messages sent to Discord. Uses <a href="https://pkg.go.dev/text/template" target="_blank" rel="noopener">Go template syntax</a>. Leave blank to use defaults.
+	<ul class="mb-0 mt-2">
+		<li><strong>Signup:</strong> <code>{"{{.Email}}"}</code> <code>{"{{.MemberID}}"}</code></li>
+		<li><strong>Print Completed:</strong> <code>{"{{.Mention}}"}</code> <code>{"{{.PrinterName}}"}</code> <code>{"{{.FileName}}"}</code></li>
+		<li><strong>Print Failed:</strong> <code>{"{{.Mention}}"}</code> <code>{"{{.PrinterName}}"}</code> <code>{"{{.FileName}}"}</code> <code>{"{{.ErrorCode}}"}</code></li>
+	</ul>
+}
