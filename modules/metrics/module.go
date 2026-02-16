@@ -5,10 +5,17 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/config"
+	"github.com/a-h/templ"
 )
+
+//go:generate go run github.com/a-h/templ/cmd/templ generate
 
 const defaultTTL = 2 * 365 * 24 * 60 * 60 // 2 years in seconds
 
@@ -201,4 +208,175 @@ type sampling struct {
 	Query       string
 	Interval    time.Duration
 	TargetTable string
+}
+
+// samplingRow represents a metrics_samplings row for the admin UI.
+type samplingRow struct {
+	ID        int64
+	Name      string
+	Query     string
+	Interval  string // Go duration string (e.g. "24h", "168h")
+	CreatedAt float64
+}
+
+// ConfigSpec returns the Metric Samplings configuration specification (read-only with ExtraContent).
+func (m *Module) ConfigSpec() config.Spec {
+	return config.Spec{
+		Module:      "metrics",
+		Title:       "Metric Samplings",
+		ReadOnly:    true,
+		Order:       50,
+		Description: configDescription(),
+		ExtraContent: func(ctx context.Context) templ.Component {
+			samplings, err := m.loadAllSamplings()
+			if err != nil {
+				slog.Error("failed to load samplings for config page", "error", err)
+				samplings = nil
+			}
+			return renderSamplingsCard(samplings)
+		},
+	}
+}
+
+// AttachRoutes registers admin routes for managing metric samplings.
+func (m *Module) AttachRoutes(router *engine.Router) {
+	router.HandleFunc("POST /admin/metrics/samplings/new", router.WithLeadership(m.handleSamplingCreate))
+	router.HandleFunc("POST /admin/metrics/samplings/{id}/edit", router.WithLeadership(m.handleSamplingUpdate))
+	router.HandleFunc("POST /admin/metrics/samplings/{id}/delete", router.WithLeadership(m.handleSamplingDelete))
+}
+
+// loadAllSamplings returns all metrics_samplings rows for display.
+func (m *Module) loadAllSamplings() ([]samplingRow, error) {
+	rows, err := m.db.Query("SELECT id, name, query, interval_seconds, created_at FROM metrics_samplings ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var samplings []samplingRow
+	for rows.Next() {
+		var s samplingRow
+		var intervalSeconds int64
+		if err := rows.Scan(&s.ID, &s.Name, &s.Query, &intervalSeconds, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		s.Interval = (time.Duration(intervalSeconds) * time.Second).String()
+		samplings = append(samplings, s)
+	}
+	return samplings, rows.Err()
+}
+
+const hardcodedTargetTable = "metrics"
+
+func (m *Module) handleSamplingCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		engine.ClientError(w, "Bad Request", "Failed to parse form.", 400)
+		return
+	}
+
+	name, query, intervalSeconds, err := parseSamplingForm(r)
+	if err != nil {
+		engine.ClientError(w, "Invalid Input", err.Error(), 400)
+		return
+	}
+
+	_, err = m.db.ExecContext(r.Context(),
+		`INSERT INTO metrics_samplings (name, query, interval_seconds, target_table) VALUES (?, ?, ?, ?)`,
+		name, query, intervalSeconds, hardcodedTargetTable)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			engine.ClientError(w, "Duplicate Name", "A sampling with that name already exists.", 400)
+			return
+		}
+		if engine.HandleError(w, err) {
+			return
+		}
+	}
+
+	http.Redirect(w, r, "/admin/config/metrics", http.StatusSeeOther)
+}
+
+func (m *Module) handleSamplingUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		engine.ClientError(w, "Invalid ID", "The sampling ID is not valid.", 400)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		engine.ClientError(w, "Bad Request", "Failed to parse form.", 400)
+		return
+	}
+
+	name, query, intervalSeconds, err := parseSamplingForm(r)
+	if err != nil {
+		engine.ClientError(w, "Invalid Input", err.Error(), 400)
+		return
+	}
+
+	result, err := m.db.ExecContext(r.Context(),
+		`UPDATE metrics_samplings SET name = ?, query = ?, interval_seconds = ?, target_table = ? WHERE id = ?`,
+		name, query, intervalSeconds, hardcodedTargetTable, id)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			engine.ClientError(w, "Duplicate Name", "A sampling with that name already exists.", 400)
+			return
+		}
+		if engine.HandleError(w, err) {
+			return
+		}
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		engine.ClientError(w, "Not Found", "Sampling not found.", 404)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/config/metrics", http.StatusSeeOther)
+}
+
+func (m *Module) handleSamplingDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		engine.ClientError(w, "Invalid ID", "The sampling ID is not valid.", 400)
+		return
+	}
+
+	_, err = m.db.ExecContext(r.Context(), "DELETE FROM metrics_samplings WHERE id = ?", id)
+	if engine.HandleError(w, err) {
+		return
+	}
+
+	http.Redirect(w, r, "/admin/config/metrics", http.StatusSeeOther)
+}
+
+// parseSamplingForm extracts and validates form fields, returning (name, query, intervalSeconds, error).
+// The interval field accepts Go duration strings (e.g. "24h", "30m", "168h").
+func parseSamplingForm(r *http.Request) (string, string, int64, error) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	query := strings.TrimSpace(r.FormValue("query"))
+	intervalStr := strings.TrimSpace(r.FormValue("interval"))
+
+	if name == "" || query == "" || intervalStr == "" {
+		return "", "", 0, fmt.Errorf("Name, query, and interval are required.")
+	}
+
+	d, err := time.ParseDuration(intervalStr)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("Invalid interval: %q is not a valid Go duration (e.g. 24h, 30m, 168h).", intervalStr)
+	}
+	if d <= 0 {
+		return "", "", 0, fmt.Errorf("Interval must be positive.")
+	}
+
+	return name, query, int64(d.Seconds()), nil
+}
+
+// truncateQuery truncates a SQL query for display in the table.
+func truncateQuery(q string) string {
+	if len(q) > 60 {
+		return q[:57] + "..."
+	}
+	return q
 }

@@ -2854,13 +2854,14 @@ func TestAdmin_ConfigSidebarNavigation(t *testing.T) {
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
 
-	// Verify all 7 sidebar links are present
+	// Verify all 8 sidebar links are present
 	configPage.ExpectSidebarLink("Waiver", "/admin/config/waiver")
 	configPage.ExpectSidebarLink("Discord", "/admin/config/discord")
 	configPage.ExpectSidebarLink("Google", "/admin/config/google")
 	configPage.ExpectSidebarLink("Stripe", "/admin/config/stripe")
 	configPage.ExpectSidebarLink("Bambu", "/admin/config/bambu")
-	configPage.ExpectSidebarLink("Fob API", "/admin/config/fobapi")
+	configPage.ExpectSidebarLink("Building Access Control API", "/admin/config/fobapi")
+	configPage.ExpectSidebarLink("Metric Samplings", "/admin/config/metrics")
 	configPage.ExpectSidebarLink("OAuth2", "/admin/config/oauth2")
 
 	// Verify active state on current page

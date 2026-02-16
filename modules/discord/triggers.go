@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+
+	"github.com/TheLab-ms/conway/engine"
 )
 
 // triggerName returns the SQLite trigger name for a given webhook ID.
@@ -101,28 +103,26 @@ func tableColumns(db *sql.DB, table string) ([]string, error) {
 	return cols, nil
 }
 
-// availableTables returns all non-internal, non-sqlite tables in the database.
+// availableTables returns tables suitable for webhook triggers, filtering out
+// discord-internal tables from the shared engine.AvailableTables helper.
 func availableTables(db *sql.DB) ([]string, error) {
-	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '\_%' ESCAPE '\' ORDER BY name`)
+	all, err := engine.AvailableTables(db)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var tables []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, err
-		}
-		// Skip internal tables that shouldn't have webhook triggers.
-		switch name {
-		case "discord_webhook_queue", "discord_webhooks", "_discord_migration_check":
-			continue
-		}
-		tables = append(tables, name)
+	skip := map[string]bool{
+		"discord_webhook_queue":      true,
+		"discord_webhooks":           true,
+		"_discord_migration_check":   true,
+		"discord_webhook_conditions": true,
 	}
-	return tables, rows.Err()
+	var tables []string
+	for _, name := range all {
+		if !skip[name] {
+			tables = append(tables, name)
+		}
+	}
+	return tables, nil
 }
 
 // buildWhenClause generates a SQL WHEN clause string from a slice of conditions.
