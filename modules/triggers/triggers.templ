@@ -13,8 +13,9 @@ templ renderTriggersCard(triggers []triggerRow, tables []string) {
 		</div>
 		<div class="card-body">
 			<p class="text-muted small mb-3">
-				Each trigger fires a SQL statement when a specified database operation occurs on a table.
-				Use presets to quickly set up common actions like logging member events or sending Discord notifications.
+				<strong>Event triggers</strong> fire a SQL statement when a database operation (INSERT/UPDATE/DELETE) occurs on a table.
+				<strong>Timed triggers</strong> execute SQL on a recurring schedule (e.g. every 24h).
+				Use <code>:last</code> in timed trigger SQL to reference the timestamp of the previous execution.
 			</p>
 
 			<!-- New trigger form (hidden by default) -->
@@ -26,7 +27,7 @@ templ renderTriggersCard(triggers []triggerRow, tables []string) {
 					</div>
 					<div class="card-body">
 						<form method="post" action="/admin/triggers/new">
-							@triggerFormFields(&triggerRow{Enabled: true}, "new", tables)
+							@triggerFormFields(&triggerRow{Enabled: true, TriggerType: "event"}, "new", tables)
 							<button type="submit" class="btn btn-primary btn-sm">Create Trigger</button>
 						</form>
 					</div>
@@ -43,6 +44,7 @@ templ renderTriggersCard(triggers []triggerRow, tables []string) {
 						<thead class="table-light">
 							<tr>
 								<th>Name</th>
+								<th>Type</th>
 								<th>Trigger</th>
 								<th>Status</th>
 								<th class="text-end">Actions</th>
@@ -55,9 +57,20 @@ templ renderTriggersCard(triggers []triggerRow, tables []string) {
 										<strong>{ tr.Name }</strong>
 									</td>
 									<td>
-										<code>{ tr.TriggerOp }</code> on <code>{ tr.TriggerTable }</code>
-										if tr.WhenClause != "" {
-											<span class="text-muted small ms-1">(filtered)</span>
+										if tr.TriggerType == "timed" {
+											<span class="badge bg-info">Timed</span>
+										} else {
+											<span class="badge bg-primary">Event</span>
+										}
+									</td>
+									<td>
+										if tr.TriggerType == "timed" {
+											every <code>{ tr.Interval }</code>
+										} else {
+											<code>{ tr.TriggerOp }</code> on <code>{ tr.TriggerTable }</code>
+											if tr.WhenClause != "" {
+												<span class="text-muted small ms-1">(filtered)</span>
+											}
 										}
 									</td>
 									<td>
@@ -75,7 +88,7 @@ templ renderTriggersCard(triggers []triggerRow, tables []string) {
 									</td>
 								</tr>
 								<tr id={ fmt.Sprintf("trigger-edit-%d", tr.ID) } class="d-none">
-									<td colspan="4">
+									<td colspan="5">
 										<div class="card border-secondary">
 											<div class="card-body">
 												<form method="post" action={ templ.SafeURL(fmt.Sprintf("/admin/triggers/%d/edit", tr.ID)) }>
@@ -98,32 +111,55 @@ templ renderTriggersCard(triggers []triggerRow, tables []string) {
 }
 
 templ triggerFormFields(tr *triggerRow, suffix string, tables []string) {
+	<!-- Trigger Type selector -->
+	<div class="mb-3">
+		<label class="form-label">Trigger Type</label>
+		<div class="btn-group btn-group-sm w-100" role="group">
+			<input type="radio" class="btn-check" name="trigger_type" id={ "type_event_" + suffix } value="event" checked?={ tr.TriggerType == "event" } onchange={ toggleTypeFields(suffix) }/>
+			<label class="btn btn-outline-primary" for={ "type_event_" + suffix }>Event (on DB change)</label>
+			<input type="radio" class="btn-check" name="trigger_type" id={ "type_timed_" + suffix } value="timed" checked?={ tr.TriggerType == "timed" } onchange={ toggleTypeFields(suffix) }/>
+			<label class="btn btn-outline-info" for={ "type_timed_" + suffix }>Timed (on schedule)</label>
+		</div>
+	</div>
+
 	<div class="row g-3 mb-3">
 		<div class="col-md-6">
 			<label for={ "name_" + suffix } class="form-label">Name</label>
 			<input type="text" class="form-control form-control-sm" id={ "name_" + suffix } name="name" value={ tr.Name } placeholder="e.g. Log: Email confirmed" required/>
 		</div>
-		<div class="col-md-3">
-			<label for={ "trigger_table_" + suffix } class="form-label">Table</label>
-			<select class="form-select form-select-sm" id={ "trigger_table_" + suffix } name="trigger_table" onchange={ fetchColumns(suffix) }>
-				<option value="" disabled selected?={ tr.TriggerTable == "" }>Select table...</option>
-				for _, t := range tables {
-					<option value={ t } selected?={ tr.TriggerTable == t }>{ t }</option>
-				}
-			</select>
+		<!-- Event trigger fields: table + operation -->
+		<div id={ "event_fields_" + suffix } class={ "col-md-6", templ.KV("d-none", tr.TriggerType == "timed") }>
+			<div class="row g-3">
+				<div class="col-md-6">
+					<label for={ "trigger_table_" + suffix } class="form-label">Table</label>
+					<select class="form-select form-select-sm" id={ "trigger_table_" + suffix } name="trigger_table" onchange={ fetchColumns(suffix) }>
+						<option value="" disabled selected?={ tr.TriggerTable == "" }>Select table...</option>
+						for _, t := range tables {
+							<option value={ t } selected?={ tr.TriggerTable == t }>{ t }</option>
+						}
+					</select>
+				</div>
+				<div class="col-md-6">
+					<label for={ "trigger_op_" + suffix } class="form-label">Operation</label>
+					<select class="form-select form-select-sm" id={ "trigger_op_" + suffix } name="trigger_op">
+						<option value="" disabled selected?={ tr.TriggerOp == "" }>Select operation...</option>
+						<option value="INSERT" selected?={ tr.TriggerOp == "INSERT" }>INSERT</option>
+						<option value="UPDATE" selected?={ tr.TriggerOp == "UPDATE" }>UPDATE</option>
+						<option value="DELETE" selected?={ tr.TriggerOp == "DELETE" }>DELETE</option>
+					</select>
+				</div>
+			</div>
 		</div>
-		<div class="col-md-3">
-			<label for={ "trigger_op_" + suffix } class="form-label">Operation</label>
-			<select class="form-select form-select-sm" id={ "trigger_op_" + suffix } name="trigger_op">
-				<option value="" disabled selected?={ tr.TriggerOp == "" }>Select operation...</option>
-				<option value="INSERT" selected?={ tr.TriggerOp == "INSERT" }>INSERT</option>
-				<option value="UPDATE" selected?={ tr.TriggerOp == "UPDATE" }>UPDATE</option>
-				<option value="DELETE" selected?={ tr.TriggerOp == "DELETE" }>DELETE</option>
-			</select>
+		<!-- Timed trigger fields: interval -->
+		<div id={ "timed_fields_" + suffix } class={ "col-md-6", templ.KV("d-none", tr.TriggerType != "timed") }>
+			<label for={ "interval_" + suffix } class="form-label">Interval</label>
+			<input type="text" class="form-control form-control-sm font-monospace" id={ "interval_" + suffix } name="interval" value={ tr.Interval } placeholder="e.g. 24h, 168h, 30m"/>
+			<div class="form-text">Go duration string (e.g. <code>24h</code>, <code>168h</code>, <code>720h</code>).</div>
 		</div>
 	</div>
 
-	<div class="mb-3">
+	<!-- WHEN clause (event triggers only) -->
+	<div id={ "when_clause_wrapper_" + suffix } class={ "mb-3", templ.KV("d-none", tr.TriggerType == "timed") }>
 		<label for={ "when_clause_" + suffix } class="form-label">WHEN Condition <span class="text-muted fw-normal">(optional)</span></label>
 		<input type="text" class="form-control form-control-sm font-monospace" id={ "when_clause_" + suffix } name="when_clause" value={ tr.WhenClause } placeholder="e.g. OLD.confirmed = 0 AND NEW.confirmed = 1"/>
 		<div class="form-text">
@@ -133,7 +169,8 @@ templ triggerFormFields(tr *triggerRow, suffix string, tables []string) {
 
 	<div class="mb-3">
 		<label for={ "action_sql_" + suffix } class="form-label">Action SQL</label>
-		<div class="btn-group btn-group-sm mb-2" role="group">
+		<!-- Presets for event triggers -->
+		<div id={ "event_presets_" + suffix } class={ "btn-group btn-group-sm mb-2", templ.KV("d-none", tr.TriggerType == "timed") } role="group">
 			<button type="button" class="btn btn-outline-secondary" onclick={ applyPresetMemberEvent(suffix) } title="Pre-fill SQL to insert a row into member_events">
 				Preset: Log Member Event
 			</button>
@@ -141,9 +178,18 @@ templ triggerFormFields(tr *triggerRow, suffix string, tables []string) {
 				Preset: Discord Notification
 			</button>
 		</div>
-		<textarea class="form-control form-control-sm font-monospace" id={ "action_sql_" + suffix } name="action_sql" rows="5" placeholder="INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'MyEvent', 'Something happened');" required>{ tr.ActionSQL }</textarea>
-		<div class="form-text">
+		<!-- Presets for timed triggers -->
+		<div id={ "timed_presets_" + suffix } class={ "btn-group btn-group-sm mb-2", templ.KV("d-none", tr.TriggerType != "timed") } role="group">
+			<button type="button" class="btn btn-outline-secondary" onclick={ applyPresetMetricSampling(suffix) } title="Pre-fill SQL for a metric sampling query">
+				Preset: Metric Sampling
+			</button>
+		</div>
+		<textarea class="form-control form-control-sm font-monospace" id={ "action_sql_" + suffix } name="action_sql" rows="5" placeholder="INSERT INTO ..." required>{ tr.ActionSQL }</textarea>
+		<div id={ "event_help_" + suffix } class={ "form-text", templ.KV("d-none", tr.TriggerType == "timed") }>
 			The SQL statement(s) to execute when the trigger fires. Reference row data with <code>NEW.column</code> (INSERT/UPDATE) or <code>OLD.column</code> (DELETE). Multiple statements must each end with a semicolon.
+		</div>
+		<div id={ "timed_help_" + suffix } class={ "form-text", templ.KV("d-none", tr.TriggerType != "timed") }>
+			The SQL statement to execute on each interval. Use the <code>:last</code> named parameter to reference the Unix timestamp of the previous execution.
 		</div>
 		<div id={ "columns_help_" + suffix } class="mt-2"></div>
 	</div>
@@ -159,6 +205,27 @@ script toggleEdit(id int64) {
 	if (row) {
 		row.classList.toggle('d-none');
 	}
+}
+
+script toggleTypeFields(suffix string) {
+	var eventRadio = document.getElementById('type_event_' + suffix);
+	var isEvent = eventRadio && eventRadio.checked;
+
+	var eventFields = document.getElementById('event_fields_' + suffix);
+	var timedFields = document.getElementById('timed_fields_' + suffix);
+	var whenClause = document.getElementById('when_clause_wrapper_' + suffix);
+	var eventPresets = document.getElementById('event_presets_' + suffix);
+	var timedPresets = document.getElementById('timed_presets_' + suffix);
+	var eventHelp = document.getElementById('event_help_' + suffix);
+	var timedHelp = document.getElementById('timed_help_' + suffix);
+
+	if (eventFields) eventFields.classList.toggle('d-none', !isEvent);
+	if (timedFields) timedFields.classList.toggle('d-none', isEvent);
+	if (whenClause) whenClause.classList.toggle('d-none', !isEvent);
+	if (eventPresets) eventPresets.classList.toggle('d-none', !isEvent);
+	if (timedPresets) timedPresets.classList.toggle('d-none', isEvent);
+	if (eventHelp) eventHelp.classList.toggle('d-none', !isEvent);
+	if (timedHelp) timedHelp.classList.toggle('d-none', isEvent);
 }
 
 script fetchColumns(suffix string) {
@@ -202,6 +269,14 @@ script applyPresetDiscord(suffix string) {
 	}
 }
 
+script applyPresetMetricSampling(suffix string) {
+	var textarea = document.getElementById('action_sql_' + suffix);
+	if (textarea) {
+		textarea.value = "INSERT INTO metrics (series, value) VALUES ('series-name', (SELECT COUNT(*) FROM table_name WHERE condition));";
+		textarea.focus();
+	}
+}
+
 templ triggerScripts() {
 	<script>
 		function toggleTriggerForm(formId) {
@@ -210,14 +285,5 @@ templ triggerScripts() {
 				form.classList.toggle('d-none');
 			}
 		}
-
-		// On page load, fetch columns for any table select that already has a value
-		document.addEventListener('DOMContentLoaded', function() {
-			document.querySelectorAll('select[name="trigger_table"]').forEach(function(sel) {
-				if (sel.value) {
-					sel.dispatchEvent(new Event('change'));
-				}
-			});
-		});
 	</script>
 }

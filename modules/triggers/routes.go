@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/TheLab-ms/conway/engine"
 )
@@ -15,8 +17,17 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tr := parseTriggerForm(r)
-	if tr.TriggerTable == "" || tr.TriggerOp == "" || tr.ActionSQL == "" {
+	tr, err := parseTriggerForm(r)
+	if err != nil {
+		engine.ClientError(w, "Invalid Input", err.Error(), 400)
+		return
+	}
+
+	if tr.TriggerType == "event" && (tr.TriggerTable == "" || tr.TriggerOp == "" || tr.ActionSQL == "") {
+		http.Redirect(w, r, "/admin/config/triggers", http.StatusSeeOther)
+		return
+	}
+	if tr.TriggerType == "timed" && (tr.ActionSQL == "" || tr.IntervalSeconds <= 0) {
 		http.Redirect(w, r, "/admin/config/triggers", http.StatusSeeOther)
 		return
 	}
@@ -27,8 +38,8 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := m.db.ExecContext(r.Context(),
-		`INSERT INTO triggers (name, enabled, trigger_table, trigger_op, when_clause, action_sql) VALUES (?, ?, ?, ?, ?, ?)`,
-		tr.Name, enabled, tr.TriggerTable, tr.TriggerOp, tr.WhenClause, tr.ActionSQL)
+		`INSERT INTO triggers (name, enabled, trigger_type, trigger_table, trigger_op, when_clause, action_sql, interval_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		tr.Name, enabled, tr.TriggerType, tr.TriggerTable, tr.TriggerOp, tr.WhenClause, tr.ActionSQL, tr.IntervalSeconds)
 	if engine.HandleError(w, err) {
 		return
 	}
@@ -39,9 +50,12 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	tr.ID = id
 
-	if err := m.createTrigger(&tr); err != nil {
-		engine.HandleError(w, fmt.Errorf("creating SQL trigger: %w", err))
-		return
+	// Only create a SQLite trigger for event triggers.
+	if tr.TriggerType == "event" {
+		if err := m.createTrigger(&tr); err != nil {
+			engine.HandleError(w, fmt.Errorf("creating SQL trigger: %w", err))
+			return
+		}
 	}
 
 	http.Redirect(w, r, "/admin/config/triggers", http.StatusSeeOther)
@@ -59,10 +73,18 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tr := parseTriggerForm(r)
+	tr, err := parseTriggerForm(r)
+	if err != nil {
+		engine.ClientError(w, "Invalid Input", err.Error(), 400)
+		return
+	}
 	tr.ID = id
 
-	if tr.TriggerTable == "" || tr.TriggerOp == "" || tr.ActionSQL == "" {
+	if tr.TriggerType == "event" && (tr.TriggerTable == "" || tr.TriggerOp == "" || tr.ActionSQL == "") {
+		http.Redirect(w, r, "/admin/config/triggers", http.StatusSeeOther)
+		return
+	}
+	if tr.TriggerType == "timed" && (tr.ActionSQL == "" || tr.IntervalSeconds <= 0) {
 		http.Redirect(w, r, "/admin/config/triggers", http.StatusSeeOther)
 		return
 	}
@@ -73,8 +95,8 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := m.db.ExecContext(r.Context(),
-		`UPDATE triggers SET name = ?, enabled = ?, trigger_table = ?, trigger_op = ?, when_clause = ?, action_sql = ? WHERE id = ?`,
-		tr.Name, enabled, tr.TriggerTable, tr.TriggerOp, tr.WhenClause, tr.ActionSQL, id)
+		`UPDATE triggers SET name = ?, enabled = ?, trigger_type = ?, trigger_table = ?, trigger_op = ?, when_clause = ?, action_sql = ?, interval_seconds = ? WHERE id = ?`,
+		tr.Name, enabled, tr.TriggerType, tr.TriggerTable, tr.TriggerOp, tr.WhenClause, tr.ActionSQL, tr.IntervalSeconds, id)
 	if engine.HandleError(w, err) {
 		return
 	}
@@ -85,10 +107,16 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Recreate the SQL trigger (handles enabled/disabled state).
-	if err := m.createTrigger(&tr); err != nil {
-		engine.HandleError(w, fmt.Errorf("recreating SQL trigger: %w", err))
-		return
+	if tr.TriggerType == "timed" {
+		// Timed triggers don't use SQLite triggers, so drop any existing one
+		// (in case the type was changed from event to timed).
+		m.dropTrigger(id)
+	} else {
+		// Recreate the SQL trigger (handles enabled/disabled state).
+		if err := m.createTrigger(&tr); err != nil {
+			engine.HandleError(w, fmt.Errorf("recreating SQL trigger: %w", err))
+			return
+		}
 	}
 
 	http.Redirect(w, r, "/admin/config/triggers", http.StatusSeeOther)
@@ -101,7 +129,7 @@ func (m *Module) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Drop the SQL trigger first.
+	// Drop the SQL trigger first (no-op if it was a timed trigger).
 	m.dropTrigger(id)
 
 	_, err = m.db.ExecContext(r.Context(), "DELETE FROM triggers WHERE id = ?", id)
@@ -141,13 +169,40 @@ func (m *Module) handleTableColumns(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(out)
 }
 
-func parseTriggerForm(r *http.Request) triggerRow {
-	return triggerRow{
-		Name:         r.FormValue("name"),
-		Enabled:      r.FormValue("enabled") == "on" || r.FormValue("enabled") == "1",
-		TriggerTable: r.FormValue("trigger_table"),
-		TriggerOp:    r.FormValue("trigger_op"),
-		WhenClause:   r.FormValue("when_clause"),
-		ActionSQL:    r.FormValue("action_sql"),
+func parseTriggerForm(r *http.Request) (triggerRow, error) {
+	triggerType := r.FormValue("trigger_type")
+	if triggerType == "" {
+		triggerType = "event"
 	}
+	if triggerType != "event" && triggerType != "timed" {
+		return triggerRow{}, fmt.Errorf("Invalid trigger type: %q", triggerType)
+	}
+
+	tr := triggerRow{
+		Name:        r.FormValue("name"),
+		Enabled:     r.FormValue("enabled") == "on" || r.FormValue("enabled") == "1",
+		TriggerType: triggerType,
+		ActionSQL:   r.FormValue("action_sql"),
+	}
+
+	if triggerType == "event" {
+		tr.TriggerTable = r.FormValue("trigger_table")
+		tr.TriggerOp = r.FormValue("trigger_op")
+		tr.WhenClause = r.FormValue("when_clause")
+	} else {
+		intervalStr := strings.TrimSpace(r.FormValue("interval"))
+		if intervalStr == "" {
+			return triggerRow{}, fmt.Errorf("Interval is required for timed triggers.")
+		}
+		d, err := time.ParseDuration(intervalStr)
+		if err != nil {
+			return triggerRow{}, fmt.Errorf("Invalid interval: %q is not a valid Go duration (e.g. 24h, 30m, 168h).", intervalStr)
+		}
+		if d <= 0 {
+			return triggerRow{}, fmt.Errorf("Interval must be positive.")
+		}
+		tr.IntervalSeconds = int64(d.Seconds())
+	}
+
+	return tr, nil
 }
