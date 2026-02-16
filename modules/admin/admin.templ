@@ -230,7 +230,7 @@ templ renderAdminListRows(rows []*tableRow, moreURL string, hasMore bool, colCou
 var intervalLabels = []string{"7 days", "30 days", "60 days", "90 days", "180 days", "365 days"}
 var intervalValues = []string{"168h", "720h", "1440h", "2160h", "4320h", "8760h"}
 
-templ renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string) {
+templ renderMetricsAdminPage(tabs []*navbarTab, charts []metricsChart, selected string) {
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
@@ -243,27 +243,32 @@ templ renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected strin
 					}
 				</select>
 			</form>
-			for _, name := range metrics {
+			for _, chart := range charts {
 				<div class="card mb-4">
 					<div class="card-header">
-						<h5 class="card-title mb-0">{ name }</h5>
+						<h5 class="card-title mb-0">{ chart.Title }</h5>
 					</div>
 					<div class="card-body">
 						<div style="position: relative; height: 280px;">
-							<canvas id={ fmt.Sprintf("chart-%s", name) } data-series={ name } data-window={ selected }></canvas>
+							<canvas id={ fmt.Sprintf("chart-%s", chart.Series) } data-series={ chart.Series } data-window={ selected } data-color={ chart.Color }></canvas>
 						</div>
 					</div>
 				</div>
 			}
 			<script>
 				document.addEventListener('DOMContentLoaded', async function() {
-					const chartColors = {
-						'active-members': { border: 'rgb(13, 110, 253)', bg: 'rgba(13, 110, 253, 0.1)' },
-						'daily-unique-visitors': { border: 'rgb(25, 135, 84)', bg: 'rgba(25, 135, 84, 0.1)' },
-						'weekly-unique-visitors': { border: 'rgb(111, 66, 193)', bg: 'rgba(111, 66, 193, 0.1)' },
-						'monthly-unique-visitors': { border: 'rgb(253, 126, 20)', bg: 'rgba(253, 126, 20, 0.1)' },
-					};
-					const defaultColors = { border: 'rgb(75, 192, 192)', bg: 'rgba(75, 192, 192, 0.1)' };
+					const defaultColor = '#4bc0c0';
+
+					function hexToRgba(hex, alpha) {
+						hex = hex.replace('#', '');
+						if (hex.length === 3) {
+							hex = hex.split('').map(c => c + c).join('');
+						}
+						var r = parseInt(hex.substring(0, 2), 16);
+						var g = parseInt(hex.substring(2, 4), 16);
+						var b = parseInt(hex.substring(4, 6), 16);
+						return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')';
+					}
 
 					function getTimeConfig(windowHours) {
 						if (windowHours <= 168) return { unit: 'day', format: { day: 'MMM d' } };
@@ -277,11 +282,13 @@ templ renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected strin
 						const series = canvas.getAttribute('data-series');
 						const windowVal = canvas.getAttribute('data-window');
 						const windowHours = parseInt(windowVal);
+						const customColor = canvas.getAttribute('data-color');
 
 						const resp = await fetch(`/admin/chart?series=${encodeURIComponent(series)}&window=${encodeURIComponent(windowVal)}`);
 						const data = await resp.json();
 
-						const colors = chartColors[series] || defaultColors;
+						const borderColor = (customColor && customColor !== '') ? customColor : defaultColor;
+						const bgColor = hexToRgba(borderColor, 0.1);
 						const timeConfig = getTimeConfig(windowHours);
 
 						new Chart(canvas, {
@@ -289,14 +296,14 @@ templ renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected strin
 							data: {
 								datasets: [{
 									data: data.map(p => ({ x: p.t * 1000, y: p.v })),
-									borderColor: colors.border,
-									backgroundColor: colors.bg,
+									borderColor: borderColor,
+									backgroundColor: bgColor,
 									borderWidth: 2,
 									tension: 0.3,
 									fill: true,
 									pointRadius: 0,
 									pointHoverRadius: 6,
-									pointBackgroundColor: colors.border,
+									pointBackgroundColor: borderColor,
 									pointBorderColor: '#fff',
 									pointBorderWidth: 2,
 									pointHitRadius: 10,

@@ -430,6 +430,15 @@ func (m *Module) renderMetricsChart(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data)
 }
 
+// metricsChart represents a chart to render on the metrics page.
+// If configured via admin settings, it uses the custom title/color.
+// Otherwise it falls back to showing the series name directly.
+type metricsChart struct {
+	Title  string
+	Series string
+	Color  string // hex color e.g. "#0d6efd", empty for default
+}
+
 func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request) {
 	selected := r.URL.Query().Get("interval")
 	if selected == "" {
@@ -441,23 +450,61 @@ func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Load chart configuration from the metrics config table
+	var configuredCharts []metricsChart
+	if m.configStore != nil {
+		cfg, _, loadErr := m.configStore.Load(r.Context(), "metrics")
+		if loadErr == nil && cfg != nil {
+			// Use reflection-free approach: query the JSON directly
+			var chartsJSON string
+			qErr := m.db.QueryRowContext(r.Context(),
+				"SELECT charts_json FROM metrics_config ORDER BY version DESC LIMIT 1").Scan(&chartsJSON)
+			if qErr == nil && chartsJSON != "" && chartsJSON != "[]" {
+				var items []struct {
+					Title  string `json:"title"`
+					Series string `json:"series"`
+					Color  string `json:"color"`
+				}
+				if json.Unmarshal([]byte(chartsJSON), &items) == nil {
+					for _, item := range items {
+						if item.Series != "" {
+							configuredCharts = append(configuredCharts, metricsChart{
+								Title:  item.Title,
+								Series: item.Series,
+								Color:  item.Color,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if len(configuredCharts) > 0 {
+		// Use configured charts
+		w.Header().Set("Content-Type", "text/html")
+		renderMetricsAdminPage(m.nav, configuredCharts, selected).Render(r.Context(), w)
+		return
+	}
+
+	// Fallback: show all available series with default settings
 	rows, err := m.db.QueryContext(r.Context(), `SELECT DISTINCT series FROM metrics WHERE timestamp > strftime('%s', 'now') - ? ORDER BY series`, int64(dur.Seconds()))
 	if engine.HandleError(w, err) {
 		return
 	}
 	defer rows.Close()
 
-	var metrics []string
+	var charts []metricsChart
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
 			continue
 		}
-		metrics = append(metrics, name)
+		charts = append(charts, metricsChart{Title: name, Series: name})
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	renderMetricsAdminPage(m.nav, metrics, selected).Render(r.Context(), w)
+	renderMetricsAdminPage(m.nav, charts, selected).Render(r.Context(), w)
 }
 
 // handleGenericConfigPage renders a configuration page for a registered module.

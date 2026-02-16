@@ -765,7 +765,7 @@ func renderAdminListRows(rows []*tableRow, moreURL string, hasMore bool, colCoun
 var intervalLabels = []string{"7 days", "30 days", "60 days", "90 days", "180 days", "365 days"}
 var intervalValues = []string{"168h", "720h", "1440h", "2160h", "4320h", "8760h"}
 
-func renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string) templ.Component {
+func renderMetricsAdminPage(tabs []*navbarTab, charts []metricsChart, selected string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -852,15 +852,15 @@ func renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			for _, name := range metrics {
+			for _, chart := range charts {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<div class=\"card mb-4\"><div class=\"card-header\"><h5 class=\"card-title mb-0\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var41 string
-				templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(name)
+				templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(chart.Title)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin.templ`, Line: 249, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin.templ`, Line: 249, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 				if templ_7745c5c3_Err != nil {
@@ -871,9 +871,9 @@ func renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var42 string
-				templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("chart-%s", name))
+				templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("chart-%s", chart.Series))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin.templ`, Line: 253, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin.templ`, Line: 253, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 				if templ_7745c5c3_Err != nil {
@@ -884,9 +884,9 @@ func renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var43 string
-				templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(name)
+				templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(chart.Series)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin.templ`, Line: 253, Col: 70}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin.templ`, Line: 253, Col: 86}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 				if templ_7745c5c3_Err != nil {
@@ -899,18 +899,31 @@ func renderMetricsAdminPage(tabs []*navbarTab, metrics []string, selected string
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(selected)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin.templ`, Line: 253, Col: 95}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin.templ`, Line: 253, Col: 111}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\"></canvas></div></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\" data-color=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var45 string
+				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(chart.Color)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `admin.templ`, Line: 253, Col: 138}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\"></canvas></div></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<script>\n\t\t\t\tdocument.addEventListener('DOMContentLoaded', async function() {\n\t\t\t\t\tconst chartColors = {\n\t\t\t\t\t\t'active-members': { border: 'rgb(13, 110, 253)', bg: 'rgba(13, 110, 253, 0.1)' },\n\t\t\t\t\t\t'daily-unique-visitors': { border: 'rgb(25, 135, 84)', bg: 'rgba(25, 135, 84, 0.1)' },\n\t\t\t\t\t\t'weekly-unique-visitors': { border: 'rgb(111, 66, 193)', bg: 'rgba(111, 66, 193, 0.1)' },\n\t\t\t\t\t\t'monthly-unique-visitors': { border: 'rgb(253, 126, 20)', bg: 'rgba(253, 126, 20, 0.1)' },\n\t\t\t\t\t};\n\t\t\t\t\tconst defaultColors = { border: 'rgb(75, 192, 192)', bg: 'rgba(75, 192, 192, 0.1)' };\n\n\t\t\t\t\tfunction getTimeConfig(windowHours) {\n\t\t\t\t\t\tif (windowHours <= 168) return { unit: 'day', format: { day: 'MMM d' } };\n\t\t\t\t\t\tif (windowHours <= 720) return { unit: 'day', format: { day: 'MMM d' } };\n\t\t\t\t\t\tif (windowHours <= 2160) return { unit: 'week', format: { week: 'MMM d' } };\n\t\t\t\t\t\treturn { unit: 'month', format: { month: 'MMM yyyy' } };\n\t\t\t\t\t}\n\n\t\t\t\t\tconst canvases = document.querySelectorAll('canvas[id^=\"chart-\"]');\n\t\t\t\t\tfor (const canvas of canvases) {\n\t\t\t\t\t\tconst series = canvas.getAttribute('data-series');\n\t\t\t\t\t\tconst windowVal = canvas.getAttribute('data-window');\n\t\t\t\t\t\tconst windowHours = parseInt(windowVal);\n\n\t\t\t\t\t\tconst resp = await fetch(`/admin/chart?series=${encodeURIComponent(series)}&window=${encodeURIComponent(windowVal)}`);\n\t\t\t\t\t\tconst data = await resp.json();\n\n\t\t\t\t\t\tconst colors = chartColors[series] || defaultColors;\n\t\t\t\t\t\tconst timeConfig = getTimeConfig(windowHours);\n\n\t\t\t\t\t\tnew Chart(canvas, {\n\t\t\t\t\t\t\ttype: 'line',\n\t\t\t\t\t\t\tdata: {\n\t\t\t\t\t\t\t\tdatasets: [{\n\t\t\t\t\t\t\t\t\tdata: data.map(p => ({ x: p.t * 1000, y: p.v })),\n\t\t\t\t\t\t\t\t\tborderColor: colors.border,\n\t\t\t\t\t\t\t\t\tbackgroundColor: colors.bg,\n\t\t\t\t\t\t\t\t\tborderWidth: 2,\n\t\t\t\t\t\t\t\t\ttension: 0.3,\n\t\t\t\t\t\t\t\t\tfill: true,\n\t\t\t\t\t\t\t\t\tpointRadius: 0,\n\t\t\t\t\t\t\t\t\tpointHoverRadius: 6,\n\t\t\t\t\t\t\t\t\tpointBackgroundColor: colors.border,\n\t\t\t\t\t\t\t\t\tpointBorderColor: '#fff',\n\t\t\t\t\t\t\t\t\tpointBorderWidth: 2,\n\t\t\t\t\t\t\t\t\tpointHitRadius: 10,\n\t\t\t\t\t\t\t\t}]\n\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\t\tresponsive: true,\n\t\t\t\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\t\t\t\tinteraction: {\n\t\t\t\t\t\t\t\t\tmode: 'index',\n\t\t\t\t\t\t\t\t\tintersect: false,\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\tanimation: {\n\t\t\t\t\t\t\t\t\tduration: 750,\n\t\t\t\t\t\t\t\t\teasing: 'easeOutQuart',\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\tscales: {\n\t\t\t\t\t\t\t\t\tx: {\n\t\t\t\t\t\t\t\t\t\ttype: 'time',\n\t\t\t\t\t\t\t\t\t\ttime: {\n\t\t\t\t\t\t\t\t\t\t\tunit: timeConfig.unit,\n\t\t\t\t\t\t\t\t\t\t\tdisplayFormats: timeConfig.format,\n\t\t\t\t\t\t\t\t\t\t\ttooltipFormat: 'MMM d, yyyy',\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t\tgrid: {\n\t\t\t\t\t\t\t\t\t\t\tdisplay: true,\n\t\t\t\t\t\t\t\t\t\t\tcolor: 'rgba(0, 0, 0, 0.05)',\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t\tborder: { display: false },\n\t\t\t\t\t\t\t\t\t\tticks: {\n\t\t\t\t\t\t\t\t\t\t\tmaxRotation: 0,\n\t\t\t\t\t\t\t\t\t\t\tautoSkip: true,\n\t\t\t\t\t\t\t\t\t\t\tmaxTicksLimit: 8,\n\t\t\t\t\t\t\t\t\t\t\tcolor: '#6c757d',\n\t\t\t\t\t\t\t\t\t\t\tfont: { size: 11 },\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\ty: {\n\t\t\t\t\t\t\t\t\t\tbeginAtZero: true,\n\t\t\t\t\t\t\t\t\t\tgrid: {\n\t\t\t\t\t\t\t\t\t\t\tdisplay: true,\n\t\t\t\t\t\t\t\t\t\t\tcolor: 'rgba(0, 0, 0, 0.05)',\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t\tborder: { display: false },\n\t\t\t\t\t\t\t\t\t\tticks: {\n\t\t\t\t\t\t\t\t\t\t\tcolor: '#6c757d',\n\t\t\t\t\t\t\t\t\t\t\tfont: { size: 11 },\n\t\t\t\t\t\t\t\t\t\t\tpadding: 8,\n\t\t\t\t\t\t\t\t\t\t\tcallback: function(value) {\n\t\t\t\t\t\t\t\t\t\t\t\treturn Number.isInteger(value) ? value.toLocaleString() : value;\n\t\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\tplugins: {\n\t\t\t\t\t\t\t\t\tlegend: { display: false },\n\t\t\t\t\t\t\t\t\ttooltip: {\n\t\t\t\t\t\t\t\t\t\tbackgroundColor: 'rgba(33, 37, 41, 0.9)',\n\t\t\t\t\t\t\t\t\t\ttitleColor: '#fff',\n\t\t\t\t\t\t\t\t\t\tbodyColor: '#fff',\n\t\t\t\t\t\t\t\t\t\tborderColor: 'rgba(255, 255, 255, 0.1)',\n\t\t\t\t\t\t\t\t\t\tborderWidth: 1,\n\t\t\t\t\t\t\t\t\t\tcornerRadius: 4,\n\t\t\t\t\t\t\t\t\t\tpadding: 12,\n\t\t\t\t\t\t\t\t\t\tdisplayColors: false,\n\t\t\t\t\t\t\t\t\t\tcallbacks: {\n\t\t\t\t\t\t\t\t\t\t\tlabel: function(context) {\n\t\t\t\t\t\t\t\t\t\t\t\treturn context.parsed.y.toLocaleString();\n\t\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t</script></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "<script>\n\t\t\t\tdocument.addEventListener('DOMContentLoaded', async function() {\n\t\t\t\t\tconst defaultColor = '#4bc0c0';\n\n\t\t\t\t\tfunction hexToRgba(hex, alpha) {\n\t\t\t\t\t\thex = hex.replace('#', '');\n\t\t\t\t\t\tif (hex.length === 3) {\n\t\t\t\t\t\t\thex = hex.split('').map(c => c + c).join('');\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar r = parseInt(hex.substring(0, 2), 16);\n\t\t\t\t\t\tvar g = parseInt(hex.substring(2, 4), 16);\n\t\t\t\t\t\tvar b = parseInt(hex.substring(4, 6), 16);\n\t\t\t\t\t\treturn 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')';\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction getTimeConfig(windowHours) {\n\t\t\t\t\t\tif (windowHours <= 168) return { unit: 'day', format: { day: 'MMM d' } };\n\t\t\t\t\t\tif (windowHours <= 720) return { unit: 'day', format: { day: 'MMM d' } };\n\t\t\t\t\t\tif (windowHours <= 2160) return { unit: 'week', format: { week: 'MMM d' } };\n\t\t\t\t\t\treturn { unit: 'month', format: { month: 'MMM yyyy' } };\n\t\t\t\t\t}\n\n\t\t\t\t\tconst canvases = document.querySelectorAll('canvas[id^=\"chart-\"]');\n\t\t\t\t\tfor (const canvas of canvases) {\n\t\t\t\t\t\tconst series = canvas.getAttribute('data-series');\n\t\t\t\t\t\tconst windowVal = canvas.getAttribute('data-window');\n\t\t\t\t\t\tconst windowHours = parseInt(windowVal);\n\t\t\t\t\t\tconst customColor = canvas.getAttribute('data-color');\n\n\t\t\t\t\t\tconst resp = await fetch(`/admin/chart?series=${encodeURIComponent(series)}&window=${encodeURIComponent(windowVal)}`);\n\t\t\t\t\t\tconst data = await resp.json();\n\n\t\t\t\t\t\tconst borderColor = (customColor && customColor !== '') ? customColor : defaultColor;\n\t\t\t\t\t\tconst bgColor = hexToRgba(borderColor, 0.1);\n\t\t\t\t\t\tconst timeConfig = getTimeConfig(windowHours);\n\n\t\t\t\t\t\tnew Chart(canvas, {\n\t\t\t\t\t\t\ttype: 'line',\n\t\t\t\t\t\t\tdata: {\n\t\t\t\t\t\t\t\tdatasets: [{\n\t\t\t\t\t\t\t\t\tdata: data.map(p => ({ x: p.t * 1000, y: p.v })),\n\t\t\t\t\t\t\t\t\tborderColor: borderColor,\n\t\t\t\t\t\t\t\t\tbackgroundColor: bgColor,\n\t\t\t\t\t\t\t\t\tborderWidth: 2,\n\t\t\t\t\t\t\t\t\ttension: 0.3,\n\t\t\t\t\t\t\t\t\tfill: true,\n\t\t\t\t\t\t\t\t\tpointRadius: 0,\n\t\t\t\t\t\t\t\t\tpointHoverRadius: 6,\n\t\t\t\t\t\t\t\t\tpointBackgroundColor: borderColor,\n\t\t\t\t\t\t\t\t\tpointBorderColor: '#fff',\n\t\t\t\t\t\t\t\t\tpointBorderWidth: 2,\n\t\t\t\t\t\t\t\t\tpointHitRadius: 10,\n\t\t\t\t\t\t\t\t}]\n\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\t\tresponsive: true,\n\t\t\t\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\t\t\t\tinteraction: {\n\t\t\t\t\t\t\t\t\tmode: 'index',\n\t\t\t\t\t\t\t\t\tintersect: false,\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\tanimation: {\n\t\t\t\t\t\t\t\t\tduration: 750,\n\t\t\t\t\t\t\t\t\teasing: 'easeOutQuart',\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\tscales: {\n\t\t\t\t\t\t\t\t\tx: {\n\t\t\t\t\t\t\t\t\t\ttype: 'time',\n\t\t\t\t\t\t\t\t\t\ttime: {\n\t\t\t\t\t\t\t\t\t\t\tunit: timeConfig.unit,\n\t\t\t\t\t\t\t\t\t\t\tdisplayFormats: timeConfig.format,\n\t\t\t\t\t\t\t\t\t\t\ttooltipFormat: 'MMM d, yyyy',\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t\tgrid: {\n\t\t\t\t\t\t\t\t\t\t\tdisplay: true,\n\t\t\t\t\t\t\t\t\t\t\tcolor: 'rgba(0, 0, 0, 0.05)',\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t\tborder: { display: false },\n\t\t\t\t\t\t\t\t\t\tticks: {\n\t\t\t\t\t\t\t\t\t\t\tmaxRotation: 0,\n\t\t\t\t\t\t\t\t\t\t\tautoSkip: true,\n\t\t\t\t\t\t\t\t\t\t\tmaxTicksLimit: 8,\n\t\t\t\t\t\t\t\t\t\t\tcolor: '#6c757d',\n\t\t\t\t\t\t\t\t\t\t\tfont: { size: 11 },\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\ty: {\n\t\t\t\t\t\t\t\t\t\tbeginAtZero: true,\n\t\t\t\t\t\t\t\t\t\tgrid: {\n\t\t\t\t\t\t\t\t\t\t\tdisplay: true,\n\t\t\t\t\t\t\t\t\t\t\tcolor: 'rgba(0, 0, 0, 0.05)',\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t\tborder: { display: false },\n\t\t\t\t\t\t\t\t\t\tticks: {\n\t\t\t\t\t\t\t\t\t\t\tcolor: '#6c757d',\n\t\t\t\t\t\t\t\t\t\t\tfont: { size: 11 },\n\t\t\t\t\t\t\t\t\t\t\tpadding: 8,\n\t\t\t\t\t\t\t\t\t\t\tcallback: function(value) {\n\t\t\t\t\t\t\t\t\t\t\t\treturn Number.isInteger(value) ? value.toLocaleString() : value;\n\t\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\tplugins: {\n\t\t\t\t\t\t\t\t\tlegend: { display: false },\n\t\t\t\t\t\t\t\t\ttooltip: {\n\t\t\t\t\t\t\t\t\t\tbackgroundColor: 'rgba(33, 37, 41, 0.9)',\n\t\t\t\t\t\t\t\t\t\ttitleColor: '#fff',\n\t\t\t\t\t\t\t\t\t\tbodyColor: '#fff',\n\t\t\t\t\t\t\t\t\t\tborderColor: 'rgba(255, 255, 255, 0.1)',\n\t\t\t\t\t\t\t\t\t\tborderWidth: 1,\n\t\t\t\t\t\t\t\t\t\tcornerRadius: 4,\n\t\t\t\t\t\t\t\t\t\tpadding: 12,\n\t\t\t\t\t\t\t\t\t\tdisplayColors: false,\n\t\t\t\t\t\t\t\t\t\tcallbacks: {\n\t\t\t\t\t\t\t\t\t\t\tlabel: function(context) {\n\t\t\t\t\t\t\t\t\t\t\t\treturn context.parsed.y.toLocaleString();\n\t\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t</script></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

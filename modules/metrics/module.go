@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS metrics_samplings (
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS metrics_samplings_name_idx ON metrics_samplings (name);
+
+CREATE TABLE IF NOT EXISTS metrics_config (
+    version INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    charts_json TEXT NOT NULL DEFAULT '[]'
+) STRICT;
 `
 
 type Module struct {
