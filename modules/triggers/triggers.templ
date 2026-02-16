@@ -1,5 +1,10 @@
 package triggers
 
+import (
+	"fmt"
+	"strconv"
+)
+
 templ triggersDescription() {
 	<strong>SQL Triggers</strong>
 	<p class="mb-0 mt-2">
@@ -7,4 +12,212 @@ templ triggersDescription() {
 		Use them to log member events, send Discord notifications, or perform any custom SQL action.
 		Data integrity triggers (family cascading, waiver linking, etc.) are managed by the system and not shown here.
 	</p>
+}
+
+templ renderTriggersCard(triggers []triggerRow, tables []string) {
+	<div class="card mb-4">
+		<div class="card-header d-flex justify-content-between align-items-center">
+			<h5 class="mb-0">Triggers</h5>
+			<button type="button" class="btn btn-primary btn-sm" onclick="toggleTriggerForm('trigger-new-form')">Add Trigger</button>
+		</div>
+		<div class="card-body">
+			<p class="text-muted small mb-3">
+				Each trigger fires a SQL statement when a specified database operation occurs on a table.
+				Use presets to quickly set up common actions like logging member events or sending Discord notifications.
+			</p>
+
+			<!-- New trigger form (hidden by default) -->
+			<div id="trigger-new-form" class="d-none mb-4">
+				<div class="card border-primary">
+					<div class="card-header bg-primary-subtle d-flex justify-content-between align-items-center">
+						<h6 class="mb-0">New Trigger</h6>
+						<button type="button" class="btn-close btn-sm" onclick="toggleTriggerForm('trigger-new-form')"></button>
+					</div>
+					<div class="card-body">
+						<form method="post" action="/admin/triggers/new">
+							@triggerFormFields(&triggerRow{Enabled: true}, "new", tables)
+							<button type="submit" class="btn btn-primary btn-sm">Create Trigger</button>
+						</form>
+					</div>
+				</div>
+			</div>
+
+			if len(triggers) == 0 {
+				<div class="text-center text-muted py-4">
+					No triggers configured. Click "Add Trigger" to create one.
+				</div>
+			} else {
+				<div class="table-responsive">
+					<table class="table table-hover table-sm mb-0">
+						<thead class="table-light">
+							<tr>
+								<th>Name</th>
+								<th>Trigger</th>
+								<th>Status</th>
+								<th class="text-end">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, tr := range triggers {
+								<tr>
+									<td>
+										<strong>{ tr.Name }</strong>
+									</td>
+									<td>
+										<code>{ tr.TriggerOp }</code> on <code>{ tr.TriggerTable }</code>
+										if tr.WhenClause != "" {
+											<span class="text-muted small ms-1">(filtered)</span>
+										}
+									</td>
+									<td>
+										if tr.Enabled {
+											<span class="badge bg-success">Enabled</span>
+										} else {
+											<span class="badge bg-secondary">Disabled</span>
+										}
+									</td>
+									<td class="text-end">
+										<button type="button" class="btn btn-sm btn-outline-primary me-1" onclick={ toggleEdit(tr.ID) }>Edit</button>
+										<form method="post" action={ templ.SafeURL(fmt.Sprintf("/admin/triggers/%d/delete", tr.ID)) } style="display:inline;" onsubmit="return confirm('Delete this trigger?');">
+											<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+										</form>
+									</td>
+								</tr>
+								<tr id={ fmt.Sprintf("trigger-edit-%d", tr.ID) } class="d-none">
+									<td colspan="4">
+										<div class="card border-secondary">
+											<div class="card-body">
+												<form method="post" action={ templ.SafeURL(fmt.Sprintf("/admin/triggers/%d/edit", tr.ID)) }>
+													@triggerFormFields(&tr, strconv.FormatInt(tr.ID, 10), tables)
+													<button type="submit" class="btn btn-primary btn-sm me-1">Save Changes</button>
+													<button type="button" class="btn btn-outline-secondary btn-sm" onclick={ toggleEdit(tr.ID) }>Cancel</button>
+												</form>
+											</div>
+										</div>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		</div>
+	</div>
+	@triggerScripts()
+}
+
+templ triggerFormFields(tr *triggerRow, suffix string, tables []string) {
+	<div class="row g-3 mb-3">
+		<div class="col-md-6">
+			<label for={ "name_" + suffix } class="form-label">Name</label>
+			<input type="text" class="form-control form-control-sm" id={ "name_" + suffix } name="name" value={ tr.Name } placeholder="e.g. Log: Email confirmed" required/>
+		</div>
+		<div class="col-md-3">
+			<label for={ "trigger_table_" + suffix } class="form-label">Table</label>
+			<select class="form-select form-select-sm" id={ "trigger_table_" + suffix } name="trigger_table" onchange={ fetchColumns(suffix) }>
+				<option value="" disabled selected?={ tr.TriggerTable == "" }>Select table...</option>
+				for _, t := range tables {
+					<option value={ t } selected?={ tr.TriggerTable == t }>{ t }</option>
+				}
+			</select>
+		</div>
+		<div class="col-md-3">
+			<label for={ "trigger_op_" + suffix } class="form-label">Operation</label>
+			<select class="form-select form-select-sm" id={ "trigger_op_" + suffix } name="trigger_op">
+				<option value="" disabled selected?={ tr.TriggerOp == "" }>Select operation...</option>
+				<option value="INSERT" selected?={ tr.TriggerOp == "INSERT" }>INSERT</option>
+				<option value="UPDATE" selected?={ tr.TriggerOp == "UPDATE" }>UPDATE</option>
+				<option value="DELETE" selected?={ tr.TriggerOp == "DELETE" }>DELETE</option>
+			</select>
+		</div>
+	</div>
+
+	<div class="mb-3">
+		<label for={ "when_clause_" + suffix } class="form-label">WHEN Condition <span class="text-muted fw-normal">(optional)</span></label>
+		<input type="text" class="form-control form-control-sm font-monospace" id={ "when_clause_" + suffix } name="when_clause" value={ tr.WhenClause } placeholder="e.g. OLD.confirmed = 0 AND NEW.confirmed = 1"/>
+		<div class="form-text">
+			SQL expression { "for" } the trigger's WHEN clause. Use <code>NEW.column</code> { "for" } INSERT/UPDATE or <code>OLD.column</code> { "for" } DELETE triggers. Leave empty to fire on every matching operation.
+		</div>
+	</div>
+
+	<div class="mb-3">
+		<label for={ "action_sql_" + suffix } class="form-label">Action SQL</label>
+		<div class="btn-group btn-group-sm mb-2" role="group">
+			<button type="button" class="btn btn-outline-secondary" onclick={ applyPresetMemberEvent(suffix) } title="Pre-fill SQL to insert a row into member_events">
+				Preset: Log Member Event
+			</button>
+			<button type="button" class="btn btn-outline-secondary" onclick={ applyPresetDiscord(suffix) } title="Pre-fill SQL to send a Discord webhook notification">
+				Preset: Discord Notification
+			</button>
+		</div>
+		<textarea class="form-control form-control-sm font-monospace" id={ "action_sql_" + suffix } name="action_sql" rows="5" placeholder="INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'MyEvent', 'Something happened');" required>{ tr.ActionSQL }</textarea>
+		<div class="form-text">
+			The SQL statement(s) to execute when the trigger fires. Reference row data with <code>NEW.column</code> (INSERT/UPDATE) or <code>OLD.column</code> (DELETE). Multiple statements must each end with a semicolon.
+		</div>
+		<div id={ "columns_help_" + suffix } class="mt-2"></div>
+	</div>
+
+	<div class="form-check mb-3">
+		<input type="checkbox" class="form-check-input" id={ "enabled_" + suffix } name="enabled" checked?={ tr.Enabled }/>
+		<label class="form-check-label" for={ "enabled_" + suffix }>Enabled</label>
+	</div>
+}
+
+script toggleEdit(id int64) {
+	var row = document.getElementById('trigger-edit-' + id);
+	if (row) {
+		row.classList.toggle('d-none');
+	}
+}
+
+script fetchColumns(suffix string) {
+	var sel = document.getElementById('trigger_table_' + suffix);
+	var helpDiv = document.getElementById('columns_help_' + suffix);
+	if (!sel || !helpDiv) return;
+	var table = sel.value;
+	if (!table) { helpDiv.innerHTML = ''; return; }
+	fetch('/admin/triggers/columns?table=' + encodeURIComponent(table))
+		.then(function(r) { return r.json(); })
+		.then(function(cols) {
+			if (!cols || cols.length === 0) {
+				helpDiv.textContent = 'No columns found for this table.';
+				return;
+			}
+			var html = '<table class="table table-sm table-bordered mb-0">';
+			html += '<thead class="table-light"><tr><th>Column</th><th>Type</th><th>Reference</th></tr></thead><tbody>';
+			for (var i = 0; i < cols.length; i++) {
+				html += '<tr><td><code>' + cols[i].name + '</code></td>';
+				html += '<td>' + (cols[i].type || '<em>untyped</em>') + '</td>';
+				html += '<td><code>NEW.' + cols[i].name + '</code></td></tr>';
+			}
+			html += '</tbody></table>';
+			helpDiv.innerHTML = html;
+		});
+}
+
+script applyPresetMemberEvent(suffix string) {
+	var textarea = document.getElementById('action_sql_' + suffix);
+	if (textarea) {
+		textarea.value = "INSERT INTO member_events (member, event, details) VALUES (NEW.id, 'EventName', 'Description of what happened');";
+		textarea.focus();
+	}
+}
+
+script applyPresetDiscord(suffix string) {
+	var textarea = document.getElementById('action_sql_' + suffix);
+	if (textarea) {
+		textarea.value = "INSERT INTO discord_webhook_queue (webhook_url, payload)\n    VALUES ('https://discord.com/api/webhooks/YOUR_WEBHOOK_URL',\n        json_object('content', 'Message text here: ' || COALESCE(CAST(NEW.id AS TEXT), ''), 'username', 'Conway'));";
+		textarea.focus();
+	}
+}
+
+templ triggerScripts() {
+	<script>
+		function toggleTriggerForm(formId) {
+			var form = document.getElementById(formId);
+			if (form) {
+				form.classList.toggle('d-none');
+			}
+		}
+	</script>
 }
