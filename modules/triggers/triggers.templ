@@ -210,5 +210,14 @@ templ triggerScripts() {
 				form.classList.toggle('d-none');
 			}
 		}
+
+		// On page load, fetch columns for any table select that already has a value
+		document.addEventListener('DOMContentLoaded', function() {
+			document.querySelectorAll('select[name="trigger_table"]').forEach(function(sel) {
+				if (sel.value) {
+					sel.dispatchEvent(new Event('change'));
+				}
+			});
+		});
 	</script>
 }
