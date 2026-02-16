@@ -108,7 +108,7 @@ func configSidebar(configSections []*configSection, activeSection string, active
 				}
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div></div><div class=\"card mt-3\"><div class=\"card-header\"><h5 class=\"mb-0\">Dev</h5></div><div class=\"list-group list-group-flush\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div></div><div class=\"card mt-3\"><div class=\"card-header\"><h5 class=\"mb-0\">Debug</h5></div><div class=\"list-group list-group-flush\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -62,17 +62,8 @@ CREATE TABLE IF NOT EXISTS discord_webhooks (
 -- Drop the old hardcoded member_events trigger (replaced by per-webhook dynamic triggers).
 DROP TRIGGER IF EXISTS discord_webhook_on_member_event;
 
--- Conditions table: optional filters that restrict when a webhook trigger fires.
--- Each row defines a single comparison (column op value). Multiple conditions on
--- the same webhook are joined by the logic field (AND / OR).
-CREATE TABLE IF NOT EXISTS discord_webhook_conditions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    webhook_id INTEGER NOT NULL REFERENCES discord_webhooks(id) ON DELETE CASCADE,
-    column_name TEXT NOT NULL,
-    operator TEXT NOT NULL DEFAULT '=',
-    value TEXT NOT NULL DEFAULT '',
-    logic TEXT NOT NULL DEFAULT 'AND'
-) STRICT;
+-- Legacy conditions table is no longer used; migration moves data into
+-- discord_webhooks.when_clause and drops this table at startup.
 `
 
 var endpoint = oauth2.Endpoint{
@@ -118,10 +109,14 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine
 	db.Exec("ALTER TABLE discord_config ADD COLUMN print_failed_message_template TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE discord_webhooks ADD COLUMN trigger_table TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE discord_webhooks ADD COLUMN trigger_op TEXT NOT NULL DEFAULT ''")
+	db.Exec("ALTER TABLE discord_webhooks ADD COLUMN when_clause TEXT NOT NULL DEFAULT ''")
 
 	// Migrate legacy trigger_event-based webhooks that used the old member_events trigger.
 	// These become SQL triggers on the member_events table with INSERT operation.
 	migrateLegacyWebhooks(db)
+
+	// Migrate structured conditions into the when_clause column, then drop the conditions table.
+	migrateConditionsToWhenClause(db)
 
 	m := &Module{
 		db:             db,
