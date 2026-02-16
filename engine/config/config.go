@@ -4,6 +4,7 @@
 package config
 
 import (
+	"context"
 	"reflect"
 	"time"
 
@@ -103,6 +104,12 @@ type Spec struct {
 
 	// ReadOnly means this config page is informational only (no form).
 	ReadOnly bool
+
+	// ExtraContent is an optional component rendered below the config card.
+	// Use this to embed additional management UI (e.g., webhook CRUD) on
+	// the same page as the module's configuration. The function is called
+	// during page rendering so it can fetch dynamic data.
+	ExtraContent func(ctx context.Context) templ.Component
 
 	// Order controls display order in the config sidebar (lower = first).
 	Order int

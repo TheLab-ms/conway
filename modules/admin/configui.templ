@@ -10,7 +10,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
-templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, version int, events []*config.Event, configSections []*configSection, saved bool, errMsg string) {
+templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, events []*config.Event, configSections []*configSection, saved bool, errMsg string) {
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
@@ -32,10 +32,13 @@ templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg an
 					</div>
 				</div>
 				<div class="col-md-9">
-					if spec.ReadOnly {
-						@renderReadOnlyConfigCard(spec)
-					} else {
-						@renderConfigCard(spec, cfg, version, saved, errMsg)
+				if spec.ReadOnly {
+					@renderReadOnlyConfigCard(spec)
+				} else {
+					@renderConfigCard(spec, cfg, saved, errMsg)
+				}
+					if spec.ExtraContent != nil {
+						@spec.ExtraContent(ctx)
 					}
 					if len(events) > 0 {
 						@renderGenericEventLog(events)
@@ -64,13 +67,10 @@ templ renderReadOnlyConfigCard(spec *config.ParsedSpec) {
 	</div>
 }
 
-templ renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool, errMsg string) {
+templ renderConfigCard(spec *config.ParsedSpec, cfg any, saved bool, errMsg string) {
 	<div class="card mb-4">
-		<div class="card-header d-flex justify-content-between align-items-center">
+		<div class="card-header">
 			<h5 class="mb-0">{ spec.Title }</h5>
-			if version > 0 {
-				<span class="badge bg-secondary">{ fmt.Sprintf("Version %d", version) }</span>
-			}
 		</div>
 		<div class="card-body">
 			if saved {
@@ -97,7 +97,6 @@ templ renderConfigCard(spec *config.ParsedSpec, cfg any, version int, saved bool
 				}
 				<div class="d-flex justify-content-between align-items-center mt-4">
 					<button type="submit" class="btn btn-primary">Save Changes</button>
-					<span class="text-muted small">Saving creates a new version for audit purposes.</span>
 				</div>
 			</form>
 			if len(spec.ArrayFields) > 0 {

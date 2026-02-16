@@ -555,11 +555,6 @@ func (p *AdminWaiverConfigPage) Submit() {
 	require.NoError(p.t, err)
 }
 
-func (p *AdminWaiverConfigPage) ExpectVersionBadge(version int) {
-	locator := p.page.Locator(".badge", playwright.PageLocatorOptions{HasText: fmt.Sprintf("Version %d", version)})
-	expect(p.t).Locator(locator).ToBeVisible()
-}
-
 func (p *AdminWaiverConfigPage) ExpectSaveSuccessMessage() {
 	locator := p.page.Locator(".alert-success", playwright.PageLocatorOptions{HasText: "saved successfully"})
 	expect(p.t).Locator(locator).ToBeVisible()
@@ -741,11 +736,6 @@ func (p *AdminStripeConfigPage) Submit() {
 	require.NoError(p.t, err)
 }
 
-func (p *AdminStripeConfigPage) ExpectVersionBadge(version int) {
-	locator := p.page.Locator(".badge", playwright.PageLocatorOptions{HasText: fmt.Sprintf("Version %d", version)})
-	expect(p.t).Locator(locator).ToBeVisible()
-}
-
 func (p *AdminStripeConfigPage) ExpectSaveSuccessMessage() {
 	locator := p.page.Locator(".alert-success", playwright.PageLocatorOptions{HasText: "saved successfully"})
 	expect(p.t).Locator(locator).ToBeVisible()
@@ -912,11 +902,6 @@ func (p *AdminBambuConfigPage) Submit() {
 	require.NoError(p.t, err)
 }
 
-func (p *AdminBambuConfigPage) ExpectVersionBadge(version int) {
-	locator := p.page.Locator(".badge", playwright.PageLocatorOptions{HasText: fmt.Sprintf("Version %d", version)})
-	expect(p.t).Locator(locator).ToBeVisible()
-}
-
 func (p *AdminBambuConfigPage) ExpectSaveSuccessMessage() {
 	locator := p.page.Locator(".alert-success", playwright.PageLocatorOptions{HasText: "saved successfully"})
 	expect(p.t).Locator(locator).ToBeVisible()
@@ -1000,11 +985,6 @@ func (p *AdminDiscordConfigPage) Submit() {
 	require.NoError(p.t, err)
 }
 
-func (p *AdminDiscordConfigPage) ExpectVersionBadge(version int) {
-	locator := p.page.Locator(".badge", playwright.PageLocatorOptions{HasText: fmt.Sprintf("Version %d", version)})
-	expect(p.t).Locator(locator).ToBeVisible()
-}
-
 func (p *AdminDiscordConfigPage) ExpectSaveSuccessMessage() {
 	locator := p.page.Locator(".alert-success", playwright.PageLocatorOptions{HasText: "saved successfully"})
 	expect(p.t).Locator(locator).ToBeVisible()
@@ -1065,11 +1045,6 @@ func (p *AdminGoogleConfigPage) FillClientSecret(value string) {
 func (p *AdminGoogleConfigPage) Submit() {
 	err := p.page.Locator("button[type='submit']").Click()
 	require.NoError(p.t, err)
-}
-
-func (p *AdminGoogleConfigPage) ExpectVersionBadge(version int) {
-	locator := p.page.Locator(".badge", playwright.PageLocatorOptions{HasText: fmt.Sprintf("Version %d", version)})
-	expect(p.t).Locator(locator).ToBeVisible()
 }
 
 func (p *AdminGoogleConfigPage) ExpectSaveSuccessMessage() {

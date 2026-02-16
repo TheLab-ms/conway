@@ -1,8 +1,6 @@
 package discord
 
 import (
-	"database/sql"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -52,10 +50,7 @@ var placeholderHelp = map[string]string{
 }
 
 func (m *Module) attachWebhookRoutes(router *engine.Router) {
-	router.HandleFunc("GET /admin/discord/webhooks", router.WithLeadership(m.handleWebhookList))
-	router.HandleFunc("GET /admin/discord/webhooks/new", router.WithLeadership(m.handleWebhookNew))
 	router.HandleFunc("POST /admin/discord/webhooks/new", router.WithLeadership(m.handleWebhookCreate))
-	router.HandleFunc("GET /admin/discord/webhooks/{id}/edit", router.WithLeadership(m.handleWebhookEdit))
 	router.HandleFunc("POST /admin/discord/webhooks/{id}/edit", router.WithLeadership(m.handleWebhookUpdate))
 	router.HandleFunc("POST /admin/discord/webhooks/{id}/delete", router.WithLeadership(m.handleWebhookDelete))
 }
@@ -80,42 +75,10 @@ func (m *Module) loadAllWebhooks() ([]webhookRow, error) {
 	return webhooks, rows.Err()
 }
 
-func (m *Module) loadWebhook(id int64) (*webhookRow, error) {
-	var wh webhookRow
-	var enabled int
-	err := m.db.QueryRow(
-		"SELECT id, webhook_url, trigger_event, message_template, username, enabled FROM discord_webhooks WHERE id = ?", id,
-	).Scan(&wh.ID, &wh.WebhookURL, &wh.TriggerEvent, &wh.MessageTemplate, &wh.Username, &enabled)
-	if err != nil {
-		return nil, err
-	}
-	wh.Enabled = enabled == 1
-	return &wh, nil
-}
-
-func (m *Module) handleWebhookList(w http.ResponseWriter, r *http.Request) {
-	webhooks, err := m.loadAllWebhooks()
-	if engine.HandleError(w, err) {
-		return
-	}
-	w.Header().Set("Content-Type", "text/html")
-	renderWebhookListPage(webhooks).Render(r.Context(), w)
-}
-
-func (m *Module) handleWebhookNew(w http.ResponseWriter, r *http.Request) {
-	wh := &webhookRow{
-		Username: "Conway",
-		Enabled:  true,
-	}
-	w.Header().Set("Content-Type", "text/html")
-	renderWebhookFormPage(wh, true, "", "").Render(r.Context(), w)
-}
-
 func (m *Module) handleWebhookCreate(w http.ResponseWriter, r *http.Request) {
 	wh := parseWebhookForm(r)
 	if wh.WebhookURL == "" || wh.TriggerEvent == "" {
-		w.Header().Set("Content-Type", "text/html")
-		renderWebhookFormPage(wh, true, "", "Webhook URL and trigger event are required.").Render(r.Context(), w)
+		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 		return
 	}
 
@@ -131,27 +94,7 @@ func (m *Module) handleWebhookCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/admin/discord/webhooks", http.StatusSeeOther)
-}
-
-func (m *Module) handleWebhookEdit(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		engine.ClientError(w, "Invalid ID", "The webhook ID is not valid.", 400)
-		return
-	}
-
-	wh, err := m.loadWebhook(id)
-	if err == sql.ErrNoRows {
-		engine.ClientError(w, "Not Found", "Webhook not found.", 404)
-		return
-	}
-	if engine.HandleError(w, err) {
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	renderWebhookFormPage(wh, false, "", "").Render(r.Context(), w)
+	http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 }
 
 func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
@@ -162,11 +105,9 @@ func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wh := parseWebhookForm(r)
-	wh.ID = id
 
 	if wh.WebhookURL == "" || wh.TriggerEvent == "" {
-		w.Header().Set("Content-Type", "text/html")
-		renderWebhookFormPage(wh, false, "", "Webhook URL and trigger event are required.").Render(r.Context(), w)
+		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 		return
 	}
 
@@ -188,8 +129,7 @@ func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html")
-	renderWebhookFormPage(wh, false, "Webhook saved successfully.", "").Render(r.Context(), w)
+	http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 }
 
 func (m *Module) handleWebhookDelete(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +144,7 @@ func (m *Module) handleWebhookDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/admin/discord/webhooks", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 }
 
 func parseWebhookForm(r *http.Request) *webhookRow {
@@ -215,11 +155,4 @@ func parseWebhookForm(r *http.Request) *webhookRow {
 		Username:        r.FormValue("username"),
 		Enabled:         r.FormValue("enabled") == "on" || r.FormValue("enabled") == "1",
 	}
-}
-
-func webhookPlaceholders(triggerEvent string) string {
-	if h, ok := placeholderHelp[triggerEvent]; ok {
-		return fmt.Sprintf("Available placeholders: %s", h)
-	}
-	return ""
 }

@@ -498,13 +498,12 @@ func (m *Module) handleGenericConfigSave(w http.ResponseWriter, r *http.Request)
 // renderGenericConfig renders a generic config page.
 func (m *Module) renderGenericConfig(w http.ResponseWriter, r *http.Request, spec *config.ParsedSpec, saved bool, errMsg string) {
 	var cfg any
-	var version int
 
 	// ReadOnly specs (like oauth2, fobapi) have no Type and no database table,
 	// so skip loading config data for them.
 	if !spec.ReadOnly {
 		var err error
-		cfg, version, err = m.configStore.Load(r.Context(), spec.Module)
+		cfg, _, err = m.configStore.Load(r.Context(), spec.Module)
 		if err != nil {
 			engine.SystemError(w, err.Error())
 			return
@@ -514,7 +513,7 @@ func (m *Module) renderGenericConfig(w http.ResponseWriter, r *http.Request, spe
 	events := m.loadModuleEvents(r.Context(), spec.Module)
 
 	w.Header().Set("Content-Type", "text/html")
-	renderGenericConfigPage(m.nav, spec, cfg, version, events, m.getConfigSections(), saved, errMsg).Render(r.Context(), w)
+	renderGenericConfigPage(m.nav, spec, cfg, events, m.getConfigSections(), saved, errMsg).Render(r.Context(), w)
 }
 
 // loadModuleEvents loads recent events for a module.

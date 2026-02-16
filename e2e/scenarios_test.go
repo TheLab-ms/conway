@@ -1586,7 +1586,6 @@ This is the updated waiver content.
 	require.NoError(t, err)
 
 	configPage.ExpectSaveSuccessMessage()
-	configPage.ExpectVersionBadge(1)
 
 	// Verify content was saved to database (normalize line endings for comparison)
 	var savedContent string
@@ -1605,13 +1604,11 @@ This is the updated waiver content.
 	err = page.WaitForLoadState()
 	require.NoError(t, err)
 
-	configPage.ExpectVersionBadge(2)
-
-	// Verify both versions exist in database
+	// Verify only one row exists in database (old version deleted)
 	var count int
 	err = env.db.QueryRow("SELECT COUNT(*) FROM waiver_content").Scan(&count)
 	require.NoError(t, err)
-	assert.Equal(t, 2, count, "should have 2 waiver versions")
+	assert.Equal(t, 1, count, "should have 1 waiver content row (old version deleted)")
 }
 
 // TestAdmin_WaiverListPage verifies the admin events page displays
@@ -1808,7 +1805,6 @@ func TestAdmin_StripeConfigPage(t *testing.T) {
 
 	configPage.ExpectHasAPIKey()
 	configPage.ExpectHasWebhookKey()
-	configPage.ExpectVersionBadge(1)
 }
 
 // TestAdmin_StripeConfigVersioning verifies that saving Stripe config
@@ -1829,7 +1825,6 @@ func TestAdmin_StripeConfigVersioning(t *testing.T) {
 	require.NoError(t, err)
 
 	configPage.ExpectSaveSuccessMessage()
-	configPage.ExpectVersionBadge(1)
 
 	// Save second version (just updating the webhook key)
 	configPage.Navigate()
@@ -1840,13 +1835,12 @@ func TestAdmin_StripeConfigVersioning(t *testing.T) {
 	require.NoError(t, err)
 
 	configPage.ExpectSaveSuccessMessage()
-	configPage.ExpectVersionBadge(2)
 
-	// Verify both versions exist in database
+	// Verify only one row exists in database (old version deleted)
 	var count int
 	err = env.db.QueryRow("SELECT COUNT(*) FROM stripe_config").Scan(&count)
 	require.NoError(t, err)
-	assert.Equal(t, 2, count, "should have two versions of config")
+	assert.Equal(t, 1, count, "should have one config row (old version deleted)")
 
 	// Verify the latest version is used (API key should be preserved from first save)
 	var apiKey, webhookKey string
@@ -2244,7 +2238,6 @@ func TestAdmin_BambuConfigSaveNewPrinter(t *testing.T) {
 
 	// Verify success message
 	configPage.ExpectSaveSuccessMessage()
-	configPage.ExpectVersionBadge(1)
 
 	// Verify printer was saved in database
 	printersJSON := getBambuPrintersJSON(t, env)
@@ -2542,7 +2535,6 @@ func TestJourney_AdminConfiguresBambuPrinter(t *testing.T) {
 
 	// Step 5: Verify success
 	configPage.ExpectSaveSuccessMessage()
-	configPage.ExpectVersionBadge(1)
 	configPage.ExpectConfiguredPrintersCount(1)
 	configPage.ExpectPollIntervalDisplay(10)
 
@@ -2598,7 +2590,6 @@ func TestAdmin_DiscordConfigPage(t *testing.T) {
 	require.NoError(t, err)
 
 	configPage.ExpectSaveSuccessMessage()
-	configPage.ExpectVersionBadge(1)
 
 	// Reload and verify secrets show placeholders
 	configPage.Navigate()
@@ -2608,7 +2599,6 @@ func TestAdmin_DiscordConfigPage(t *testing.T) {
 	configPage.ExpectHasClientSecret()
 	configPage.ExpectHasBotToken()
 	configPage.ExpectHasPrintWebhookURL()
-	configPage.ExpectVersionBadge(1)
 
 	// Verify non-secret fields retain their values
 	clientID, err := page.Locator("#client_id").InputValue()
@@ -2750,7 +2740,6 @@ func TestAdmin_GoogleConfigPage(t *testing.T) {
 	require.NoError(t, err)
 
 	configPage.ExpectSaveSuccessMessage()
-	configPage.ExpectVersionBadge(1)
 
 	// Reload and verify secret shows placeholder
 	configPage.Navigate()
@@ -2758,7 +2747,6 @@ func TestAdmin_GoogleConfigPage(t *testing.T) {
 	require.NoError(t, err)
 
 	configPage.ExpectHasClientSecret()
-	configPage.ExpectVersionBadge(1)
 
 	// Verify non-secret field retains its value
 	clientID, err := page.Locator("#client_id").InputValue()

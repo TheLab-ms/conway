@@ -233,7 +233,7 @@ func applyDefaults(configVal reflect.Value, spec *ParsedSpec) {
 	}
 }
 
-// Save stores a new version of the config.
+// Save stores the config, replacing any existing row.
 // If preserveSecrets is true, empty secret fields will keep their existing values.
 func (s *Store) Save(ctx context.Context, module string, config any, preserveSecrets bool) error {
 	spec, ok := s.registry.Get(module)
@@ -278,6 +278,22 @@ func (s *Store) Save(ctx context.Context, module string, config any, preserveSec
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
 	}
 
+	// Delete the existing row and insert the new one inside a transaction
+	// so the config is never missing between the two operations. The version
+	// column auto-increments, so each save gets a new version number even
+	// though only one row is ever retained. This allows consumers (e.g.
+	// machines module) to detect config changes by comparing version numbers.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("starting transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s", tableName))
+	if err != nil {
+		return fmt.Errorf("clearing old config: %w", err)
+	}
+
 	query := fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES (%s)",
 		tableName,
@@ -285,8 +301,12 @@ func (s *Store) Save(ctx context.Context, module string, config any, preserveSec
 		strings.Join(placeholders, ", "),
 	)
 
-	_, err := s.db.ExecContext(ctx, query, values...)
-	return err
+	_, err = tx.ExecContext(ctx, query, values...)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // buildInsertParams builds column names and values for INSERT.
