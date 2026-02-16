@@ -23,15 +23,21 @@ var validOps = map[string]bool{
 // placeholderPattern matches {placeholder} tokens in message templates.
 var placeholderPattern = regexp.MustCompile(`\{(\w+)\}`)
 
-// tableColumns returns the column names for the given table, using PRAGMA table_info.
-func tableColumns(db *sql.DB, table string) ([]string, error) {
+// columnInfo holds the name and type of a database column.
+type columnInfo struct {
+	Name string
+	Type string
+}
+
+// tableColumnsInfo returns column names and types for the given table, using PRAGMA table_info.
+func tableColumnsInfo(db *sql.DB, table string) ([]columnInfo, error) {
 	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
 		return nil, fmt.Errorf("querying table_info for %s: %w", table, err)
 	}
 	defer rows.Close()
 
-	var cols []string
+	var cols []columnInfo
 	for rows.Next() {
 		var cid int
 		var name, typ string
@@ -41,9 +47,22 @@ func tableColumns(db *sql.DB, table string) ([]string, error) {
 		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
 			return nil, err
 		}
-		cols = append(cols, name)
+		cols = append(cols, columnInfo{Name: name, Type: typ})
 	}
 	return cols, rows.Err()
+}
+
+// tableColumns returns the column names for the given table, using PRAGMA table_info.
+func tableColumns(db *sql.DB, table string) ([]string, error) {
+	infos, err := tableColumnsInfo(db, table)
+	if err != nil {
+		return nil, err
+	}
+	cols := make([]string, len(infos))
+	for i, c := range infos {
+		cols[i] = c.Name
+	}
+	return cols, nil
 }
 
 // availableTables returns all non-internal, non-sqlite tables in the database.

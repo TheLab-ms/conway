@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -137,41 +138,34 @@ func (m *Module) handleWebhookDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
 }
 
-// handleTableColumns returns the column names for a given table as JSON.
+// handleTableColumns returns the column names and types for a given table as JSON.
 // Used by the admin UI to dynamically show available placeholders.
 func (m *Module) handleTableColumns(w http.ResponseWriter, r *http.Request) {
 	table := r.URL.Query().Get("table")
 	if table == "" {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(""))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
 		return
 	}
 
-	cols, err := tableColumns(m.db, table)
+	cols, err := tableColumnsInfo(m.db, table)
 	if err != nil {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(""))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/plain")
-	w.Write([]byte("{" + joinPlaceholders(cols) + "}"))
-}
-
-// joinPlaceholders formats column names as {col1}, {col2}, ... for display.
-func joinPlaceholders(cols []string) string {
-	parts := make([]string, len(cols))
+	type colJSON struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	}
+	out := make([]colJSON, len(cols))
 	for i, c := range cols {
-		parts[i] = c + "}"
+		out[i] = colJSON{Name: c.Name, Type: c.Type}
 	}
-	result := ""
-	for i, p := range parts {
-		if i > 0 {
-			result += ", {"
-		}
-		result += p
-	}
-	return result
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
 func parseWebhookForm(r *http.Request) webhookRow {

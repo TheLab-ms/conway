@@ -89,7 +89,6 @@ templ renderWebhooksCard(webhooks []webhookRow, tables []string) {
 			}
 		</div>
 	</div>
-	@webhookPlaceholderReference()
 	@webhookScripts()
 }
 
@@ -120,49 +119,17 @@ templ webhookInlineFormFields(wh *webhookRow, suffix string, tables []string) {
 	</div>
 
 	<div class="row g-3 mb-3">
-		<div class="col-12">
-			<div id={ "columns_help_" + suffix } class="text-muted small"></div>
-		</div>
-	</div>
-
-	<div class="row g-3 mb-3">
 		<div class="col-md-8">
 			<label for={ "message_template_" + suffix } class="form-label">Message Template</label>
 			<textarea class="form-control form-control-sm font-monospace" id={ "message_template_" + suffix } name="message_template" rows="3" placeholder="e.g. New row in {table}: {column_name}">{ wh.MessageTemplate }</textarea>
 			<div class="form-text">Use <code>{"{"}</code>column_name<code>{"}"}</code> placeholders matching the table's column names.</div>
+			<div id={ "columns_help_" + suffix } class="mt-2"></div>
 		</div>
 		<div class="col-md-4">
 			<div class="form-check mt-4">
 				<input type="checkbox" class="form-check-input" id={ "enabled_" + suffix } name="enabled" checked?={ wh.Enabled }/>
 				<label class="form-check-label" for={ "enabled_" + suffix }>Enabled</label>
 			</div>
-		</div>
-	</div>
-}
-
-templ webhookPlaceholderReference() {
-	<div class="card mb-4">
-		<div class="card-header">
-			<h6 class="mb-0">Webhook Placeholder Reference</h6>
-		</div>
-		<div class="card-body">
-			<p class="text-muted small mb-2">
-				Use <code>{"{"}</code>placeholder<code>{"}"}</code> syntax in the message template.
-			</p>
-			<table class="table table-sm mb-0">
-				<thead>
-					<tr>
-						<th>Trigger Type</th>
-						<th>Placeholders</th>
-					</tr>
-				</thead>
-				<tbody>
-					<tr>
-						<td><strong>SQL Trigger</strong></td>
-						<td>Any <code>{"{"}</code>column_name<code>{"}"}</code> from the selected table. Select a table above to see available columns.</td>
-					</tr>
-				</tbody>
-			</table>
 		</div>
 	</div>
 }
@@ -179,15 +146,23 @@ script fetchColumns(suffix string) {
 	var helpDiv = document.getElementById('columns_help_' + suffix);
 	if (!sel || !helpDiv) return;
 	var table = sel.value;
-	if (!table) { helpDiv.textContent = ''; return; }
+	if (!table) { helpDiv.innerHTML = ''; return; }
 	fetch('/admin/discord/webhooks/columns?table=' + encodeURIComponent(table))
-		.then(function(r) { return r.text(); })
-		.then(function(text) {
-			if (text) {
-				helpDiv.innerHTML = '<strong>Available placeholders:</strong> <code>' + text + '</code>';
-			} else {
+		.then(function(r) { return r.json(); })
+		.then(function(cols) {
+			if (!cols || cols.length === 0) {
 				helpDiv.textContent = 'No columns found for this table.';
+				return;
 			}
+			var html = '<table class="table table-sm table-bordered mb-0">';
+			html += '<thead class="table-light"><tr><th>Column</th><th>Type</th><th>Placeholder</th></tr></thead><tbody>';
+			for (var i = 0; i < cols.length; i++) {
+				html += '<tr><td><code>' + cols[i].name + '</code></td>';
+				html += '<td>' + (cols[i].type || '<em>untyped</em>') + '</td>';
+				html += '<td><code>{' + cols[i].name + '}</code></td></tr>';
+			}
+			html += '</tbody></table>';
+			helpDiv.innerHTML = html;
 		});
 }
 
