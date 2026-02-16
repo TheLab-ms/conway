@@ -20,6 +20,32 @@ var validOps = map[string]bool{
 	"DELETE": true,
 }
 
+// validOperators is the set of allowed condition comparison operators.
+var validOperators = map[string]bool{
+	"=":           true,
+	"!=":          true,
+	">":           true,
+	"<":           true,
+	">=":          true,
+	"<=":          true,
+	"LIKE":        true,
+	"NOT LIKE":    true,
+	"IS NULL":     true,
+	"IS NOT NULL": true,
+}
+
+// unaryOperators are operators that don't take a right-hand value.
+var unaryOperators = map[string]bool{
+	"IS NULL":     true,
+	"IS NOT NULL": true,
+}
+
+// validLogic is the set of allowed condition join operators.
+var validLogic = map[string]bool{
+	"AND": true,
+	"OR":  true,
+}
+
 // placeholderPattern matches {placeholder} tokens in message templates.
 var placeholderPattern = regexp.MustCompile(`\{(\w+)\}`)
 
@@ -27,6 +53,16 @@ var placeholderPattern = regexp.MustCompile(`\{(\w+)\}`)
 type columnInfo struct {
 	Name string
 	Type string
+}
+
+// conditionRow represents a single condition from discord_webhook_conditions.
+type conditionRow struct {
+	ID         int64
+	WebhookID  int64
+	ColumnName string
+	Operator   string
+	Value      string
+	Logic      string // "AND" or "OR"; ignored for the first condition.
 }
 
 // tableColumnsInfo returns column names and types for the given table, using PRAGMA table_info.
@@ -89,6 +125,60 @@ func availableTables(db *sql.DB) ([]string, error) {
 	return tables, rows.Err()
 }
 
+// buildWhenClause generates a SQL WHEN clause string from a slice of conditions.
+// It returns an empty string when there are no valid conditions, or a string like
+// "WHEN NEW.col = 'val' AND NEW.other > '5'\n" ready to insert before BEGIN.
+func buildWhenClause(conditions []conditionRow, colSet map[string]bool, rowRef string) string {
+	if len(conditions) == 0 {
+		return ""
+	}
+
+	var parts []string
+	var logics []string
+	for _, c := range conditions {
+		op := strings.ToUpper(c.Operator)
+		if !validOperators[op] {
+			continue
+		}
+		if !colSet[c.ColumnName] {
+			continue
+		}
+		logic := strings.ToUpper(c.Logic)
+		if !validLogic[logic] {
+			logic = "AND"
+		}
+
+		var part string
+		if unaryOperators[op] {
+			part = fmt.Sprintf("%s.%s %s", rowRef, c.ColumnName, op)
+		} else {
+			escaped := strings.ReplaceAll(c.Value, "'", "''")
+			part = fmt.Sprintf("%s.%s %s '%s'", rowRef, c.ColumnName, op, escaped)
+		}
+		parts = append(parts, part)
+		logics = append(logics, logic)
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	// Build the expression: first condition stands alone, subsequent ones
+	// are prefixed by their logic operator.
+	var sb strings.Builder
+	sb.WriteString("WHEN ")
+	for i, part := range parts {
+		if i > 0 {
+			sb.WriteString(" ")
+			sb.WriteString(logics[i])
+			sb.WriteString(" ")
+		}
+		sb.WriteString(part)
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
 // buildTriggerSQL generates the CREATE TRIGGER statement for a webhook.
 // The trigger fires on the given table+operation and substitutes {column} placeholders
 // in the message template with NEW.column or OLD.column values, then inserts the
@@ -96,7 +186,10 @@ func availableTables(db *sql.DB) ([]string, error) {
 //
 // For INSERT/UPDATE triggers, column references use NEW.<col>.
 // For DELETE triggers, column references use OLD.<col>.
-func buildTriggerSQL(webhookID int64, table, op, messageTemplate string, tableCols []string) (string, error) {
+//
+// If conditions are provided, a WHEN clause is added so the trigger only fires
+// when the conditions evaluate to true.
+func buildTriggerSQL(webhookID int64, table, op, messageTemplate string, tableCols []string, conditions []conditionRow) (string, error) {
 	op = strings.ToUpper(op)
 	if !validOps[op] {
 		return "", fmt.Errorf("invalid trigger operation: %s", op)
@@ -135,8 +228,11 @@ func buildTriggerSQL(webhookID int64, table, op, messageTemplate string, tableCo
 		// handled by the Go notifier or be a typo the admin can fix).
 	}
 
+	// Build the optional WHEN clause from conditions.
+	whenClause := buildWhenClause(conditions, colSet, rowRef)
+
 	triggerSQL := fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS %s AFTER %s ON %s
-BEGIN
+%sBEGIN
     INSERT INTO discord_webhook_queue (webhook_url, payload)
     SELECT
         w.webhook_url,
@@ -146,13 +242,14 @@ BEGIN
         )
     FROM discord_webhooks w
     WHERE w.id = %d AND w.enabled = 1;
-END`, name, op, table, expr, webhookID)
+END`, name, op, table, whenClause, expr, webhookID)
 
 	return triggerSQL, nil
 }
 
 // createTrigger creates (or recreates) the SQLite trigger for a webhook.
-func (m *Module) createTrigger(wh *webhookRow) error {
+// The conditions slice is used to build an optional WHEN clause.
+func (m *Module) createTrigger(wh *webhookRow, conditions []conditionRow) error {
 	if wh.TriggerTable == "" || wh.TriggerOp == "" {
 		return nil // App-level event (Signup, Print*), no SQL trigger needed.
 	}
@@ -165,7 +262,7 @@ func (m *Module) createTrigger(wh *webhookRow) error {
 		return fmt.Errorf("table %s has no columns or does not exist", wh.TriggerTable)
 	}
 
-	trigSQL, err := buildTriggerSQL(wh.ID, wh.TriggerTable, wh.TriggerOp, wh.MessageTemplate, cols)
+	trigSQL, err := buildTriggerSQL(wh.ID, wh.TriggerTable, wh.TriggerOp, wh.MessageTemplate, cols, conditions)
 	if err != nil {
 		return err
 	}
@@ -219,7 +316,11 @@ func (m *Module) recreateAllTriggers() {
 	rows.Close()
 
 	for i := range webhooks {
-		if err := m.createTrigger(&webhooks[i]); err != nil {
+		conditions, err := m.loadConditions(webhooks[i].ID)
+		if err != nil {
+			slog.Error("failed to load conditions for webhook trigger", "error", err, "webhookID", webhooks[i].ID)
+		}
+		if err := m.createTrigger(&webhooks[i], conditions); err != nil {
 			slog.Error("failed to recreate webhook trigger", "error", err, "webhookID", webhooks[i].ID)
 		}
 	}

@@ -5,6 +5,24 @@ import (
 	"strconv"
 )
 
+// conditionLabel returns "condition" or "conditions" based on count.
+func conditionLabel(n int) string {
+	if n == 1 {
+		return "condition"
+	}
+	return "conditions"
+}
+
+// condOperators returns the ordered list of supported condition operators for the UI.
+func condOperators() []string {
+	return []string{"=", "!=", ">", "<", ">=", "<=", "LIKE", "NOT LIKE", "IS NULL", "IS NOT NULL"}
+}
+
+// isUnaryOp returns true for operators that don't require a value.
+func isUnaryOp(op string) bool {
+	return op == "IS NULL" || op == "IS NOT NULL"
+}
+
 // renderWebhooksCard renders the webhooks management UI as an inline card
 // for embedding in the Discord config page.
 templ renderWebhooksCard(webhooks []webhookRow, tables []string) {
@@ -54,6 +72,9 @@ templ renderWebhooksCard(webhooks []webhookRow, tables []string) {
 								<tr>
 									<td>
 										<code>{ wh.TriggerOp }</code> on <code>{ wh.TriggerTable }</code>
+										if len(wh.Conditions) > 0 {
+											<span class="text-muted small ms-1">({ strconv.Itoa(len(wh.Conditions)) } { conditionLabel(len(wh.Conditions)) })</span>
+										}
 									</td>
 									<td>
 										if wh.Enabled {
@@ -132,6 +153,52 @@ templ webhookInlineFormFields(wh *webhookRow, suffix string, tables []string) {
 			</div>
 		</div>
 	</div>
+
+	<!-- Conditions section -->
+	<div class="mb-3">
+		<label class="form-label">Conditions <span class="text-muted fw-normal">(optional)</span></label>
+		<div id={ "conditions_" + suffix }>
+			for i, c := range wh.Conditions {
+				<div class="condition-row row g-2 mb-2 align-items-center">
+					<div class="col-auto" style="min-width:80px">
+						if i == 0 {
+							<span class="form-text">Where</span>
+							<input type="hidden" name="cond_logic" value={ c.Logic }/>
+						} else {
+							<select class="form-select form-select-sm" name="cond_logic">
+								<option value="AND" selected?={ c.Logic == "AND" }>AND</option>
+								<option value="OR" selected?={ c.Logic == "OR" }>OR</option>
+							</select>
+						}
+					</div>
+					<div class="col">
+						<select class="form-select form-select-sm cond-column-select" name="cond_column" data-suffix={ suffix }>
+							<option value="" disabled>Column...</option>
+							<option value={ c.ColumnName } selected>{ c.ColumnName }</option>
+						</select>
+					</div>
+					<div class="col-auto">
+						<select class="form-select form-select-sm cond-operator-select" name="cond_operator" onchange="toggleCondValue(this)">
+							for _, op := range condOperators() {
+								<option value={ op } selected?={ c.Operator == op }>{ op }</option>
+							}
+						</select>
+					</div>
+					<div class="col">
+						if isUnaryOp(c.Operator) {
+							<input type="text" class="form-control form-control-sm cond-value-input" name="cond_value" value={ c.Value } placeholder="value" disabled style="visibility:hidden"/>
+						} else {
+							<input type="text" class="form-control form-control-sm cond-value-input" name="cond_value" value={ c.Value } placeholder="value"/>
+						}
+					</div>
+					<div class="col-auto">
+						<button type="button" class="btn btn-outline-danger btn-sm" onclick="removeConditionRow(this)">x</button>
+					</div>
+				</div>
+			}
+		</div>
+		<button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick={ addConditionRow(suffix) }>+ Add Condition</button>
+	</div>
 }
 
 script toggleEdit(id int64) {
@@ -163,7 +230,66 @@ script fetchColumns(suffix string) {
 			}
 			html += '</tbody></table>';
 			helpDiv.innerHTML = html;
+
+			// Cache columns for condition row builder.
+			if (!window._webhookColumns) window._webhookColumns = {};
+			window._webhookColumns[table] = cols;
+
+			// Update any existing condition column selects for this form.
+			var container = document.getElementById('conditions_' + suffix);
+			if (container) {
+				var selects = container.querySelectorAll('select.cond-column-select[data-suffix="' + suffix + '"]');
+				for (var s = 0; s < selects.length; s++) {
+					var current = selects[s].value;
+					var optHtml = '<option value="" disabled>Column...</option>';
+					for (var j = 0; j < cols.length; j++) {
+						var selected = (cols[j].name === current) ? ' selected' : '';
+						optHtml += '<option value="' + cols[j].name + '"' + selected + '>' + cols[j].name + '</option>';
+					}
+					selects[s].innerHTML = optHtml;
+				}
+			}
 		});
+}
+
+script addConditionRow(suffix string) {
+	var container = document.getElementById('conditions_' + suffix);
+	if (!container) return;
+	var isFirst = container.querySelectorAll('.condition-row').length === 0;
+	var row = document.createElement('div');
+	row.className = 'condition-row row g-2 mb-2 align-items-center';
+
+	var logicHtml;
+	if (isFirst) {
+		logicHtml = '<span class="form-text">Where</span><input type="hidden" name="cond_logic" value="AND"/>';
+	} else {
+		logicHtml = '<select class="form-select form-select-sm" name="cond_logic"><option value="AND" selected>AND</option><option value="OR">OR</option></select>';
+	}
+
+	// Build column options from the cached columns (fetched when the table is selected).
+	var colOptions = '<option value="" disabled selected>Column...</option>';
+	var sel = document.getElementById('trigger_table_' + suffix);
+	if (sel && sel.value && window._webhookColumns && window._webhookColumns[sel.value]) {
+		var cols = window._webhookColumns[sel.value];
+		for (var i = 0; i < cols.length; i++) {
+			colOptions += '<option value="' + cols[i].name + '">' + cols[i].name + '</option>';
+		}
+	}
+
+	var opOptions = '';
+	var ops = ['=','!=','>','<','>=','<=','LIKE','NOT LIKE','IS NULL','IS NOT NULL'];
+	for (var i = 0; i < ops.length; i++) {
+		opOptions += '<option value="' + ops[i] + '">' + ops[i] + '</option>';
+	}
+
+	row.innerHTML =
+		'<div class="col-auto" style="min-width:80px">' + logicHtml + '</div>' +
+		'<div class="col"><select class="form-select form-select-sm cond-column-select" name="cond_column" data-suffix="' + suffix + '">' + colOptions + '</select></div>' +
+		'<div class="col-auto"><select class="form-select form-select-sm cond-operator-select" name="cond_operator" onchange="toggleCondValue(this)">' + opOptions + '</select></div>' +
+		'<div class="col"><input type="text" class="form-control form-control-sm cond-value-input" name="cond_value" placeholder="value"/></div>' +
+		'<div class="col-auto"><button type="button" class="btn btn-outline-danger btn-sm" onclick="removeConditionRow(this)">x</button></div>';
+
+	container.appendChild(row);
 }
 
 templ webhookScripts() {
@@ -173,6 +299,47 @@ templ webhookScripts() {
 			if (form) {
 				form.classList.toggle('d-none');
 			}
+		}
+
+		function removeConditionRow(btn) {
+			var row = btn.closest('.condition-row');
+			if (row) {
+				var container = row.parentNode;
+				row.remove();
+				// Update the first remaining row to show "Where" instead of AND/OR selector.
+				var rows = container.querySelectorAll('.condition-row');
+				if (rows.length > 0) {
+					var firstLogicCol = rows[0].querySelector('.col-auto');
+					if (firstLogicCol) {
+						var existingSel = firstLogicCol.querySelector('select[name="cond_logic"]');
+						if (existingSel) {
+							var val = existingSel.value || 'AND';
+							firstLogicCol.innerHTML = '<span class="form-text">Where</span><input type="hidden" name="cond_logic" value="' + val + '"/>';
+						}
+					}
+				}
+			}
+		}
+
+		function toggleCondValue(sel) {
+			var row = sel.closest('.condition-row');
+			if (!row) return;
+			var valInput = row.querySelector('.cond-value-input');
+			if (!valInput) return;
+			var op = sel.value;
+			if (op === 'IS NULL' || op === 'IS NOT NULL') {
+				valInput.disabled = true;
+				valInput.style.visibility = 'hidden';
+				valInput.value = '';
+			} else {
+				valInput.disabled = false;
+				valInput.style.visibility = 'visible';
+			}
+		}
+
+		// Cache column lists for condition dropdowns.
+		if (!window._webhookColumns) {
+			window._webhookColumns = {};
 		}
 	</script>
 }

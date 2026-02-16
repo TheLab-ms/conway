@@ -292,6 +292,10 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /admin/chart", router.WithLeadership(m.renderMetricsChart))
 	router.HandleFunc("GET /admin/metrics", router.WithLeadership(m.renderMetricsPageHandler))
 
+	// Dev tools routes
+	router.HandleFunc("GET /admin/config/dev/db", router.WithLeadership(m.handleDBConsole))
+	router.HandleFunc("POST /admin/config/dev/db", router.WithLeadership(m.handleDBConsoleExec))
+
 	// Configuration routes
 	router.HandleFunc("GET /admin/config", router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
 		// Redirect to the first config section from the registry
@@ -565,4 +569,76 @@ func (m *Module) getConfigSections() []*configSection {
 		})
 	}
 	return sections
+}
+
+// handleDBConsole renders the DB Console page.
+func (m *Module) handleDBConsole(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	renderDBConsolePage(m.nav, m.getConfigSections(), "", "", nil, nil, 0, false).Render(r.Context(), w)
+}
+
+// handleDBConsoleExec executes a SQL query and renders the results.
+func (m *Module) handleDBConsoleExec(w http.ResponseWriter, r *http.Request) {
+	query := strings.TrimSpace(r.FormValue("query"))
+	if query == "" {
+		m.handleDBConsole(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	sections := m.getConfigSections()
+
+	// Determine if this is a query that returns rows.
+	upper := strings.ToUpper(query)
+	isSelect := strings.HasPrefix(upper, "SELECT") ||
+		strings.HasPrefix(upper, "PRAGMA") ||
+		strings.HasPrefix(upper, "EXPLAIN") ||
+		strings.HasPrefix(upper, "WITH")
+
+	if isSelect {
+		rows, err := m.db.QueryContext(r.Context(), query)
+		if err != nil {
+			renderDBConsolePage(m.nav, sections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
+			return
+		}
+		defer rows.Close()
+
+		cols, err := rows.Columns()
+		if err != nil {
+			renderDBConsolePage(m.nav, sections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
+			return
+		}
+
+		var resultRows [][]string
+		for rows.Next() {
+			vals := make([]any, len(cols))
+			ptrs := make([]any, len(cols))
+			for i := range vals {
+				ptrs[i] = &vals[i]
+			}
+			if err := rows.Scan(ptrs...); err != nil {
+				renderDBConsolePage(m.nav, sections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
+				return
+			}
+			row := make([]string, len(vals))
+			for i, v := range vals {
+				if v == nil {
+					row[i] = "NULL"
+				} else {
+					row[i] = fmt.Sprint(v)
+				}
+			}
+			resultRows = append(resultRows, row)
+		}
+
+		renderDBConsolePage(m.nav, sections, query, "", cols, resultRows, 0, true).Render(r.Context(), w)
+	} else {
+		result, err := m.db.ExecContext(r.Context(), query)
+		if err != nil {
+			renderDBConsolePage(m.nav, sections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
+			return
+		}
+		affected, _ := result.RowsAffected()
+		renderDBConsolePage(m.nav, sections, query, "", nil, nil, affected, true).Render(r.Context(), w)
+	}
 }

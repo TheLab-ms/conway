@@ -2,6 +2,7 @@ package discord
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -15,8 +16,9 @@ type webhookRow struct {
 	WebhookURL      string
 	MessageTemplate string
 	Enabled         bool
-	TriggerTable    string // SQL trigger: the table to watch.
-	TriggerOp       string // SQL trigger: INSERT, UPDATE, or DELETE.
+	TriggerTable    string         // SQL trigger: the table to watch.
+	TriggerOp       string         // SQL trigger: INSERT, UPDATE, or DELETE.
+	Conditions      []conditionRow // Optional conditions that gate when the trigger fires.
 }
 
 func (m *Module) attachWebhookRoutes(router *engine.Router) {
@@ -43,10 +45,30 @@ func (m *Module) loadAllWebhooks() ([]webhookRow, error) {
 		wh.Enabled = enabled == 1
 		webhooks = append(webhooks, wh)
 	}
-	return webhooks, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+
+	// Load conditions for each webhook. Done after closing the rows iterator
+	// to avoid deadlock with SQLite's MaxOpenConns=1.
+	for i := range webhooks {
+		conditions, err := m.loadConditions(webhooks[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("loading conditions for webhook %d: %w", webhooks[i].ID, err)
+		}
+		webhooks[i].Conditions = conditions
+	}
+
+	return webhooks, nil
 }
 
 func (m *Module) handleWebhookCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		engine.ClientError(w, "Bad Request", "Failed to parse form.", 400)
+		return
+	}
+
 	wh := parseWebhookForm(r)
 	if wh.WebhookURL == "" || wh.TriggerTable == "" || wh.TriggerOp == "" {
 		http.Redirect(w, r, "/admin/config/discord", http.StatusSeeOther)
@@ -72,7 +94,11 @@ func (m *Module) handleWebhookCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	wh.ID = id
 
-	if err := m.createTrigger(&wh); err != nil {
+	if err := m.saveConditions(wh.ID, wh.Conditions); err != nil {
+		slog.Error("failed to save webhook conditions", "error", err, "webhookID", wh.ID)
+	}
+
+	if err := m.createTrigger(&wh, wh.Conditions); err != nil {
 		slog.Error("failed to create webhook trigger", "error", err, "webhookID", wh.ID)
 	}
 
@@ -83,6 +109,11 @@ func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		engine.ClientError(w, "Invalid ID", "The webhook ID is not valid.", 400)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		engine.ClientError(w, "Bad Request", "Failed to parse form.", 400)
 		return
 	}
 
@@ -112,8 +143,12 @@ func (m *Module) handleWebhookUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := m.saveConditions(wh.ID, wh.Conditions); err != nil {
+		slog.Error("failed to save webhook conditions", "error", err, "webhookID", wh.ID)
+	}
+
 	// Recreate the SQL trigger.
-	if err := m.createTrigger(&wh); err != nil {
+	if err := m.createTrigger(&wh, wh.Conditions); err != nil {
 		slog.Error("failed to recreate webhook trigger", "error", err, "webhookID", wh.ID)
 	}
 
@@ -175,5 +210,92 @@ func parseWebhookForm(r *http.Request) webhookRow {
 		Enabled:         r.FormValue("enabled") == "on" || r.FormValue("enabled") == "1",
 		TriggerTable:    r.FormValue("trigger_table"),
 		TriggerOp:       r.FormValue("trigger_op"),
+		Conditions:      parseConditionsForm(r),
 	}
+}
+
+// parseConditionsForm extracts the dynamic condition rows from the form.
+// Conditions are submitted as parallel arrays: cond_column[], cond_operator[],
+// cond_value[], and cond_logic[].
+func parseConditionsForm(r *http.Request) []conditionRow {
+	columns := r.Form["cond_column"]
+	operators := r.Form["cond_operator"]
+	values := r.Form["cond_value"]
+	logics := r.Form["cond_logic"]
+
+	var conditions []conditionRow
+	for i := range columns {
+		col := columns[i]
+		if col == "" {
+			continue
+		}
+		op := "="
+		if i < len(operators) {
+			op = operators[i]
+		}
+		val := ""
+		if i < len(values) {
+			val = values[i]
+		}
+		logic := "AND"
+		if i < len(logics) {
+			logic = logics[i]
+		}
+		conditions = append(conditions, conditionRow{
+			ColumnName: col,
+			Operator:   op,
+			Value:      val,
+			Logic:      logic,
+		})
+	}
+	return conditions
+}
+
+// loadConditions returns all conditions for a given webhook, ordered by id.
+func (m *Module) loadConditions(webhookID int64) ([]conditionRow, error) {
+	rows, err := m.db.Query(
+		"SELECT id, webhook_id, column_name, operator, value, logic FROM discord_webhook_conditions WHERE webhook_id = ? ORDER BY id",
+		webhookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var conditions []conditionRow
+	for rows.Next() {
+		var c conditionRow
+		if err := rows.Scan(&c.ID, &c.WebhookID, &c.ColumnName, &c.Operator, &c.Value, &c.Logic); err != nil {
+			return nil, err
+		}
+		conditions = append(conditions, c)
+	}
+	return conditions, rows.Err()
+}
+
+// saveConditions replaces all conditions for a webhook. It deletes existing
+// conditions and inserts the new set within a transaction.
+func (m *Module) saveConditions(webhookID int64, conditions []conditionRow) error {
+	tx, err := m.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM discord_webhook_conditions WHERE webhook_id = ?", webhookID); err != nil {
+		return err
+	}
+
+	for _, c := range conditions {
+		if c.ColumnName == "" {
+			continue
+		}
+		if _, err := tx.Exec(
+			"INSERT INTO discord_webhook_conditions (webhook_id, column_name, operator, value, logic) VALUES (?, ?, ?, ?, ?)",
+			webhookID, c.ColumnName, c.Operator, c.Value, c.Logic,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }

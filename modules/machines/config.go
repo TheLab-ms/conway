@@ -20,7 +20,7 @@ type Config struct {
 func (m *Module) ConfigSpec() config.Spec {
 	return config.Spec{
 		Module:      "bambu",
-		Title:       "Bambu 3D Printer Integration",
+		Title:       "Bambu Integration",
 		Description: configDescription(),
 		Type:        Config{},
 		ArrayFields: []config.ArrayFieldDef{

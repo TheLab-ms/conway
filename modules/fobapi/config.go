@@ -12,7 +12,7 @@ import (
 func (m *Module) ConfigSpec() config.Spec {
 	return config.Spec{
 		Module:      "fobapi",
-		Title:       "Fob API (Access Controllers)",
+		Title:       "Building Access Control API",
 		ReadOnly:    true,
 		Order:       40,
 		Description: configDescription(),

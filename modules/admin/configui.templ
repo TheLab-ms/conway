@@ -10,27 +10,43 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
+templ configSidebar(configSections []*configSection, activeSection string, activeDevPage string) {
+	<div class="col-md-3">
+		<div class="card">
+			<div class="card-header">
+				<h5 class="mb-0">Configuration</h5>
+			</div>
+			<div class="list-group list-group-flush">
+				for _, section := range configSections {
+					if section.Name == activeSection {
+						<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
+					} else {
+						<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
+					}
+				}
+			</div>
+		</div>
+		<div class="card mt-3">
+			<div class="card-header">
+				<h5 class="mb-0">Dev</h5>
+			</div>
+			<div class="list-group list-group-flush">
+				if activeDevPage == "db" {
+					<a href="/admin/config/dev/db" class="list-group-item list-group-item-action active">DB Console</a>
+				} else {
+					<a href="/admin/config/dev/db" class="list-group-item list-group-item-action">DB Console</a>
+				}
+			</div>
+		</div>
+	</div>
+}
+
 templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, events []*config.Event, configSections []*configSection, saved bool, errMsg string) {
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
 			<div class="row">
-				<div class="col-md-3">
-					<div class="card">
-						<div class="card-header">
-							<h5 class="mb-0">Configuration</h5>
-						</div>
-						<div class="list-group list-group-flush">
-							for _, section := range configSections {
-								if section.Name == spec.Title {
-									<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
-								} else {
-									<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
-								}
-							}
-						</div>
-					</div>
-				</div>
+				@configSidebar(configSections, spec.Title, "")
 				<div class="col-md-9">
 				if spec.ReadOnly {
 					@renderReadOnlyConfigCard(spec)
@@ -42,6 +58,72 @@ templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg an
 					}
 					if len(events) > 0 {
 						@renderGenericEventLog(events)
+					}
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ renderDBConsolePage(tabs []*navbarTab, configSections []*configSection, query string, errMsg string, columns []string, rows [][]string, rowsAffected int64, executed bool) {
+	@bootstrap.View() {
+		@adminNav(tabs)
+		<div class="container my-5">
+			<div class="row">
+				@configSidebar(configSections, "", "db")
+				<div class="col-md-9">
+					<div class="card mb-4">
+						<div class="card-header">
+							<h5 class="mb-0">DB Console</h5>
+						</div>
+						<div class="card-body">
+							<form method="post">
+								<div class="mb-3">
+									<textarea class="form-control font-monospace" name="query" rows="6" placeholder="SELECT * FROM members LIMIT 10;" style="resize: vertical;">{ query }</textarea>
+								</div>
+								<button type="submit" class="btn btn-primary">Run</button>
+							</form>
+						</div>
+					</div>
+					if executed {
+						if errMsg != "" {
+							<div class="alert alert-danger font-monospace" role="alert">
+								{ errMsg }
+							</div>
+						} else if len(columns) > 0 {
+							<div class="card">
+								<div class="card-header d-flex justify-content-between align-items-center">
+									<h6 class="mb-0">Results</h6>
+									<span class="badge bg-secondary">{ strconv.Itoa(len(rows)) } rows</span>
+								</div>
+								<div class="card-body p-0">
+									<div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+										<table class="table table-hover table-sm mb-0 font-monospace">
+											<thead class="table-light" style="position: sticky; top: 0;">
+												<tr>
+													for _, col := range columns {
+														<th>{ col }</th>
+													}
+												</tr>
+											</thead>
+											<tbody>
+												for _, row := range rows {
+													<tr>
+														for _, cell := range row {
+															<td class="text-nowrap">{ cell }</td>
+														}
+													</tr>
+												}
+											</tbody>
+										</table>
+									</div>
+								</div>
+							</div>
+						} else {
+							<div class="alert alert-success" role="alert">
+								Query executed successfully. Rows affected: { strconv.FormatInt(rowsAffected, 10) }
+							</div>
+						}
 					}
 				</div>
 			</div>

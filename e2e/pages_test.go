@@ -782,7 +782,7 @@ func (p *AdminBambuConfigPage) Navigate() {
 }
 
 func (p *AdminBambuConfigPage) ExpectPageTitle() {
-	locator := p.page.GetByText("Bambu 3D Printer Integration")
+	locator := p.page.GetByText("Bambu Integration")
 	expect(p.t).Locator(locator).ToBeVisible()
 }
 

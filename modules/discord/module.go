@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS discord_webhooks (
 
 -- Drop the old hardcoded member_events trigger (replaced by per-webhook dynamic triggers).
 DROP TRIGGER IF EXISTS discord_webhook_on_member_event;
+
+-- Conditions table: optional filters that restrict when a webhook trigger fires.
+-- Each row defines a single comparison (column op value). Multiple conditions on
+-- the same webhook are joined by the logic field (AND / OR).
+CREATE TABLE IF NOT EXISTS discord_webhook_conditions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    webhook_id INTEGER NOT NULL REFERENCES discord_webhooks(id) ON DELETE CASCADE,
+    column_name TEXT NOT NULL,
+    operator TEXT NOT NULL DEFAULT '=',
+    value TEXT NOT NULL DEFAULT '',
+    logic TEXT NOT NULL DEFAULT 'AND'
+) STRICT;
 `
 
 var endpoint = oauth2.Endpoint{
