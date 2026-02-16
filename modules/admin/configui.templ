@@ -10,7 +10,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
 
-templ configSidebar(configSections []*configSection, activeSection string, activeDevPage string) {
+templ configSidebar(configSections []*configSection, devSections []*configSection, activeSection string) {
 	<div class="col-md-3">
 		<div class="card">
 			<div class="card-header">
@@ -28,25 +28,27 @@ templ configSidebar(configSections []*configSection, activeSection string, activ
 		</div>
 		<div class="card mt-3">
 			<div class="card-header">
-				<h5 class="mb-0">Debug</h5>
+				<h5 class="mb-0">Dev</h5>
 			</div>
 			<div class="list-group list-group-flush">
-				if activeDevPage == "db" {
-					<a href="/admin/config/dev/db" class="list-group-item list-group-item-action active">DB Console</a>
-				} else {
-					<a href="/admin/config/dev/db" class="list-group-item list-group-item-action">DB Console</a>
+				for _, section := range devSections {
+					if section.Name == activeSection {
+						<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
+					} else {
+						<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
+					}
 				}
 			</div>
 		</div>
 	</div>
 }
 
-templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, events []*config.Event, configSections []*configSection, saved bool, errMsg string) {
+templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg any, events []*config.Event, configSections []*configSection, devSections []*configSection, saved bool, errMsg string) {
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
 			<div class="row">
-				@configSidebar(configSections, spec.Title, "")
+				@configSidebar(configSections, devSections, spec.Title)
 				<div class="col-md-9">
 				if spec.ReadOnly {
 					@renderReadOnlyConfigCard(spec)
@@ -65,12 +67,12 @@ templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg an
 	}
 }
 
-templ renderDBConsolePage(tabs []*navbarTab, configSections []*configSection, query string, errMsg string, columns []string, rows [][]string, rowsAffected int64, executed bool) {
+templ renderDBConsolePage(tabs []*navbarTab, configSections []*configSection, devSections []*configSection, query string, errMsg string, columns []string, rows [][]string, rowsAffected int64, executed bool) {
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
 			<div class="row">
-				@configSidebar(configSections, "", "db")
+				@configSidebar(configSections, devSections, "DB Console")
 				<div class="col-md-9">
 					<div class="card mb-4">
 						<div class="card-header">
@@ -283,16 +285,40 @@ templ renderArrayItem(af config.ArrayField, item any, index int) {
 		<div class="card-body">
 			<div class="row g-3">
 				for _, field := range af.Fields {
-					<div class="col-md-6">
-						<label class="form-label">{ field.Label }</label>
+					<div class={ arrayFieldColClass(field) }>
+						if field.Type != config.FieldTypeBool {
+							<label class="form-label">{ field.Label }</label>
+						}
 						switch field.Type {
 						case config.FieldTypePassword:
 							<input type="password" class="form-control font-monospace"
 								   name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }
 								   placeholder={ secretPlaceholder(config.HasValue(item, field.Name)) }/>
-							if field.Help != "" {
-								<div class="form-text">{ field.Help }</div>
-							}
+						case config.FieldTypeTextarea:
+							<textarea class="form-control font-monospace"
+									  name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }
+									  if field.Rows > 0 {
+									      rows={ strconv.Itoa(field.Rows) }
+									  } else {
+									      rows="3"
+									  }>{ config.GetStringValue(item, field.Name) }</textarea>
+						case config.FieldTypeSelect:
+							<select class="form-select"
+									name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }>
+								for _, opt := range field.Options {
+									<option value={ opt.Value } selected?={ config.GetStringValue(item, field.Name) == opt.Value }>
+										{ opt.Label }
+									</option>
+								}
+							</select>
+						case config.FieldTypeBool:
+							<div class="form-check mt-2">
+								<input type="checkbox" class="form-check-input"
+									   id={ fmt.Sprintf("%s_%d_%s", af.JSONName, index, field.JSONName) }
+									   name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }
+									   checked?={ config.HasValue(item, field.Name) }/>
+								<label class="form-check-label" for={ fmt.Sprintf("%s_%d_%s", af.JSONName, index, field.JSONName) }>{ field.Label }</label>
+							</div>
 						default:
 							<input type="text" class="form-control"
 								   name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }
@@ -301,6 +327,11 @@ templ renderArrayItem(af config.ArrayField, item any, index int) {
 								   if field.Required {
 									   required
 								   }/>
+						}
+						if field.Help != "" {
+							<div class="form-text">
+								@templ.Raw(field.Help)
+							</div>
 						}
 					</div>
 				}
@@ -329,13 +360,37 @@ templ renderArrayItemTemplate(af config.ArrayField) {
 		<div class="card-body">
 			<div class="row g-3">
 				for _, field := range af.Fields {
-					<div class="col-md-6">
-						<label class="form-label">{ field.Label }</label>
+					<div class={ arrayFieldColClass(field) }>
+						if field.Type != config.FieldTypeBool {
+							<label class="form-label">{ field.Label }</label>
+						}
 						switch field.Type {
 						case config.FieldTypePassword:
 							<input type="password" class="form-control font-monospace"
 								   name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
 								   placeholder="(required for new items)"/>
+						case config.FieldTypeTextarea:
+							<textarea class="form-control font-monospace"
+									  name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
+									  if field.Rows > 0 {
+									      rows={ strconv.Itoa(field.Rows) }
+									  } else {
+									      rows="3"
+									  }></textarea>
+						case config.FieldTypeSelect:
+							<select class="form-select"
+									name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }>
+								for _, opt := range field.Options {
+									<option value={ opt.Value }>{ opt.Label }</option>
+								}
+							</select>
+						case config.FieldTypeBool:
+							<div class="form-check mt-2">
+								<input type="checkbox" class="form-check-input"
+									   name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
+									   checked/>
+								<label class="form-check-label">{ field.Label }</label>
+							</div>
 						default:
 							<input type="text" class="form-control item-field"
 								   name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
@@ -344,6 +399,11 @@ templ renderArrayItemTemplate(af config.ArrayField) {
 								   if field.Required {
 									   required
 								   }/>
+						}
+						if field.Help != "" {
+							<div class="form-text">
+								@templ.Raw(field.Help)
+							</div>
 						}
 					</div>
 				}
@@ -372,10 +432,20 @@ script addArrayItem(jsonName string) {
 	var card = clone.querySelector('.array-item-card');
 
 	card.setAttribute('data-item-index', nextIndex);
-	card.querySelectorAll('input').forEach(function(input) {
-		var name = input.getAttribute('name');
+	card.querySelectorAll('input, select, textarea').forEach(function(el) {
+		var name = el.getAttribute('name');
 		if (name) {
-			input.setAttribute('name', name.replace('[-1]', '[' + nextIndex + ']'));
+			el.setAttribute('name', name.replace('[-1]', '[' + nextIndex + ']'));
+		}
+		var id = el.getAttribute('id');
+		if (id) {
+			el.setAttribute('id', id.replace(/_-1_/g, '_' + nextIndex + '_'));
+		}
+	});
+	card.querySelectorAll('label[for]').forEach(function(label) {
+		var forAttr = label.getAttribute('for');
+		if (forAttr) {
+			label.setAttribute('for', forAttr.replace(/_-1_/g, '_' + nextIndex + '_'));
 		}
 	});
 
@@ -394,7 +464,7 @@ script addArrayItem(jsonName string) {
 	container.appendChild(clone);
 	container.setAttribute('data-next-index', nextIndex + 1);
 
-	var firstInput = container.lastElementChild.querySelector('input');
+	var firstInput = container.lastElementChild.querySelector('input, select, textarea');
 	if (firstInput) {
 		firstInput.focus();
 	}
@@ -517,4 +587,11 @@ func getItemDisplayName(item any, fields []config.Field) string {
 		}
 	}
 	return "Item"
+}
+
+func arrayFieldColClass(field config.Field) string {
+	if field.Type == config.FieldTypeTextarea || field.Type == config.FieldTypeBool {
+		return "col-12"
+	}
+	return "col-md-6"
 }

@@ -111,6 +111,10 @@ type Spec struct {
 	// during page rendering so it can fetch dynamic data.
 	ExtraContent func(ctx context.Context) templ.Component
 
+	// DevPage marks this config page as a developer/debug tool.
+	// DevPage specs appear in the "Dev" sidebar section instead of "Configuration".
+	DevPage bool
+
 	// Order controls display order in the config sidebar (lower = first).
 	Order int
 

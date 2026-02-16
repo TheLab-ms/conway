@@ -1,7 +1,7 @@
 // Package triggers provides a unified SQL trigger management system.
 // It replaces the hardcoded member_events triggers and the Discord-specific
 // webhook trigger CRUD, consolidating all user-configurable triggers into
-// a single settings page with generic SQL action bodies.
+// a single settings page managed through the native admin config UI.
 package triggers
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
@@ -9,12 +9,12 @@ package triggers
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/TheLab-ms/conway/engine"
-	"github.com/TheLab-ms/conway/engine/config"
-	"github.com/a-h/templ"
 )
 
 const migration = `
@@ -30,54 +30,171 @@ CREATE TABLE IF NOT EXISTS triggers (
 ) STRICT;
 `
 
+const configMigration = `
+CREATE TABLE IF NOT EXISTS triggers_config (
+    version INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    triggers_json TEXT NOT NULL DEFAULT '[]'
+) STRICT;
+`
+
 // Module manages user-configurable SQL triggers.
 type Module struct {
-	db *sql.DB
+	db            *sql.DB
+	configVersion int64
 }
 
 // New creates a new triggers module, applying migrations and seeding defaults.
 func New(db *sql.DB) *Module {
 	engine.MustMigrate(db, migration)
+	engine.MustMigrate(db, configMigration)
 
 	m := &Module{db: db}
 
 	m.migrateDiscordWebhooks()
 	m.seedDefaults()
-	m.recreateAllTriggers()
+	m.migrateToConfigTable()
+	m.syncTriggersFromConfig()
 
 	return m
 }
 
-// ConfigSpec returns the config specification for the triggers page.
-func (m *Module) ConfigSpec() config.Spec {
-	return config.Spec{
-		Module:      "triggers",
-		Title:       "Triggers",
-		ReadOnly:    true,
-		Description: triggersDescription(),
-		ExtraContent: func(ctx context.Context) templ.Component {
-			rows, err := m.loadAll()
-			if err != nil {
-				slog.Error("failed to load triggers for config page", "error", err)
-				rows = nil
-			}
-			tables, err := availableTables(m.db)
-			if err != nil {
-				slog.Error("failed to load tables for triggers page", "error", err)
-				tables = nil
-			}
-			return renderTriggersCard(rows, tables)
-		},
-		Order: 5,
+// AttachWorkers registers a background worker that watches for config changes
+// and recreates SQLite triggers when the config version changes.
+func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
+	mgr.Add(engine.Poll(5*time.Second, func(ctx context.Context) bool {
+		if m.configChanged(ctx) {
+			m.syncTriggersFromConfig()
+		}
+		return false
+	}))
+}
+
+// configChanged checks if the database config version differs from the loaded version.
+func (m *Module) configChanged(ctx context.Context) bool {
+	var version int64
+	err := m.db.QueryRowContext(ctx,
+		`SELECT version FROM triggers_config ORDER BY version DESC LIMIT 1`).Scan(&version)
+	if err != nil {
+		return false
+	}
+	return version != m.configVersion
+}
+
+// syncTriggersFromConfig loads the current config and recreates all SQLite triggers.
+func (m *Module) syncTriggersFromConfig() {
+	row := m.db.QueryRow(`SELECT version, triggers_json FROM triggers_config ORDER BY version DESC LIMIT 1`)
+
+	var version int64
+	var triggersJSON string
+	err := row.Scan(&version, &triggersJSON)
+	if err == sql.ErrNoRows {
+		return
+	}
+	if err != nil {
+		slog.Error("failed to load triggers config", "error", err)
+		return
+	}
+
+	m.configVersion = version
+
+	var triggers []TriggerItem
+	if err := json.Unmarshal([]byte(triggersJSON), &triggers); err != nil {
+		slog.Error("failed to parse triggers JSON", "error", err)
+		return
+	}
+
+	// Drop all existing user triggers first.
+	m.dropAllUserTriggers()
+
+	// Create triggers for enabled items.
+	for i, tr := range triggers {
+		if !tr.Enabled || tr.TriggerTable == "" || tr.TriggerOp == "" || tr.ActionSQL == "" {
+			continue
+		}
+		id := int64(i + 1)
+		trigSQL, err := buildTriggerSQL(id, tr.TriggerTable, tr.TriggerOp, tr.WhenClause, tr.ActionSQL)
+		if err != nil {
+			slog.Error("failed to build trigger SQL", "error", err, "name", tr.Name)
+			continue
+		}
+		if _, err := m.db.Exec(trigSQL); err != nil {
+			slog.Error("failed to create trigger", "error", err, "name", tr.Name)
+		}
 	}
 }
 
-// AttachRoutes registers the trigger CRUD and helper API routes.
-func (m *Module) AttachRoutes(router *engine.Router) {
-	router.HandleFunc("POST /admin/triggers/new", router.WithLeadership(m.handleCreate))
-	router.HandleFunc("POST /admin/triggers/{id}/edit", router.WithLeadership(m.handleUpdate))
-	router.HandleFunc("POST /admin/triggers/{id}/delete", router.WithLeadership(m.handleDelete))
-	router.HandleFunc("GET /admin/triggers/columns", router.WithLeadership(m.handleTableColumns))
+// dropAllUserTriggers drops all SQLite triggers with the user_trigger_ prefix.
+func (m *Module) dropAllUserTriggers() {
+	rows, err := m.db.Query("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'user_trigger_%'")
+	if err != nil {
+		slog.Error("failed to list user triggers", "error", err)
+		return
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if rows.Scan(&name) == nil {
+			names = append(names, name)
+		}
+	}
+	for _, name := range names {
+		m.db.Exec(fmt.Sprintf("DROP TRIGGER IF EXISTS %s", name))
+	}
+}
+
+// migrateToConfigTable migrates data from the old triggers table to triggers_config.
+// This runs once; subsequent starts find triggers_config populated and skip.
+func (m *Module) migrateToConfigTable() {
+	// Check if triggers_config already has data.
+	var configCount int
+	if err := m.db.QueryRow("SELECT COUNT(*) FROM triggers_config").Scan(&configCount); err != nil {
+		slog.Error("failed to count triggers_config", "error", err)
+		return
+	}
+	if configCount > 0 {
+		return // Already migrated.
+	}
+
+	// Load all rows from the old triggers table.
+	rows, err := m.db.Query("SELECT name, enabled, trigger_table, trigger_op, when_clause, action_sql FROM triggers ORDER BY id")
+	if err != nil {
+		slog.Error("failed to load triggers for config migration", "error", err)
+		return
+	}
+	defer rows.Close()
+
+	var items []TriggerItem
+	for rows.Next() {
+		var item TriggerItem
+		var enabled int
+		if err := rows.Scan(&item.Name, &enabled, &item.TriggerTable, &item.TriggerOp, &item.WhenClause, &item.ActionSQL); err != nil {
+			slog.Error("failed to scan trigger for config migration", "error", err)
+			continue
+		}
+		item.Enabled = enabled == 1
+		items = append(items, item)
+	}
+
+	if len(items) == 0 {
+		return
+	}
+
+	jsonBytes, err := json.Marshal(items)
+	if err != nil {
+		slog.Error("failed to marshal triggers for config migration", "error", err)
+		return
+	}
+
+	_, err = m.db.Exec("INSERT INTO triggers_config (triggers_json) VALUES (?)", string(jsonBytes))
+	if err != nil {
+		slog.Error("failed to insert triggers config", "error", err)
+		return
+	}
+
+	slog.Info("migrated triggers to config table", "count", len(items))
 }
 
 // seedDefaults inserts the default member_events triggers if the triggers
@@ -92,12 +209,6 @@ func (m *Module) seedDefaults() {
 	if count > 0 {
 		return // Already have triggers, nothing to seed.
 	}
-
-	// Check whether the old hardcoded triggers are present (they will be
-	// until the members schema.sql edit removes them on next startup).
-	// We seed defaults regardless — if the hardcoded ones still exist,
-	// we'll name ours differently and they'll coexist until the old ones
-	// are dropped by the schema change.
 
 	defaults := []triggerRow{
 		{

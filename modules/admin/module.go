@@ -517,7 +517,7 @@ func (m *Module) renderGenericConfig(w http.ResponseWriter, r *http.Request, spe
 	events := m.loadModuleEvents(r.Context(), spec.Module)
 
 	w.Header().Set("Content-Type", "text/html")
-	renderGenericConfigPage(m.nav, spec, cfg, events, m.getConfigSections(), saved, errMsg).Render(r.Context(), w)
+	renderGenericConfigPage(m.nav, spec, cfg, events, m.getConfigSections(), m.getDevSections(), saved, errMsg).Render(r.Context(), w)
 }
 
 // loadModuleEvents loads recent events for a module.
@@ -555,7 +555,7 @@ func (m *Module) loadModuleEvents(ctx context.Context, module string) []*config.
 }
 
 // getConfigSections returns the list of config sections for the sidebar,
-// built entirely from the config registry.
+// built entirely from the config registry. DevPage specs are excluded.
 func (m *Module) getConfigSections() []*configSection {
 	if m.configRegistry == nil {
 		return nil
@@ -563,6 +563,9 @@ func (m *Module) getConfigSections() []*configSection {
 
 	var sections []*configSection
 	for _, spec := range m.configRegistry.List() {
+		if spec.DevPage {
+			continue
+		}
 		sections = append(sections, &configSection{
 			Name: spec.Title,
 			Path: "/admin/config/" + spec.Module,
@@ -571,10 +574,29 @@ func (m *Module) getConfigSections() []*configSection {
 	return sections
 }
 
+// getDevSections returns the list of dev/debug sections for the sidebar,
+// built from DevPage specs in the config registry plus hardcoded entries.
+func (m *Module) getDevSections() []*configSection {
+	sections := []*configSection{
+		{Name: "DB Console", Path: "/admin/config/dev/db"},
+	}
+	if m.configRegistry != nil {
+		for _, spec := range m.configRegistry.List() {
+			if spec.DevPage {
+				sections = append(sections, &configSection{
+					Name: spec.Title,
+					Path: "/admin/config/" + spec.Module,
+				})
+			}
+		}
+	}
+	return sections
+}
+
 // handleDBConsole renders the DB Console page.
 func (m *Module) handleDBConsole(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
-	renderDBConsolePage(m.nav, m.getConfigSections(), "", "", nil, nil, 0, false).Render(r.Context(), w)
+	renderDBConsolePage(m.nav, m.getConfigSections(), m.getDevSections(), "", "", nil, nil, 0, false).Render(r.Context(), w)
 }
 
 // handleDBConsoleExec executes a SQL query and renders the results.
@@ -587,6 +609,7 @@ func (m *Module) handleDBConsoleExec(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 	sections := m.getConfigSections()
+	devSections := m.getDevSections()
 
 	// Determine if this is a query that returns rows.
 	upper := strings.ToUpper(query)
@@ -598,14 +621,14 @@ func (m *Module) handleDBConsoleExec(w http.ResponseWriter, r *http.Request) {
 	if isSelect {
 		rows, err := m.db.QueryContext(r.Context(), query)
 		if err != nil {
-			renderDBConsolePage(m.nav, sections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
+			renderDBConsolePage(m.nav, sections, devSections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
 			return
 		}
 		defer rows.Close()
 
 		cols, err := rows.Columns()
 		if err != nil {
-			renderDBConsolePage(m.nav, sections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
+			renderDBConsolePage(m.nav, sections, devSections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
 			return
 		}
 
@@ -617,7 +640,7 @@ func (m *Module) handleDBConsoleExec(w http.ResponseWriter, r *http.Request) {
 				ptrs[i] = &vals[i]
 			}
 			if err := rows.Scan(ptrs...); err != nil {
-				renderDBConsolePage(m.nav, sections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
+				renderDBConsolePage(m.nav, sections, devSections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
 				return
 			}
 			row := make([]string, len(vals))
@@ -631,14 +654,14 @@ func (m *Module) handleDBConsoleExec(w http.ResponseWriter, r *http.Request) {
 			resultRows = append(resultRows, row)
 		}
 
-		renderDBConsolePage(m.nav, sections, query, "", cols, resultRows, 0, true).Render(r.Context(), w)
+		renderDBConsolePage(m.nav, sections, devSections, query, "", cols, resultRows, 0, true).Render(r.Context(), w)
 	} else {
 		result, err := m.db.ExecContext(r.Context(), query)
 		if err != nil {
-			renderDBConsolePage(m.nav, sections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
+			renderDBConsolePage(m.nav, sections, devSections, query, err.Error(), nil, nil, 0, true).Render(r.Context(), w)
 			return
 		}
 		affected, _ := result.RowsAffected()
-		renderDBConsolePage(m.nav, sections, query, "", nil, nil, affected, true).Render(r.Context(), w)
+		renderDBConsolePage(m.nav, sections, devSections, query, "", nil, nil, affected, true).Render(r.Context(), w)
 	}
 }
