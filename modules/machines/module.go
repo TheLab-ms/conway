@@ -5,7 +5,6 @@ package machines
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/TheLab-ms/conway/modules/machines/bambu"
 )
 
@@ -48,13 +48,6 @@ DROP TRIGGER IF EXISTS bambu_print_failed;
 
 var discordHandleRegex = regexp.MustCompile(`@([a-zA-Z0-9_.]+)`)
 
-type printerConfig struct {
-	Name         string `json:"name"`
-	Host         string `json:"host"`
-	AccessCode   string `json:"access_code"`
-	SerialNumber string `json:"serial_number"`
-}
-
 type PrinterStatus struct {
 	bambu.PrinterData
 
@@ -74,11 +67,12 @@ func (p PrinterStatus) OwnerDiscordHandle() string {
 }
 
 type Module struct {
-	db          *sql.DB
-	eventLogger *engine.EventLogger
+	db           *sql.DB
+	eventLogger  *engine.EventLogger
+	configLoader *config.Loader[Config]
 
 	printers     []*bambu.Printer
-	configs      []*printerConfig
+	configs      []PrinterConfig
 	serialToName map[string]string
 
 	streams map[string]*engine.StreamMux
@@ -87,7 +81,7 @@ type Module struct {
 	pollInterval time.Duration
 
 	// configVersion tracks the current loaded config version to detect changes
-	configVersion int64
+	configVersion int
 }
 
 func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
@@ -105,10 +99,13 @@ func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
 		pollInterval: time.Second * 5, // default
 	}
 
-	// Load and apply config from database
-	m.reloadConfig(context.Background())
-
 	return m
+}
+
+// SetConfigLoader sets the typed config loader and performs the initial config load.
+func (m *Module) SetConfigLoader(store *config.Store) {
+	m.configLoader = config.NewLoader[Config](store, "bambu")
+	m.reloadConfig(context.Background())
 }
 
 // savePrinterState upserts a printer's state to the database.
@@ -342,35 +339,23 @@ func (m *Module) clearStopRequest(ctx context.Context, serial string) {
 
 // configChanged checks if the database config version differs from the loaded version.
 func (m *Module) configChanged(ctx context.Context) bool {
-	if m.db == nil {
+	if m.configLoader == nil {
 		return false
 	}
-	var version int64
-	err := m.db.QueryRowContext(ctx,
-		`SELECT version FROM bambu_config ORDER BY version DESC LIMIT 1`).Scan(&version)
+	_, version, err := m.configLoader.LoadWithVersion(ctx)
 	if err != nil {
 		return false
 	}
 	return version != m.configVersion
 }
 
-// reloadConfig loads the configuration from database and rebuilds printer connections.
+// reloadConfig loads the configuration and rebuilds printer connections.
 func (m *Module) reloadConfig(ctx context.Context) {
-	if m.db == nil {
+	if m.configLoader == nil {
 		return
 	}
 
-	row := m.db.QueryRowContext(ctx,
-		`SELECT version, printers_json, COALESCE(poll_interval_seconds, 5)
-		 FROM bambu_config ORDER BY version DESC LIMIT 1`)
-
-	var version int64
-	var printersJSON string
-	var pollIntervalSec int
-	err := row.Scan(&version, &printersJSON, &pollIntervalSec)
-	if err == sql.ErrNoRows {
-		return // No config
-	}
+	cfg, version, err := m.configLoader.LoadWithVersion(ctx)
 	if err != nil {
 		slog.Error("failed to load Bambu config", "error", err)
 		return
@@ -378,15 +363,9 @@ func (m *Module) reloadConfig(ctx context.Context) {
 
 	m.configVersion = version
 
-	var configs []*printerConfig
-	if err := json.Unmarshal([]byte(printersJSON), &configs); err != nil {
-		slog.Error("failed to parse Bambu printers JSON", "error", err)
-		return
-	}
-
 	// Apply poll interval
-	if pollIntervalSec >= 1 {
-		m.pollInterval = time.Duration(pollIntervalSec) * time.Second
+	if cfg.PollIntervalSeconds >= 1 {
+		m.pollInterval = time.Duration(cfg.PollIntervalSeconds) * time.Second
 	}
 
 	// Disconnect old printer MQTT connections before rebuilding
@@ -395,9 +374,9 @@ func (m *Module) reloadConfig(ctx context.Context) {
 	}
 
 	// Build set of new serial numbers to detect removed printers
-	newSerials := make(map[string]struct{}, len(configs))
-	for _, cfg := range configs {
-		newSerials[cfg.SerialNumber] = struct{}{}
+	newSerials := make(map[string]struct{}, len(cfg.Printers))
+	for _, p := range cfg.Printers {
+		newSerials[p.SerialNumber] = struct{}{}
 	}
 
 	// Remove StreamMux instances for printers no longer in config
@@ -409,27 +388,27 @@ func (m *Module) reloadConfig(ctx context.Context) {
 	}
 
 	// Rebuild printer connections
-	m.configs = configs
+	m.configs = cfg.Printers
 	m.serialToName = make(map[string]string)
 	m.printers = nil
 
-	for _, cfg := range configs {
-		m.serialToName[cfg.SerialNumber] = cfg.Name
+	for _, p := range cfg.Printers {
+		m.serialToName[p.SerialNumber] = p.Name
 		printer := bambu.NewPrinter(&bambu.PrinterConfig{
-			Host:         cfg.Host,
-			AccessCode:   cfg.AccessCode,
-			SerialNumber: cfg.SerialNumber,
+			Host:         p.Host,
+			AccessCode:   p.AccessCode,
+			SerialNumber: p.SerialNumber,
 		})
 		m.printers = append(m.printers, printer)
 		// Only create stream mux if it doesn't exist
-		if _, exists := m.streams[cfg.SerialNumber]; !exists {
-			m.streams[cfg.SerialNumber] = engine.NewStreamMux(func(ctx context.Context) (io.ReadCloser, error) {
+		if _, exists := m.streams[p.SerialNumber]; !exists {
+			m.streams[p.SerialNumber] = engine.NewStreamMux(func(ctx context.Context) (io.ReadCloser, error) {
 				return printer.CameraStream(ctx)
 			})
 		}
 	}
 
-	slog.Info("loaded Bambu config", "printers", len(configs), "pollInterval", m.pollInterval)
+	slog.Info("loaded Bambu config", "printers", len(cfg.Printers), "pollInterval", m.pollInterval)
 }
 
 // GetConfiguredPrinterCount returns the number of configured printers.

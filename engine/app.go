@@ -16,18 +16,24 @@ type App struct {
 	ProcMgr
 	Router         *Router
 	configRegistry *config.Registry
+	configStore    *config.Store
 }
 
 func NewApp(httpAddr string, router *Router, db *sql.DB) *App {
+	registry := config.NewRegistry(db)
 	a := &App{
 		Router:         router,
-		configRegistry: config.NewRegistry(db),
+		configRegistry: registry,
+		configStore:    config.NewStore(db, registry),
 	}
 	a.ProcMgr.Add(router.Serve(httpAddr))
 	return a
 }
 
 func (a *App) Configs() *config.Registry { return a.configRegistry }
+
+// ConfigStore returns the shared config store for typed config loading.
+func (a *App) ConfigStore() *config.Store { return a.configStore }
 
 func (p *ProcMgr) Run(ctx context.Context) { p.run(ctx) }
 

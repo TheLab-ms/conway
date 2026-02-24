@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
@@ -72,16 +73,6 @@ var endpoint = oauth2.Endpoint{
 	AuthStyle: oauth2.AuthStyleInParams,
 }
 
-// discordConfig holds Discord-related configuration from the database.
-type discordConfig struct {
-	clientID          string
-	clientSecret      string
-	botToken          string
-	guildID           string
-	roleID            string
-	syncIntervalHours int
-}
-
 // LoginCompleteFunc is called by the discord module to finish a login flow.
 // It receives the member ID and the callback URI to redirect to after login.
 type LoginCompleteFunc func(w http.ResponseWriter, r *http.Request, memberID int64, callbackURI string)
@@ -98,6 +89,7 @@ type Module struct {
 	eventLogger    *engine.EventLogger
 	loginComplete  LoginCompleteFunc
 	signupConfirm  SignupConfirmFunc
+	configLoader   *config.Loader[Config]
 }
 
 func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine.EventLogger) *Module {
@@ -141,26 +133,22 @@ func (m *Module) SetSignupConfirm(f SignupConfirmFunc) {
 	m.signupConfirm = f
 }
 
-// loadConfig loads the latest Discord configuration from the database.
-func (m *Module) loadConfig(ctx context.Context) (*discordConfig, error) {
-	if m.db == nil {
-		return &discordConfig{syncIntervalHours: 24}, nil
-	}
+// SetConfigLoader sets the typed config loader for this module.
+func (m *Module) SetConfigLoader(store *config.Store) {
+	m.configLoader = config.NewLoader[Config](store, "discord")
+}
 
-	row := m.db.QueryRowContext(ctx,
-		`SELECT client_id, client_secret, bot_token, guild_id, role_id, COALESCE(sync_interval_hours, 24)
-		 FROM discord_config ORDER BY version DESC LIMIT 1`)
-
-	cfg := &discordConfig{}
-	err := row.Scan(&cfg.clientID, &cfg.clientSecret, &cfg.botToken, &cfg.guildID, &cfg.roleID, &cfg.syncIntervalHours)
-	if err == sql.ErrNoRows {
-		return &discordConfig{syncIntervalHours: 24}, nil
+// loadConfig loads the latest Discord configuration.
+func (m *Module) loadConfig(ctx context.Context) (*Config, error) {
+	if m.configLoader == nil {
+		return &Config{SyncIntervalHours: 24}, nil
 	}
+	cfg, err := m.configLoader.Load(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading discord config: %w", err)
 	}
-	if cfg.syncIntervalHours < 1 {
-		cfg.syncIntervalHours = 24
+	if cfg.SyncIntervalHours < 1 {
+		cfg.SyncIntervalHours = 24
 	}
 	return cfg, nil
 }
@@ -171,15 +159,15 @@ func (m *Module) getOAuthConfig(ctx context.Context) (*oauth2.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.clientID == "" || cfg.clientSecret == "" {
+	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return nil, fmt.Errorf("discord OAuth is not configured")
 	}
 	return &oauth2.Config{
 		Endpoint:     endpoint,
 		Scopes:       []string{"identify", "email"},
 		RedirectURL:  fmt.Sprintf("%s/discord/callback", m.self.String()),
-		ClientID:     cfg.clientID,
-		ClientSecret: cfg.clientSecret,
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
 	}, nil
 }
 
@@ -189,11 +177,11 @@ func (m *Module) getAPIClient(ctx context.Context) (*discordAPIClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.botToken == "" || cfg.guildID == "" {
+	if cfg.BotToken == "" || cfg.GuildID == "" {
 		return nil, fmt.Errorf("discord bot is not configured")
 	}
 	authConf, _ := m.getOAuthConfig(ctx) // May be nil if OAuth not configured
-	return newDiscordAPIClient(cfg.botToken, cfg.guildID, m.httpClient, authConf), nil
+	return newDiscordAPIClient(cfg.BotToken, cfg.GuildID, m.httpClient, authConf), nil
 }
 
 // getRoleID gets the current role ID from configuration.
@@ -202,7 +190,7 @@ func (m *Module) getRoleID(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return cfg.roleID, nil
+	return cfg.RoleID, nil
 }
 
 // IsLoginEnabled reports whether Discord OAuth login is available.
@@ -211,7 +199,7 @@ func (m *Module) IsLoginEnabled(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	return cfg.clientID != "" && cfg.clientSecret != "" && m.loginComplete != nil
+	return cfg.ClientID != "" && cfg.ClientSecret != "" && m.loginComplete != nil
 }
 
 // getLoginOAuthConfig builds an OAuth2 config for the login flow
@@ -221,15 +209,15 @@ func (m *Module) getLoginOAuthConfig(ctx context.Context) (*oauth2.Config, error
 	if err != nil {
 		return nil, err
 	}
-	if cfg.clientID == "" || cfg.clientSecret == "" {
+	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return nil, fmt.Errorf("discord OAuth is not configured")
 	}
 	return &oauth2.Config{
 		Endpoint:     endpoint,
 		Scopes:       []string{"identify", "email"},
 		RedirectURL:  fmt.Sprintf("%s/login/discord/callback", m.self.String()),
-		ClientID:     cfg.clientID,
-		ClientSecret: cfg.clientSecret,
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
 	}, nil
 }
 
@@ -457,11 +445,11 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
 	// Check if role sync is configured
 	cfg, err := m.loadConfig(ctx)
-	if err != nil || cfg.botToken == "" || cfg.guildID == "" || cfg.roleID == "" {
+	if err != nil || cfg.BotToken == "" || cfg.GuildID == "" || cfg.RoleID == "" {
 		return false
 	}
 
-	intervalSeconds := cfg.syncIntervalHours * 3600
+	intervalSeconds := cfg.SyncIntervalHours * 3600
 
 	result, err := m.db.ExecContext(ctx, `UPDATE members SET discord_last_synced = NULL WHERE discord_user_id IS NOT NULL AND (discord_last_synced IS NULL OR discord_last_synced < unixepoch() - ?) AND id IN (SELECT id FROM members WHERE discord_user_id IS NOT NULL AND (discord_last_synced IS NULL OR discord_last_synced < unixepoch() - ?) ORDER BY id ASC LIMIT 10)`, intervalSeconds, intervalSeconds)
 	if err != nil {
@@ -479,7 +467,7 @@ func (m *Module) scheduleFullReconciliation(ctx context.Context) bool {
 func (m *Module) GetItem(ctx context.Context) (item *syncItem, err error) {
 	// Check if role sync is configured
 	cfg, err := m.loadConfig(ctx)
-	if err != nil || cfg.botToken == "" || cfg.guildID == "" || cfg.roleID == "" {
+	if err != nil || cfg.BotToken == "" || cfg.GuildID == "" || cfg.RoleID == "" {
 		return nil, sql.ErrNoRows // No work to do
 	}
 

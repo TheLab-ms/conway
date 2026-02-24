@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
 )
@@ -38,6 +39,7 @@ type Module struct {
 	httpClient     *http.Client
 	loginComplete  LoginCompleteFunc
 	signupConfirm  SignupConfirmFunc
+	configLoader   *config.Loader[Config]
 }
 
 func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer) *Module {
@@ -67,44 +69,47 @@ func (m *Module) SetSignupConfirm(f SignupConfirmFunc) {
 	m.signupConfirm = f
 }
 
-// loadConfig loads the latest Google configuration from the database.
-func (m *Module) loadConfig(ctx context.Context) (clientID, clientSecret string, err error) {
-	if m.db == nil {
-		return "", "", nil
+// SetConfigLoader sets the typed config loader for this module.
+func (m *Module) SetConfigLoader(store *config.Store) {
+	m.configLoader = config.NewLoader[Config](store, "google")
+}
+
+// loadConfig loads the latest Google configuration.
+func (m *Module) loadConfig(ctx context.Context) (*Config, error) {
+	if m.configLoader == nil {
+		return &Config{}, nil
 	}
-	row := m.db.QueryRowContext(ctx,
-		`SELECT client_id, client_secret FROM google_config ORDER BY version DESC LIMIT 1`)
-	err = row.Scan(&clientID, &clientSecret)
-	if err == sql.ErrNoRows {
-		return "", "", nil
+	cfg, err := m.configLoader.Load(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading google config: %w", err)
 	}
-	return clientID, clientSecret, err
+	return cfg, nil
 }
 
 // IsLoginEnabled reports whether Google OAuth login is available.
 func (m *Module) IsLoginEnabled(ctx context.Context) bool {
-	clientID, clientSecret, err := m.loadConfig(ctx)
+	cfg, err := m.loadConfig(ctx)
 	if err != nil {
 		return false
 	}
-	return clientID != "" && clientSecret != "" && m.loginComplete != nil
+	return cfg.ClientID != "" && cfg.ClientSecret != "" && m.loginComplete != nil
 }
 
 // getLoginOAuthConfig builds an OAuth2 config for the login flow.
 func (m *Module) getLoginOAuthConfig(ctx context.Context) (*oauth2.Config, error) {
-	clientID, clientSecret, err := m.loadConfig(ctx)
+	cfg, err := m.loadConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if clientID == "" || clientSecret == "" {
+	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return nil, fmt.Errorf("google OAuth is not configured")
 	}
 	return &oauth2.Config{
 		Endpoint:     endpoint,
 		Scopes:       []string{"openid", "email"},
 		RedirectURL:  fmt.Sprintf("%s/login/google/callback", m.self.String()),
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
 	}, nil
 }
 

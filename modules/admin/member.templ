@@ -331,7 +331,7 @@ func hasNameOverride(m *member) bool {
 templ renderMemberEventRows(events []*memberEvent, memberID int64, page int, hasMore bool) {
 	for _, event := range events {
 		<tr>
-			<td>{ formatEventTime(event.Created) }</td>
+			<td>{ engine.FormatTimeAgo(event.Created, 7*24*time.Hour, "Jan 2, 2006 3:04 PM") }</td>
 			<td><strong>{ event.Event }</strong></td>
 			<td>{ event.Details }</td>
 		</tr>
@@ -343,38 +343,5 @@ templ renderMemberEventRows(events []*memberEvent, memberID int64, page int, has
 				Loading...
 			</td>
 		</tr>
-	}
-}
-
-func formatEventTime(ts time.Time) string {
-	dur := time.Since(ts)
-
-	const minute = time.Minute
-	const hour = time.Hour
-	const day = time.Hour * 24
-
-	switch {
-	case dur < minute:
-		return "just now"
-	case dur < hour:
-		mins := int(dur / minute)
-		if mins == 1 {
-			return "1 minute ago"
-		}
-		return fmt.Sprintf("%d minutes ago", mins)
-	case dur < day:
-		hours := int(dur / hour)
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
-	case dur < day*7:
-		days := int(dur / day)
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
-	default:
-		return ts.Format("Jan 2, 2006 3:04 PM")
 	}
 }

@@ -2,7 +2,8 @@ package fobapi
 
 import (
 	"fmt"
-	"time"
+
+	"github.com/TheLab-ms/conway/engine"
 )
 
 templ configDescription() {
@@ -51,7 +52,7 @@ templ renderControllersCard(clients []*fobClient) {
 										<button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">Save</button>
 									</form>
 								</td>
-								<td class="text-muted text-nowrap small">{ formatLastSeen(client.LastSeen.Time) }</td>
+								<td class="text-muted text-nowrap small">{ engine.FormatTimeAgo(client.LastSeen.Time, 0, "") }</td>
 								</tr>
 							}
 						</tbody>
@@ -60,32 +61,6 @@ templ renderControllersCard(clients []*fobClient) {
 			}
 		</div>
 	</div>
-}
-
-func formatLastSeen(ts time.Time) string {
-	dur := time.Since(ts)
-	switch {
-	case dur < time.Minute:
-		return "just now"
-	case dur < time.Hour:
-		mins := int(dur / time.Minute)
-		if mins == 1 {
-			return "1 min ago"
-		}
-		return fmt.Sprintf("%d mins ago", mins)
-	case dur < 24*time.Hour:
-		hours := int(dur / time.Hour)
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
-	default:
-		days := int(dur / (24 * time.Hour))
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
-	}
 }
 
 templ configInfoContent(selfURL string) {

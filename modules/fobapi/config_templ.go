@@ -10,7 +10,8 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"fmt"
-	"time"
+
+	"github.com/TheLab-ms/conway/engine"
 )
 
 func configDescription() templ.Component {
@@ -70,7 +71,7 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(clients)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 22, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 23, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -98,7 +99,7 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(client.IPAddress)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 45, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 46, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -111,7 +112,7 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 				var templ_7745c5c3_Var5 templ.SafeURL
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/doors/%d", client.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 47, Col: 90}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 48, Col: 90}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -124,7 +125,7 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(client.DoorName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 49, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 50, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -135,9 +136,9 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var7 string
-				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(formatLastSeen(client.LastSeen.Time))
+				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(engine.FormatTimeAgo(client.LastSeen.Time, 0, ""))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 54, Col: 87}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 55, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -159,32 +160,6 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 		}
 		return nil
 	})
-}
-
-func formatLastSeen(ts time.Time) string {
-	dur := time.Since(ts)
-	switch {
-	case dur < time.Minute:
-		return "just now"
-	case dur < time.Hour:
-		mins := int(dur / time.Minute)
-		if mins == 1 {
-			return "1 min ago"
-		}
-		return fmt.Sprintf("%d mins ago", mins)
-	case dur < 24*time.Hour:
-		hours := int(dur / time.Hour)
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
-	default:
-		days := int(dur / (24 * time.Hour))
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
-	}
 }
 
 func configInfoContent(selfURL string) templ.Component {
@@ -215,7 +190,7 @@ func configInfoContent(selfURL string) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 95, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 70, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {

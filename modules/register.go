@@ -79,17 +79,20 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	discordMod := discord.New(opts.Database, opts.Self, opts.DiscordIssuer, engine.NewEventLogger(opts.Database, "discord"))
 	discordMod.SetLoginCompleter(authModule.CompleteLoginForMember)
 	discordMod.SetSignupConfirm(authModule.RenderSignupConfirmation)
+	discordMod.SetConfigLoader(a.ConfigStore())
 	authModule.DiscordLoginEnabled = discordMod.IsLoginEnabled
 	a.Add(discordMod)
 
 	machinesMod := machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu"))
 
 	a.Add(machinesMod)
+	machinesMod.SetConfigLoader(a.ConfigStore())
 
 	// Google OAuth login module
 	googleMod := google.New(opts.Database, opts.Self, opts.GoogleIssuer)
 	googleMod.SetLoginCompleter(authModule.CompleteLoginForMember)
 	googleMod.SetSignupConfirm(authModule.RenderSignupConfirmation)
+	googleMod.SetConfigLoader(a.ConfigStore())
 	authModule.GoogleLoginEnabled = googleMod.IsLoginEnabled
 	a.Add(googleMod)
 
@@ -101,6 +104,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	// Admin module added last so it can access the fully-populated config registry
 	adminMod := admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin"))
 	adminMod.SetConfigRegistry(a.Configs())
+	adminMod.SetConfigStore(a.ConfigStore())
 	a.Add(adminMod)
 
 	return authModule

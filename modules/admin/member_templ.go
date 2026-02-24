@@ -759,9 +759,9 @@ func renderMemberEventRows(events []*memberEvent, memberID int64, page int, hasM
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var26 string
-			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(formatEventTime(event.Created))
+			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(engine.FormatTimeAgo(event.Created, 7*24*time.Hour, "Jan 2, 2006 3:04 PM"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 334, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 334, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
@@ -819,39 +819,6 @@ func renderMemberEventRows(events []*memberEvent, memberID int64, page int, hasM
 		}
 		return nil
 	})
-}
-
-func formatEventTime(ts time.Time) string {
-	dur := time.Since(ts)
-
-	const minute = time.Minute
-	const hour = time.Hour
-	const day = time.Hour * 24
-
-	switch {
-	case dur < minute:
-		return "just now"
-	case dur < hour:
-		mins := int(dur / minute)
-		if mins == 1 {
-			return "1 minute ago"
-		}
-		return fmt.Sprintf("%d minutes ago", mins)
-	case dur < day:
-		hours := int(dur / hour)
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
-	case dur < day*7:
-		days := int(dur / day)
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
-	default:
-		return ts.Format("Jan 2, 2006 3:04 PM")
-	}
 }
 
 var _ = templruntime.GeneratedTemplate

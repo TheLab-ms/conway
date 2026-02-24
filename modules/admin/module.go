@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -52,9 +53,80 @@ func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer, eventLogger *e
 // This should be called after all modules are registered with the App.
 func (m *Module) SetConfigRegistry(registry *config.Registry) {
 	m.configRegistry = registry
-	if registry != nil {
+	if m.configStore == nil && registry != nil {
 		m.configStore = config.NewStore(m.db, registry)
 	}
+}
+
+// SetConfigStore sets the config store for dynamic configuration.
+func (m *Module) SetConfigStore(store *config.Store) {
+	m.configStore = store
+}
+
+// queryListPage executes a paginated list query for the given view.
+// page=0 means first page (used by POST search), page>=1 for subsequent pages.
+// Returns rows, hasMore, moreURL, colCount, and any error.
+func (m *Module) queryListPage(r *http.Request, view listView, page int64) ([]*tableRow, bool, string, int, error) {
+	const limit = 20
+
+	txn, err := m.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, false, "", 0, err
+	}
+	defer txn.Rollback()
+
+	q, rowCountQuery, args := view.BuildQuery(r)
+
+	var rowCount int64
+	if err := txn.QueryRowContext(r.Context(), rowCountQuery, args...).Scan(&rowCount); err != nil {
+		return nil, false, "", 0, err
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	args = append(args, sql.Named("limit", limit), sql.Named("offset", offset))
+	results, err := txn.QueryContext(r.Context(), q, args...)
+	if err != nil {
+		return nil, false, "", 0, err
+	}
+	defer results.Close()
+
+	rows, err := view.BuildRows(results)
+	if err != nil {
+		return nil, false, "", 0, err
+	}
+
+	hasMore := rowCount > offset+limit
+	moreURL := ""
+	if hasMore {
+		// Extract search param from POST form or GET query
+		search := r.FormValue("search")
+		if search == "" {
+			search = r.URL.Query().Get("search")
+		}
+		moreURL = fmt.Sprintf("/admin/more%s?page=%d&search=%s", view.RelPath, page+1, url.QueryEscape(search))
+		if view.FilterParam != "" {
+			// Collect filter values from POST form or GET query
+			r.ParseForm()
+			filters := r.Form[view.FilterParam]
+			if len(filters) == 0 {
+				filters = r.URL.Query()[view.FilterParam]
+			}
+			for _, f := range filters {
+				moreURL += "&" + view.FilterParam + "=" + url.QueryEscape(f)
+			}
+		}
+	}
+
+	colCount := len(view.Rows)
+	if colCount == 0 {
+		colCount = 1
+	}
+
+	return rows, hasMore, moreURL, colCount, nil
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -65,110 +137,23 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 		}))
 
 		router.HandleFunc("POST /admin/search"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
-			const limit = 20
-			txn, err := m.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+			rows, hasMore, moreURL, colCount, err := m.queryListPage(r, view, 0)
 			if engine.HandleError(w, err) {
 				return
 			}
-			defer txn.Rollback()
-
-			q, rowCountQuery, args := view.BuildQuery(r)
-
-			// Get the row count
-			var rowCount int64
-			err = txn.QueryRowContext(r.Context(), rowCountQuery, args...).Scan(&rowCount)
-			if engine.HandleError(w, err) {
-				return
-			}
-
-			// Query first page
-			args = append(args, sql.Named("limit", limit), sql.Named("offset", 0))
-			results, err := txn.QueryContext(r.Context(), q, args...)
-			if engine.HandleError(w, err) {
-				return
-			}
-			defer results.Close()
-
-			rows, err := view.BuildRows(results)
-			if engine.HandleError(w, err) {
-				return
-			}
-
-			hasMore := rowCount > limit
-			moreURL := ""
-			if hasMore {
-				search := r.PostFormValue("search")
-				moreURL = fmt.Sprintf("/admin/more%s?page=2&search=%s", view.RelPath, url.QueryEscape(search))
-				// Include any filter params in the moreURL
-				r.ParseForm()
-				if view.FilterParam != "" {
-					for _, f := range r.Form[view.FilterParam] {
-						moreURL += "&" + view.FilterParam + "=" + url.QueryEscape(f)
-					}
-				}
-			}
-			colCount := len(view.Rows)
-			if colCount == 0 {
-				colCount = 1
-			}
-
 			w.Header().Set("Content-Type", "text/html")
 			renderAdminListElements(view.Rows, rows, moreURL, hasMore, colCount).Render(r.Context(), w)
 		}))
 
 		router.HandleFunc("GET /admin/more"+view.RelPath, router.WithLeadership(func(w http.ResponseWriter, r *http.Request) {
-			const limit = 20
-			txn, err := m.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
-			if engine.HandleError(w, err) {
-				return
-			}
-			defer txn.Rollback()
-
-			q, rowCountQuery, args := view.BuildQuery(r)
-
-			// Get the row count
-			var rowCount int64
-			err = txn.QueryRowContext(r.Context(), rowCountQuery, args...).Scan(&rowCount)
-			if engine.HandleError(w, err) {
-				return
-			}
-
 			page, _ := strconv.ParseInt(r.URL.Query().Get("page"), 10, 0)
 			if page < 1 {
 				page = 1
 			}
-			offset := (page - 1) * limit
-
-			// Query
-			args = append(args, sql.Named("limit", limit), sql.Named("offset", offset))
-			results, err := txn.QueryContext(r.Context(), q, args...)
+			rows, hasMore, moreURL, colCount, err := m.queryListPage(r, view, page)
 			if engine.HandleError(w, err) {
 				return
 			}
-			defer results.Close()
-
-			rows, err := view.BuildRows(results)
-			if engine.HandleError(w, err) {
-				return
-			}
-
-			hasMore := rowCount > offset+limit
-			moreURL := ""
-			if hasMore {
-				search := r.URL.Query().Get("search")
-				moreURL = fmt.Sprintf("/admin/more%s?page=%d&search=%s", view.RelPath, page+1, url.QueryEscape(search))
-				// Include any filter params in the moreURL
-				if view.FilterParam != "" {
-					for _, f := range r.URL.Query()[view.FilterParam] {
-						moreURL += "&" + view.FilterParam + "=" + url.QueryEscape(f)
-					}
-				}
-			}
-			colCount := len(view.Rows)
-			if colCount == 0 {
-				colCount = 1
-			}
-
 			w.Header().Set("Content-Type", "text/html")
 			renderAdminListRows(rows, moreURL, hasMore, colCount).Render(r.Context(), w)
 		}))
@@ -443,30 +428,27 @@ func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request
 		selected = "1440h" // default to 60 days
 	}
 
-	// Load chart configuration from the metrics config table
+	// Load chart configuration from the metrics config
 	var configuredCharts []metricsChart
 	if m.configStore != nil {
 		cfg, _, loadErr := m.configStore.Load(r.Context(), "metrics")
 		if loadErr == nil && cfg != nil {
-			// Use reflection-free approach: query the JSON directly
-			var chartsJSON string
-			qErr := m.db.QueryRowContext(r.Context(),
-				"SELECT charts_json FROM metrics_config ORDER BY version DESC LIMIT 1").Scan(&chartsJSON)
-			if qErr == nil && chartsJSON != "" && chartsJSON != "[]" {
-				var items []struct {
-					Title  string `json:"title"`
-					Series string `json:"series"`
-					Color  string `json:"color"`
-				}
-				if json.Unmarshal([]byte(chartsJSON), &items) == nil {
-					for _, item := range items {
-						if item.Series != "" {
-							configuredCharts = append(configuredCharts, metricsChart{
-								Title:  item.Title,
-								Series: item.Series,
-								Color:  item.Color,
-							})
-						}
+			// The config store handles JSON array deserialization via setArrayFieldFromDB.
+			// Extract charts using reflection to avoid a direct dependency on the metrics package.
+			cfgVal := reflect.ValueOf(cfg)
+			if cfgVal.Kind() == reflect.Ptr {
+				cfgVal = cfgVal.Elem()
+			}
+			if chartsField := cfgVal.FieldByName("Charts"); chartsField.IsValid() {
+				for i := range chartsField.Len() {
+					item := chartsField.Index(i)
+					series := item.FieldByName("Series").String()
+					if series != "" {
+						configuredCharts = append(configuredCharts, metricsChart{
+							Title:  item.FieldByName("Title").String(),
+							Series: series,
+							Color:  item.FieldByName("Color").String(),
+						})
 					}
 				}
 			}

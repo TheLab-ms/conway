@@ -5,10 +5,24 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
 )
+
+templ configSidebarLinks(configSections []*configSection, category string, activeSection string) {
+	for _, section := range configSections {
+		if section.Category == category {
+			if section.Name == activeSection {
+				<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
+			} else {
+				<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
+			}
+		}
+	}
+}
 
 templ configSidebar(configSections []*configSection, activeSection string, activeDevPage string) {
 	<div class="col-md-3">
@@ -17,15 +31,7 @@ templ configSidebar(configSections []*configSection, activeSection string, activ
 				<h5 class="mb-0">Configuration</h5>
 			</div>
 			<div class="list-group list-group-flush">
-				for _, section := range configSections {
-					if section.Category == "" {
-						if section.Name == activeSection {
-							<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
-						} else {
-							<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
-						}
-					}
-				}
+				@configSidebarLinks(configSections, "", activeSection)
 			</div>
 		</div>
 		<div class="card mt-3">
@@ -33,15 +39,7 @@ templ configSidebar(configSections []*configSection, activeSection string, activ
 				<h5 class="mb-0">Integrations</h5>
 			</div>
 			<div class="list-group list-group-flush">
-				for _, section := range configSections {
-					if section.Category == "Integrations" {
-						if section.Name == activeSection {
-							<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
-						} else {
-							<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
-						}
-					}
-				}
+				@configSidebarLinks(configSections, "Integrations", activeSection)
 			</div>
 		</div>
 		<div class="card mt-3">
@@ -525,7 +523,7 @@ templ renderGenericEventLog(events []*config.Event) {
 					<tbody>
 						for _, event := range events {
 							<tr>
-								<td class="text-nowrap">{ formatEventTime(event.Created) }</td>
+								<td class="text-nowrap">{ engine.FormatTimeAgo(event.Created, 7*24*time.Hour, "Jan 2, 2006 3:04 PM") }</td>
 								<td><span class="badge bg-secondary">{ event.EventType }</span></td>
 								<td>
 									if event.Success {
