@@ -520,7 +520,7 @@ func (m *Module) handleGenericConfigSave(w http.ResponseWriter, r *http.Request)
 func (m *Module) renderGenericConfig(w http.ResponseWriter, r *http.Request, spec *config.ParsedSpec, saved bool, errMsg string) {
 	var cfg any
 
-	// ReadOnly specs (like oauth2, fobapi) have no Type and no database table,
+	// ReadOnly specs (like fobapi) have no Type and no database table,
 	// so skip loading config data for them.
 	if !spec.ReadOnly {
 		var err error

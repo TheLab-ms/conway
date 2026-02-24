@@ -2825,12 +2825,7 @@ func TestAdmin_ReadOnlyConfigPages(t *testing.T) {
 		{
 			name:         "fob_api",
 			path:         "/admin/config/fobapi",
-			expectedText: []string{"Fob API", "/api/fobs", "ETag"},
-		},
-		{
-			name:         "oauth2",
-			path:         "/admin/config/oauth2",
-			expectedText: []string{"OAuth2 Provider", "Discovery", "Authorization Code Flow"},
+			expectedText: []string{"Fob API", "/api/fobs"},
 		},
 	}
 
@@ -2861,7 +2856,7 @@ func TestAdmin_ConfigSidebarNavigation(t *testing.T) {
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
 
-	// Verify all 8 sidebar links are present
+	// Verify all 7 sidebar links are present
 	configPage.ExpectSidebarLink("Waiver", "/admin/config/waiver")
 	configPage.ExpectSidebarLink("Discord", "/admin/config/discord")
 	configPage.ExpectSidebarLink("Google", "/admin/config/google")
@@ -2869,7 +2864,6 @@ func TestAdmin_ConfigSidebarNavigation(t *testing.T) {
 	configPage.ExpectSidebarLink("Bambu", "/admin/config/bambu")
 	configPage.ExpectSidebarLink("Building Access Control API", "/admin/config/fobapi")
 	configPage.ExpectSidebarLink("Triggers", "/admin/config/triggers")
-	configPage.ExpectSidebarLink("OAuth2", "/admin/config/oauth2")
 
 	// Verify active state on current page
 	configPage.ExpectSidebarActiveLink("/admin/config/waiver")
