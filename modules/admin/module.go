@@ -431,8 +431,6 @@ func (m *Module) renderMetricsChart(w http.ResponseWriter, r *http.Request) {
 }
 
 // metricsChart represents a chart to render on the metrics page.
-// If configured via admin settings, it uses the custom title/color.
-// Otherwise it falls back to showing the series name directly.
 type metricsChart struct {
 	Title  string
 	Series string
@@ -443,11 +441,6 @@ func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request
 	selected := r.URL.Query().Get("interval")
 	if selected == "" {
 		selected = "1440h" // default to 60 days
-	}
-	dur, err := time.ParseDuration(selected)
-	if err != nil {
-		engine.ClientError(w, "Invalid Request", "Invalid interval", 400)
-		return
 	}
 
 	// Load chart configuration from the metrics config table
@@ -480,31 +473,8 @@ func (m *Module) renderMetricsPageHandler(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	if len(configuredCharts) > 0 {
-		// Use configured charts
-		w.Header().Set("Content-Type", "text/html")
-		renderMetricsAdminPage(m.nav, configuredCharts, selected).Render(r.Context(), w)
-		return
-	}
-
-	// Fallback: show all available series with default settings
-	rows, err := m.db.QueryContext(r.Context(), `SELECT DISTINCT series FROM metrics WHERE timestamp > strftime('%s', 'now') - ? ORDER BY series`, int64(dur.Seconds()))
-	if engine.HandleError(w, err) {
-		return
-	}
-	defer rows.Close()
-
-	var charts []metricsChart
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			continue
-		}
-		charts = append(charts, metricsChart{Title: name, Series: name})
-	}
-
 	w.Header().Set("Content-Type", "text/html")
-	renderMetricsAdminPage(m.nav, charts, selected).Render(r.Context(), w)
+	renderMetricsAdminPage(m.nav, configuredCharts, selected).Render(r.Context(), w)
 }
 
 // handleGenericConfigPage renders a configuration page for a registered module.

@@ -904,10 +904,17 @@ func TestAdmin_MetricsDashboard(t *testing.T) {
 	env, _, page := setupAdminTest(t)
 	seedMetrics(t, env, "test_series", 10)
 
+	// Configure metrics dashboard to show the test series (no fallback auto-discovery).
+	_, err := env.db.Exec(`DELETE FROM metrics_config`)
+	require.NoError(t, err)
+	_, err = env.db.Exec(`INSERT INTO metrics_config (charts_json) VALUES (?)`,
+		`[{"title":"Test Series","series":"test_series","color":""}]`)
+	require.NoError(t, err)
+
 	metricsPage := NewAdminMetricsPage(t, page, env.baseURL)
 	metricsPage.Navigate()
 
-	err := page.WaitForLoadState()
+	err = page.WaitForLoadState()
 	require.NoError(t, err)
 
 	t.Run("interval_selector", func(t *testing.T) {

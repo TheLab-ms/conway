@@ -25,7 +25,7 @@ func (m *Module) ConfigSpec() config.Spec {
 				FieldName: "Charts",
 				Label:     "Charts",
 				ItemLabel: "Chart",
-				Help:      "Configure which metric series are displayed on the metrics dashboard and how they appear. If no charts are configured, all available series are shown with default settings.",
+				Help:      "Configure which metric series are displayed on the metrics dashboard and how they appear.",
 				KeyField:  "Title",
 			},
 		},
