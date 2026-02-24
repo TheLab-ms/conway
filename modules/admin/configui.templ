@@ -18,10 +18,28 @@ templ configSidebar(configSections []*configSection, activeSection string, activ
 			</div>
 			<div class="list-group list-group-flush">
 				for _, section := range configSections {
-					if section.Name == activeSection {
-						<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
-					} else {
-						<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
+					if section.Category == "" {
+						if section.Name == activeSection {
+							<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
+						} else {
+							<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
+						}
+					}
+				}
+			</div>
+		</div>
+		<div class="card mt-3">
+			<div class="card-header">
+				<h5 class="mb-0">Integrations</h5>
+			</div>
+			<div class="list-group list-group-flush">
+				for _, section := range configSections {
+					if section.Category == "Integrations" {
+						if section.Name == activeSection {
+							<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action active">{ section.Name }</a>
+						} else {
+							<a href={ templ.SafeURL(section.Path) } class="list-group-item list-group-item-action">{ section.Name }</a>
+						}
 					}
 				}
 			</div>

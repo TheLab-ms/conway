@@ -20,7 +20,7 @@ type Config struct {
 func (m *Module) ConfigSpec() config.Spec {
 	return config.Spec{
 		Module:      "bambu",
-		Title:       "Bambu Integration",
+		Title:       "Bambu",
 		Description: configDescription(),
 		Type:        Config{},
 		ArrayFields: []config.ArrayFieldDef{
@@ -38,6 +38,7 @@ func (m *Module) ConfigSpec() config.Spec {
 				Title: "Polling Settings",
 			},
 		},
-		Order: 30,
+		Order:    30,
+		Category: "Integrations",
 	}
 }

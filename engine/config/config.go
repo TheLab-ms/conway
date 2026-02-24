@@ -111,6 +111,10 @@ type Spec struct {
 	// during page rendering so it can fetch dynamic data.
 	ExtraContent func(ctx context.Context) templ.Component
 
+	// Category groups this config into a sidebar section (e.g. "Integrations").
+	// Empty string means the item appears in the default "Configuration" section.
+	Category string
+
 	// Order controls display order in the config sidebar (lower = first).
 	Order int
 

@@ -1,8 +1,9 @@
 package admin
 
 type configSection struct {
-	Name string
-	Path string
+	Name     string
+	Path     string
+	Category string
 }
 
 func secretPlaceholder(hasValue bool) string {

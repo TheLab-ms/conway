@@ -19,7 +19,7 @@ type Config struct {
 func (m *Module) ConfigSpec() config.Spec {
 	return config.Spec{
 		Module:      "stripe",
-		Title:       "Stripe Integration",
+		Title:       "Stripe",
 		Description: configDescription(),
 		Type:        Config{},
 		Sections: []config.SectionDef{
@@ -43,6 +43,7 @@ func (m *Module) ConfigSpec() config.Spec {
 				KeyField:  "Name",
 			},
 		},
-		Order: 20,
+		Order:    20,
+		Category: "Integrations",
 	}
 }

@@ -581,8 +581,9 @@ func (m *Module) getConfigSections() []*configSection {
 	var sections []*configSection
 	for _, spec := range m.configRegistry.List() {
 		sections = append(sections, &configSection{
-			Name: spec.Title,
-			Path: "/admin/config/" + spec.Module,
+			Name:     spec.Title,
+			Path:     "/admin/config/" + spec.Module,
+			Category: spec.Category,
 		})
 	}
 	return sections

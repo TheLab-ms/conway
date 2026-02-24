@@ -12,7 +12,7 @@ type Config struct {
 func (m *Module) ConfigSpec() config.Spec {
 	return config.Spec{
 		Module:      "google",
-		Title:       "Google Login",
+		Title:       "Google",
 		Description: configDescription(),
 		Type:        Config{},
 		Sections: []config.SectionDef{
@@ -22,6 +22,7 @@ func (m *Module) ConfigSpec() config.Spec {
 				Description: oauthSectionDescription(m.self.String()),
 			},
 		},
-		Order: 11,
+		Order:    11,
+		Category: "Integrations",
 	}
 }

@@ -36,7 +36,7 @@ func (c *Config) Validate() error {
 func (m *Module) ConfigSpec() config.Spec {
 	return config.Spec{
 		Module:      "discord",
-		Title:       "Discord Integration",
+		Title:       "Discord",
 		Description: configDescription(),
 		Type:        Config{},
 		Sections: []config.SectionDef{
@@ -55,6 +55,7 @@ func (m *Module) ConfigSpec() config.Spec {
 				Title: "Sync Settings",
 			},
 		},
-		Order: 10,
+		Order:    10,
+		Category: "Integrations",
 	}
 }
