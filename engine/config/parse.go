@@ -148,6 +148,8 @@ func parseConfigTag(tag string, field *Field) {
 				field.Type = FieldTypeSelect
 			case "bool":
 				field.Type = FieldTypeBool
+			case "color":
+				field.Type = FieldTypeColor
 			}
 		case "default":
 			field.Default = value

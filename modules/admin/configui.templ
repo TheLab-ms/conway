@@ -261,6 +261,17 @@ templ renderGenericFormField(field config.Field, cfg any) {
 				<input type="checkbox" class="form-check-input" id={ field.JSONName }
 					   name={ field.JSONName } checked?={ config.HasValue(cfg, field.Name) }/>
 			</div>
+		case config.FieldTypeColor:
+			<div class="input-group">
+				<input type="color" class="form-control form-control-color"
+					   id={ field.JSONName + "-picker" }
+					   value={ colorOrDefault(config.GetStringValue(cfg, field.Name)) }
+					   oninput={ syncColorToText(field.JSONName) }/>
+				<input type="text" class="form-control font-monospace" id={ field.JSONName }
+					   name={ field.JSONName } value={ config.GetStringValue(cfg, field.Name) }
+					   placeholder={ field.Placeholder }
+					   oninput={ syncTextToColor(field.JSONName) }/>
+			</div>
 		}
 		if field.Help != "" {
 			<div class="form-text">
@@ -311,6 +322,18 @@ templ renderArrayItem(af config.ArrayField, item any, index int) {
 							if field.Help != "" {
 								<div class="form-text">{ field.Help }</div>
 							}
+						case config.FieldTypeColor:
+							<div class="input-group">
+								<input type="color" class="form-control form-control-color color-picker-input"
+									   value={ colorOrDefault(config.GetStringValue(item, field.Name)) }/>
+								<input type="text" class="form-control font-monospace color-text-input"
+									   name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }
+									   value={ config.GetStringValue(item, field.Name) }
+									   placeholder={ field.Placeholder }/>
+							</div>
+							if field.Help != "" {
+								<div class="form-text">{ field.Help }</div>
+							}
 						default:
 							<input type="text" class="form-control"
 								   name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }
@@ -354,6 +377,15 @@ templ renderArrayItemTemplate(af config.ArrayField) {
 							<input type="password" class="form-control font-monospace"
 								   name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
 								   placeholder="(required for new items)"/>
+						case config.FieldTypeColor:
+							<div class="input-group">
+								<input type="color" class="form-control form-control-color color-picker-input"
+									   value="#4bc0c0"/>
+								<input type="text" class="form-control font-monospace color-text-input"
+									   name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
+									   placeholder={ field.Placeholder }
+									   data-field-name={ field.JSONName }/>
+							</div>
 						default:
 							<input type="text" class="form-control item-field"
 								   name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
@@ -439,7 +471,37 @@ templ arrayItemScripts() {
 			confirmDiv.classList.add('d-none');
 			deleteBtn.classList.remove('d-none');
 		}
+
+		// Sync color picker and text input for array item color fields
+		document.addEventListener('input', function(e) {
+			if (e.target.classList.contains('color-picker-input')) {
+				var textInput = e.target.closest('.input-group').querySelector('.color-text-input');
+				if (textInput) textInput.value = e.target.value;
+			}
+			if (e.target.classList.contains('color-text-input')) {
+				var picker = e.target.closest('.input-group').querySelector('.color-picker-input');
+				if (picker && /^#[0-9a-fA-F]{6}$/.test(e.target.value)) {
+					picker.value = e.target.value;
+				}
+			}
+		});
 	</script>
+}
+
+// Sync color picker value to the text input for top-level color fields.
+script syncColorToText(fieldJSONName string) {
+	var picker = document.getElementById(fieldJSONName + '-picker');
+	var text = document.getElementById(fieldJSONName);
+	if (picker && text) text.value = picker.value;
+}
+
+// Sync text input value to the color picker for top-level color fields.
+script syncTextToColor(fieldJSONName string) {
+	var picker = document.getElementById(fieldJSONName + '-picker');
+	var text = document.getElementById(fieldJSONName);
+	if (picker && text && /^#[0-9a-fA-F]{6}$/.test(text.value)) {
+		picker.value = text.value;
+	}
 }
 
 templ renderGenericEventLog(events []*config.Event) {
@@ -535,4 +597,13 @@ func getItemDisplayName(item any, fields []config.Field) string {
 		}
 	}
 	return "Item"
+}
+
+// colorOrDefault returns the hex color value, or a default if empty/invalid.
+// The HTML color input requires a valid #rrggbb value.
+func colorOrDefault(v string) string {
+	if len(v) == 7 && v[0] == '#' {
+		return v
+	}
+	return "#4bc0c0"
 }

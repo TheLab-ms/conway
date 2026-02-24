@@ -6,7 +6,7 @@ import "github.com/TheLab-ms/conway/engine/config"
 type ChartConfig struct {
 	Title  string `json:"title" config:"label=Title,required,placeholder=e.g. Active Members"`
 	Series string `json:"series" config:"label=Metric Series,required,placeholder=e.g. active-members,help=The metric series name to query. Must match a series in the metrics table."`
-	Color  string `json:"color" config:"label=Color,placeholder=e.g. #0d6efd,help=Hex color for the chart line. Leave blank for default teal."`
+	Color  string `json:"color" config:"label=Color,type=color,placeholder=e.g. #0d6efd,help=Hex color for the chart line. Leave blank for default teal."`
 }
 
 // Config holds metrics dashboard configuration.

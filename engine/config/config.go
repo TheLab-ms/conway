@@ -21,6 +21,7 @@ const (
 	FieldTypeTextarea FieldType = "textarea"
 	FieldTypeSelect   FieldType = "select"
 	FieldTypeBool     FieldType = "bool"
+	FieldTypeColor    FieldType = "color" // Color picker with hex input
 )
 
 // Field represents a single configuration field with metadata.
