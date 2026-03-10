@@ -309,13 +309,15 @@ def create_esp32_wroom_32e(board, ref, val):
       Pin 1 = GND
       Pin 2 = 3V3
       Pin 3 = EN (chip enable, active high)
-      Pin 25 = GPIO25 (Wiegand D0)
-      Pin 8 = GPIO33 (Wiegand D1)
-      Pin 7 = GPIO32 (Relay)
-      Pin 27 = GPIO16 (RS485 RX)
-      Pin 28 = GPIO17 (RS485 TX)
-      Pin 24 = GPIO4 (RS485 DE/RE)
-      Pin 23 = GPIO0 (Boot mode)
+      Pin 8 = GPIO32 (Relay driver)
+      Pin 9 = GPIO33 (Wiegand D1)
+      Pin 10 = GPIO25 (Wiegand D0)
+      Pin 25 = GPIO0 (Boot mode select)
+      Pin 26 = GPIO4 (RS485 DE/RE)
+      Pin 27 = GPIO16 (RS485 RX / UART2)
+      Pin 28 = GPIO17 (RS485 TX / UART2)
+      Pin 34 = RXD0 / GPIO3 (FTDI TX -> ESP RX)
+      Pin 35 = TXD0 / GPIO1 (ESP TX -> FTDI RX)
       Pin 39 = GND (exposed pad)
     """
     fp = pcbnew.FOOTPRINT(board)
@@ -433,11 +435,13 @@ def create_pin_header_1x6(board, ref, val):
 def create_nets(board):
     """Create all electrical nets and add them to the board."""
     net_names = [
-        "GND", "12V", "3V3",
+        "GND", "12V", "12V_RAW", "3V3",
         "WIEG_D0_IN", "WIEG_D1_IN",    # From reader to optocoupler LED
+        "WIEG_D0_R", "WIEG_D1_R",      # From current-limit resistor to optocoupler LED anode
         "WIEG_D0", "WIEG_D1",           # From optocoupler output to ESP32
-        "RELAY_DRV",                      # ESP32 GPIO32 -> R6 -> Q1 base
-        "RELAY_12V",                      # 12V to relay coil terminal
+        "RELAY_DRV",                      # ESP32 GPIO32 -> R6 pad 1
+        "RELAY_BASE",                     # R6 pad 2 -> Q1 base
+        "RELAY_12V",                      # Relay coil switched side (Q1 collector)
         "RS485_TX", "RS485_RX",          # ESP32 UART2 to MAX3485
         "RS485_DE",                       # Direction enable
         "RS485_A", "RS485_B",            # Differential pair
@@ -491,12 +495,14 @@ def place_components(board, nets):
     parts["U1"] = u1
 
     # Input filter caps (near D1/U1)
-    c1 = create_c0805(board, "C1", "22uF")
+    # Note: Using 10uF 0805 (25V rated) instead of 22uF 0805 (only 6.3V rated)
+    # to ensure adequate voltage margin on the 12V rail.
+    c1 = create_c0805(board, "C1", "10uF")
     c1.SetPosition(pt(42.0, 9.0))
     board.Add(c1)
     parts["C1"] = c1
 
-    c1b = create_c0805(board, "C1B", "22uF")
+    c1b = create_c0805(board, "C1B", "10uF")
     c1b.SetPosition(pt(42.0, 12.0))
     board.Add(c1b)
     parts["C1B"] = c1b
@@ -611,6 +617,8 @@ def place_components(board, nets):
 
     # ---- RS485 Section (bottom-right) ----
     # U5: MAX3485 RS485 transceiver
+    # TODO: Add TVS diode (e.g., PESD5V0S2BT) on RS485 A/B lines for ESD
+    # protection. Field-wired access controllers are exposed to ESD events.
     u5 = create_sop8(board, "U5", "MAX3485")
     u5.SetPosition(pt(55.0, 50.0))
     u5.SetOrientationDegrees(90)
@@ -624,6 +632,7 @@ def place_components(board, nets):
     parts["J5"] = j5
 
     # R7: 120R RS485 termination (optional - solder bridge)
+    # DNP by default; only populate if board is at end of RS485 bus.
     r7 = create_r0805(board, "R7", "120R")
     r7.SetPosition(pt(46.0, 46.0))
     board.Add(r7)
@@ -636,6 +645,8 @@ def place_components(board, nets):
     parts["C8"] = c8
 
     # ---- FTDI Programming Header + Auto-Reset (left side) ----
+    # TODO: Add a power indicator LED + 1K resistor on 3.3V rail for field
+    # diagnostics. A 0805 LED near J1 would indicate board is powered.
     # J6: 1x6 FTDI header
     # Pinout: 1=GND, 2=CTS(NC), 3=3V3, 4=TXO(->ESP RX), 5=RXI(<-ESP TX), 6=DTR
     j6 = create_pin_header_1x6(board, "J6", "FTDI")
@@ -693,13 +704,13 @@ def assign_nets(parts, nets):
         raise ValueError(f"Pad {pad_num} not found on {part.GetReference()}")
 
     # ---- Power ----
-    # J1: 12V input (1=+12V, 2=GND)
-    set_pad_net(parts["J1"], 1, nets["12V"])
+    # J1: 12V input (1=+12V_RAW, 2=GND)
+    set_pad_net(parts["J1"], 1, nets["12V_RAW"])
     set_pad_net(parts["J1"], 2, nets["GND"])
 
-    # D1: SS34 (1=Cathode->12V_internal, 2=Anode<-J1.1)
-    set_pad_net(parts["D1"], 2, nets["12V"])  # Anode from input
-    set_pad_net(parts["D1"], 1, nets["12V"])  # Cathode to 12V rail (same net, protection)
+    # D1: SS34 reverse-polarity protection (1=Cathode->12V, 2=Anode<-12V_RAW)
+    set_pad_net(parts["D1"], 2, nets["12V_RAW"])  # Anode from input (pre-diode)
+    set_pad_net(parts["D1"], 1, nets["12V"])       # Cathode to 12V rail (post-diode)
 
     # U1: AMS1117-3.3 (1=GND, 2=VOUT, 3=VIN, 4=Tab=VOUT)
     set_pad_net(parts["U1"], 1, nets["GND"])
@@ -751,12 +762,12 @@ def assign_nets(parts, nets):
     set_pad_net(parts["J2"], 3, nets["12V"])
     set_pad_net(parts["J2"], 4, nets["GND"])
 
-    # R2: 390R (1 -> J2.D0, 2 -> U2.Anode)
+    # R2: 390R current-limit (1=WIEG_D0_IN from J2, 2=WIEG_D0_R to U2 anode)
     set_pad_net(parts["R2"], 1, nets["WIEG_D0_IN"])
-    set_pad_net(parts["R2"], 2, nets["WIEG_D0_IN"])  # same net through resistor
+    set_pad_net(parts["R2"], 2, nets["WIEG_D0_R"])
 
     # U2: EL817 (1=Anode, 2=Cathode=GND, 3=Emitter=GND, 4=Collector=D0)
-    set_pad_net(parts["U2"], 1, nets["WIEG_D0_IN"])
+    set_pad_net(parts["U2"], 1, nets["WIEG_D0_R"])
     set_pad_net(parts["U2"], 2, nets["GND"])
     set_pad_net(parts["U2"], 3, nets["GND"])
     set_pad_net(parts["U2"], 4, nets["WIEG_D0"])
@@ -766,12 +777,12 @@ def assign_nets(parts, nets):
     set_pad_net(parts["R4"], 2, nets["3V3"])
 
     # ---- Wiegand D1 Path ----
-    # R3: 390R
+    # R3: 390R current-limit (1=WIEG_D1_IN from J2, 2=WIEG_D1_R to U3 anode)
     set_pad_net(parts["R3"], 1, nets["WIEG_D1_IN"])
-    set_pad_net(parts["R3"], 2, nets["WIEG_D1_IN"])
+    set_pad_net(parts["R3"], 2, nets["WIEG_D1_R"])
 
     # U3: EL817
-    set_pad_net(parts["U3"], 1, nets["WIEG_D1_IN"])
+    set_pad_net(parts["U3"], 1, nets["WIEG_D1_R"])
     set_pad_net(parts["U3"], 2, nets["GND"])
     set_pad_net(parts["U3"], 3, nets["GND"])
     set_pad_net(parts["U3"], 4, nets["WIEG_D1"])
@@ -781,18 +792,18 @@ def assign_nets(parts, nets):
     set_pad_net(parts["R5"], 2, nets["3V3"])
 
     # ---- Relay Driver ----
-    # J3: Relay output (1=Switched, 2=12V)
+    # J3: Relay output (1=Switched side via Q1, 2=+12V supply)
     set_pad_net(parts["J3"], 1, nets["RELAY_12V"])
-    set_pad_net(parts["J3"], 2, nets["RELAY_12V"])
+    set_pad_net(parts["J3"], 2, nets["12V"])
 
     # Q1: SS8050 (1=Base, 2=Emitter=GND, 3=Collector)
-    set_pad_net(parts["Q1"], 1, nets["RELAY_DRV"])
+    set_pad_net(parts["Q1"], 1, nets["RELAY_BASE"])
     set_pad_net(parts["Q1"], 2, nets["GND"])
     set_pad_net(parts["Q1"], 3, nets["RELAY_12V"])
 
-    # R6: 1K base resistor
+    # R6: 1K base resistor (1=RELAY_DRV from ESP32, 2=RELAY_BASE to Q1)
     set_pad_net(parts["R6"], 1, nets["RELAY_DRV"])
-    set_pad_net(parts["R6"], 2, nets["RELAY_DRV"])
+    set_pad_net(parts["R6"], 2, nets["RELAY_BASE"])
 
     # D2: M7 flyback (1=Cathode=12V, 2=Anode=collector)
     set_pad_net(parts["D2"], 1, nets["12V"])
@@ -919,10 +930,10 @@ def route_all(board, parts, nets):
 
     # === 12V POWER PATH ===
 
-    # J1.1 (+12V) -> D1.2 (Anode)
+    # J1.1 (+12V_RAW) -> D1.2 (Anode)
     p1 = get_pad_pos(parts["J1"], 1)
     p2 = get_pad_pos(parts["D1"], 2)
-    route_wire(board, [p1, p2], TW_POWER, F, nets["12V"])
+    route_wire(board, [p1, p2], TW_POWER, F, nets["12V_RAW"])
 
     # D1.1 (Cathode) -> 12V rail distribution point
     d1k = get_pad_pos(parts["D1"], 1)
@@ -1096,7 +1107,7 @@ def route_all(board, parts, nets):
 
     # R2.2 -> U2.1 (Anode)
     u2_a = get_pad_pos(parts["U2"], 1)
-    route_wire(board, [r2_2, u2_a], TW_SIGNAL, F, nets["WIEG_D0_IN"])
+    route_wire(board, [r2_2, u2_a], TW_SIGNAL, F, nets["WIEG_D0_R"])
 
     # U2.4 (Collector) -> R4.1 (pull-up) and -> ESP32 GPIO25 (pin 10)
     u2_col = get_pad_pos(parts["U2"], 4)
@@ -1123,7 +1134,7 @@ def route_all(board, parts, nets):
                TW_SIGNAL, F, nets["WIEG_D1_IN"])
 
     u3_a = get_pad_pos(parts["U3"], 1)
-    route_wire(board, [r3_2, u3_a], TW_SIGNAL, F, nets["WIEG_D1_IN"])
+    route_wire(board, [r3_2, u3_a], TW_SIGNAL, F, nets["WIEG_D1_R"])
 
     u3_col = get_pad_pos(parts["U3"], 4)
     r5_sig = get_pad_pos(parts["R5"], 1)
@@ -1158,7 +1169,7 @@ def route_all(board, parts, nets):
                TW_SIGNAL, B, nets["RELAY_DRV"])
     route_wire(board, [via_relay2, r6_1], TW_SIGNAL, F, nets["RELAY_DRV"])
     route_wire(board, [r6_2, (q1_base[0], r6_2[1]), q1_base],
-               TW_SIGNAL, F, nets["RELAY_DRV"])
+               TW_SIGNAL, F, nets["RELAY_BASE"])
 
     # Q1.3 (Collector) -> D2.2 (Anode) and -> J3.1
     q1_col = get_pad_pos(parts["Q1"], 3)
@@ -1500,6 +1511,9 @@ def generate_jlcpcb_bom(parts, filename):
         "ESP32-WROOM-32E": "C529584",
     }
 
+    # Components that are Do Not Populate by default
+    dnp_refs = {"R7"}  # RS485 termination - only populate at bus endpoints
+
     # Map reference prefix to JLCPCB footprint description
     fp_map = {
         "R": "0805", "C": "0805",
@@ -1511,10 +1525,15 @@ def generate_jlcpcb_bom(parts, filename):
 
     bom = {}
     manual_parts = []
+    dnp_parts = []
 
     for ref, part in sorted(parts.items()):
         val = part.GetValue()
         lcsc_pn = lcsc_map.get(val, "")
+
+        if ref in dnp_refs:
+            dnp_parts.append(ref)
+            continue
 
         if not lcsc_pn:
             if ref.startswith("J") or ref.startswith("H"):
@@ -1542,6 +1561,8 @@ def generate_jlcpcb_bom(parts, filename):
     print(f"  Generated BOM: {filename}")
     if manual_parts:
         print(f"  Manual assembly required: {', '.join(sorted(manual_parts))}")
+    if dnp_parts:
+        print(f"  DNP (Do Not Populate): {', '.join(sorted(dnp_parts))}")
 
 
 def generate_jlcpcb_cpl(parts, filename):
@@ -1705,7 +1726,10 @@ def main():
     print("  - J5: RS485 screw terminal (4-pin, 5mm pitch)")
     print("  - J6: FTDI programming header (1x6, 2.54mm pitch)")
     print("\nComponent Notes:")
-    print("  - R7 (120R): RS485 termination. Only solder if board is at end of bus.")
+    print("  - R7 (120R): RS485 termination, DNP by default. Hand-solder only")
+    print("    if this board is at the end of the RS485 bus.")
+    print("  - C1, C1B: 10uF 25V 0805 on 12V input (not 22uF, which is only")
+    print("    available at 6.3V in 0805 and would fail at 12V).")
     print("  - Extended JLCPCB parts: U2/U3 (EL817) = $3 each setup fee")
     print("  - U4 (ESP32-WROOM-32E) is extended part = $3 setup fee")
     print("=" * 70)
