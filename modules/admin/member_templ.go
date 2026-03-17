@@ -692,7 +692,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "> <label class=\"form-check-label\" for=\"non-billable\">Non-billable <i>(landlord fobs, lifetime members, etc.)</i></label></div><button type=\"submit\" class=\"btn btn-primary mt-2\">Save</button></form></div></div><div class=\"card mt-3\"><div class=\"card-body\"><h5 class=\"card-title mb-2\">Events</h5><table class=\"table table-hover\"><thead class=\"table-light\"><tr><th scope=\"col\">Time</th><th scope=\"col\">Event</th><th scope=\"col\">Details</th></tr></thead> <tbody id=\"member-events-body\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "> <label class=\"form-check-label\" for=\"non-billable\">Non-billable <i>(landlord fobs, lifetime members, etc.)</i></label></div><button type=\"submit\" class=\"btn btn-primary mt-2\">Save</button></form></div></div><div class=\"card mt-3\"><div class=\"card-body\"><h5 class=\"card-title mb-2\">Events</h5><table class=\"table table-hover\"><thead><tr><th scope=\"col\">Time</th><th scope=\"col\">Event</th><th scope=\"col\">Details</th></tr></thead> <tbody id=\"member-events-body\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

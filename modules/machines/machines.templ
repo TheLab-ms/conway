@@ -18,10 +18,10 @@ templ renderMachines(printers []PrinterStatus) {
 								src={ fmt.Sprintf("/machines/stream/%s", printer.SerialNumber) }
 								class="card-img-top"
 								alt={ fmt.Sprintf("%s camera", printer.PrinterName) }
-								style="aspect-ratio: 16/9; object-fit: cover; background-color: #e9ecef;"
+								style="aspect-ratio: 16/9; object-fit: cover; background-color: #1a1a1a;"
 								onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
 							/>
-							<div class="card-img-top d-none justify-content-center align-items-center text-muted" style="aspect-ratio: 16/9; background-color: #e9ecef;">
+							<div class="card-img-top d-none justify-content-center align-items-center text-muted" style="aspect-ratio: 16/9; background-color: #1a1a1a;">
 								Camera unavailable
 							</div>
 							<div class="card-body">

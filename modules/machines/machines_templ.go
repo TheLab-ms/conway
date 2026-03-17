@@ -78,7 +78,7 @@ func renderMachines(printers []PrinterStatus) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" style=\"aspect-ratio: 16/9; object-fit: cover; background-color: #e9ecef;\" onerror=\"this.style.display='none'; this.nextElementSibling.style.display='flex';\"><div class=\"card-img-top d-none justify-content-center align-items-center text-muted\" style=\"aspect-ratio: 16/9; background-color: #e9ecef;\">Camera unavailable</div><div class=\"card-body\"><h5 class=\"card-title\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" style=\"aspect-ratio: 16/9; object-fit: cover; background-color: #1a1a1a;\" onerror=\"this.style.display='none'; this.nextElementSibling.style.display='flex';\"><div class=\"card-img-top d-none justify-content-center align-items-center text-muted\" style=\"aspect-ratio: 16/9; background-color: #1a1a1a;\">Camera unavailable</div><div class=\"card-body\"><h5 class=\"card-title\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

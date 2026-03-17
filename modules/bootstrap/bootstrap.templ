@@ -1,21 +1,26 @@
 package bootstrap
 
 templ View() {
-	@view("") { { children... }}
+	@view() { { children... }}
 }
 
 templ DarkmodeView() {
-	@view("dark") { { children... }}
+	@view() { { children... }}
 }
 
-templ view(theme string) {
+templ view() {
 	<!DOCTYPE html>
-	<html lang="en" data-bs-theme={theme}>
+	<html lang="en" data-bs-theme="dark">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<title>Conway Makerspace System</title>
+			<meta name="theme-color" content="#00C853"/>
+			<title>TheLab Makerspace</title>
+			<link rel="preconnect" href="https://fonts.googleapis.com"/>
+			<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+			<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 			<link href="/assets/bootstrap/css/bootstrap.min.css" rel="stylesheet"/>
+			<link href="/assets/conway.css" rel="stylesheet"/>
 			<script src="/assets/bootstrap/js/bootstrap.bundle.min.js"></script>
 			<script src="/assets/htmx.min.js"></script>
 			<script src="/assets/chartjs/chart.umd.min.js"></script>

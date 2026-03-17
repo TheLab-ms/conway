@@ -12,7 +12,7 @@ type navbarTab struct {
 }
 
 templ adminNav(tabs []*navbarTab) {
-	<nav class="navbar navbar-expand-lg bg-light">
+	<nav class="navbar navbar-expand-lg bg-body-tertiary">
 		<div class="container-fluid">
 			<a class="navbar-brand" href="/admin">Conway</a>
 			<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
@@ -180,7 +180,7 @@ templ renderAdminListElements(rowMeta []*tableRowMeta, rows []*tableRow, moreURL
 			<div class="table-responsive">
 				<table class="table table-hover mb-0">
 					if len(rowMeta) > 1 {
-						<thead class="table-light">
+						<thead>
 							<tr>
 								for _, meta := range rowMeta {
 									<th class={ fmt.Sprintf("col-%d", meta.Width) }>{ meta.Title }</th>
@@ -257,7 +257,7 @@ templ renderMetricsAdminPage(tabs []*navbarTab, charts []metricsChart, selected 
 			}
 			<script>
 				document.addEventListener('DOMContentLoaded', async function() {
-					const defaultColor = '#4bc0c0';
+					const defaultColor = '#00C853';
 
 					function hexToRgba(hex, alpha) {
 						hex = hex.replace('#', '');
@@ -304,7 +304,7 @@ templ renderMetricsAdminPage(tabs []*navbarTab, charts []metricsChart, selected 
 									pointRadius: 0,
 									pointHoverRadius: 6,
 									pointBackgroundColor: borderColor,
-									pointBorderColor: '#fff',
+									pointBorderColor: '#1a1a1a',
 									pointBorderWidth: 2,
 									pointHitRadius: 10,
 								}]
@@ -330,14 +330,14 @@ templ renderMetricsAdminPage(tabs []*navbarTab, charts []metricsChart, selected 
 										},
 										grid: {
 											display: true,
-											color: 'rgba(0, 0, 0, 0.05)',
+											color: 'rgba(255, 255, 255, 0.05)',
 										},
 										border: { display: false },
 										ticks: {
 											maxRotation: 0,
 											autoSkip: true,
 											maxTicksLimit: 8,
-											color: '#6c757d',
+											color: '#999999',
 											font: { size: 11 },
 										},
 									},
@@ -345,11 +345,11 @@ templ renderMetricsAdminPage(tabs []*navbarTab, charts []metricsChart, selected 
 										beginAtZero: true,
 										grid: {
 											display: true,
-											color: 'rgba(0, 0, 0, 0.05)',
+											color: 'rgba(255, 255, 255, 0.05)',
 										},
 										border: { display: false },
 										ticks: {
-											color: '#6c757d',
+											color: '#999999',
 											font: { size: 11 },
 											padding: 8,
 											callback: function(value) {
@@ -361,9 +361,9 @@ templ renderMetricsAdminPage(tabs []*navbarTab, charts []metricsChart, selected 
 								plugins: {
 									legend: { display: false },
 									tooltip: {
-										backgroundColor: 'rgba(33, 37, 41, 0.9)',
-										titleColor: '#fff',
-										bodyColor: '#fff',
+										backgroundColor: 'rgba(26, 26, 26, 0.95)',
+										titleColor: '#e0e0e0',
+										bodyColor: '#e0e0e0',
 										borderColor: 'rgba(255, 255, 255, 0.1)',
 										borderWidth: 1,
 										cornerRadius: 4,

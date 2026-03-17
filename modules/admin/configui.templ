@@ -115,7 +115,7 @@ templ renderDBConsolePage(tabs []*navbarTab, configSections []*configSection, qu
 								<div class="card-body p-0">
 									<div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
 										<table class="table table-hover table-sm mb-0 font-monospace">
-											<thead class="table-light" style="position: sticky; top: 0;">
+											<thead style="position: sticky; top: 0;">
 												<tr>
 													for _, col := range columns {
 														<th>{ col }</th>
@@ -378,7 +378,7 @@ templ renderArrayItemTemplate(af config.ArrayField) {
 						case config.FieldTypeColor:
 							<div class="input-group">
 								<input type="color" class="form-control form-control-color color-picker-input"
-									   value="#4bc0c0"/>
+									   value="#00C853"/>
 								<input type="text" class="form-control font-monospace color-text-input"
 									   name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
 									   placeholder={ field.Placeholder }
@@ -511,7 +511,7 @@ templ renderGenericEventLog(events []*config.Event) {
 		<div class="card-body p-0">
 			<div class="table-responsive">
 				<table class="table table-hover table-sm mb-0">
-					<thead class="table-light">
+					<thead>
 						<tr>
 							<th>Time</th>
 							<th>Type</th>
@@ -603,5 +603,5 @@ func colorOrDefault(v string) string {
 	if len(v) == 7 && v[0] == '#' {
 		return v
 	}
-	return "#4bc0c0"
+	return "#00C853"
 }

@@ -43,7 +43,7 @@ templ renderMember(member *member) {
 }
 
 templ renderWelcome(member *member) {
-	<div class="card mb-4 border-primary">
+	<div class="card mb-4" style="border-color: var(--color-accent);">
 		<div class="card-body">
 			<h4 class="card-title mb-1">Welcome!</h4>
 		</div>
@@ -89,7 +89,7 @@ templ renderPaymentStep(member *member) {
 						</svg>
 					</span>
 				} else if member.WaiverSigned {
-					<span class="badge bg-primary rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+					<span class="badge bg-success rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
 						2
 					</span>
 				} else {
@@ -127,10 +127,10 @@ templ renderStep(number string, title string, description string, complete bool,
 							<path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
 						</svg>
 					</span>
-				} else if isCurrent {
-					<span class="badge bg-primary rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
-						{ number }
-					</span>
+			} else if isCurrent {
+				<span class="badge bg-success rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+					{ number }
+				</span>
 				} else {
 					<span class="badge bg-secondary rounded-circle" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
 						{ number }

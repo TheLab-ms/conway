@@ -353,7 +353,7 @@ func renderDBConsolePage(tabs []*navbarTab, configSections []*configSection, que
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " rows</span></div><div class=\"card-body p-0\"><div class=\"table-responsive\" style=\"max-height: 600px; overflow-y: auto;\"><table class=\"table table-hover table-sm mb-0 font-monospace\"><thead class=\"table-light\" style=\"position: sticky; top: 0;\"><tr>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " rows</span></div><div class=\"card-body p-0\"><div class=\"table-responsive\" style=\"max-height: 600px; overflow-y: auto;\"><table class=\"table table-hover table-sm mb-0 font-monospace\"><thead style=\"position: sticky; top: 0;\"><tr>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1762,7 +1762,7 @@ func renderArrayItemTemplate(af config.ArrayField) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			case config.FieldTypeColor:
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "<div class=\"input-group\"><input type=\"color\" class=\"form-control form-control-color color-picker-input\" value=\"#4bc0c0\"> <input type=\"text\" class=\"form-control font-monospace color-text-input\" name=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "<div class=\"input-group\"><input type=\"color\" class=\"form-control form-control-color color-picker-input\" value=\"#00C853\"> <input type=\"text\" class=\"form-control font-monospace color-text-input\" name=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2022,7 +2022,7 @@ func renderGenericEventLog(events []*config.Event) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "</span></div><div class=\"card-body p-0\"><div class=\"table-responsive\"><table class=\"table table-hover table-sm mb-0\"><thead class=\"table-light\"><tr><th>Time</th><th>Type</th><th>Status</th><th>Entity</th><th>Details</th></tr></thead> <tbody>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "</span></div><div class=\"card-body p-0\"><div class=\"table-responsive\"><table class=\"table table-hover table-sm mb-0\"><thead><tr><th>Time</th><th>Type</th><th>Status</th><th>Entity</th><th>Details</th></tr></thead> <tbody>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2180,7 +2180,7 @@ func colorOrDefault(v string) string {
 	if len(v) == 7 && v[0] == '#' {
 		return v
 	}
-	return "#4bc0c0"
+	return "#00C853"
 }
 
 var _ = templruntime.GeneratedTemplate

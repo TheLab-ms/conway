@@ -151,7 +151,7 @@ func renderWelcome(member *member) templ.Component {
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"card mb-4 border-primary\"><div class=\"card-body\"><h4 class=\"card-title mb-1\">Welcome!</h4></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"card mb-4\" style=\"border-color: var(--color-accent);\"><div class=\"card-body\"><h4 class=\"card-title mb-1\">Welcome!</h4></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -297,7 +297,7 @@ func renderPaymentStep(member *member) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else if member.WaiverSigned {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<span class=\"badge bg-primary rounded-circle\" style=\"width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;\">2</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<span class=\"badge bg-success rounded-circle\" style=\"width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;\">2</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -393,14 +393,14 @@ func renderStep(number string, title string, description string, complete bool, 
 				return templ_7745c5c3_Err
 			}
 		} else if isCurrent {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<span class=\"badge bg-primary rounded-circle\" style=\"width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<span class=\"badge bg-success rounded-circle\" style=\"width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(number)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 132, Col: 14}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 132, Col: 13}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
