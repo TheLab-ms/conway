@@ -28,6 +28,7 @@
   --color-heading:       #ffffff;
 
   --color-discord:       #5865F2;
+  --color-discord-text:  #8B93F7;
 
   /* Typography */
   --font-heading: 'Space Grotesk', system-ui, -apple-system, sans-serif;
@@ -190,7 +191,14 @@ h1, h2, h3, h4, h5, h6,
 }
 
 .btn-outline-danger {
+  --bs-btn-color: #ff6b6b;
+  --bs-btn-border-color: #ff6b6b;
   --bs-btn-hover-bg: rgba(220, 53, 69, 0.1);
+  --bs-btn-hover-color: #ff8a8a;
+  --bs-btn-hover-border-color: #ff8a8a;
+  --bs-btn-active-bg: rgba(220, 53, 69, 0.15);
+  --bs-btn-active-color: #ff8a8a;
+  --bs-btn-active-border-color: #ff8a8a;
 }
 
 
@@ -361,6 +369,20 @@ thead.table-light th {
   background-color: rgba(255, 193, 7, 0.1) !important;
 }
 
+.bg-secondary-subtle {
+  background-color: rgba(108, 117, 125, 0.15) !important;
+}
+
+.badge.bg-secondary-subtle.text-secondary {
+  color: #b0b0b0 !important;
+}
+
+.badge.bg-info,
+.badge.text-bg-info {
+  background-color: #0dcaf0 !important;
+  color: #0d0d0d !important;
+}
+
 
 /* ---------- Alerts ---------- */
 .alert-success {
@@ -461,6 +483,11 @@ hr {
 
 code {
   color: var(--color-accent);
+}
+
+/* Discord username text — lightened for WCAG AA contrast on dark backgrounds */
+.text-discord {
+  color: var(--color-discord-text) !important;
 }
 
 /* Scrollbar styling */

@@ -8,7 +8,7 @@ import (
 templ renderProfile(profile *ProfileData) {
 	@bootstrap.View() {
 		<div class="container my-5" style="max-width: 600px;">
-			<h2 class="mb-4">Edit Profile</h2>
+			<h1>Edit Profile</h1>
 
 			// Card Preview
 			<div class="d-flex justify-content-center mb-4">
@@ -25,7 +25,7 @@ templ renderProfile(profile *ProfileData) {
 							@previewPlaceholderAvatar()
 						}
 					</div>
-					<h6 class="card-title mb-1" id="preview-name">{ getDisplayName(profile) }</h6>
+					<h2 class="card-title h6 mb-1" id="preview-name">{ getDisplayName(profile) }</h2>
 					if profile.Pronouns != "" {
 						<span class="text-muted small" id="preview-pronouns">{ profile.Pronouns }</span>
 					} else {
@@ -52,7 +52,7 @@ templ renderProfile(profile *ProfileData) {
 										style="width: 24px; height: 24px; object-fit: cover;"
 									/>
 								}
-								<span style="color: #5865F2; font-size: 0.85rem;">
+								<span class="text-discord" style="font-size: 0.85rem;">
 									{ "@" + profile.DiscordUsername }
 								</span>
 							</div>

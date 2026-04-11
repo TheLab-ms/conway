@@ -113,6 +113,8 @@ func TestLogin_SentPageShowsEmail(t *testing.T) {
 	_, err := page.Goto(env.baseURL + "/login/sent?email=test@example.com")
 	require.NoError(t, err)
 
+	AssertNoViolations(t, page)
+
 	// Check that the email is displayed
 	emailText := page.GetByText("test@example.com")
 	expect(t).Locator(emailText).ToBeVisible()
@@ -136,6 +138,7 @@ func TestLoginFlow(t *testing.T) {
 		// Navigate to login page and submit email
 		loginPage := NewLoginPage(t, page, env.baseURL)
 		loginPage.Navigate()
+		AssertNoViolations(t, page)
 		loginPage.FillEmail(email)
 		loginPage.Submit()
 		loginPage.ConfirmSignup()
@@ -173,6 +176,7 @@ func TestLoginFlow(t *testing.T) {
 		// Navigate to login page and submit email
 		loginPage := NewLoginPage(t, page, env.baseURL)
 		loginPage.Navigate()
+		AssertNoViolations(t, page)
 		loginPage.FillEmail(email)
 		loginPage.Submit()
 		loginPage.ConfirmSignup()
@@ -262,6 +266,7 @@ func TestWaiver_DisplayAndValidation(t *testing.T) {
 	waiverPage := NewWaiverPage(t, page, env.baseURL)
 
 	waiverPage.Navigate()
+	AssertNoViolations(t, page)
 	waiverPage.ExpectWaiverText()
 
 	// Check that the form elements are present
@@ -296,6 +301,7 @@ func TestWaiver_SuccessfulSubmission(t *testing.T) {
 	waiverPage := NewWaiverPage(t, page, env.baseURL)
 
 	waiverPage.NavigateWithRedirect("/")
+	AssertNoViolations(t, page)
 	waiverPage.CheckAgree1()
 	waiverPage.CheckAgree2()
 	waiverPage.FillName("Test Signer")
@@ -365,6 +371,7 @@ func TestDashboard_OnboardingStates(t *testing.T) {
 			env, _, page := setupMemberTest(t, tc.name+"@example.com", tc.opts...)
 			dashboard := NewMemberDashboardPage(t, page, env.baseURL)
 			dashboard.Navigate()
+			AssertNoViolations(t, page)
 			tc.expectFunc(t, dashboard)
 		})
 	}
@@ -383,6 +390,7 @@ func TestDashboard_DiscordLinking(t *testing.T) {
 		)
 		dashboard := NewMemberDashboardPage(t, page, env.baseURL)
 		dashboard.Navigate()
+		AssertNoViolations(t, page)
 		expect(t).Locator(page.Locator("a:has-text('Link Discord')")).ToBeVisible()
 	})
 
@@ -396,6 +404,7 @@ func TestDashboard_DiscordLinking(t *testing.T) {
 		)
 		dashboard := NewMemberDashboardPage(t, page, env.baseURL)
 		dashboard.Navigate()
+		AssertNoViolations(t, page)
 		expect(t).Locator(page.Locator("a:has-text('Link Discord')")).ToBeHidden()
 	})
 }
@@ -570,6 +579,8 @@ func TestAdmin_MembersListAndSearch(t *testing.T) {
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
 
+	AssertNoViolations(t, page)
+
 	t.Run("shows_members_list", func(t *testing.T) {
 		expect(t).Locator(page.Locator("#results")).ToBeVisible()
 	})
@@ -619,6 +630,8 @@ func TestAdmin_EditDesignations(t *testing.T) {
 
 	_, err := page.Goto(env.baseURL + "/admin/members/" + strconv.FormatInt(targetID, 10))
 	require.NoError(t, err)
+
+	AssertNoViolations(t, page)
 
 	detail := NewAdminMemberDetailPage(t, page, env.baseURL)
 	detail.ToggleLeadership()
@@ -689,6 +702,8 @@ func TestJourney_AdminManagesMember(t *testing.T) {
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
 
+	AssertNoViolations(t, page)
+
 	// Step 2: Search for the member
 	adminList.Search("manageme@example.com")
 
@@ -697,6 +712,8 @@ func TestJourney_AdminManagesMember(t *testing.T) {
 
 	err = page.WaitForURL(fmt.Sprintf("**/admin/members/%d", targetID))
 	require.NoError(t, err)
+
+	AssertNoViolations(t, page)
 
 	// Step 4: Edit member details
 	detail := NewAdminMemberDetailPage(t, page, env.baseURL)
@@ -773,6 +790,7 @@ func TestAdmin_DataListPages(t *testing.T) {
 	eventsPage.Navigate()
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
+	AssertNoViolations(t, page)
 	expect(t).Locator(page.Locator("#results")).ToBeVisible()
 
 	// Verify fob swipes appear (shown as fob ID in details)
@@ -917,6 +935,8 @@ func TestAdmin_MetricsDashboard(t *testing.T) {
 	err = page.WaitForLoadState()
 	require.NoError(t, err)
 
+	AssertNoViolations(t, page)
+
 	t.Run("interval_selector", func(t *testing.T) {
 		expect(t).Locator(page.Locator("#interval")).ToBeVisible()
 	})
@@ -1051,6 +1071,8 @@ func TestMachines_AllPrinterStatuses(t *testing.T) {
 	machinesPage := NewMachinesPage(t, page, env.baseURL)
 	machinesPage.Navigate()
 
+	AssertNoViolations(t, page)
+
 	t.Run("page_structure", func(t *testing.T) {
 		machinesPage.ExpectHeading()
 		machinesPage.ExpectPrinterCard("Printer A")
@@ -1120,6 +1142,7 @@ func TestKiosk_AccessFromPhysicalSpace(t *testing.T) {
 
 	kiosk := NewKioskPage(t, page, env.baseURL)
 	kiosk.Navigate()
+	AssertNoViolations(t, page)
 	kiosk.ExpectKioskInterface()
 }
 
@@ -1445,6 +1468,8 @@ func TestWaiver_PrefilledEmail(t *testing.T) {
 	_, err := page.Goto(env.baseURL + "/waiver?email=prefilled@example.com")
 	require.NoError(t, err)
 
+	AssertNoViolations(t, page)
+
 	emailValue, err := page.Locator("#email").InputValue()
 	require.NoError(t, err)
 	assert.Equal(t, "prefilled@example.com", emailValue)
@@ -1473,6 +1498,8 @@ Another paragraph here.
 
 	waiverPage := NewWaiverPage(t, page, env.baseURL)
 	waiverPage.Navigate()
+
+	AssertNoViolations(t, page)
 
 	// Verify custom title and paragraph are displayed
 	expect(t).Locator(page.GetByText("Custom Waiver Title")).ToBeVisible()
@@ -1554,6 +1581,8 @@ func TestAdmin_WaiverConfigPage(t *testing.T) {
 
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
+
+	AssertNoViolations(t, page)
 
 	// Verify page elements
 	expect(t).Locator(page.GetByText("Waiver Content")).ToBeVisible()
@@ -1783,6 +1812,8 @@ func TestAdmin_StripeConfigPage(t *testing.T) {
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
 
+	AssertNoViolations(t, page)
+
 	// Verify the page displays Stripe configuration instructions
 	configPage.ExpectWebhookURLInstruction()
 
@@ -1873,6 +1904,8 @@ func TestDirectory_DisplaysReadyMembers(t *testing.T) {
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
 
+	AssertNoViolations(t, page)
+
 	directoryPage.ExpectHeading()
 	directoryPage.ExpectMemberCard("Ready Member")
 	directoryPage.ExpectMemberCardNotVisible("Not Ready Member")
@@ -1913,6 +1946,8 @@ func TestDirectory_ShowsDiscordUsername(t *testing.T) {
 
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
+
+	AssertNoViolations(t, page)
 
 	directoryPage.ExpectMemberCard("Discord User")
 	directoryPage.ExpectDiscordUsername("Discord User", "discorduser123")
@@ -2088,6 +2123,8 @@ func TestDirectory_ShowsProfileData(t *testing.T) {
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
 
+	AssertNoViolations(t, page)
+
 	// Current user appears first despite others having more recent fob_last_seen
 	directoryPage.ExpectMemberCardFirst("Current User")
 
@@ -2130,6 +2167,7 @@ func TestJourney_MemberEditsProfile(t *testing.T) {
 
 	// Edit profile
 	profilePage := NewProfilePage(t, page, env.baseURL)
+	AssertNoViolations(t, page)
 	profilePage.ExpectHeading()
 	profilePage.ExpectPreviewName("John Smith")
 	profilePage.ExpectDiscordUsername("johnsmith")
@@ -2164,6 +2202,8 @@ func TestAdmin_BambuConfigPage(t *testing.T) {
 
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
+
+	AssertNoViolations(t, page)
 
 	// Verify page structure
 	configPage.ExpectPageTitle()
@@ -2576,6 +2616,8 @@ func TestAdmin_DiscordConfigPage(t *testing.T) {
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
 
+	AssertNoViolations(t, page)
+
 	// Verify the page displays Discord configuration sections
 	expect(t).Locator(page.GetByText("Discord Integration")).ToBeVisible()
 	expect(t).Locator(page.GetByText("OAuth2 Configuration")).ToBeVisible()
@@ -2693,6 +2735,8 @@ func TestJourney_DiscordConfigEnablesLoginButton(t *testing.T) {
 	_, err := loginPage.Goto(env.baseURL + "/login")
 	require.NoError(t, err)
 
+	AssertNoViolations(t, loginPage)
+
 	discordBtn := loginPage.Locator("a:has-text('Login with Discord')")
 	expect(t).Locator(discordBtn).ToBeHidden()
 
@@ -2730,6 +2774,8 @@ func TestAdmin_GoogleConfigPage(t *testing.T) {
 
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
+
+	AssertNoViolations(t, page)
 
 	// Verify page displays Google configuration
 	expect(t).Locator(page.GetByText("Google Login")).ToBeVisible()
@@ -2785,6 +2831,8 @@ func TestJourney_GoogleConfigEnablesLoginButton(t *testing.T) {
 	_, err := loginPage.Goto(env.baseURL + "/login")
 	require.NoError(t, err)
 
+	AssertNoViolations(t, loginPage)
+
 	googleBtn := loginPage.Locator("a:has-text('Login with Google')")
 	expect(t).Locator(googleBtn).ToBeHidden()
 
@@ -2837,6 +2885,8 @@ func TestAdmin_ReadOnlyConfigPages(t *testing.T) {
 			err := page.WaitForLoadState()
 			require.NoError(t, err)
 
+			AssertNoViolations(t, page)
+
 			for _, text := range tc.expectedText {
 				configPage.ExpectTextVisible(text)
 			}
@@ -2855,6 +2905,8 @@ func TestAdmin_ConfigSidebarNavigation(t *testing.T) {
 
 	err := page.WaitForLoadState()
 	require.NoError(t, err)
+
+	AssertNoViolations(t, page)
 
 	// Verify all 7 sidebar links are present
 	configPage.ExpectSidebarLink("Waiver", "/admin/config/waiver")
@@ -2996,6 +3048,7 @@ func TestDonation_CardRendersWithItems(t *testing.T) {
 
 		dashboard := NewMemberDashboardPage(t, page, env.baseURL)
 		dashboard.Navigate()
+		AssertNoViolations(t, page)
 		dashboard.ExpectActiveStatus()
 		dashboard.ExpectDonationCard()
 
@@ -3019,6 +3072,7 @@ func TestDonation_CardRendersWithItems(t *testing.T) {
 
 		dashboard := NewMemberDashboardPage(t, page, env.baseURL)
 		dashboard.Navigate()
+		AssertNoViolations(t, page)
 		dashboard.ExpectDonationCard()
 
 		assert.Equal(t, 1, dashboard.DonationOptionCount(), "should have 1 donation item")

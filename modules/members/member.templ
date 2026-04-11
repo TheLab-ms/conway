@@ -24,6 +24,7 @@ type member struct {
 templ renderMember(member *member) {
 	@bootstrap.View() {
 		<div class="container my-5" style="max-width: 600px;">
+			<h1 class="visually-hidden">Dashboard</h1>
 			if member.AccessStatus == "Ready" {
 				@renderActiveStatus()
 				@renderOnboardingChecklist(member)
@@ -45,21 +46,21 @@ templ renderMember(member *member) {
 templ renderWelcome(member *member) {
 	<div class="card mb-4" style="border-color: var(--color-accent);">
 		<div class="card-body">
-			<h4 class="card-title mb-1">Welcome!</h4>
+			<h2 class="card-title h4 mb-1">Welcome!</h2>
 		</div>
 	</div>
 }
 
 templ renderActiveStatus() {
 	<div class="alert alert-success">
-		<h4 class="alert-heading">You're all set!</h4>
+		<h2 class="alert-heading h4">You're all set!</h2>
 		<p class="mb-0">Your key fob is active and you have full access to the space.</p>
 	</div>
 }
 
 templ renderFamilyInactiveWarning() {
 	<div class="alert alert-warning mb-4">
-		<h4 class="alert-heading">Family Plan Issue</h4>
+		<h2 class="alert-heading h4">Family Plan Issue</h2>
 		<p class="mb-0">Your membership is part of a family plan that is no longer active. Please contact the primary account holder.</p>
 	</div>
 }
@@ -165,7 +166,7 @@ templ renderDonationCard(items []donationItem) {
 		<div class="card-body text-center">
 			<p class="text-muted small mb-3">Need to pay for consumables or other usage costs? Select an item and make a one-time payment.</p>
 			<div class="d-flex justify-content-center gap-2">
-				<select id="donation-select" class="form-select form-select-sm" style="max-width: 250px;">
+				<select id="donation-select" class="form-select form-select-sm" style="max-width: 250px;" aria-label="Select donation item">
 					for _, item := range items {
 						<option value={ item.PriceID }>{ item.Name }</option>
 					}

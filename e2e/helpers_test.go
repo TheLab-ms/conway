@@ -581,6 +581,23 @@ func setupUnauthenticatedTest(t *testing.T) (env *TestEnv, page playwright.Page)
 	return env, page
 }
 
+// newMobileContext creates a new browser context with a mobile viewport (375x812, iPhone-like)
+// and registers cleanup. This is essential for testing responsive elements like the
+// hamburger menu button, which is only visible at viewport widths below Bootstrap's lg breakpoint (992px).
+func newMobileContext(t *testing.T) playwright.BrowserContext {
+	t.Helper()
+	ctx, err := browser.NewContext(playwright.BrowserNewContextOptions{
+		Viewport: &playwright.Size{Width: 375, Height: 812},
+	})
+	require.NoError(t, err, "could not create mobile browser context")
+	t.Cleanup(func() {
+		if err := ctx.Close(); err != nil {
+			t.Logf("warning: could not close mobile context: %v", err)
+		}
+	})
+	return ctx
+}
+
 // seedBambuConfig inserts Bambu printer configuration into the database for testing.
 func seedBambuConfig(t *testing.T, env *TestEnv, printersJSON string, pollIntervalSecs int) {
 	t.Helper()

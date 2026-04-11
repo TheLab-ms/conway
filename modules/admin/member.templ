@@ -137,20 +137,21 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
+			<h1 class="visually-hidden">Member Detail</h1>
 			<div class="card">
 				<div class="card-body">
-					<h5 class="card-title mb-2">Basic Info</h5>
-					<h6 class="card-subtitle mb-2 text-muted">Account created on { member.Created.Time.Format(timeFormat) }</h6>
+					<h2 class="card-title h5 mb-2">Basic Info</h2>
+					<p class="card-subtitle mb-2 text-muted">Account created on { member.Created.Time.Format(timeFormat) }</p>
 					if member.FobLastSeen != nil {
-						<h6 class="card-subtitle mb-2 text-muted">Last fob'd in { formatLastFobSwipe(member.FobLastSeen.Time) }</h6>
+						<p class="card-subtitle mb-2 text-muted">Last fob'd in { formatLastFobSwipe(member.FobLastSeen.Time) }</p>
 					}
-					<h6 class="card-subtitle mb-4 text-muted"><a href={ templ.URL(fmt.Sprintf("/admin/members/%d/logincode", member.ID)) }>Login code</a></h6>
+					<p class="card-subtitle mb-4 text-muted"><a href={ templ.URL(fmt.Sprintf("/admin/members/%d/logincode", member.ID)) }>Login code</a></p>
 					if member.AccessStatus != "Ready" {
 						<span class="badge text-bg-danger mb-3">{ member.AccessStatus }</span>
 					}
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/basics", member.ID)) } id="basic-info-form">
 						<div class="input-group mb-2">
-							<span class="input-group-text">Name</span>
+							<label for="name" class="input-group-text">Name</label>
 							if hasNameOverride(member) {
 								<input type="text" class="form-control" id="name" name="name" value={ *member.NameOverride } placeholder={ member.Name }/>
 							} else {
@@ -168,11 +169,11 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 							</div>
 						</div>
 						<div class="input-group mb-2">
-							<span class="input-group-text">Fob ID</span>
+							<label for="fob_id" class="input-group-text">Fob ID</label>
 							<input type="number" class="form-control" id="fob_id" name="fob_id" value={ strconv.FormatInt(*member.FobID, 10) }/>
-							<span class="input-group-text">Discord</span>
+							<label for="discord_user_id" class="input-group-text">Discord</label>
 							if member.DiscordUsername != "" {
-								<input type="text" class="form-control" disabled value={ member.DiscordUsername }/>
+								<input type="text" class="form-control" disabled value={ member.DiscordUsername } aria-label="Discord username"/>
 								<input type="hidden" name="discord_user_id" value={ member.DiscordUserID }/>
 							} else {
 								<input type="text" class="form-control" id="discord_user_id" name="discord_user_id" value={ member.DiscordUserID }/>
@@ -196,7 +197,7 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 			</div>
 			<div class="card mt-3">
 				<div class="card-body">
-					<h5 class="card-title mb-2">Discounts</h5>
+					<h2 class="card-title h5 mb-2">Discounts</h2>
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/discounts", member.ID)) }>
 						<script>
 							document.addEventListener('DOMContentLoaded', (event) => {
@@ -217,7 +218,8 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 								handler()
 							})
 						</script>
-						<select class="form-select" id="discount" name="discount">
+						<label for="discount" class="form-label">Discount Type</label>
+					<select class="form-select" id="discount" name="discount">
 							<option value="" selected?={ member.DiscountType == nil || *member.DiscountType == "" }>None</option>
 							<option value="military" selected?={ member.DiscountType != nil && *member.DiscountType == "military" }>Military</option>
 							<option value="retired" selected?={ member.DiscountType != nil && *member.DiscountType == "retired" }>Retired</option>
@@ -241,13 +243,13 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 			</div>
 			<div class="card mt-3">
 				<div class="card-body">
-					<h5 class="card-title">
-						Payment
+				<h2 class="card-title h5">
+					Payment
 						if (member.PaypalSubID == nil || *member.PaypalSubID == "") && (member.StripeStatus == nil || (*member.StripeStatus != "active" && *member.StripeStatus != "trialing")) {
 							<span class="badge text-bg-danger">!</span>
 						}
-					</h5>
-					<h6 class="card-subtitle mb-2 text-muted">
+				</h2>
+				<p class="card-subtitle mb-2 text-muted">
 						Subscription status:
 						<b>
 							if member.PaypalSubID != nil && *member.PaypalSubID != "" {
@@ -258,7 +260,7 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 								{ *member.StripeStatus }
 							}
 						</b>
-					</h6>
+					</p>
 					if member.StripeSubID == nil || *member.StripeSubID == "" {
 						<a href="#" class="btn btn-secondary disabled" aria-disabled="true">View subscription in Stripe</a>
 					} else {
@@ -275,7 +277,7 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 			</div>
 			<div class="card mt-3">
 				<div class="card-body">
-					<h5 class="card-title mb-2">Designations</h5>
+					<h2 class="card-title h5 mb-2">Designations</h2>
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/designations", member.ID)) }>
 						<div class="form-check">
 							<input type="checkbox" class="form-check-input" id="leadership" name="leadership" checked?={ member.Leadership }/>
@@ -291,7 +293,7 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 			</div>
 			<div class="card mt-3">
 				<div class="card-body">
-					<h5 class="card-title mb-2">Events</h5>
+					<h2 class="card-title h5 mb-2">Events</h2>
 					<table class="table table-hover">
 						<thead>
 							<tr>

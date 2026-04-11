@@ -28,23 +28,23 @@ templ configSidebar(configSections []*configSection, activeSection string, activ
 	<div class="col-md-3">
 		<div class="card">
 			<div class="card-header">
-				<h5 class="mb-0">Configuration</h5>
-			</div>
-			<div class="list-group list-group-flush">
-				@configSidebarLinks(configSections, "", activeSection)
-			</div>
+			<h2 class="mb-0 h5">Configuration</h2>
 		</div>
-		<div class="card mt-3">
-			<div class="card-header">
-				<h5 class="mb-0">Integrations</h5>
-			</div>
-			<div class="list-group list-group-flush">
-				@configSidebarLinks(configSections, "Integrations", activeSection)
-			</div>
+		<div class="list-group list-group-flush">
+			@configSidebarLinks(configSections, "", activeSection)
 		</div>
-		<div class="card mt-3">
-			<div class="card-header">
-				<h5 class="mb-0">Debug</h5>
+	</div>
+	<div class="card mt-3">
+		<div class="card-header">
+			<h2 class="mb-0 h5">Integrations</h2>
+		</div>
+		<div class="list-group list-group-flush">
+			@configSidebarLinks(configSections, "Integrations", activeSection)
+		</div>
+	</div>
+	<div class="card mt-3">
+		<div class="card-header">
+			<h2 class="mb-0 h5">Debug</h2>
 			</div>
 			<div class="list-group list-group-flush">
 				if activeDevPage == "db" {
@@ -61,6 +61,7 @@ templ renderGenericConfigPage(tabs []*navbarTab, spec *config.ParsedSpec, cfg an
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
+			<h1 class="visually-hidden">Configuration</h1>
 			<div class="row">
 				@configSidebar(configSections, spec.Title, "")
 				<div class="col-md-9">
@@ -85,12 +86,13 @@ templ renderDBConsolePage(tabs []*navbarTab, configSections []*configSection, qu
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
+			<h1 class="visually-hidden">Configuration</h1>
 			<div class="row">
 				@configSidebar(configSections, "", "db")
 				<div class="col-md-9">
 					<div class="card mb-4">
 						<div class="card-header">
-							<h5 class="mb-0">DB Console</h5>
+							<h2 class="mb-0 h5">DB Console</h2>
 						</div>
 						<div class="card-body">
 							<form method="post">
@@ -109,7 +111,7 @@ templ renderDBConsolePage(tabs []*navbarTab, configSections []*configSection, qu
 						} else if len(columns) > 0 {
 							<div class="card">
 								<div class="card-header d-flex justify-content-between align-items-center">
-									<h6 class="mb-0">Results</h6>
+									<h3 class="mb-0 h6">Results</h3>
 									<span class="badge bg-secondary">{ strconv.Itoa(len(rows)) } rows</span>
 								</div>
 								<div class="card-body p-0">
@@ -150,7 +152,7 @@ templ renderDBConsolePage(tabs []*navbarTab, configSections []*configSection, qu
 templ renderReadOnlyConfigCard(spec *config.ParsedSpec) {
 	<div class="card mb-4">
 		<div class="card-header">
-			<h5 class="mb-0">{ spec.Title }</h5>
+			<h2 class="mb-0 h5">{ spec.Title }</h2>
 		</div>
 		<div class="card-body">
 			if spec.Description != nil {
@@ -168,7 +170,7 @@ templ renderReadOnlyConfigCard(spec *config.ParsedSpec) {
 templ renderConfigCard(spec *config.ParsedSpec, cfg any, saved bool, errMsg string) {
 	<div class="card mb-4">
 		<div class="card-header">
-			<h5 class="mb-0">{ spec.Title }</h5>
+			<h2 class="mb-0 h5">{ spec.Title }</h2>
 		</div>
 		<div class="card-body">
 			if saved {
@@ -206,7 +208,7 @@ templ renderConfigCard(spec *config.ParsedSpec, cfg any, saved bool, errMsg stri
 
 templ renderGenericFormSection(section config.Section, cfg any) {
 	if section.Title != "" {
-		<h6 class="text-muted border-bottom pb-2 mb-3 mt-4">{ section.Title }</h6>
+		<h3 class="text-muted border-bottom pb-2 mb-3 mt-4 h6">{ section.Title }</h3>
 	}
 	if section.Description != nil {
 		<p class="text-muted small mb-3">
@@ -280,7 +282,7 @@ templ renderGenericFormField(field config.Field, cfg any) {
 }
 
 templ renderArrayField(af config.ArrayField, cfg any) {
-	<h6 class="text-muted border-bottom pb-2 mb-3 mt-4">{ af.Label }</h6>
+	<h3 class="text-muted border-bottom pb-2 mb-3 mt-4 h6">{ af.Label }</h3>
 	if af.Help != "" {
 		<p class="text-muted small mb-3">{ af.Help }</p>
 	}
@@ -505,7 +507,7 @@ script syncTextToColor(fieldJSONName string) {
 templ renderGenericEventLog(events []*config.Event) {
 	<div class="card mb-4">
 		<div class="card-header d-flex justify-content-between align-items-center">
-			<h5 class="mb-0">Recent Events</h5>
+			<h2 class="mb-0 h5">Recent Events</h2>
 			<span class="badge bg-secondary">{ strconv.Itoa(len(events)) }</span>
 		</div>
 		<div class="card-body p-0">

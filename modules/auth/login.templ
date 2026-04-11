@@ -11,10 +11,10 @@ templ renderLoginPage(callbackURI string, tso *TurnstileOptions, discordEnabled 
 		<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 	}
 	@bootstrap.View() {
-		<body class="d-flex align-items-center justify-content-center vh-100 p-3">
+		<div class="d-flex align-items-center justify-content-center vh-100 p-3">
 			<div class="card p-4">
 				<div id="login-email" class="text-center">
-					<h5 class="mb-3">Login or Signup</h5>
+					<h1 class="h5 mb-3">Login or Signup</h1>
 					<form action="/login" method="post">
 						<div class="mb-3">
 							<input type="email" class="form-control" id="email" name="email" placeholder="Email" required/>
@@ -40,16 +40,16 @@ templ renderLoginPage(callbackURI string, tso *TurnstileOptions, discordEnabled 
 					}
 				</div>
 			</div>
-		</body>
+		</div>
 	}
 }
 
 templ renderLoginSentPage(email string) {
 	@bootstrap.View() {
-		<body class="d-flex align-items-center justify-content-center vh-100 p-3">
+		<div class="d-flex align-items-center justify-content-center vh-100 p-3">
 			<div id="login-code" class="text-center">
 				<div class="card p-4" style="max-width: 400px;">
-					<h5 class="mb-3">Check Your Email</h5>
+					<h1 class="h5 mb-3">Check Your Email</h1>
 					if email != "" {
 						<p class="text-muted mb-4">
 							We sent a login code to <strong>{ email }</strong>
@@ -62,11 +62,11 @@ templ renderLoginSentPage(email string) {
 					<form action="/login/code" method="post" id="code-form">
 						<label class="form-label">Enter your 5-digit code</label>
 						<div class="d-flex justify-content-center gap-2 mb-3">
-							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px; font-family: var(--font-heading);" data-index="0" autofocus/>
-							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px; font-family: var(--font-heading);" data-index="1"/>
-							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px; font-family: var(--font-heading);" data-index="2"/>
-							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px; font-family: var(--font-heading);" data-index="3"/>
-							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px; font-family: var(--font-heading);" data-index="4"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px; font-family: var(--font-heading);" data-index="0" autofocus aria-label="Digit 1"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px; font-family: var(--font-heading);" data-index="1" aria-label="Digit 2"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px; font-family: var(--font-heading);" data-index="2" aria-label="Digit 3"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px; font-family: var(--font-heading);" data-index="3" aria-label="Digit 4"/>
+							<input type="text" class="form-control text-center code-digit" maxlength="1" pattern="[0-9]" inputmode="numeric" style="width: 50px; height: 60px; font-size: 24px; font-family: var(--font-heading);" data-index="4" aria-label="Digit 5"/>
 						</div>
 						<input type="hidden" name="code" id="code-value"/>
 						<div id="code-error" class="text-danger mb-3" style="display: none;"></div>
@@ -126,16 +126,16 @@ templ renderLoginSentPage(email string) {
 					});
 				})();
 			</script>
-		</body>
+		</div>
 	}
 }
 
 templ renderSignupConfirmPage(email string, confirmToken string, callbackURI string) {
 	@bootstrap.View() {
-		<body class="d-flex align-items-center justify-content-center vh-100 p-3">
+		<div class="d-flex align-items-center justify-content-center vh-100 p-3">
 			<div class="card p-4" style="max-width: 450px;">
 				<div class="text-center">
-					<h5 class="mb-3">Create a New Account?</h5>
+					<h1 class="h5 mb-3">Create a New Account?</h1>
 					<p class="text-muted mb-3">
 						We don't have an account for <strong>{ email }</strong>.
 					</p>
@@ -150,7 +150,7 @@ templ renderSignupConfirmPage(email string, confirmToken string, callbackURI str
 					<a href="/login" class="btn btn-outline-secondary w-100">Go Back</a>
 				</div>
 			</div>
-		</body>
+		</div>
 	}
 }
 

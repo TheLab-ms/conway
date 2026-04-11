@@ -234,7 +234,7 @@ templ renderMetricsAdminPage(tabs []*navbarTab, charts []metricsChart, selected 
 	@bootstrap.View() {
 		@adminNav(tabs)
 		<div class="container my-5">
-			<h2 class="mb-4">Metrics</h2>
+			<h1>Metrics</h1>
 			<form method="get" class="mb-5">
 				<label for="interval">Interval:</label>
 				<select name="interval" id="interval" class="form-select w-auto d-inline-block ms-2" onchange="this.form.submit()">
@@ -246,7 +246,7 @@ templ renderMetricsAdminPage(tabs []*navbarTab, charts []metricsChart, selected 
 			for _, chart := range charts {
 				<div class="card mb-4">
 					<div class="card-header">
-						<h5 class="card-title mb-0">{ chart.Title }</h5>
+						<h2 class="card-title h5 mb-0">{ chart.Title }</h2>
 					</div>
 					<div class="card-body">
 						<div style="position: relative; height: 280px;">

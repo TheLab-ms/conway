@@ -10,7 +10,7 @@ templ renderDirectory(members []DirectoryMember, currentUserID int64) {
 		<div class="container my-5">
 			<div class="d-flex justify-content-between align-items-start mb-4">
 				<div>
-					<h2>Member Directory</h2>
+					<h1>Member Directory</h1>
 					<p class="text-muted mb-0">
 						Put a face to the name! This directory helps members remember each other and connect Discord handles with the people you meet at the space.
 						Only other members can see this page, so consider uploading a real photo of yourself.
@@ -36,7 +36,7 @@ templ renderDirectory(members []DirectoryMember, currentUserID int64) {
 								}
 							</div>
 							// Display name
-							<h6 class="card-title mb-1">{ member.DisplayName }</h6>
+							<h2 class="card-title h6 mb-1">{ member.DisplayName }</h2>
 							// Pronouns
 							if member.Pronouns != "" {
 								<span class="text-muted small">{ member.Pronouns }</span>
@@ -63,7 +63,7 @@ templ renderDirectory(members []DirectoryMember, currentUserID int64) {
 												style="width: 24px; height: 24px; object-fit: cover;"
 											/>
 										}
-										<span style="color: #5865F2; font-size: 0.85rem;">
+										<span class="text-discord" style="font-size: 0.85rem;">
 											{ "@" + member.DiscordUsername }
 										</span>
 									</div>
