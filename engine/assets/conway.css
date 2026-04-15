@@ -258,10 +258,6 @@ a.card:hover,
   border-color: var(--color-border-light);
 }
 
-.navbar-toggler-icon {
-  filter: invert(1);
-}
-
 
 /* ---------- Forms ---------- */
 .form-control,

@@ -3,7 +3,7 @@ module github.com/TheLab-ms/conway
 go 1.25.0
 
 require (
-	github.com/a-h/templ v0.3.960
+	github.com/a-h/templ v0.3.1001
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/gavv/httpexpect/v2 v2.16.0
@@ -33,7 +33,7 @@ require (
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.5 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
