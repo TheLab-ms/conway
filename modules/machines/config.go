@@ -6,7 +6,7 @@ import "github.com/TheLab-ms/conway/engine/config"
 type PrinterConfig struct {
 	Name         string `json:"name" config:"label=Name,required,placeholder=e.g. Lab Printer 1"`
 	Host         string `json:"host" config:"label=Host/IP Address,required,placeholder=e.g. 192.168.1.100"`
-	AccessCode   string `json:"access_code" config:"label=Access Code,secret"`
+	AccessCode   string `json:"access_code" config:"label=Access Code"`
 	SerialNumber string `json:"serial_number" config:"label=Serial Number,required,placeholder=e.g. 01P00A123456789"`
 }
 

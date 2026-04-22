@@ -2429,9 +2429,9 @@ func TestAdmin_BambuConfigEditExistingPrinter(t *testing.T) {
 	// Verify existing printer is displayed
 	assert.Equal(t, 1, configPage.PrinterCardCount())
 	assert.Equal(t, "Original Name", configPage.GetPrinterName(0))
-	configPage.ExpectPrinterAccessCodePlaceholder(0, "secret is set")
+	assert.Equal(t, "secret123", configPage.GetPrinterAccessCode(0))
 
-	// Update name only (leave access code empty to preserve)
+	// Update name only (access code value is round-tripped from the form)
 	configPage.FillPrinterName(0, "Updated Name")
 	configPage.Submit()
 
@@ -2492,9 +2492,9 @@ func TestAdmin_BambuConfigVersioning(t *testing.T) {
 	assert.Equal(t, firstVersion+1, secondVersion, "second save should increment version by 1")
 }
 
-// TestAdmin_BambuConfigNewPrinterWithoutAccessCodeSkipped verifies that
-// new printers without access code are not saved (they're skipped).
-func TestAdmin_BambuConfigNewPrinterWithoutAccessCodeSkipped(t *testing.T) {
+// TestAdmin_BambuConfigNewPrinterWithoutAccessCode verifies that a new printer
+// can be saved even when the access code is left blank.
+func TestAdmin_BambuConfigNewPrinterWithoutAccessCode(t *testing.T) {
 	t.Parallel()
 	env, _, page := setupAdminTest(t)
 
@@ -2515,9 +2515,9 @@ func TestAdmin_BambuConfigNewPrinterWithoutAccessCodeSkipped(t *testing.T) {
 	err = page.WaitForLoadState()
 	require.NoError(t, err)
 
-	// Printer should not be saved (new printers require access code)
+	// Printer should be saved with an empty access code
 	printersJSON := getBambuPrintersJSON(t, env)
-	assert.NotContains(t, printersJSON, "No Access Code Printer")
+	assert.Contains(t, printersJSON, "No Access Code Printer")
 }
 
 // TestAdmin_BambuConfigPollIntervalValidation verifies that poll interval
@@ -2601,7 +2601,7 @@ func TestJourney_AdminConfiguresBambuPrinter(t *testing.T) {
 	assert.Equal(t, "Lab Bambu X1C", configPage.GetPrinterName(0))
 	assert.Equal(t, "192.168.10.50", configPage.GetPrinterHost(0))
 	assert.Equal(t, "01P00A350100001", configPage.GetPrinterSerial(0))
-	configPage.ExpectPrinterAccessCodePlaceholder(0, "secret is set")
+	assert.Equal(t, "X1C-ACCESS-CODE", configPage.GetPrinterAccessCode(0))
 }
 
 // TestAdmin_DiscordConfigPage verifies that administrators can view and update

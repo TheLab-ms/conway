@@ -851,11 +851,11 @@ func (p *AdminBambuConfigPage) GetPrinterSerial(index int) string {
 	return value
 }
 
-func (p *AdminBambuConfigPage) ExpectPrinterAccessCodePlaceholder(index int, expectedPlaceholder string) {
+func (p *AdminBambuConfigPage) GetPrinterAccessCode(index int) string {
 	locator := p.page.Locator(fmt.Sprintf("input[name='printers[%d][access_code]']", index))
-	placeholder, err := locator.GetAttribute("placeholder")
+	value, err := locator.InputValue()
 	require.NoError(p.t, err)
-	require.Contains(p.t, placeholder, expectedPlaceholder)
+	return value
 }
 
 func (p *AdminBambuConfigPage) ClickDeletePrinter(index int) {
