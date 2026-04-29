@@ -3,6 +3,7 @@ package signs
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -103,19 +104,37 @@ func (p *ippPrinter) Print(ctx context.Context, job PrintJob) error {
 	// the printer's actual IPP URI. The library's PrintJobContext hardcodes
 	// it to "ipp://localhost/printers/<queue>", which Brother rejects with
 	// IPP status 0x0406 (client-error-not-found).
+	//
+	// We deliberately do NOT send job-priority or copies here:
+	//   - Brother MFC firmware does not list job-priority in its
+	//     job-creation-attributes-supported set; sending it causes the
+	//     printer to silently drop the entire job (returning IPP status
+	//     0x0001 "successful-ok-ignored-or-substituted-attributes" but
+	//     never producing output).
+	//   - copies defaults to 1 on the printer side; setting it explicitly
+	//     would belong in JobAttributes (Job Template group) per RFC 8011,
+	//     not OperationAttributes as the go-ipp library's PrintJobContext
+	//     incorrectly does.
 	req := ipp.NewRequest(ipp.OperationPrintJob, 1)
 	req.OperationAttributes[ipp.AttributePrinterURI] = p.printerURI
 	req.OperationAttributes[ipp.AttributeRequestingUserName] = ippUsername
 	req.OperationAttributes[ipp.AttributeJobName] = job.JobName
 	req.OperationAttributes[ipp.AttributeDocumentFormat] = "application/pdf"
-	req.OperationAttributes[ipp.AttributeCopies] = 1
-	req.OperationAttributes[ipp.AttributeJobPriority] = ipp.DefaultJobPriority
 	req.File = bytes.NewReader(job.PDF)
 	req.FileSize = len(job.PDF)
 
 	// We discard the response (which carries the printer-assigned job ID);
 	// the workqueue tracks our own job identity and we do not poll status.
 	if _, err := p.adapter.SendRequestContext(ctx, p.url, req, nil); err != nil {
+		// The go-ipp library treats any non-zero IPP status as an error,
+		// but RFC 8011 §15.1 defines status codes 0x0000–0x00FF as the
+		// "successful" class. Unwrap so we don't fail jobs the printer
+		// actually accepted (e.g. status 0x0001 with a substituted
+		// non-essential attribute).
+		var ipperr ipp.IPPError
+		if errors.As(err, &ipperr) && ipperr.Status >= 0x0000 && ipperr.Status <= 0x00FF {
+			return nil
+		}
 		return fmt.Errorf("ipp print: %w", err)
 	}
 	return nil
