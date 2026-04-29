@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 
 	ipp "github.com/phin1x/go-ipp"
 )
@@ -24,7 +25,7 @@ type Printer interface {
 type PrinterTarget struct {
 	Host  string
 	Port  int
-	Queue string // Printer/queue name (the part after /printers/ in the IPP URI).
+	Queue string // IPP path on the printer (e.g. "ipp/print" for Brother, "printers/<name>" for CUPS).
 }
 
 // NewIPPPrinter returns a Printer that delivers jobs to a network printer over
@@ -42,6 +43,28 @@ type ippPrinter struct {
 	target PrinterTarget
 }
 
+// brotherAdapter wraps the stock HttpAdapter so the HTTP request URL uses the
+// configured printer path verbatim instead of the library's hardcoded
+// "/printers/<queue>" namespace. Brother printers (and many other embedded
+// IPP servers) expose only a single endpoint such as "/ipp/print" and return
+// 404 for the CUPS-style "/printers/..." path.
+//
+// The IPP-level "printer-uri" attribute inside the request body is built
+// separately by the client (`ipp://localhost/printers/<queue>`) and is
+// independent of the HTTP URL the request is POSTed to, so overriding only
+// GetHttpUri is sufficient.
+type brotherAdapter struct {
+	*ipp.HttpAdapter
+	scheme string
+	host   string
+	port   int
+	path   string // already URL-quoted-safe; no leading slash
+}
+
+func (a *brotherAdapter) GetHttpUri(_ string, _ interface{}) string {
+	return fmt.Sprintf("%s://%s:%d/%s", a.scheme, a.host, a.port, a.path)
+}
+
 func (p *ippPrinter) Print(ctx context.Context, job PrintJob) error {
 	if p.target.Host == "" || p.target.Queue == "" {
 		return fmt.Errorf("printer not configured (missing host or queue)")
@@ -51,7 +74,18 @@ func (p *ippPrinter) Print(ctx context.Context, job PrintJob) error {
 		port = 631
 	}
 
-	client := ipp.NewIPPClient(p.target.Host, port, "conway", "", false)
+	// Strip any leading slash so a user pasting "/ipp/print" still works.
+	queuePath := strings.TrimLeft(p.target.Queue, "/")
+
+	adapter := &brotherAdapter{
+		HttpAdapter: ipp.NewHttpAdapter(p.target.Host, port, "conway", "", false),
+		scheme:      "http",
+		host:        p.target.Host,
+		port:        port,
+		path:        queuePath,
+	}
+	client := ipp.NewIPPClientWithAdapter("conway", adapter)
+
 	doc := ipp.Document{
 		Document: bytes.NewReader(job.PDF),
 		Size:     len(job.PDF),
@@ -59,7 +93,9 @@ func (p *ippPrinter) Print(ctx context.Context, job PrintJob) error {
 		MimeType: "application/pdf",
 	}
 
-	if _, err := client.PrintJobContext(ctx, doc, p.target.Queue, nil); err != nil {
+	// PrintJobContext uses the queue name only to populate the IPP
+	// "printer-uri" attribute; the HTTP URL comes from our adapter above.
+	if _, err := client.PrintJobContext(ctx, doc, queuePath, nil); err != nil {
 		return fmt.Errorf("ipp print: %w", err)
 	}
 	return nil
