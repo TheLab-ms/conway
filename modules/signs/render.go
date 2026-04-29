@@ -10,12 +10,10 @@ import (
 )
 
 // SignData is the variable bag passed to a sign template's body.
-type SignData struct {
-	DiscordHandle string
-	Date          string
-	MachineName   string
-	Issue         string
-}
+// It is a string map so that templates can define arbitrary custom fields.
+// The keys "DiscordHandle" and "Date" are always present; other keys come
+// from the template's FieldDef definitions.
+type SignData map[string]string
 
 // RenderSign executes the template's Go-text/template body against data,
 // then converts the resulting markdown into a Letter-size PDF.

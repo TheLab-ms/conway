@@ -16,20 +16,68 @@ func mustMarshalTemplate(t Template) string {
 	return string(b)
 }
 
+// FieldDef describes a user-facing form field that the template expects.
+// Templates declare their own fields, and the sign form renders them
+// dynamically. Field values are passed to the Go template body as
+// {{.FieldName}}.
+type FieldDef struct {
+	// Name is the template variable name (e.g. "MachineName"). Must be a
+	// valid Go template identifier (letters/digits/underscores, starts
+	// with a letter).
+	Name string `json:"name"`
+
+	// Label is the human-readable label shown on the form.
+	Label string `json:"label"`
+
+	// Placeholder is optional hint text inside the input.
+	Placeholder string `json:"placeholder,omitempty"`
+
+	// Required marks the field as mandatory. The submit handler rejects
+	// empty values for required fields.
+	Required bool `json:"required,omitempty"`
+
+	// Multiline renders the field as a <textarea> instead of a single-line
+	// <input>.
+	Multiline bool `json:"multiline,omitempty"`
+}
+
 // Template describes a single printable sign template.
 //
 // Templates use Go text/template syntax over a markdown body.
 // The following variables are always available:
 //   - {{.DiscordHandle}}: Discord username of the user who initiated the print
 //   - {{.Date}}: human-readable date the print was initiated
-//   - {{.MachineName}}: machine/equipment name (optional, from form)
-//   - {{.Issue}}: free-form description (required, from form)
+//
+// Additional variables are provided by the template's Fields definitions.
 type Template struct {
 	Slug        string `json:"slug" config:"label=Slug,required,placeholder=e.g. maintenance,help=URL-safe identifier."`
 	Name        string `json:"name" config:"label=Name,required,placeholder=e.g. Out of Service"`
 	Description string `json:"description" config:"label=Short Description,placeholder=Shown on the picker page."`
 	Orientation string `json:"orientation" config:"label=Orientation,options=portrait|landscape,default=portrait"`
-	Body        string `json:"body" config:"label=Body (Markdown + Go template),required,multiline,rows=14,help=Markdown body. Use {{.DiscordHandle}}, {{.Date}}, {{.MachineName}}, {{.Issue}}."`
+	Body        string `json:"body" config:"label=Body (Markdown + Go template),required,multiline,rows=14,help=Markdown body. Use {{.DiscordHandle}} and {{.Date}} (always available) plus any field names defined below (e.g. {{.MachineName}})."`
+	FieldsJSON  string `json:"fields_json,omitempty" config:"label=Fields (JSON),multiline,rows=8,help=JSON array defining form fields. Each object: {\"name\": \"MachineName\"&#44; \"label\": \"Machine name\"&#44; \"placeholder\": \"e.g. Drill Press\"&#44; \"required\": true&#44; \"multiline\": false}. Field names become template variables."`
+}
+
+// ParsedFields returns the FieldDef list parsed from the FieldsJSON string.
+// Returns nil on empty or malformed JSON.
+func (t Template) ParsedFields() []FieldDef {
+	if t.FieldsJSON == "" {
+		return nil
+	}
+	var fields []FieldDef
+	if err := json.Unmarshal([]byte(t.FieldsJSON), &fields); err != nil {
+		return nil
+	}
+	return fields
+}
+
+// mustMarshalFields JSON-encodes a []FieldDef into a string. Panics on error.
+func mustMarshalFields(fields []FieldDef) string {
+	b, err := json.Marshal(fields)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }
 
 // Config holds the signs module configuration.
@@ -53,7 +101,7 @@ func (m *Module) ConfigSpec() config.Spec {
 				FieldName: "Templates",
 				Label:     "Sign Templates",
 				ItemLabel: "Template",
-				Help:      "Sign templates members can fill in and print. Body is markdown with Go template syntax. Available variables: {{.DiscordHandle}}, {{.Date}}, {{.MachineName}}, {{.Issue}}.",
+				Help:      "Sign templates members can fill in and print. Body is markdown with Go template syntax. Available variables: {{.DiscordHandle}}, {{.Date}}, plus any custom field names you define in the Fields JSON below.",
 				KeyField:  "Slug",
 			},
 		},
@@ -81,4 +129,19 @@ Reported by **@{{.DiscordHandle}}**
 
 {{.Date}}
 `,
+	FieldsJSON: mustMarshalFields([]FieldDef{
+		{
+			Name:        "MachineName",
+			Label:       "Machine / equipment name",
+			Placeholder: "e.g. Bambu Lab Printer 2",
+			Required:    true,
+		},
+		{
+			Name:        "Issue",
+			Label:       "What's wrong? (1-2 sentences)",
+			Placeholder: "Describe the issue clearly so the next person knows what's broken.",
+			Required:    true,
+			Multiline:   true,
+		},
+	}),
 }

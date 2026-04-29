@@ -98,8 +98,8 @@ func TestSigns_SubmitQueuesAndPrints(t *testing.T) {
 		WithConfirmed(), WithActiveStripeSubscription(), WithDiscordUsername("alice"))
 
 	form := url.Values{
-		"machine_name": {"Bambu X1C"},
-		"issue":        {"Nozzle clogged"},
+		"field_MachineName": {"Bambu X1C"},
+		"field_Issue":       {"Nozzle clogged"},
 	}
 	req := authedRequest(t, env, memberID, http.MethodPost, "/signs/maintenance",
 		strings.NewReader(form.Encode()))
@@ -145,8 +145,8 @@ func TestSigns_RecentPrintsPanel(t *testing.T) {
 		WithConfirmed(), WithActiveStripeSubscription(), WithDiscordUsername("alice"))
 
 	form := url.Values{
-		"machine_name": {"Bambu X1C"},
-		"issue":        {"Nozzle clogged"},
+		"field_MachineName": {"Bambu X1C"},
+		"field_Issue":       {"Nozzle clogged"},
 	}
 	req := authedRequest(t, env, memberID, http.MethodPost, "/signs/maintenance",
 		strings.NewReader(form.Encode()))
@@ -176,8 +176,8 @@ func TestSigns_SubmitRequiresAuth(t *testing.T) {
 	env := NewTestEnv(t)
 
 	form := url.Values{
-		"machine_name": {"Some Machine"},
-		"issue":        {"Some issue"},
+		"field_MachineName": {"Some Machine"},
+		"field_Issue":       {"Some issue"},
 	}
 	req, err := http.NewRequest(http.MethodPost, env.baseURL+"/signs/maintenance",
 		strings.NewReader(form.Encode()))

@@ -312,7 +312,7 @@ templ renderArrayItem(af config.ArrayField, item any, index int) {
 		<div class="card-body">
 			<div class="row g-3">
 				for _, field := range af.Fields {
-					<div class="col-md-6">
+					<div class={ templ.KV("col-md-6", field.Type != config.FieldTypeTextarea), templ.KV("col-12", field.Type == config.FieldTypeTextarea) }>
 						<label class="form-label">{ field.Label }</label>
 						switch field.Type {
 						case config.FieldTypePassword:
@@ -331,6 +331,32 @@ templ renderArrayItem(af config.ArrayField, item any, index int) {
 									   value={ config.GetStringValue(item, field.Name) }
 									   placeholder={ field.Placeholder }/>
 							</div>
+							if field.Help != "" {
+								<div class="form-text">{ field.Help }</div>
+							}
+						case config.FieldTypeTextarea:
+							<textarea class="form-control font-monospace"
+									  name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }
+									  if field.Rows > 0 {
+										  rows={ strconv.Itoa(field.Rows) }
+									  } else {
+										  rows="6"
+									  }
+									  placeholder={ field.Placeholder }>{ config.GetStringValue(item, field.Name) }</textarea>
+							if field.Help != "" {
+								<div class="form-text">
+									@templ.Raw(field.Help)
+								</div>
+							}
+						case config.FieldTypeSelect:
+							<select class="form-select"
+									name={ fmt.Sprintf("%s[%d][%s]", af.JSONName, index, field.JSONName) }>
+								for _, opt := range field.Options {
+									<option value={ opt.Value } selected?={ config.GetStringValue(item, field.Name) == opt.Value }>
+										{ opt.Label }
+									</option>
+								}
+							</select>
 							if field.Help != "" {
 								<div class="form-text">{ field.Help }</div>
 							}
@@ -370,7 +396,7 @@ templ renderArrayItemTemplate(af config.ArrayField) {
 		<div class="card-body">
 			<div class="row g-3">
 				for _, field := range af.Fields {
-					<div class="col-md-6">
+					<div class={ templ.KV("col-md-6", field.Type != config.FieldTypeTextarea), templ.KV("col-12", field.Type == config.FieldTypeTextarea) }>
 						<label class="form-label">{ field.Label }</label>
 						switch field.Type {
 						case config.FieldTypePassword:
@@ -386,6 +412,26 @@ templ renderArrayItemTemplate(af config.ArrayField) {
 									   placeholder={ field.Placeholder }
 									   data-field-name={ field.JSONName }/>
 							</div>
+						case config.FieldTypeTextarea:
+							<textarea class="form-control font-monospace"
+									  name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
+									  if field.Rows > 0 {
+										  rows={ strconv.Itoa(field.Rows) }
+									  } else {
+										  rows="6"
+									  }
+									  placeholder={ field.Placeholder }
+									  data-field-name={ field.JSONName }></textarea>
+						case config.FieldTypeSelect:
+							<select class="form-select"
+									name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
+									data-field-name={ field.JSONName }>
+								for _, opt := range field.Options {
+									<option value={ opt.Value }>
+										{ opt.Label }
+									</option>
+								}
+							</select>
 						default:
 							<input type="text" class="form-control item-field"
 								   name={ fmt.Sprintf("%s[-1][%s]", af.JSONName, field.JSONName) }
@@ -422,7 +468,7 @@ script addArrayItem(jsonName string) {
 	var card = clone.querySelector('.array-item-card');
 
 	card.setAttribute('data-item-index', nextIndex);
-	card.querySelectorAll('input').forEach(function(input) {
+	card.querySelectorAll('input, textarea, select').forEach(function(input) {
 		var name = input.getAttribute('name');
 		if (name) {
 			input.setAttribute('name', name.replace('[-1]', '[' + nextIndex + ']'));

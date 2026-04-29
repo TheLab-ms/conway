@@ -52,8 +52,8 @@ func queueRow(t *testing.T, m *Module, slug, machine, issue, discord string) {
 	t.Helper()
 	_, err := m.db.Exec(`
 		INSERT INTO signs_print_queue
-		    (member_id, discord_username, template_slug, machine_name, issue)
-		VALUES (NULL, ?, ?, ?, ?)`,
+		    (member_id, discord_username, template_slug, machine_name, issue, fields_json)
+		VALUES (NULL, ?, ?, ?, ?, '{}')`,
 		discord, slug, machine, issue)
 	require.NoError(t, err)
 }
@@ -117,8 +117,8 @@ func TestModule_ProcessOne_PrinterError_RetainsItem(t *testing.T) {
 	base := time.Now().Unix() - 30
 	_, err := m.db.Exec(`
 		INSERT INTO signs_print_queue
-		    (created, send_at, member_id, discord_username, template_slug, machine_name, issue)
-		VALUES (?, ?, NULL, ?, ?, ?, ?)`,
+		    (created, send_at, member_id, discord_username, template_slug, machine_name, issue, fields_json)
+		VALUES (?, ?, NULL, ?, ?, ?, ?, '{}')`,
 		base, base+5, "alice", "maintenance", "Drill", "Broken")
 	require.NoError(t, err)
 
@@ -146,8 +146,8 @@ func TestModule_ProcessOne_BackoffDoubles(t *testing.T) {
 	now := time.Now().Unix()
 	_, err := m.db.Exec(`
 		INSERT INTO signs_print_queue
-		    (created, send_at, member_id, discord_username, template_slug, machine_name, issue)
-		VALUES (?, ?, NULL, ?, ?, ?, ?)`,
+		    (created, send_at, member_id, discord_username, template_slug, machine_name, issue, fields_json)
+		VALUES (?, ?, NULL, ?, ?, ?, ?, '{}')`,
 		now-1, now-1, "alice", "maintenance", "Drill", "Broken")
 	require.NoError(t, err)
 

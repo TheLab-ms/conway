@@ -5,6 +5,7 @@ package signs
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -37,7 +38,8 @@ CREATE TABLE IF NOT EXISTS signs_print_queue (
     discord_username TEXT NOT NULL DEFAULT '',
     template_slug TEXT NOT NULL,
     machine_name TEXT NOT NULL DEFAULT '',
-    issue TEXT NOT NULL DEFAULT ''
+    issue TEXT NOT NULL DEFAULT '',
+    fields_json TEXT NOT NULL DEFAULT '{}'
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS signs_print_queue_send_at_idx ON signs_print_queue (send_at);
@@ -272,6 +274,7 @@ type queuedPrint struct {
 	TemplateSlug    string
 	MachineName     string
 	Issue           string
+	FieldsJSON      string
 	Created         int64
 	Attempts        int64
 }
@@ -286,12 +289,13 @@ func (m *Module) GetItem(ctx context.Context) (*queuedPrint, error) {
 	}
 	q := &queuedPrint{}
 	err := m.db.QueryRowContext(ctx, `
-		SELECT id, member_id, discord_username, template_slug, machine_name, issue, created, attempts
+		SELECT id, member_id, discord_username, template_slug, machine_name, issue,
+		       COALESCE(fields_json, '{}'), created, attempts
 		FROM signs_print_queue
 		WHERE unixepoch() >= send_at AND unixepoch() - created < ?
 		ORDER BY send_at ASC LIMIT 1`, int64(printQueueTTL.Seconds())).Scan(
 		&q.ID, &q.MemberID, &q.DiscordUsername, &q.TemplateSlug,
-		&q.MachineName, &q.Issue, &q.Created, &q.Attempts)
+		&q.MachineName, &q.Issue, &q.FieldsJSON, &q.Created, &q.Attempts)
 	if err != nil {
 		return nil, err
 	}
@@ -309,12 +313,7 @@ func (m *Module) ProcessItem(ctx context.Context, item *queuedPrint) error {
 		return &RenderError{Err: err}
 	}
 
-	pdf, err := RenderSign(tmpl, SignData{
-		DiscordHandle: item.DiscordUsername,
-		Date:          time.Unix(item.Created, 0).Format("Mon Jan 2, 2006 3:04 PM"),
-		MachineName:   item.MachineName,
-		Issue:         item.Issue,
-	})
+	pdf, err := RenderSign(tmpl, buildSignData(item))
 	if err != nil {
 		m.eventLogger.LogEvent(ctx, item.MemberID.Int64, "RenderError",
 			item.TemplateSlug, tmpl.Name, false, err.Error())
@@ -328,8 +327,18 @@ func (m *Module) ProcessItem(ctx context.Context, item *queuedPrint) error {
 	}
 
 	jobName := fmt.Sprintf("Sign: %s", tmpl.Name)
-	if item.MachineName != "" {
-		jobName = fmt.Sprintf("Sign: %s — %s", tmpl.Name, item.MachineName)
+	data := buildSignData(item)
+	// Use MachineName for the job name if available (backward compat),
+	// otherwise use the first non-empty field value.
+	if mn := data["MachineName"]; mn != "" {
+		jobName = fmt.Sprintf("Sign: %s — %s", tmpl.Name, mn)
+	} else {
+		for _, fd := range tmpl.ParsedFields() {
+			if v := data[fd.Name]; v != "" {
+				jobName = fmt.Sprintf("Sign: %s — %s", tmpl.Name, v)
+				break
+			}
+		}
 	}
 
 	if err := printer.Print(ctx, PrintJob{JobName: jobName, PDF: pdf}); err != nil {
@@ -338,7 +347,7 @@ func (m *Module) ProcessItem(ctx context.Context, item *queuedPrint) error {
 		return err
 	}
 	m.eventLogger.LogEvent(ctx, item.MemberID.Int64, "Printed",
-		item.TemplateSlug, tmpl.Name, true, fmt.Sprintf("machine=%q", item.MachineName))
+		item.TemplateSlug, tmpl.Name, true, fmt.Sprintf("fields=%s", item.FieldsJSON))
 	return nil
 }
 
@@ -364,6 +373,39 @@ func (m *Module) UpdateItem(ctx context.Context, item *queuedPrint, success bool
 	return err
 }
 
+// --- helpers ---
+
+// buildSignData constructs a SignData map from a queued print row.
+// It always sets DiscordHandle and Date, then overlays fields from
+// fields_json. For backward compatibility, MachineName and Issue from
+// the legacy columns are set when fields_json is empty/missing.
+func buildSignData(item *queuedPrint) SignData {
+	data := SignData{
+		"DiscordHandle": item.DiscordUsername,
+		"Date":          time.Unix(item.Created, 0).Format("Mon Jan 2, 2006 3:04 PM"),
+	}
+
+	// Try to parse fields_json first.
+	var fields map[string]string
+	if item.FieldsJSON != "" && item.FieldsJSON != "{}" {
+		if err := json.Unmarshal([]byte(item.FieldsJSON), &fields); err == nil && len(fields) > 0 {
+			for k, v := range fields {
+				data[k] = v
+			}
+			return data
+		}
+	}
+
+	// Backward compatibility: use legacy columns.
+	if item.MachineName != "" {
+		data["MachineName"] = item.MachineName
+	}
+	if item.Issue != "" {
+		data["Issue"] = item.Issue
+	}
+	return data
+}
+
 // --- handlers ---
 
 func findTemplate(templates []Template, slug string) (Template, bool) {
@@ -385,12 +427,14 @@ func (m *Module) recentPrints(ctx context.Context, memberID int64, leadership bo
 	if leadership {
 		rows, err = m.db.QueryContext(ctx, `
 			SELECT q.id, q.created, q.template_slug, q.machine_name, q.issue,
+			       COALESCE(q.fields_json, '{}'),
 			       q.discord_username, q.member_id, q.send_at
 			FROM signs_print_queue q
 			ORDER BY q.created DESC LIMIT ?`, limit)
 	} else {
 		rows, err = m.db.QueryContext(ctx, `
 			SELECT q.id, q.created, q.template_slug, q.machine_name, q.issue,
+			       COALESCE(q.fields_json, '{}'),
 			       q.discord_username, q.member_id, q.send_at
 			FROM signs_print_queue q
 			WHERE q.member_id = ?
@@ -406,7 +450,7 @@ func (m *Module) recentPrints(ctx context.Context, memberID int64, leadership bo
 		var r printRecord
 		var ts int64
 		if err := rows.Scan(&r.ID, &ts, &r.TemplateSlug, &r.MachineName, &r.Issue,
-			&r.DiscordUsername, &r.MemberID, &r.SendAt); err != nil {
+			&r.FieldsJSON, &r.DiscordUsername, &r.MemberID, &r.SendAt); err != nil {
 			return nil, err
 		}
 		r.Created = time.Unix(ts, 0)
@@ -421,9 +465,36 @@ type printRecord struct {
 	TemplateSlug    string
 	MachineName     string
 	Issue           string
+	FieldsJSON      string
 	DiscordUsername string
 	MemberID        sql.NullInt64
 	SendAt          int64
+}
+
+// FieldSummary returns a short summary of the dynamic fields for display
+// in the recent prints table. Falls back to legacy MachineName/Issue.
+func (r printRecord) FieldSummary() string {
+	if r.FieldsJSON != "" && r.FieldsJSON != "{}" {
+		var fields map[string]string
+		if err := json.Unmarshal([]byte(r.FieldsJSON), &fields); err == nil && len(fields) > 0 {
+			var parts []string
+			for _, v := range fields {
+				if v != "" {
+					parts = append(parts, v)
+				}
+			}
+			if len(parts) > 0 {
+				return strings.Join(parts, " — ")
+			}
+		}
+	}
+	if r.MachineName != "" && r.Issue != "" {
+		return r.MachineName + " — " + r.Issue
+	}
+	if r.MachineName != "" {
+		return r.MachineName
+	}
+	return r.Issue
 }
 
 // Status returns a short label suitable for the UI badge.
@@ -455,8 +526,10 @@ func (m *Module) renderForm(w http.ResponseWriter, r *http.Request) {
 		engine.ClientError(w, "Not Found", "Unknown sign template.", http.StatusNotFound)
 		return
 	}
+	fields := tmpl.ParsedFields()
+	values := make(map[string]string, len(fields))
 	w.Header().Set("Content-Type", "text/html")
-	renderForm(tmpl, "", "", "").Render(r.Context(), w)
+	renderForm(tmpl, fields, values, "").Render(r.Context(), w)
 }
 
 func (m *Module) submit(w http.ResponseWriter, r *http.Request) {
@@ -475,34 +548,29 @@ func (m *Module) submit(w http.ResponseWriter, r *http.Request) {
 		engine.ClientError(w, "Bad Request", err.Error(), http.StatusBadRequest)
 		return
 	}
-	machine := strings.TrimSpace(r.FormValue("machine_name"))
-	issue := strings.TrimSpace(r.FormValue("issue"))
 
-	if machine == "" {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusBadRequest)
-		renderForm(tmpl, machine, issue, "Please name the machine or equipment.").Render(r.Context(), w)
-		return
-	}
-	if len(machine) > maxMachineNameLen {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusBadRequest)
-		renderForm(tmpl, machine, issue,
-			fmt.Sprintf("Machine name is too long (max %d characters).", maxMachineNameLen)).Render(r.Context(), w)
-		return
-	}
-	if issue == "" {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusBadRequest)
-		renderForm(tmpl, machine, issue, "Please describe the issue.").Render(r.Context(), w)
-		return
-	}
-	if len(issue) > maxIssueLen {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusBadRequest)
-		renderForm(tmpl, machine, issue,
-			fmt.Sprintf("Issue description is too long (max %d characters).", maxIssueLen)).Render(r.Context(), w)
-		return
+	fields := tmpl.ParsedFields()
+	values := make(map[string]string, len(fields))
+
+	// Collect and validate dynamic field values.
+	for _, fd := range fields {
+		val := strings.TrimSpace(r.FormValue("field_" + fd.Name))
+		values[fd.Name] = val
+
+		if fd.Required && val == "" {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusBadRequest)
+			renderForm(tmpl, fields, values,
+				fmt.Sprintf("%s is required.", fd.Label)).Render(r.Context(), w)
+			return
+		}
+		if len(val) > maxIssueLen {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusBadRequest)
+			renderForm(tmpl, fields, values,
+				fmt.Sprintf("%s is too long (max %d characters).", fd.Label, maxIssueLen)).Render(r.Context(), w)
+			return
+		}
 	}
 
 	user := auth.GetUserMeta(r.Context())
@@ -530,17 +598,23 @@ func (m *Module) submit(w http.ResponseWriter, r *http.Request) {
 
 	discord := lookupDiscordUsername(r.Context(), m.db, user.ID)
 
-	_, err := m.db.ExecContext(r.Context(), `
+	fieldsJSON, err := json.Marshal(values)
+	if err != nil {
+		engine.SystemError(w, "encoding fields: "+err.Error())
+		return
+	}
+
+	_, err = m.db.ExecContext(r.Context(), `
 		INSERT INTO signs_print_queue
-		    (member_id, discord_username, template_slug, machine_name, issue)
-		VALUES (?, ?, ?, ?, ?)`,
-		user.ID, discord, tmpl.Slug, machine, issue)
+		    (member_id, discord_username, template_slug, machine_name, issue, fields_json)
+		VALUES (?, ?, ?, '', '', ?)`,
+		user.ID, discord, tmpl.Slug, string(fieldsJSON))
 	if err != nil {
 		engine.SystemError(w, "queueing sign print: "+err.Error())
 		return
 	}
 	m.eventLogger.LogEvent(r.Context(), user.ID, "Queued",
-		tmpl.Slug, tmpl.Name, true, fmt.Sprintf("machine=%q", machine))
+		tmpl.Slug, tmpl.Name, true, string(fieldsJSON))
 
 	http.Redirect(w, r, "/signs?ok="+tmpl.Slug, http.StatusSeeOther)
 }

@@ -52,8 +52,7 @@ templ renderIndex(templates []Template, recents []printRecord, flash string) {
 							<tr>
 								<th>When</th>
 								<th>Template</th>
-								<th>Machine</th>
-								<th>Issue</th>
+								<th>Details</th>
 								<th>Status</th>
 							</tr>
 						</thead>
@@ -62,8 +61,7 @@ templ renderIndex(templates []Template, recents []printRecord, flash string) {
 								<tr>
 									<td class="text-nowrap">{ r.Created.Format("Jan 2 3:04 PM") }</td>
 									<td>{ r.TemplateSlug }</td>
-									<td>{ r.MachineName }</td>
-									<td class="text-truncate" style="max-width: 320px;">{ r.Issue }</td>
+									<td class="text-truncate" style="max-width: 400px;">{ r.FieldSummary() }</td>
 									<td>
 										if r.Status() == "Printing" {
 											<span class="badge bg-info text-dark">{ r.Status() }</span>
@@ -84,7 +82,7 @@ templ renderIndex(templates []Template, recents []printRecord, flash string) {
 	}
 }
 
-templ renderForm(t Template, machineName, issue, errMsg string) {
+templ renderForm(t Template, fields []FieldDef, values map[string]string, errMsg string) {
 	@bootstrap.View() {
 		<div class="container my-4" style="max-width: 700px;">
 			<a href="/signs" class="text-secondary small">&larr; Signs</a>
@@ -96,32 +94,43 @@ templ renderForm(t Template, machineName, issue, errMsg string) {
 				<div class="alert alert-danger" role="alert">{ errMsg }</div>
 			}
 			<form method="post" action={ templ.URL(signURL(t.Slug)) }>
-				<div class="mb-3">
-					<label for="machine_name" class="form-label">Machine / equipment name</label>
-					<input
-						type="text"
-						class="form-control form-control-lg"
-						id="machine_name"
-						name="machine_name"
-						maxlength="200"
-						required
-						placeholder="e.g. Bambu Lab Printer 2"
-						value={ machineName }
-					/>
-				</div>
-				<div class="mb-4">
-					<label for="issue" class="form-label">What's wrong? (1-2 sentences)</label>
-					<textarea
-						class="form-control"
-						id="issue"
-						name="issue"
-						rows="4"
-						maxlength="2000"
-						required
-						placeholder="Describe the issue clearly so the next person knows what's broken."
-					>{ issue }</textarea>
-				</div>
-				<button type="submit" class="btn btn-success btn-lg">Print sign</button>
+				for _, fd := range fields {
+					<div class="mb-3">
+						<label for={ "field_" + fd.Name } class="form-label">{ fd.Label }</label>
+						if fd.Multiline {
+							<textarea
+								class="form-control"
+								id={ "field_" + fd.Name }
+								name={ "field_" + fd.Name }
+								rows="4"
+								maxlength="2000"
+								if fd.Required {
+									required
+								}
+								placeholder={ fd.Placeholder }
+							>{ values[fd.Name] }</textarea>
+						} else {
+							<input
+								type="text"
+								class="form-control form-control-lg"
+								id={ "field_" + fd.Name }
+								name={ "field_" + fd.Name }
+								maxlength="200"
+								if fd.Required {
+									required
+								}
+								placeholder={ fd.Placeholder }
+								value={ values[fd.Name] }
+							/>
+						}
+					</div>
+				}
+				if len(fields) == 0 {
+					<div class="alert alert-warning">
+						This template has no fields configured. Ask leadership to add field definitions.
+					</div>
+				}
+				<button type="submit" class="btn btn-success btn-lg" disabled?={ len(fields) == 0 }>Print sign</button>
 				<a href="/signs" class="btn btn-link">Cancel</a>
 			</form>
 		</div>
