@@ -1,0 +1,129 @@
+package signs
+
+import (
+	"net/url"
+
+	"github.com/TheLab-ms/conway/modules/bootstrap"
+)
+
+// signURL builds a /signs/{slug} URL with the slug path-escaped, since the
+// admin can configure arbitrary slugs through the config UI.
+func signURL(slug string) string {
+	return "/signs/" + url.PathEscape(slug)
+}
+
+templ renderIndex(templates []Template, recents []printRecord, flash string) {
+	@bootstrap.View() {
+		<div class="container my-4" style="max-width: 900px;">
+			<h1 class="mb-2">Signs</h1>
+			<p class="text-secondary mb-4">
+				Posted on equipment to indicate maintenance status. Pick a sign to print on the lab's letter-paper laser printer.
+			</p>
+			if flash != "" {
+				<div class="alert alert-success" role="alert">
+					Print queued. It'll go to the printer momentarily.
+				</div>
+			}
+			if len(templates) == 0 {
+				<div class="alert alert-warning" role="alert">
+					No sign templates have been configured yet. Ask leadership to add one in the admin settings.
+				</div>
+			}
+			<div class="row g-3 mb-5">
+				for _, t := range templates {
+					<div class="col-md-6">
+						<div class="card h-100">
+							<div class="card-body d-flex flex-column">
+								<h3 class="card-title">{ t.Name }</h3>
+								<p class="card-text text-secondary flex-grow-1">{ t.Description }</p>
+								<a href={ templ.URL(signURL(t.Slug)) } class="btn btn-success align-self-start">
+									Fill out & print
+								</a>
+							</div>
+						</div>
+					</div>
+				}
+			</div>
+			if len(recents) > 0 {
+				<h2 class="mb-3">Recent prints</h2>
+				<div class="table-responsive">
+					<table class="table table-sm align-middle">
+						<thead>
+							<tr>
+								<th>When</th>
+								<th>Template</th>
+								<th>Machine</th>
+								<th>Issue</th>
+								<th>Status</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, r := range recents {
+								<tr>
+									<td class="text-nowrap">{ r.Created.Format("Jan 2 3:04 PM") }</td>
+									<td>{ r.TemplateSlug }</td>
+									<td>{ r.MachineName }</td>
+									<td class="text-truncate" style="max-width: 320px;">{ r.Issue }</td>
+									<td>
+										if r.Status() == "Printing" {
+											<span class="badge bg-info text-dark">{ r.Status() }</span>
+										} else {
+											<span class="badge bg-warning text-dark">{ r.Status() }</span>
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<p class="small text-secondary">
+					Prints disappear from this list once delivered to the printer (or after one hour if delivery fails).
+				</p>
+			}
+		</div>
+	}
+}
+
+templ renderForm(t Template, machineName, issue, errMsg string) {
+	@bootstrap.View() {
+		<div class="container my-4" style="max-width: 700px;">
+			<a href="/signs" class="text-secondary small">&larr; Signs</a>
+			<h1 class="mt-2 mb-1">{ t.Name }</h1>
+			if t.Description != "" {
+				<p class="text-secondary mb-4">{ t.Description }</p>
+			}
+			if errMsg != "" {
+				<div class="alert alert-danger" role="alert">{ errMsg }</div>
+			}
+			<form method="post" action={ templ.URL(signURL(t.Slug)) }>
+				<div class="mb-3">
+					<label for="machine_name" class="form-label">Machine / equipment name</label>
+					<input
+						type="text"
+						class="form-control form-control-lg"
+						id="machine_name"
+						name="machine_name"
+						maxlength="200"
+						required
+						placeholder="e.g. Bambu Lab Printer 2"
+						value={ machineName }
+					/>
+				</div>
+				<div class="mb-4">
+					<label for="issue" class="form-label">What's wrong? (1-2 sentences)</label>
+					<textarea
+						class="form-control"
+						id="issue"
+						name="issue"
+						rows="4"
+						maxlength="2000"
+						required
+						placeholder="Describe the issue clearly so the next person knows what's broken."
+					>{ issue }</textarea>
+				</div>
+				<button type="submit" class="btn btn-success btn-lg">Print sign</button>
+				<a href="/signs" class="btn btn-link">Cancel</a>
+			</form>
+		</div>
+	}
+}

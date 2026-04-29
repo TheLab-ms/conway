@@ -17,6 +17,7 @@ import (
 	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/TheLab-ms/conway/modules"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/signs"
 	"github.com/playwright-community/playwright-go"
 	"github.com/stripe/stripe-go/v78"
 )
@@ -29,10 +30,12 @@ var (
 // TestEnv holds an isolated test environment with its own database, server, and auth.
 // Each test gets its own TestEnv, enabling full parallel execution.
 type TestEnv struct {
-	baseURL    string
-	db         *sql.DB
-	authIssuer *engine.TokenIssuer
-	cancel     context.CancelFunc
+	baseURL     string
+	db          *sql.DB
+	authIssuer  *engine.TokenIssuer
+	cancel      context.CancelFunc
+	SignsPrinter *fakePrinter
+	SignsModule  *signs.Module
 }
 
 func TestMain(m *testing.M) {
@@ -116,6 +119,8 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	authModule := auth.New(db, self, nil, authIssuer)
 	a.Router.Authenticator = authModule
 
+	signsPrinter := &fakePrinter{}
+	var signsModule *signs.Module
 	modules.Register(a, modules.Options{
 		Database:    db,
 		Self:        self,
@@ -125,6 +130,8 @@ func NewTestEnv(t *testing.T) *TestEnv {
 		Turnstile:   nil,
 		EmailSender: nil,
 		SpaceHost:   "127.0.0.1",
+		SignsPrinter: signsPrinter,
+		OnSignsModule: func(m *signs.Module) { signsModule = m },
 	})
 
 	// Seed printer state
@@ -147,10 +154,12 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	// we skip ProcMgr.Run to avoid double-binding.
 
 	env := &TestEnv{
-		baseURL:    baseURL,
-		db:         db,
-		authIssuer: authIssuer,
-		cancel:     cancel,
+		baseURL:      baseURL,
+		db:           db,
+		authIssuer:   authIssuer,
+		cancel:       cancel,
+		SignsPrinter: signsPrinter,
+		SignsModule:  signsModule,
 	}
 
 	// Wait for server to be ready
@@ -158,7 +167,6 @@ func NewTestEnv(t *testing.T) *TestEnv {
 		t.Fatalf("test server did not become ready: %v", err)
 	}
 
-	// Register cleanup
 	t.Cleanup(func() {
 		cancel()
 		db.Close()

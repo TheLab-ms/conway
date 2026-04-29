@@ -7,8 +7,10 @@ require (
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/gavv/httpexpect/v2 v2.16.0
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
+	github.com/phin1x/go-ipp v1.7.0
 	github.com/playwright-community/playwright-go v0.5200.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/stretchr/testify v1.11.1

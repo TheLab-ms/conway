@@ -20,6 +20,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/metrics"
 	"github.com/TheLab-ms/conway/modules/oauth2"
 	"github.com/TheLab-ms/conway/modules/payment"
+	"github.com/TheLab-ms/conway/modules/signs"
 	"github.com/TheLab-ms/conway/modules/triggers"
 	"github.com/TheLab-ms/conway/modules/waiver"
 )
@@ -44,6 +45,13 @@ type Options struct {
 
 	// Kiosk config
 	SpaceHost string
+
+	// Signs module: optional injectable printer (for tests). nil => IPP from config.
+	SignsPrinter signs.Printer
+	// OnSignsModule, if set, is called with the signs module after registration.
+	// This is a TEST-ONLY hook: production code should not need access to
+	// internal module handles. Used by e2e tests to drive ProcessOne.
+	OnSignsModule func(*signs.Module)
 }
 
 // Register adds all modules to the app and returns the auth module
@@ -100,6 +108,17 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	// discordwebhook (needs discord_webhook_queue table) and after machines
 	// (which may reference discord tables), but before admin.
 	a.Add(triggers.New(opts.Database))
+
+	// Signs module: queue-backed printing of letter-paper signs over IPP.
+	signsMod := signs.New(opts.Database, engine.NewEventLogger(opts.Database, "signs"))
+	if opts.SignsPrinter != nil {
+		signsMod.SetPrinter(opts.SignsPrinter)
+	}
+	a.Add(signsMod)
+	signsMod.SetConfigLoader(a.ConfigStore())
+	if opts.OnSignsModule != nil {
+		opts.OnSignsModule(signsMod)
+	}
 
 	// Admin module added last so it can access the fully-populated config registry
 	adminMod := admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin"))
