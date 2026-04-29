@@ -36,11 +36,42 @@ type PrinterTarget struct {
 // host/port are configured by leadership through the admin UI; do not point
 // it at anything routable from the public internet.
 func NewIPPPrinter(target PrinterTarget) Printer {
-	return &ippPrinter{target: target}
+	port := target.Port
+	if port == 0 {
+		port = 631
+	}
+	// Trim slashes so a user pasting "/ipp/print" or "ipp/print/" still works.
+	queuePath := strings.Trim(target.Queue, "/")
+
+	adapter := &brotherAdapter{
+		HttpAdapter: ipp.NewHttpAdapter(target.Host, port, ippUsername, "", false),
+		scheme:      "http",
+		host:        target.Host,
+		port:        port,
+		path:        queuePath,
+	}
+	// Built once and reused so the underlying *http.Transport pools
+	// connections across jobs (it would otherwise leak idle conns under load).
+	url := adapter.GetHttpUri("", nil)
+	printerURI := fmt.Sprintf("ipp://%s:%d/%s", target.Host, port, queuePath)
+
+	return &ippPrinter{
+		target:     target,
+		adapter:    adapter,
+		url:        url,
+		printerURI: printerURI,
+	}
 }
 
+// ippUsername is sent as the IPP "requesting-user-name" attribute. The printer
+// shows it in the queue UI; nothing on the lab LAN authenticates against it.
+const ippUsername = "conway"
+
 type ippPrinter struct {
-	target PrinterTarget
+	target     PrinterTarget
+	adapter    *brotherAdapter
+	url        string // HTTP URL we POST IPP requests to
+	printerURI string // value of the IPP "printer-uri" operation attribute
 }
 
 // brotherAdapter wraps the stock HttpAdapter so the HTTP request URL uses the
@@ -48,17 +79,12 @@ type ippPrinter struct {
 // "/printers/<queue>" namespace. Brother printers (and many other embedded
 // IPP servers) expose only a single endpoint such as "/ipp/print" and return
 // 404 for the CUPS-style "/printers/..." path.
-//
-// The IPP-level "printer-uri" attribute inside the request body is built
-// separately by the client (`ipp://localhost/printers/<queue>`) and is
-// independent of the HTTP URL the request is POSTed to, so overriding only
-// GetHttpUri is sufficient.
 type brotherAdapter struct {
 	*ipp.HttpAdapter
 	scheme string
 	host   string
 	port   int
-	path   string // already URL-quoted-safe; no leading slash
+	path   string
 }
 
 func (a *brotherAdapter) GetHttpUri(_ string, _ interface{}) string {
@@ -69,33 +95,27 @@ func (p *ippPrinter) Print(ctx context.Context, job PrintJob) error {
 	if p.target.Host == "" || p.target.Queue == "" {
 		return fmt.Errorf("printer not configured (missing host or queue)")
 	}
-	port := p.target.Port
-	if port == 0 {
-		port = 631
+	if len(job.PDF) == 0 {
+		return fmt.Errorf("print job has empty PDF")
 	}
 
-	// Strip any leading slash so a user pasting "/ipp/print" still works.
-	queuePath := strings.TrimLeft(p.target.Queue, "/")
+	// Build the Print-Job request directly so we can set "printer-uri" to
+	// the printer's actual IPP URI. The library's PrintJobContext hardcodes
+	// it to "ipp://localhost/printers/<queue>", which Brother rejects with
+	// IPP status 0x0406 (client-error-not-found).
+	req := ipp.NewRequest(ipp.OperationPrintJob, 1)
+	req.OperationAttributes[ipp.AttributePrinterURI] = p.printerURI
+	req.OperationAttributes[ipp.AttributeRequestingUserName] = ippUsername
+	req.OperationAttributes[ipp.AttributeJobName] = job.JobName
+	req.OperationAttributes[ipp.AttributeDocumentFormat] = "application/pdf"
+	req.OperationAttributes[ipp.AttributeCopies] = 1
+	req.OperationAttributes[ipp.AttributeJobPriority] = ipp.DefaultJobPriority
+	req.File = bytes.NewReader(job.PDF)
+	req.FileSize = len(job.PDF)
 
-	adapter := &brotherAdapter{
-		HttpAdapter: ipp.NewHttpAdapter(p.target.Host, port, "conway", "", false),
-		scheme:      "http",
-		host:        p.target.Host,
-		port:        port,
-		path:        queuePath,
-	}
-	client := ipp.NewIPPClientWithAdapter("conway", adapter)
-
-	doc := ipp.Document{
-		Document: bytes.NewReader(job.PDF),
-		Size:     len(job.PDF),
-		Name:     job.JobName,
-		MimeType: "application/pdf",
-	}
-
-	// PrintJobContext uses the queue name only to populate the IPP
-	// "printer-uri" attribute; the HTTP URL comes from our adapter above.
-	if _, err := client.PrintJobContext(ctx, doc, queuePath, nil); err != nil {
+	// We discard the response (which carries the printer-assigned job ID);
+	// the workqueue tracks our own job identity and we do not poll status.
+	if _, err := p.adapter.SendRequestContext(ctx, p.url, req, nil); err != nil {
 		return fmt.Errorf("ipp print: %w", err)
 	}
 	return nil
