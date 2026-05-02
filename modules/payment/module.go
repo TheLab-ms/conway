@@ -144,17 +144,74 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	var memberID int64
 	m.db.QueryRowContext(r.Context(), "SELECT id FROM members WHERE email = ?", strings.ToLower(cust.Email)).Scan(&memberID)
 
-	// Update our representation of the member to reflect Stripe
-	_, err = m.db.ExecContext(r.Context(), "UPDATE members SET stripe_customer_id = $2, stripe_subscription_id = $3, stripe_subscription_state = $4, name = $5 WHERE email = $1", strings.ToLower(cust.Email), cust.ID, sub.ID, sub.Status, cust.Name)
+	// Apply the update, filtering out stale events for old/replaced subscriptions.
+	applied, err := m.applySubscriptionUpdate(r.Context(), cust.Email, cust.ID, sub.ID, string(sub.Status), cust.Name)
 	if err != nil {
 		m.eventLogger.LogEvent(r.Context(), memberID, "WebhookError", cust.ID, "", false, "db update: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
 
+	if !applied && memberID > 0 {
+		m.eventLogger.LogEvent(r.Context(), memberID, "WebhookIgnored", cust.ID, "", true, fmt.Sprintf("event=%s status=%s sub=%s (stale event for non-current subscription)", event.Type, sub.Status, sub.ID))
+		slog.Info("ignored stale stripe webhook for non-current subscription", "member", cust.Email, "status", sub.Status, "subscription", sub.ID)
+		w.WriteHeader(204)
+		return
+	}
+
 	m.eventLogger.LogEvent(r.Context(), memberID, "WebhookReceived", cust.ID, "", true, fmt.Sprintf("event=%s status=%s", event.Type, sub.Status))
 	slog.Info("updated member's stripe subscription metadata", "member", cust.Email, "status", sub.Status)
 	w.WriteHeader(204)
+}
+
+// applySubscriptionUpdate writes the latest subscription state to the matching
+// member, but ignores events that are stale relative to a newer subscription
+// that has already taken over.
+//
+// Stripe's customer.subscription.* webhooks can arrive out of order or after a
+// long delay. In particular, a member can replace a canceling subscription with
+// a fresh one before the original reaches the end of its billed period. When
+// the eventual `customer.subscription.deleted` for the old subscription
+// finally arrives, naively overwriting the member would clobber the new
+// subscription's active state and deactivate the member.
+//
+// The rule applied here is: an event updates the member only when one of the
+// following holds:
+//
+//  1. The event's subscription ID matches the one we already have on file
+//     (the normal "this is about our current subscription" case).
+//  2. The member has no subscription on file yet (first-time signup, or a
+//     previously cleared record).
+//  3. The event represents an active or trialing subscription, which
+//     legitimately takes over from any previously tracked subscription.
+//
+// Any other event (notably: a non-active status for a subscription ID that
+// doesn't match the currently-tracked one) is treated as stale and dropped.
+//
+// Returns true if a row was written, false if the event was filtered out or
+// no member matched the email.
+func (m *Module) applySubscriptionUpdate(ctx context.Context, email, custID, subID, status, name string) (bool, error) {
+	res, err := m.db.ExecContext(ctx, `
+		UPDATE members
+		   SET stripe_customer_id = ?,
+		       stripe_subscription_id = ?,
+		       stripe_subscription_state = ?,
+		       name = ?
+		 WHERE email = ?
+		   AND (
+		         stripe_subscription_id IS NULL
+		      OR stripe_subscription_id = ?
+		      OR ? IN ('active', 'trialing')
+		   )`,
+		custID, subID, status, name, strings.ToLower(email), subID, status)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // handleCheckoutForm redirects users to the appropriate Stripe Checkout workflow.
