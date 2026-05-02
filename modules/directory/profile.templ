@@ -12,7 +12,14 @@ templ renderProfile(profile *ProfileData) {
 
 			// Card Preview
 			<div class="d-flex justify-content-center mb-4">
-				<div class="card text-center p-3" style="width: 200px;">
+				<div id="preview-card" class="card text-center p-3" style={ previewCardStyle(profile.DirectoryHidden) }>
+					<span
+						id="preview-hidden-badge"
+						class="badge bg-secondary"
+						style={ hiddenBadgeStyle(profile.DirectoryHidden) }
+					>
+						Hidden
+					</span>
 					<div class="d-flex justify-content-center mb-3">
 						if profile.HasProfilePicture || profile.HasDiscordAvatar {
 							<img
@@ -145,6 +152,32 @@ templ renderProfile(profile *ProfileData) {
 					</div>
 				</div>
 
+				<div class="card mb-4">
+					<div class="card-header">
+						<strong>Privacy</strong>
+					</div>
+					<div class="card-body">
+						<div class="form-check form-switch">
+							<input
+								class="form-check-input"
+								type="checkbox"
+								role="switch"
+								id="directory_hidden"
+								name="directory_hidden"
+								checked?={ profile.DirectoryHidden }
+								onchange="updatePreviewHidden(this.checked)"
+							/>
+							<label class="form-check-label" for="directory_hidden">
+								Hide me from the member directory
+							</label>
+						</div>
+						<p class="text-muted small mt-2 mb-0">
+							When enabled, your profile won't appear in the member directory shown to other members.
+							Your account, key fob access, and Discord membership are unaffected.
+						</p>
+					</div>
+				</div>
+
 				<div class="d-flex gap-2">
 					<button type="submit" class="btn btn-primary">Save Changes</button>
 					<a href="/directory" class="btn btn-outline-secondary">Cancel</a>
@@ -161,8 +194,35 @@ templ renderProfile(profile *ProfileData) {
 				const preview = document.getElementById('preview-bio');
 				preview.textContent = value.trim();
 			}
+			function updatePreviewHidden(checked) {
+				const card = document.getElementById('preview-card');
+				const badge = document.getElementById('preview-hidden-badge');
+				if (checked) {
+					card.style.opacity = '0.45';
+					badge.style.display = '';
+				} else {
+					card.style.opacity = '1';
+					badge.style.display = 'none';
+				}
+			}
 		</script>
 	}
+}
+
+func previewCardStyle(hidden bool) string {
+	base := "width: 200px; position: relative; transition: opacity 0.2s ease;"
+	if hidden {
+		return base + " opacity: 0.45;"
+	}
+	return base
+}
+
+func hiddenBadgeStyle(hidden bool) string {
+	base := "position: absolute; top: 8px; right: 8px; font-size: 0.65rem;"
+	if !hidden {
+		return base + " display: none;"
+	}
+	return base
 }
 
 func getDisplayName(profile *ProfileData) string {

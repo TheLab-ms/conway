@@ -40,6 +40,7 @@ type ProfileData struct {
 	HasDiscordAvatar  bool
 	DiscordUsername   string
 	Leadership        bool
+	DirectoryHidden   bool // If true, hide this member from the directory listing
 }
 
 type Module struct {
@@ -53,6 +54,8 @@ func New(db *sql.DB) *Module {
 	db.Exec(`ALTER TABLE members ADD COLUMN bio TEXT`)
 	// Add pronouns column if it doesn't exist
 	db.Exec(`ALTER TABLE members ADD COLUMN pronouns TEXT`)
+	// Add directory_hidden flag (opt-out of member directory) if it doesn't exist
+	db.Exec(`ALTER TABLE members ADD COLUMN directory_hidden INTEGER DEFAULT 0`)
 	return &Module{db: db}
 }
 
@@ -102,6 +105,7 @@ func (m *Module) queryMembers(ctx context.Context) ([]DirectoryMember, error) {
 			COALESCE(fob_last_seen, 0) as fob_last_seen
 		FROM members
 		WHERE access_status = 'Ready'
+			AND COALESCE(directory_hidden, 0) = 0
 			AND COALESCE(name_override, name) IS NOT NULL AND COALESCE(name_override, name) != ''
 			AND (
 				(profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0)
@@ -281,7 +285,8 @@ func (m *Module) queryProfile(ctx context.Context, userID int64) (*ProfileData, 
 			profile_picture IS NOT NULL AND LENGTH(profile_picture) > 0 as has_profile_picture,
 			discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0 as has_discord_avatar,
 			COALESCE(discord_username, '') as discord_username,
-			leadership
+			leadership,
+			COALESCE(directory_hidden, 0) as directory_hidden
 		FROM members
 		WHERE id = ?`,
 		userID).Scan(
@@ -294,6 +299,7 @@ func (m *Module) queryProfile(ctx context.Context, userID int64) (*ProfileData, 
 		&profile.HasDiscordAvatar,
 		&profile.DiscordUsername,
 		&profile.Leadership,
+		&profile.DirectoryHidden,
 	)
 	return profile, err
 }
@@ -308,6 +314,7 @@ func (m *Module) handleEditProfile(w http.ResponseWriter, r *http.Request) {
 
 	pronouns := strings.TrimSpace(r.FormValue("pronouns"))
 	bio := strings.TrimSpace(r.FormValue("bio"))
+	directoryHidden := r.FormValue("directory_hidden") == "on"
 
 	// Validate pronouns length
 	if len(pronouns) > 50 {
@@ -325,13 +332,20 @@ func (m *Module) handleEditProfile(w http.ResponseWriter, r *http.Request) {
 	_, err := m.db.ExecContext(r.Context(), `
 		UPDATE members SET
 			pronouns = CASE WHEN $1 = '' THEN NULL ELSE $1 END,
-			bio = CASE WHEN $2 = '' THEN NULL ELSE $2 END
-		WHERE id = $3`,
-		pronouns, bio, userID)
+			bio = CASE WHEN $2 = '' THEN NULL ELSE $2 END,
+			directory_hidden = $3
+		WHERE id = $4`,
+		pronouns, bio, directoryHidden, userID)
 
 	if engine.HandleError(w, err) {
 		return
 	}
 
+	// Redirect to directory if visible, otherwise stay on profile page
+	// (since they won't appear in the directory anymore).
+	if directoryHidden {
+		http.Redirect(w, r, "/directory/profile", http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/directory", http.StatusSeeOther)
 }

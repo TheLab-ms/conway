@@ -14,6 +14,7 @@ func TestQueryMembersNameOverride(t *testing.T) {
 	db.Exec(`ALTER TABLE members ADD COLUMN profile_picture BLOB`)
 	db.Exec(`ALTER TABLE members ADD COLUMN bio TEXT`)
 	db.Exec(`ALTER TABLE members ADD COLUMN pronouns TEXT`)
+	db.Exec(`ALTER TABLE members ADD COLUMN directory_hidden INTEGER DEFAULT 0`)
 
 	// Insert a member with only billing name (no override)
 	_, err := db.Exec(`INSERT INTO members (email, name, confirmed, non_billable, waiver, fob_id, profile_picture)
@@ -53,6 +54,7 @@ func TestQueryMembersExcludesEmptyNames(t *testing.T) {
 	db.Exec(`ALTER TABLE members ADD COLUMN profile_picture BLOB`)
 	db.Exec(`ALTER TABLE members ADD COLUMN bio TEXT`)
 	db.Exec(`ALTER TABLE members ADD COLUMN pronouns TEXT`)
+	db.Exec(`ALTER TABLE members ADD COLUMN directory_hidden INTEGER DEFAULT 0`)
 
 	// Member with empty name and no override should be excluded
 	_, err := db.Exec(`INSERT INTO members (email, name, confirmed, non_billable, waiver, fob_id, profile_picture)
@@ -75,4 +77,29 @@ func TestQueryMembersExcludesEmptyNames(t *testing.T) {
 
 	assert.Len(t, results, 1)
 	assert.Equal(t, "Valid Name", results[0].DisplayName)
+}
+
+func TestQueryMembersExcludesDirectoryHidden(t *testing.T) {
+	db := members.NewTestDB(t)
+	db.Exec(`ALTER TABLE members ADD COLUMN profile_picture BLOB`)
+	db.Exec(`ALTER TABLE members ADD COLUMN bio TEXT`)
+	db.Exec(`ALTER TABLE members ADD COLUMN pronouns TEXT`)
+	db.Exec(`ALTER TABLE members ADD COLUMN directory_hidden INTEGER DEFAULT 0`)
+
+	// Visible by default (directory_hidden NULL/0)
+	_, err := db.Exec(`INSERT INTO members (email, name, confirmed, non_billable, waiver, fob_id, profile_picture)
+		VALUES ('visible@test.com', 'Visible Member', 1, 1, 1, 1, X'89504E47')`)
+	require.NoError(t, err)
+
+	// Explicitly opted out
+	_, err = db.Exec(`INSERT INTO members (email, name, confirmed, non_billable, waiver, fob_id, profile_picture, directory_hidden)
+		VALUES ('hidden@test.com', 'Hidden Member', 1, 1, 1, 2, X'89504E47', 1)`)
+	require.NoError(t, err)
+
+	m := &Module{db: db}
+	results, err := m.queryMembers(context.Background())
+	require.NoError(t, err)
+
+	assert.Len(t, results, 1)
+	assert.Equal(t, "Visible Member", results[0].DisplayName)
 }
