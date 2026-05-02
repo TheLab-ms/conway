@@ -16,8 +16,8 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/config"
+	"github.com/TheLab-ms/conway/engine/oauthlogin"
 	"github.com/TheLab-ms/conway/modules/auth"
-	"github.com/TheLab-ms/conway/modules/members/memberdb"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
 )
@@ -227,9 +227,90 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 	router.HandleFunc("GET /discord/login", router.WithAuthn(m.handleLogin))
 	router.HandleFunc("GET /discord/callback", router.WithAuthn(m.handleCallback))
 
-	// Discord-based login (unauthenticated)
-	router.HandleFunc("GET /login/discord", m.handleLoginStart)
-	router.HandleFunc("GET /login/discord/callback", m.handleLoginCallback)
+	// Discord-based login (unauthenticated) - delegated to oauthlogin helper
+	provider := &loginProvider{m: m}
+	deps := oauthlogin.Deps{
+		DB:             m.db,
+		StateTokIssuer: m.stateTokIssuer,
+		LoginComplete:  oauthlogin.LoginCompleteFunc(m.loginComplete),
+	}
+	if m.signupConfirm != nil {
+		deps.SignupConfirm = oauthlogin.SignupConfirmFunc(m.signupConfirm)
+	}
+	start, callback := oauthlogin.Handlers(provider, deps)
+	router.HandleFunc("GET /login/discord", start)
+	router.HandleFunc("GET /login/discord/callback", callback)
+}
+
+// loginProvider adapts the Discord module to the oauthlogin.Provider interface.
+type loginProvider struct{ m *Module }
+
+func (p *loginProvider) Name() string { return "discord" }
+
+func (p *loginProvider) OAuthConfig(ctx context.Context) (*oauth2.Config, error) {
+	return p.m.getLoginOAuthConfig(ctx)
+}
+
+func (p *loginProvider) FetchUser(ctx context.Context, token *oauth2.Token, oc *oauth2.Config) (*oauthlogin.UserInfo, error) {
+	client := oc.Client(ctx, token)
+	resp, err := client.Get("https://discord.com/api/users/@me")
+	if err != nil {
+		return nil, fmt.Errorf("fetching Discord user info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var u struct {
+		ID    string `json:"id"`
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
+		return nil, fmt.Errorf("decoding Discord user info: %w", err)
+	}
+	return &oauthlogin.UserInfo{
+		Email:      strings.ToLower(u.Email),
+		ProviderID: u.ID,
+	}, nil
+}
+
+// LookupExistingMember resolves a member by discord_user_id first, then by email.
+func (p *loginProvider) LookupExistingMember(ctx context.Context, db *sql.DB, info *oauthlogin.UserInfo) (int64, bool, error) {
+	var memberID int64
+	err := db.QueryRowContext(ctx,
+		"SELECT id FROM members WHERE discord_user_id = ? LIMIT 1",
+		info.ProviderID).Scan(&memberID)
+	if err == nil {
+		return memberID, true, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, false, err
+	}
+
+	err = db.QueryRowContext(ctx,
+		"SELECT id FROM members WHERE email = ?",
+		info.Email).Scan(&memberID)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return memberID, true, nil
+}
+
+// LinkAccount writes Discord identity columns and clears discord_last_synced
+// so the background worker fetches the avatar.
+func (p *loginProvider) LinkAccount(ctx context.Context, db *sql.DB, memberID int64, info *oauthlogin.UserInfo) error {
+	_, err := db.ExecContext(ctx,
+		"UPDATE members SET email = ?, discord_user_id = ?, discord_email = ?, discord_last_synced = NULL WHERE id = ?",
+		info.Email, info.ProviderID, info.Email, memberID)
+	if err != nil {
+		slog.Error("failed to link discord account during login", "error", err, "memberID", memberID)
+	}
+	return err
+}
+
+func (p *loginProvider) SignupProviderTag(info *oauthlogin.UserInfo) string {
+	return "discord:" + info.ProviderID
 }
 
 func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -314,126 +395,8 @@ func (m *Module) processDiscordCallback(ctx context.Context, userID int64, authC
 }
 
 // handleLoginStart initiates the Discord OAuth2 login flow (unauthenticated).
-func (m *Module) handleLoginStart(w http.ResponseWriter, r *http.Request) {
-	oauthConf, err := m.getLoginOAuthConfig(r.Context())
-	if err != nil {
-		engine.ClientError(w, "Not Available", "Discord login is not configured", 503)
-		return
-	}
+// Removed: now handled by the oauthlogin package via loginProvider.
 
-	callbackURI := r.URL.Query().Get("callback_uri")
-
-	state, err := m.stateTokIssuer.Sign(&jwt.RegisteredClaims{
-		Issuer:    callbackURI,
-		Audience:  jwt.ClaimStrings{"discord-login"},
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
-	})
-	if err != nil {
-		engine.SystemError(w, err.Error())
-		return
-	}
-
-	http.Redirect(w, r, oauthConf.AuthCodeURL(state), http.StatusTemporaryRedirect)
-}
-
-// handleLoginCallback completes the Discord OAuth2 login flow (unauthenticated).
-func (m *Module) handleLoginCallback(w http.ResponseWriter, r *http.Request) {
-	// Verify state JWT
-	stateStr := r.URL.Query().Get("state")
-	stateClaims, err := m.stateTokIssuer.Verify(stateStr)
-	if err != nil || len(stateClaims.Audience) == 0 || stateClaims.Audience[0] != "discord-login" {
-		engine.ClientError(w, "Invalid State", "The login state is invalid or expired. Please try again.", 400)
-		return
-	}
-	callbackURI := stateClaims.Issuer
-
-	// Handle OAuth error (e.g. user denied)
-	if r.URL.Query().Get("error") != "" {
-		http.Redirect(w, r, "/login", http.StatusFound)
-		return
-	}
-
-	// Exchange code for token
-	oauthConf, err := m.getLoginOAuthConfig(r.Context())
-	if err != nil {
-		engine.ClientError(w, "Not Available", "Discord login is not configured", 503)
-		return
-	}
-
-	token, err := oauthConf.Exchange(r.Context(), r.URL.Query().Get("code"))
-	if err != nil {
-		engine.ClientError(w, "Login Failed", "Discord login failed. Please try again.", 400)
-		return
-	}
-
-	// Fetch Discord user info
-	client := oauthConf.Client(r.Context(), token)
-	resp, err := client.Get("https://discord.com/api/users/@me")
-	if err != nil {
-		engine.SystemError(w, "Failed to fetch Discord user info: "+err.Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	var discordUser struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&discordUser); err != nil {
-		engine.SystemError(w, "Failed to decode Discord user info: "+err.Error())
-		return
-	}
-
-	if discordUser.Email == "" {
-		engine.ClientError(w, "Email Required", "Your Discord account does not have a verified email address. Please use email login instead.", 400)
-		return
-	}
-	discordUser.Email = strings.ToLower(discordUser.Email)
-
-	// Find or create member: first by discord_user_id, then by email
-	var memberID int64
-	err = m.db.QueryRowContext(r.Context(),
-		"SELECT id FROM members WHERE discord_user_id = ? LIMIT 1",
-		discordUser.ID).Scan(&memberID)
-
-	if err == sql.ErrNoRows {
-		// No member with this discord_user_id; check by email
-		err = m.db.QueryRowContext(r.Context(),
-			"SELECT id FROM members WHERE email = ?",
-			discordUser.Email).Scan(&memberID)
-
-		if err == sql.ErrNoRows {
-			// No account exists at all - show signup confirmation
-			if m.signupConfirm != nil {
-				m.signupConfirm(w, r, discordUser.Email, "discord:"+discordUser.ID, callbackURI)
-				return
-			}
-			// Fallback: create account directly if no confirmation function is set
-			memberID, err = memberdb.FindOrCreateByEmail(r.Context(), m.db, discordUser.Email)
-			if err != nil {
-				engine.SystemError(w, err.Error())
-				return
-			}
-		} else if err != nil {
-			engine.SystemError(w, err.Error())
-			return
-		}
-	} else if err != nil {
-		engine.SystemError(w, err.Error())
-		return
-	}
-
-	// Link Discord account and mark for async sync (avatar will be fetched by the
-	// discord module's background worker via discord_last_synced = NULL).
-	_, err = m.db.ExecContext(r.Context(),
-		"UPDATE members SET email = ?, discord_user_id = ?, discord_email = ?, discord_last_synced = NULL WHERE id = ?",
-		discordUser.Email, discordUser.ID, discordUser.Email, memberID)
-	if err != nil {
-		slog.Error("failed to link discord account during login", "error", err, "memberID", memberID)
-	}
-
-	m.loginComplete(w, r, memberID, callbackURI)
-}
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 	// Always start workers - they'll check config dynamically

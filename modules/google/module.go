@@ -14,8 +14,7 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/config"
-	"github.com/TheLab-ms/conway/modules/members/memberdb"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/TheLab-ms/conway/engine/oauthlogin"
 	"golang.org/x/oauth2"
 )
 
@@ -115,108 +114,60 @@ func (m *Module) getLoginOAuthConfig(ctx context.Context) (*oauth2.Config, error
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
-	router.HandleFunc("GET /login/google", m.handleLoginStart)
-	router.HandleFunc("GET /login/google/callback", m.handleLoginCallback)
+	provider := &loginProvider{m: m}
+	deps := oauthlogin.Deps{
+		DB:             m.db,
+		StateTokIssuer: m.stateTokIssuer,
+		LoginComplete:  oauthlogin.LoginCompleteFunc(m.loginComplete),
+	}
+	if m.signupConfirm != nil {
+		deps.SignupConfirm = oauthlogin.SignupConfirmFunc(m.signupConfirm)
+	}
+	start, callback := oauthlogin.Handlers(provider, deps)
+	router.HandleFunc("GET /login/google", start)
+	router.HandleFunc("GET /login/google/callback", callback)
 }
 
-// handleLoginStart initiates the Google OAuth2 login flow.
-func (m *Module) handleLoginStart(w http.ResponseWriter, r *http.Request) {
-	oauthConf, err := m.getLoginOAuthConfig(r.Context())
-	if err != nil {
-		engine.ClientError(w, "Not Available", "Google login is not configured", 503)
-		return
-	}
+// loginProvider adapts the Google module to the oauthlogin.Provider interface.
+type loginProvider struct{ m *Module }
 
-	callbackURI := r.URL.Query().Get("callback_uri")
+func (p *loginProvider) Name() string { return "google" }
 
-	state, err := m.stateTokIssuer.Sign(&jwt.RegisteredClaims{
-		Issuer:    callbackURI,
-		Audience:  jwt.ClaimStrings{"google-login"},
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
-	})
-	if err != nil {
-		engine.SystemError(w, err.Error())
-		return
-	}
-
-	http.Redirect(w, r, oauthConf.AuthCodeURL(state), http.StatusTemporaryRedirect)
+func (p *loginProvider) OAuthConfig(ctx context.Context) (*oauth2.Config, error) {
+	return p.m.getLoginOAuthConfig(ctx)
 }
 
-// handleLoginCallback completes the Google OAuth2 login flow.
-func (m *Module) handleLoginCallback(w http.ResponseWriter, r *http.Request) {
-	// Verify state JWT
-	stateStr := r.URL.Query().Get("state")
-	stateClaims, err := m.stateTokIssuer.Verify(stateStr)
-	if err != nil || len(stateClaims.Audience) == 0 || stateClaims.Audience[0] != "google-login" {
-		engine.ClientError(w, "Invalid State", "The login state is invalid or expired. Please try again.", 400)
-		return
-	}
-	callbackURI := stateClaims.Issuer
-
-	// Handle OAuth error (e.g. user denied)
-	if r.URL.Query().Get("error") != "" {
-		http.Redirect(w, r, "/login", http.StatusFound)
-		return
-	}
-
-	// Exchange code for token
-	oauthConf, err := m.getLoginOAuthConfig(r.Context())
-	if err != nil {
-		engine.ClientError(w, "Not Available", "Google login is not configured", 503)
-		return
-	}
-
-	token, err := oauthConf.Exchange(r.Context(), r.URL.Query().Get("code"))
-	if err != nil {
-		engine.ClientError(w, "Login Failed", "Google login failed. Please try again.", 400)
-		return
-	}
-
-	// Fetch Google user info
-	client := oauthConf.Client(r.Context(), token)
+func (p *loginProvider) FetchUser(ctx context.Context, token *oauth2.Token, oc *oauth2.Config) (*oauthlogin.UserInfo, error) {
+	client := oc.Client(ctx, token)
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
-		engine.SystemError(w, "Failed to fetch Google user info: "+err.Error())
-		return
+		return nil, fmt.Errorf("fetching Google user info: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var googleUser struct {
+	var u struct {
 		Email string `json:"email"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&googleUser); err != nil {
-		engine.SystemError(w, "Failed to decode Google user info: "+err.Error())
-		return
+	if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
+		return nil, fmt.Errorf("decoding Google user info: %w", err)
 	}
-
-	if googleUser.Email == "" {
-		engine.ClientError(w, "Email Required", "Your Google account does not have an email address. Please use email login instead.", 400)
-		return
-	}
-	googleUser.Email = strings.ToLower(googleUser.Email)
-
-	// Find or create member by email
-	var memberID int64
-	err = m.db.QueryRowContext(r.Context(),
-		"SELECT id FROM members WHERE email = ?",
-		googleUser.Email).Scan(&memberID)
-
-	if err == sql.ErrNoRows {
-		// No account exists - show signup confirmation
-		if m.signupConfirm != nil {
-			m.signupConfirm(w, r, googleUser.Email, "google", callbackURI)
-			return
-		}
-		// Fallback: create account directly if no confirmation function is set
-		memberID, err = memberdb.FindOrCreateByEmail(r.Context(), m.db, googleUser.Email)
-		if err != nil {
-			engine.SystemError(w, err.Error())
-			return
-		}
-	} else if err != nil {
-		engine.SystemError(w, err.Error())
-		return
-	}
-
-	m.loginComplete(w, r, memberID, callbackURI)
+	return &oauthlogin.UserInfo{Email: strings.ToLower(u.Email)}, nil
 }
+
+func (p *loginProvider) LookupExistingMember(ctx context.Context, db *sql.DB, info *oauthlogin.UserInfo) (int64, bool, error) {
+	var memberID int64
+	err := db.QueryRowContext(ctx, "SELECT id FROM members WHERE email = ?", info.Email).Scan(&memberID)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return memberID, true, nil
+}
+
+func (p *loginProvider) LinkAccount(_ context.Context, _ *sql.DB, _ int64, _ *oauthlogin.UserInfo) error {
+	return nil
+}
+
+func (p *loginProvider) SignupProviderTag(_ *oauthlogin.UserInfo) string { return "google" }
