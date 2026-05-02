@@ -19,7 +19,6 @@ import (
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/signs"
 	"github.com/playwright-community/playwright-go"
-	"github.com/stripe/stripe-go/v78"
 )
 
 var (
@@ -65,10 +64,9 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// 4. Configure Stripe test mode (global, but read-only after set)
-	if key := os.Getenv("STRIPE_TEST_KEY"); key != "" {
-		stripe.Key = key
-	}
+	// 4. Stripe configuration is now per-handler-call (read from stripe_config
+	// table by the payment module). We deliberately do NOT mutate stripe.Key
+	// here so concurrent tests with different keys cannot race on the global.
 
 	// 5. Run tests
 	code := m.Run()

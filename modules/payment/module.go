@@ -17,14 +17,19 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/stripe/stripe-go/v78"
-	billingsession "github.com/stripe/stripe-go/v78/billingportal/session"
-	"github.com/stripe/stripe-go/v78/checkout/session"
-	"github.com/stripe/stripe-go/v78/coupon"
-	"github.com/stripe/stripe-go/v78/customer"
-	"github.com/stripe/stripe-go/v78/price"
-	"github.com/stripe/stripe-go/v78/subscription"
+	stripeclient "github.com/stripe/stripe-go/v78/client"
 	"github.com/stripe/stripe-go/v78/webhook"
 )
+
+// stripeClient returns a per-call Stripe API client bound to the given API key.
+// We deliberately avoid mutating the package-global stripe.Key so concurrent
+// requests using different keys (test vs prod, or future multi-tenant) cannot
+// race on the global.
+func stripeClient(apiKey string) *stripeclient.API {
+	c := &stripeclient.API{}
+	c.Init(apiKey, nil)
+	return c
+}
 
 const migration = `
 CREATE TABLE IF NOT EXISTS stripe_config (
@@ -121,19 +126,17 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set API key from config if available
-	if cfg.apiKey != "" {
-		stripe.Key = cfg.apiKey
-	}
+	sc := stripeClient(cfg.apiKey)
 
 	// Get the latest state of the customer and subscription Stripe API objects
 	subID := event.Data.Object["id"].(string)
-	sub, err := subscription.Get(subID, &stripe.SubscriptionParams{})
+	sub, err := sc.Subscriptions.Get(subID, &stripe.SubscriptionParams{})
 	if err != nil {
 		m.eventLogger.LogEvent(r.Context(), 0, "APIError", "", "", false, "subscription.Get: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
-	cust, err := customer.Get(sub.Customer.ID, &stripe.CustomerParams{})
+	cust, err := sc.Customers.Get(sub.Customer.ID, &stripe.CustomerParams{})
 	if err != nil {
 		m.eventLogger.LogEvent(r.Context(), 0, "APIError", sub.Customer.ID, "", false, "customer.Get: "+err.Error())
 		engine.SystemError(w, err.Error())
@@ -223,10 +226,8 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set API key from config
-	if cfg.apiKey != "" {
-		stripe.Key = cfg.apiKey
-	}
+	// Per-call Stripe client; never mutate stripe.Key globally.
+	sc := stripeClient(cfg.apiKey)
 
 	memberID := auth.GetUserMeta(r.Context()).ID
 	var email string
@@ -255,7 +256,7 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 		}
 		sessionParams.Context = r.Context()
 
-		s, err := billingsession.New(sessionParams)
+		s, err := sc.BillingPortalSessions.New(sessionParams)
 		if err != nil {
 			m.eventLogger.LogEvent(r.Context(), memberID, "APIError", custID, "", false, "billingportal.session.New: "+err.Error())
 			engine.SystemError(w, err.Error())
@@ -281,7 +282,7 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 	if annual {
 		freq = "yearly"
 	}
-	pricesIter := price.Search(&stripe.PriceSearchParams{
+	pricesIter := sc.Prices.Search(&stripe.PriceSearchParams{
 		SearchParams: stripe.SearchParams{
 			Context: r.Context(),
 			Limit:   stripe.Int64(1),
@@ -298,7 +299,7 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 
 	// Apply discount(s)
 	if discountType != nil {
-		coupIter := coupon.List(&stripe.CouponListParams{})
+		coupIter := sc.Coupons.List(&stripe.CouponListParams{})
 
 		for coupIter.Next() {
 			coup := coupIter.Coupon()
@@ -320,7 +321,7 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 		checkoutParams.Customer = existingCustomerID
 	}
 
-	s, err := session.New(checkoutParams)
+	s, err := sc.CheckoutSessions.New(checkoutParams)
 	if err != nil {
 		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", custID, "", false, "checkout.session.New: "+err.Error())
 		engine.SystemError(w, err.Error())
@@ -341,9 +342,7 @@ func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if cfg.apiKey != "" {
-		stripe.Key = cfg.apiKey
-	}
+	sc := stripeClient(cfg.apiKey)
 
 	memberID := auth.GetUserMeta(r.Context()).ID
 
@@ -380,7 +379,7 @@ func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) 
 
 	// Create a Stripe customer if one doesn't exist yet
 	if existingCustomerID == nil || *existingCustomerID == "" {
-		cust, err := customer.New(&stripe.CustomerParams{
+		cust, err := sc.Customers.New(&stripe.CustomerParams{
 			Email: &email,
 		})
 		if err != nil {
@@ -420,7 +419,7 @@ func (m *Module) handleDonationCheckout(w http.ResponseWriter, r *http.Request) 
 	}
 	checkoutParams.Context = r.Context()
 
-	s, err := session.New(checkoutParams)
+	s, err := sc.CheckoutSessions.New(checkoutParams)
 	if err != nil {
 		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", *existingCustomerID, "", false, "donation checkout.session.New: "+err.Error())
 		engine.SystemError(w, err.Error())

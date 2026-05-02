@@ -18,7 +18,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/skip2/go-qrcode"
 	"github.com/stripe/stripe-go/v78"
-	"github.com/stripe/stripe-go/v78/customer"
+	stripeclient "github.com/stripe/stripe-go/v78/client"
 )
 
 //go:generate go run github.com/a-h/templ/cmd/templ generate
@@ -191,7 +191,9 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			engine.ClientError(w, "Configuration Error", "Stripe API key is not configured", 400)
 			return
 		}
-		stripe.Key = apiKey
+		// Per-call client; never mutate stripe.Key globally.
+		sc := &stripeclient.API{}
+		sc.Init(apiKey, nil)
 
 		// Query member email
 		var email string
@@ -201,7 +203,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 		}
 
 		// Create Stripe customer
-		cust, err := customer.New(&stripe.CustomerParams{
+		cust, err := sc.Customers.New(&stripe.CustomerParams{
 			Email: &email,
 		})
 		if engine.HandleError(w, err) {
