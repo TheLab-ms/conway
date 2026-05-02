@@ -12,6 +12,10 @@ import (
 //go:embed assets/*
 var assetFS embed.FS
 
+// Authenticator decorates http.HandlerFuncs with authentication and
+// leadership checks. WithAuthn enforces that a request is authenticated;
+// WithLeadership additionally restricts to users acting in a leadership role.
+// The default Router uses a no-op implementation; replace it to enable auth.
 type Authenticator interface {
 	WithAuthn(http.HandlerFunc) http.HandlerFunc
 	WithLeadership(http.HandlerFunc) http.HandlerFunc
@@ -22,6 +26,9 @@ type noopAuthenticator struct{}
 func (noopAuthenticator) WithAuthn(fn http.HandlerFunc) http.HandlerFunc      { return fn }
 func (noopAuthenticator) WithLeadership(fn http.HandlerFunc) http.HandlerFunc { return fn }
 
+// Router wraps http.ServeMux to add request-level access logging, styled
+// error pages, and an embedded Authenticator. The package's static assets
+// directory is automatically mounted at "/".
 type Router struct {
 	router *http.ServeMux
 
@@ -29,6 +36,9 @@ type Router struct {
 	Authenticator
 }
 
+// NewRouter constructs a Router with a fresh ServeMux, mounts the embedded
+// assets/ filesystem at "/", and installs a no-op Authenticator that callers
+// can replace by assigning to the embedded field.
 func NewRouter() *Router {
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(assetFS)))
@@ -52,8 +62,12 @@ func (r *Router) Serve(addr string) Proc {
 	}
 }
 
+// ServeHTTP implements http.Handler by delegating to the underlying ServeMux.
 func (r *Router) ServeHTTP(w http.ResponseWriter, rr *http.Request) { r.router.ServeHTTP(w, rr) }
 
+// HandleFunc registers fn as the handler for route, wrapping it with response
+// status capture and structured slog access logging (path, method, user agent,
+// latency, status).
 func (r *Router) HandleFunc(route string, fn http.HandlerFunc) {
 	r.router.HandleFunc(route, func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -91,11 +105,17 @@ func HandleError(w http.ResponseWriter, err error) bool {
 	return true
 }
 
+// FormHandler backs an HTTP form POST with a single SQL Exec. Query is run
+// using sql.Named parameters: "route_id" is bound from the request path value
+// "id", and each name in Fields is bound from the corresponding form value.
 type FormHandler struct {
 	Query  string
 	Fields []string
 }
 
+// Handler returns an http.HandlerFunc that executes f.Query against db using
+// the bindings described on FormHandler, then redirects (303) back to the
+// request's Referer. Errors are surfaced via SystemError.
 func (f *FormHandler) Handler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		args := []any{

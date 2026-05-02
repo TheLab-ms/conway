@@ -14,6 +14,8 @@ import (
 // FieldType defines the UI input type for a config field.
 type FieldType string
 
+// Supported FieldType values, each corresponding to a UI input control
+// rendered by the config admin pages.
 const (
 	FieldTypeText     FieldType = "text"
 	FieldTypePassword FieldType = "password" // Masked input, secret preservation

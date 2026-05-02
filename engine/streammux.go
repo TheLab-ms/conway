@@ -23,6 +23,9 @@ type StreamMux struct {
 	source func(ctx context.Context) (io.ReadCloser, error)
 }
 
+// NewStreamMux constructs a StreamMux backed by source. The source function
+// is invoked lazily on the first Subscribe call; the context it receives is
+// canceled when the last subscriber disconnects (or Stop is called).
 func NewStreamMux(source func(ctx context.Context) (io.ReadCloser, error)) *StreamMux {
 	return &StreamMux{
 		clients: make(map[chan []byte]struct{}),

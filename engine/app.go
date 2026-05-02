@@ -19,6 +19,9 @@ type App struct {
 	configStore    *config.Store
 }
 
+// NewApp constructs an App that listens on httpAddr, serves the given router,
+// and persists module configuration in db. The HTTP server is registered as a
+// proc on the embedded ProcMgr and starts when Run is called.
 func NewApp(httpAddr string, router *Router, db *sql.DB) *App {
 	registry := config.NewRegistry(db)
 	a := &App{
@@ -30,13 +33,22 @@ func NewApp(httpAddr string, router *Router, db *sql.DB) *App {
 	return a
 }
 
+// Configs returns the shared config registry into which modules register their specs.
 func (a *App) Configs() *config.Registry { return a.configRegistry }
 
 // ConfigStore returns the shared config store for typed config loading.
 func (a *App) ConfigStore() *config.Store { return a.configStore }
 
+// Run starts every registered proc in its own goroutine and blocks until ctx
+// is canceled and all procs have returned.
 func (p *ProcMgr) Run(ctx context.Context) { p.run(ctx) }
 
+// Add registers mod with the App. The module may optionally implement any of:
+//   - AttachRoutes(*Router) to register HTTP handlers,
+//   - AttachWorkers(*ProcMgr) to register background procs,
+//   - ConfigSpec() config.Spec to advertise a configuration schema.
+//
+// Modules that implement none of these are accepted but contribute nothing.
 func (a *App) Add(mod any) {
 	type routableModule interface {
 		AttachRoutes(*Router)
@@ -61,13 +73,18 @@ func (a *App) Add(mod any) {
 	}
 }
 
+// Proc is a long-running worker function managed by a ProcMgr. A Proc is
+// expected to run until its context is canceled; returning early (with or
+// without an error) before cancellation is treated as a fatal bug.
 type Proc func(context.Context) error
 
-// ProcMgr is like a fancy implementation of sync.WaitGroup.
+// ProcMgr is like a fancy implementation of sync.WaitGroup: it owns a set of
+// Procs, runs them concurrently, and waits for all of them to exit.
 type ProcMgr struct {
 	procs []Proc
 }
 
+// Add appends proc to the set of workers that will be launched by Run.
 func (p *ProcMgr) Add(proc Proc) { p.procs = append(p.procs, proc) }
 
 func (p *ProcMgr) run(ctx context.Context) {

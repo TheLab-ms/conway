@@ -13,10 +13,14 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// TokenIssuer signs and verifies JWTs using an RSA private key (RS256).
 type TokenIssuer struct {
 	Key *rsa.PrivateKey
 }
 
+// NewTokenIssuer returns a TokenIssuer whose key is loaded from keyFile. If
+// the file does not exist, a fresh 2048-bit RSA key is generated and written
+// to keyFile with mode 0600. Any I/O or parse error panics.
 func NewTokenIssuer(keyFile string) *TokenIssuer {
 	t := &TokenIssuer{}
 	t.loadOrGenerateKey(keyFile)
@@ -55,11 +59,15 @@ read:
 	goto read
 }
 
+// Sign returns a JWT signed with the issuer's RSA key (RS256) for claims.
 func (t *TokenIssuer) Sign(claims *jwt.RegisteredClaims) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	return token.SignedString(t.Key)
 }
 
+// Verify parses and validates tok against the issuer's public key, returning
+// the embedded registered claims. It returns an error if the signature is
+// invalid or the token is otherwise unacceptable.
 func (t *TokenIssuer) Verify(tok string) (*jwt.RegisteredClaims, error) {
 	claims := &jwt.RegisteredClaims{}
 	token, err := jwt.ParseWithClaims(tok, claims, func(token *jwt.Token) (any, error) {
@@ -74,8 +82,13 @@ func (t *TokenIssuer) Verify(tok string) (*jwt.RegisteredClaims, error) {
 	return claims, nil
 }
 
+// TokenClaimsFunc returns a freshly populated claims struct each time the
+// OAuth2 TokenSource needs to mint a new token.
 type TokenClaimsFunc func() *jwt.RegisteredClaims
 
+// OAuth2 adapts the issuer to an oauth2.TokenSource. Each refresh signs a new
+// JWT built from tcf(); the result is wrapped in oauth2.ReuseTokenSource so
+// the same token is reused until it expires.
 func (t *TokenIssuer) OAuth2(tcf TokenClaimsFunc) oauth2.TokenSource {
 	return oauth2.ReuseTokenSource(nil, &tokenSrc{parent: t, claims: tcf})
 }

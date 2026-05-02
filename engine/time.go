@@ -15,10 +15,15 @@ func init() {
 	}
 }
 
+// LocalTime is a time.Time wrapper that implements sql.Scanner for columns
+// stored as int64 Unix epoch seconds (UTC). Scanned values are converted to
+// the America/Chicago time zone.
 type LocalTime struct {
 	Time time.Time
 }
 
+// Scan implements sql.Scanner. It expects src to be an int64 Unix epoch (UTC)
+// and stores it in l.Time converted to America/Chicago local time.
 func (l *LocalTime) Scan(src any) error {
 	epochUTC, ok := src.(int64)
 	if !ok {

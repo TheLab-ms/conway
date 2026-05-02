@@ -12,6 +12,9 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// PollingFunc is invoked on every tick of a Poll/DynamicPoll loop. It should
+// return true if it processed an item and wants to be invoked again immediately
+// (e.g. to drain a queue), or false to wait for the next interval.
 type PollingFunc func(context.Context) bool
 
 // Poll is a Proc that polls a given function regularly.
@@ -82,6 +85,10 @@ func PollWorkqueue[T any](wq Workqueue[T]) PollingFunc {
 	}
 }
 
+// Workqueue is the generic interface consumed by PollWorkqueue and
+// WithRateLimiting. Implementations supply an item source (GetItem), a
+// per-item processor (ProcessItem), and an outcome reporter (UpdateItem)
+// invoked with success=true iff ProcessItem returned nil.
 type Workqueue[T any] interface {
 	GetItem(context.Context) (T, error)
 	ProcessItem(context.Context, T) error
