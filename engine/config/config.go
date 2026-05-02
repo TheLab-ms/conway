@@ -74,6 +74,13 @@ type ArrayFieldDef struct {
 	KeyField  string // Field name used for secret preservation matching
 	MinItems  int
 	MaxItems  int
+
+	// Hidden suppresses the generic auto-generated array editor for this
+	// field. The module is expected to provide its own UI (e.g. via
+	// Spec.ExtraContent and dedicated routes). Persistence still works
+	// through the normal store — saves of the parent config preserve the
+	// existing array contents because no form fields are emitted.
+	Hidden bool
 }
 
 // Spec defines a module's configuration specification.
@@ -149,6 +156,7 @@ type ArrayField struct {
 	KeyField  string  // Field name used for secret preservation matching
 	MinItems  int     // Minimum required items
 	MaxItems  int     // Maximum allowed items (0 = unlimited)
+	Hidden    bool    // If true, generic UI omits this field — module renders its own.
 	Fields    []Field // Fields within each array item
 	GoType    reflect.Type
 }

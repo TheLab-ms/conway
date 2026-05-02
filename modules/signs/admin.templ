@@ -1,0 +1,521 @@
+package signs
+
+import (
+	"strconv"
+
+	"github.com/TheLab-ms/conway/modules/bootstrap"
+)
+
+// renderTemplatesListPanel is rendered as ExtraContent on the signs config
+// page. It replaces the legacy generic JSON-blob array editor with a clean
+// list of template cards plus a "+ New Template" CTA.
+templ renderTemplatesListPanel(templates []Template) {
+	<div class="card mb-4">
+		<div class="card-header d-flex justify-content-between align-items-center">
+			<div>
+				<h2 class="mb-0 h5">Sign Templates</h2>
+				<small class="text-secondary">Designs members can fill in and print.</small>
+			</div>
+			<a href="/admin/signs/templates/new" class="btn btn-success btn-sm">+ New Template</a>
+		</div>
+		if len(templates) == 0 {
+			<div class="card-body text-center text-secondary py-5">
+				<p class="mb-2">No templates yet.</p>
+				<a href="/admin/signs/templates/new" class="btn btn-success">Create your first template</a>
+			</div>
+		} else {
+			<ul class="list-group list-group-flush">
+				for _, t := range templates {
+					{{ meta := metaFor(t) }}
+					<li class="list-group-item d-flex align-items-center">
+						<div class="flex-grow-1">
+							<div class="d-flex align-items-center gap-2">
+								<a href={ templ.URL("/admin/signs/templates/" + meta.Slug) } class="fw-semibold link-light text-decoration-none">{ meta.Name }</a>
+								<code class="small text-secondary">{ meta.Slug }</code>
+								if meta.Orientation == "landscape" {
+									<span class="badge bg-secondary">landscape</span>
+								}
+								<span class="badge bg-dark text-secondary border border-secondary">{ strconv.Itoa(meta.FieldCount) } { fieldNoun(meta.FieldCount) }</span>
+							</div>
+							if meta.Description != "" {
+								<div class="small text-secondary mt-1">{ meta.Description }</div>
+							}
+						</div>
+						<div class="d-flex gap-2 ms-3">
+							<a href={ templ.URL("/admin/signs/templates/" + meta.Slug) } class="btn btn-sm btn-outline-primary">Edit</a>
+							<form method="post" action={ templ.URL("/admin/signs/templates/" + meta.Slug + "/duplicate") } class="d-inline">
+								<button type="submit" class="btn btn-sm btn-outline-secondary">Duplicate</button>
+							</form>
+							<form method="post" action={ templ.URL("/admin/signs/templates/" + meta.Slug + "/delete") } class="d-inline"
+								onsubmit={ confirmDeleteTemplate(meta.Name) }>
+								<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+							</form>
+						</div>
+					</li>
+				}
+			</ul>
+		}
+		<div class="card-footer text-secondary small">
+			Body uses Markdown with Go-template <code>{`{{.Variable}}`}</code> syntax.
+			Always-available variables: <code>{`{{.DiscordHandle}}`}</code>, <code>{`{{.Date}}`}</code>.
+		</div>
+	</div>
+}
+
+script confirmDeleteTemplate(name string) {
+	return confirm('Delete the "' + name + '" template? This cannot be undone.');
+}
+
+func fieldNoun(n int) string {
+	if n == 1 {
+		return "field"
+	}
+	return "fields"
+}
+
+// renderTemplateEditor is the dedicated /admin/signs/templates/{slug} page.
+// Two-pane layout: editor on the left, sticky live PDF preview on the right.
+templ renderTemplateEditor(v editorView) {
+	@bootstrap.View() {
+		<div class="container-fluid py-3" style="max-width: 1600px;">
+			<nav class="mb-3 small">
+				<a href="/admin/config/signs" class="text-secondary text-decoration-none">&larr; Sign Templates</a>
+			</nav>
+
+			<div class="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
+				<h1 class="h3 mb-0">
+					if v.IsNew {
+						New Sign Template
+					} else {
+						Edit: { v.Template.Name }
+					}
+				</h1>
+				<div class="d-flex gap-2 align-items-center">
+					if v.JustSaved {
+						<span class="badge bg-success align-self-center">Saved</span>
+					}
+					if !v.IsNew {
+						<a href={ templ.URL("/signs/" + v.Template.Slug) } target="_blank" class="btn btn-sm btn-outline-secondary">
+							Open print form &rarr;
+						</a>
+					}
+				</div>
+			</div>
+
+			if v.ErrorMessage != "" {
+				<div class="alert alert-danger" role="alert">{ v.ErrorMessage }</div>
+			}
+
+			<form id="template-editor-form" method="post" action={ templ.URL(v.FormAction) }>
+				<div class="row g-4">
+					<!-- ============== EDITOR PANE ============== -->
+					<div class="col-lg-7">
+						<div class="card mb-3">
+							<div class="card-header"><strong>Template metadata</strong></div>
+							<div class="card-body">
+								<div class="row g-3">
+									<div class="col-md-7">
+										<label for="t-name" class="form-label">Name <span class="text-danger">*</span></label>
+										<input type="text" id="t-name" name="name" class="form-control"
+											value={ v.Template.Name } placeholder="e.g. Out of Service" required
+											maxlength="80"/>
+									</div>
+									<div class="col-md-5">
+										<label for="t-slug" class="form-label">Slug <span class="text-danger">*</span></label>
+										<input type="text" id="t-slug" name="slug" class="form-control font-monospace"
+											value={ v.Template.Slug } placeholder="out-of-service" required
+											pattern="[a-z0-9][a-z0-9_-]{0,63}" maxlength="64"/>
+										<div class="form-text">URL identifier. Lowercase letters, digits, dashes, underscores.</div>
+									</div>
+									<div class="col-md-9">
+										<label for="t-desc" class="form-label">Short description</label>
+										<input type="text" id="t-desc" name="description" class="form-control"
+											value={ v.Template.Description } placeholder="Shown on the picker page."
+											maxlength="200"/>
+									</div>
+									<div class="col-md-3">
+										<label for="t-orient" class="form-label">Orientation</label>
+										<select id="t-orient" name="orientation" class="form-select">
+											<option value="portrait" selected?={ v.Template.Orientation != "landscape" }>Portrait</option>
+											<option value="landscape" selected?={ v.Template.Orientation == "landscape" }>Landscape</option>
+										</select>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card mb-3">
+							<div class="card-header d-flex justify-content-between align-items-center">
+								<strong>Body (Markdown)</strong>
+								<button type="button" class="btn btn-sm btn-link p-0" data-bs-toggle="collapse" data-bs-target="#md-help">
+									Cheatsheet
+								</button>
+							</div>
+							<div class="collapse" id="md-help">
+								<div class="card-body border-bottom small text-secondary">
+									<div class="row">
+										<div class="col-md-6">
+											<code># Big title</code> — accent-colored hero heading<br/>
+											<code>## Heading</code> &nbsp; <code>### Subheading</code><br/>
+											<code>- Bullet</code> &nbsp; or &nbsp; <code>* Bullet</code><br/>
+											<code>---</code> — accent horizontal rule
+										</div>
+										<div class="col-md-6">
+											<code>**bold**</code> — inline bold spans<br/>
+											<code>{`{{.DiscordHandle}}`}</code> — submitter's handle<br/>
+											<code>{`{{.Date}}`}</code> — submission timestamp<br/>
+											<code>{`{{.YourFieldName}}`}</code> — any field defined below
+										</div>
+									</div>
+								</div>
+							</div>
+							<div class="card-body">
+								<div class="btn-toolbar mb-2 d-flex flex-wrap gap-1" role="toolbar">
+									<button type="button" class="btn btn-sm btn-outline-secondary" data-md-insert="# ">H1</button>
+									<button type="button" class="btn btn-sm btn-outline-secondary" data-md-insert="## ">H2</button>
+									<button type="button" class="btn btn-sm btn-outline-secondary" data-md-insert="### ">H3</button>
+									<button type="button" class="btn btn-sm btn-outline-secondary" data-md-wrap="**">Bold</button>
+									<button type="button" class="btn btn-sm btn-outline-secondary" data-md-insert="- ">List</button>
+									<button type="button" class="btn btn-sm btn-outline-secondary" data-md-insert={ "\n---\n" }>Rule</button>
+									<div class="vr mx-1"></div>
+									<select id="var-picker" class="form-select form-select-sm" style="width: auto;">
+										<option value="">Insert variable…</option>
+										<option value="{{.DiscordHandle}}">{`{{.DiscordHandle}}`}</option>
+										<option value="{{.Date}}">{`{{.Date}}`}</option>
+										<optgroup id="var-picker-fields" label="Custom fields"></optgroup>
+									</select>
+								</div>
+								<textarea id="t-body" name="body" class="form-control font-monospace" rows="18"
+									placeholder="# OUT OF SERVICE&#10;&#10;Describe the issue here.&#10;&#10;---&#10;&#10;Reported by **@{{.DiscordHandle}}**" required>{ v.Template.Body }</textarea>
+							</div>
+						</div>
+
+						<div class="card mb-3">
+							<div class="card-header d-flex justify-content-between align-items-center">
+								<div>
+									<strong>Form fields</strong>
+									<span class="text-secondary small ms-2">— what the user fills in before printing</span>
+								</div>
+								<button type="button" id="add-field-btn" class="btn btn-sm btn-success">+ Add field</button>
+							</div>
+							<div class="card-body">
+								<div id="fields-container">
+									for i, fd := range v.Fields {
+										@fieldRow(fd, i, false)
+									}
+								</div>
+								if len(v.Fields) == 0 {
+									<p id="no-fields-msg" class="text-secondary mb-0">
+										No fields yet — click <em>+ Add field</em> to add one. Field names become
+										template variables (e.g. <code>MachineName</code> &rarr; <code>{`{{.MachineName}}`}</code>).
+									</p>
+								}
+							</div>
+						</div>
+
+						<div class="card mb-3">
+							<div class="card-header"><strong>Sample preview values</strong></div>
+							<div class="card-body">
+								<p class="text-secondary small mb-3">
+									These values are only used for the live preview on the right —
+									they're not saved.
+								</p>
+								<div id="sample-values">
+									for _, fd := range v.Fields {
+										@sampleValueRow(fd)
+									}
+								</div>
+								if len(v.Fields) == 0 {
+									<p class="text-secondary small mb-0">Add form fields above to set sample values.</p>
+								}
+							</div>
+						</div>
+
+						<div class="d-flex gap-2 mb-5">
+							<button type="submit" class="btn btn-success">Save Template</button>
+							<a href="/admin/config/signs" class="btn btn-outline-secondary">Cancel</a>
+							if !v.IsNew {
+								<form method="post" action={ templ.URL("/admin/signs/templates/" + v.Template.Slug + "/delete") } class="ms-auto"
+									onsubmit={ confirmDeleteTemplate(v.Template.Name) }>
+									<button type="submit" class="btn btn-outline-danger">Delete Template</button>
+								</form>
+							}
+						</div>
+					</div>
+
+					<!-- ============== PREVIEW PANE ============== -->
+					<div class="col-lg-5">
+						<div style="position: sticky; top: 1rem;">
+							<div class="card">
+								<div class="card-header d-flex justify-content-between align-items-center">
+									<strong>Live preview</strong>
+									<div class="d-flex gap-2 align-items-center">
+										<span id="preview-status" class="text-secondary small">idle</span>
+										<button type="button" id="preview-refresh-btn" class="btn btn-sm btn-outline-secondary">Refresh</button>
+										<a id="preview-popout" href="#" target="_blank" class="btn btn-sm btn-outline-secondary" title="Open in new tab">&#8599;</a>
+									</div>
+								</div>
+								<div class="card-body p-0" style="background: #2b2b2b;">
+									<iframe id="preview-frame"
+										title="PDF preview"
+										style="width: 100%; height: 80vh; border: 0; background: #2b2b2b;"></iframe>
+								</div>
+								<div class="card-footer text-secondary small">
+									Auto-refreshes when you stop typing for a moment. Renders the same PDF a member would print.
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</form>
+
+			<!-- Hidden template used by JS to clone new field rows -->
+			<template id="field-row-template">
+				@fieldRow(FieldDef{}, 0, true)
+			</template>
+			<template id="sample-row-template">
+				@sampleValueRow(FieldDef{Name: "__NAME__", Label: "__LABEL__"})
+			</template>
+		</div>
+
+		@editorScripts()
+	}
+}
+
+// fieldRow renders one row in the structured fields editor.
+templ fieldRow(fd FieldDef, idx int, isTemplate bool) {
+	<div class="field-row border rounded p-2 mb-2"
+		if isTemplate {
+			data-tpl="1" style="display:none;"
+		}>
+		<div class="row g-2 align-items-start">
+			<div class="col-md-3">
+				<label class="form-label small mb-1">Variable name</label>
+				<input type="text" name="field_name[]" class="form-control form-control-sm font-monospace field-name-input"
+					value={ fd.Name } placeholder="MachineName"
+					pattern="[A-Za-z][A-Za-z0-9_]*" maxlength="64" required/>
+			</div>
+			<div class="col-md-3">
+				<label class="form-label small mb-1">Label</label>
+				<input type="text" name="field_label[]" class="form-control form-control-sm"
+					value={ fd.Label } placeholder="Machine name" maxlength="80"/>
+			</div>
+			<div class="col-md-3">
+				<label class="form-label small mb-1">Placeholder</label>
+				<input type="text" name="field_placeholder[]" class="form-control form-control-sm"
+					value={ fd.Placeholder } placeholder="e.g. Drill Press" maxlength="200"/>
+			</div>
+			<div class="col-md-2">
+				<label class="form-label small mb-1 d-block">Options</label>
+				<div class="form-check form-check-inline">
+					<input type="checkbox" class="form-check-input" name="field_required[]" value="on" checked?={ fd.Required }/>
+					<label class="form-check-label small">Required</label>
+				</div>
+				<div class="form-check form-check-inline">
+					<input type="checkbox" class="form-check-input" name="field_multiline[]" value="on" checked?={ fd.Multiline }/>
+					<label class="form-check-label small">Multiline</label>
+				</div>
+			</div>
+			<div class="col-md-1 d-flex align-items-end justify-content-end">
+				<button type="button" class="btn btn-sm btn-outline-danger field-remove-btn" title="Remove">&times;</button>
+			</div>
+		</div>
+	</div>
+}
+
+templ sampleValueRow(fd FieldDef) {
+	<div class="mb-2 sample-row" data-field-name={ fd.Name }>
+		<label class="form-label small mb-1">{ fd.Label } <code class="text-secondary">{`{{.`}{ fd.Name }{`}}`}</code></label>
+		<input type="text" name={ "preview_" + fd.Name } class="form-control form-control-sm sample-input"
+			placeholder={ fd.Placeholder }/>
+	</div>
+}
+
+// editorScripts wires up: markdown toolbar inserts, structured field
+// add/remove + variable-picker sync, debounced live preview submission to
+// /admin/signs/preview into the right-pane iframe, and slug auto-fill from
+// the name field for new templates.
+templ editorScripts() {
+	<script>
+	(function() {
+		var form = document.getElementById('template-editor-form');
+		var bodyEl = document.getElementById('t-body');
+		var nameEl = document.getElementById('t-name');
+		var slugEl = document.getElementById('t-slug');
+		var fieldsContainer = document.getElementById('fields-container');
+		var samplesContainer = document.getElementById('sample-values');
+		var noFieldsMsg = document.getElementById('no-fields-msg');
+		var addFieldBtn = document.getElementById('add-field-btn');
+		var fieldTpl = document.getElementById('field-row-template');
+		var sampleTpl = document.getElementById('sample-row-template');
+		var varPicker = document.getElementById('var-picker');
+		var varPickerFields = document.getElementById('var-picker-fields');
+		var previewFrame = document.getElementById('preview-frame');
+		var previewStatus = document.getElementById('preview-status');
+		var previewRefreshBtn = document.getElementById('preview-refresh-btn');
+		var previewPopout = document.getElementById('preview-popout');
+
+		// ---- markdown toolbar ----
+		function insertAtCursor(text, wrap) {
+			bodyEl.focus();
+			var s = bodyEl.selectionStart, e = bodyEl.selectionEnd;
+			var v = bodyEl.value;
+			if (wrap) {
+				var sel = v.substring(s, e) || 'text';
+				var ins = wrap + sel + wrap;
+				bodyEl.value = v.substring(0, s) + ins + v.substring(e);
+				bodyEl.selectionStart = s + wrap.length;
+				bodyEl.selectionEnd = s + wrap.length + sel.length;
+			} else {
+				bodyEl.value = v.substring(0, s) + text + v.substring(e);
+				bodyEl.selectionStart = bodyEl.selectionEnd = s + text.length;
+			}
+			schedulePreview();
+		}
+		document.querySelectorAll('[data-md-insert]').forEach(function(btn) {
+			btn.addEventListener('click', function() { insertAtCursor(btn.getAttribute('data-md-insert'), null); });
+		});
+		document.querySelectorAll('[data-md-wrap]').forEach(function(btn) {
+			btn.addEventListener('click', function() { insertAtCursor(null, btn.getAttribute('data-md-wrap')); });
+		});
+		varPicker.addEventListener('change', function() {
+			if (varPicker.value) {
+				insertAtCursor(varPicker.value, null);
+				varPicker.value = '';
+			}
+		});
+
+		// ---- structured fields editor ----
+		function refreshFieldsState() {
+			var rows = fieldsContainer.querySelectorAll('.field-row');
+			if (noFieldsMsg) {
+				noFieldsMsg.style.display = rows.length === 0 ? '' : 'none';
+			}
+			// rebuild variable-picker custom-field list
+			varPickerFields.innerHTML = '';
+			// rebuild sample-values panel, preserving previously-typed values
+			var existingValues = {};
+			samplesContainer.querySelectorAll('.sample-row').forEach(function(row) {
+				var input = row.querySelector('.sample-input');
+				if (input) existingValues[row.getAttribute('data-field-name')] = input.value;
+			});
+			samplesContainer.innerHTML = '';
+			var seen = {};
+			rows.forEach(function(row) {
+				var nameInput = row.querySelector('.field-name-input');
+				var labelInput = row.querySelector('input[name="field_label[]"]');
+				var phInput = row.querySelector('input[name="field_placeholder[]"]');
+				var name = (nameInput && nameInput.value) ? nameInput.value.trim() : '';
+				if (!name || seen[name]) return;
+				seen[name] = true;
+				var opt = document.createElement('option');
+				opt.value = '\u007B\u007B.' + name + '\u007D\u007D';
+				opt.textContent = '\u007B\u007B.' + name + '\u007D\u007D';
+				varPickerFields.appendChild(opt);
+
+				var sampleHTML = sampleTpl.innerHTML
+					.replace(/__NAME__/g, name)
+					.replace(/__LABEL__/g, (labelInput && labelInput.value) || name);
+				var div = document.createElement('div');
+				div.innerHTML = sampleHTML;
+				var sample = div.firstElementChild;
+				var sInput = sample.querySelector('.sample-input');
+				if (sInput) {
+					if (phInput) sInput.placeholder = phInput.value || '';
+					if (existingValues[name]) sInput.value = existingValues[name];
+					sInput.addEventListener('input', schedulePreview);
+				}
+				samplesContainer.appendChild(sample);
+			});
+			schedulePreview();
+		}
+
+		function addField(prefill) {
+			var node = fieldTpl.content.firstElementChild.cloneNode(true);
+			node.removeAttribute('data-tpl');
+			node.style.display = '';
+			if (prefill) {
+				var n = node.querySelector('input[name="field_name[]"]');
+				if (n) n.value = prefill;
+			}
+			fieldsContainer.appendChild(node);
+			wireFieldRow(node);
+			refreshFieldsState();
+			var first = node.querySelector('input');
+			if (first) first.focus();
+		}
+
+		function wireFieldRow(row) {
+			row.querySelectorAll('input').forEach(function(input) {
+				input.addEventListener('input', refreshFieldsState);
+			});
+			var rm = row.querySelector('.field-remove-btn');
+			if (rm) {
+				rm.addEventListener('click', function() {
+					if (!confirm('Remove this field?')) return;
+					row.remove();
+					refreshFieldsState();
+				});
+			}
+		}
+
+		fieldsContainer.querySelectorAll('.field-row').forEach(wireFieldRow);
+		addFieldBtn.addEventListener('click', function() { addField(''); });
+
+		// ---- live preview (debounced) ----
+		var previewTimer = null;
+		var inFlight = null;
+		function schedulePreview() {
+			previewStatus.textContent = 'pending…';
+			if (previewTimer) clearTimeout(previewTimer);
+			previewTimer = setTimeout(runPreview, 600);
+		}
+		function runPreview() {
+			previewStatus.textContent = 'rendering…';
+			if (inFlight) inFlight.abort();
+			var ctrl = new AbortController();
+			inFlight = ctrl;
+			var fd = new FormData(form);
+			fetch('/admin/signs/preview', {
+				method: 'POST',
+				body: fd,
+				signal: ctrl.signal,
+			}).then(function(r) {
+				return r.blob().then(function(b) { return { ok: r.ok, type: r.headers.get('content-type') || '', blob: b }; });
+			}).then(function(res) {
+				var url = URL.createObjectURL(res.blob);
+				if (previewFrame.dataset.url) URL.revokeObjectURL(previewFrame.dataset.url);
+				previewFrame.dataset.url = url;
+				previewFrame.src = url;
+				previewPopout.href = url;
+				previewStatus.textContent = res.ok ? 'ok' : 'error';
+			}).catch(function(err) {
+				if (err.name === 'AbortError') return;
+				previewStatus.textContent = 'error';
+			});
+		}
+
+		// Re-render on body / metadata edits.
+		bodyEl.addEventListener('input', schedulePreview);
+		document.getElementById('t-orient').addEventListener('change', schedulePreview);
+		previewRefreshBtn.addEventListener('click', runPreview);
+
+		// Auto-fill slug from name on new templates (only while slug is empty
+		// or hasn't been hand-edited).
+		var slugDirty = !!slugEl.value;
+		slugEl.addEventListener('input', function() { slugDirty = true; });
+		nameEl.addEventListener('input', function() {
+			if (!slugDirty) {
+				slugEl.value = nameEl.value
+					.toLowerCase()
+					.replace(/[^a-z0-9]+/g, '-')
+					.replace(/^-+|-+$/g, '')
+					.substring(0, 64);
+			}
+		});
+
+		refreshFieldsState();
+		runPreview();
+	})();
+	</script>
+}

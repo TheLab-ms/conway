@@ -255,6 +255,7 @@ func (s *Store) Save(ctx context.Context, module string, config any, preserveSec
 				existingVal = existingVal.Elem()
 			}
 			mergeSecrets(configVal, existingVal, spec)
+			preserveHiddenArrayFields(configVal, existingVal, spec)
 			filterNewArrayItemsWithoutSecrets(configVal, existingVal, spec)
 		} else {
 			// No existing config — filter new items with empty secrets
@@ -340,6 +341,37 @@ func (s *Store) buildInsertParams(configVal reflect.Value, spec *ParsedSpec) ([]
 	}
 
 	return columns, values
+}
+
+// preserveHiddenArrayFields copies existing values forward for any array
+// field marked Hidden in the spec when the new value's slice is nil. Hidden
+// fields are managed by dedicated module UI; the generic form-parse path
+// produces a fresh struct with those slices left nil, so we restore them
+// from the existing record. Modules that pass a Config struct directly
+// (e.g. the signs admin handlers that mutate Templates and call Save) keep
+// their explicit value — even an empty non-nil slice means "I really do
+// want to clear this", which is distinct from "I didn't touch it".
+func preserveHiddenArrayFields(newVal, existingVal reflect.Value, spec *ParsedSpec) {
+	if !existingVal.IsValid() {
+		return
+	}
+	for _, af := range spec.ArrayFields {
+		if !af.Hidden {
+			continue
+		}
+		newField := newVal.FieldByName(af.Name)
+		oldField := existingVal.FieldByName(af.Name)
+		if !newField.IsValid() || !newField.CanSet() || !oldField.IsValid() {
+			continue
+		}
+		// Only restore from existing when the caller left the field nil.
+		// A non-nil slice (including length 0) is an explicit intent we
+		// must respect.
+		if newField.Kind() == reflect.Slice && !newField.IsNil() {
+			continue
+		}
+		newField.Set(oldField)
+	}
 }
 
 // mergeSecrets preserves secret field values from existing config when new values are empty.
@@ -528,6 +560,13 @@ func (s *Store) ParseFormIntoConfig(r *http.Request, module string) (any, error)
 
 	// Parse array fields
 	for _, af := range spec.ArrayFields {
+		if af.Hidden {
+			// Hidden array fields are managed by module-specific UI; the
+			// generic form does not emit any inputs for them, so we
+			// neither parse nor reset the slice here. Save() will copy
+			// the existing value forward via preserveHiddenArrayFields.
+			continue
+		}
 		parseArrayFieldFromForm(r, configVal.FieldByName(af.Name), af)
 	}
 

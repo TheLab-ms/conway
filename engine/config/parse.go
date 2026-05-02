@@ -285,6 +285,7 @@ func parseArrayField(sf reflect.StructField, defs []ArrayFieldDef) *ArrayField {
 			}
 			af.MinItems = def.MinItems
 			af.MaxItems = def.MaxItems
+			af.Hidden = def.Hidden
 			break
 		}
 	}

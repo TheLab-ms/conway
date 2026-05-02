@@ -193,13 +193,15 @@ templ renderConfigCard(spec *config.ParsedSpec, cfg any, saved bool, errMsg stri
 					@renderGenericFormSection(section, cfg)
 				}
 				for _, af := range spec.ArrayFields {
-					@renderArrayField(af, cfg)
+					if !af.Hidden {
+						@renderArrayField(af, cfg)
+					}
 				}
 				<div class="d-flex justify-content-between align-items-center mt-4">
 					<button type="submit" class="btn btn-primary">Save Changes</button>
 				</div>
 			</form>
-			if len(spec.ArrayFields) > 0 {
+			if hasVisibleArrayField(spec.ArrayFields) {
 				@arrayItemScripts()
 			}
 		</div>
@@ -652,4 +654,16 @@ func colorOrDefault(v string) string {
 		return v
 	}
 	return "#00C853"
+}
+
+// hasVisibleArrayField returns true if any array field is rendered by the
+// generic UI (i.e. not Hidden). Used to gate inclusion of the array-editor
+// JS helpers.
+func hasVisibleArrayField(afs []config.ArrayField) bool {
+	for _, af := range afs {
+		if !af.Hidden {
+			return true
+		}
+	}
+	return false
 }

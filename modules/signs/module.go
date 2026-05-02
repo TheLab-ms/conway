@@ -77,6 +77,7 @@ type Module struct {
 	eventLogger *engine.EventLogger
 
 	configLoader *config.Loader[Config]
+	configStore  *config.Store
 
 	// snapMu guards the in-memory config snapshot below.
 	snapMu        sync.RWMutex
@@ -115,6 +116,7 @@ func (m *Module) SetPrinter(p Printer) {
 // registration after the config registry has been populated.
 func (m *Module) SetConfigLoader(store *config.Store) {
 	m.configLoader = config.NewLoader[Config](store, "signs")
+	m.configStore = store
 	m.seedDefaultsIfEmpty(context.Background())
 	m.reloadConfig(context.Background())
 }
@@ -240,6 +242,14 @@ func (m *Module) AttachRoutes(r *engine.Router) {
 	r.HandleFunc("GET /signs", r.WithAuthn(m.requireActive(m.renderIndex)))
 	r.HandleFunc("GET /signs/{slug}", r.WithAuthn(m.requireActive(m.renderForm)))
 	r.HandleFunc("POST /signs/{slug}", r.WithAuthn(m.requireActive(m.submit)))
+
+	// Template authoring (leadership only).
+	r.HandleFunc("GET /admin/signs/templates/new", r.WithLeadership(m.handleTemplateNew))
+	r.HandleFunc("GET /admin/signs/templates/{slug}", r.WithLeadership(m.handleTemplateEdit))
+	r.HandleFunc("POST /admin/signs/templates/{slug}", r.WithLeadership(m.handleTemplateSave))
+	r.HandleFunc("POST /admin/signs/templates/{slug}/delete", r.WithLeadership(m.handleTemplateDelete))
+	r.HandleFunc("POST /admin/signs/templates/{slug}/duplicate", r.WithLeadership(m.handleTemplateDuplicate))
+	r.HandleFunc("POST /admin/signs/preview", r.WithLeadership(m.handlePreview))
 }
 
 // requireActive rejects non-active members with a 403 page so they can't

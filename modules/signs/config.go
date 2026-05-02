@@ -50,12 +50,16 @@ type FieldDef struct {
 //
 // Additional variables are provided by the template's Fields definitions.
 type Template struct {
-	Slug        string `json:"slug" config:"label=Slug,required,placeholder=e.g. maintenance,help=URL-safe identifier."`
-	Name        string `json:"name" config:"label=Name,required,placeholder=e.g. Out of Service"`
-	Description string `json:"description" config:"label=Short Description,placeholder=Shown on the picker page."`
-	Orientation string `json:"orientation" config:"label=Orientation,options=portrait|landscape,default=portrait"`
-	Body        string `json:"body" config:"label=Body (Markdown + Go template),required,multiline,rows=14,help=Markdown body. Use {{.DiscordHandle}} and {{.Date}} (always available) plus any field names defined below (e.g. {{.MachineName}})."`
-	FieldsJSON  string `json:"fields_json,omitempty" config:"label=Fields (JSON),multiline,rows=8,help=JSON array defining form fields. Each object: {\"name\": \"MachineName\"&#44; \"label\": \"Machine name\"&#44; \"placeholder\": \"e.g. Drill Press\"&#44; \"required\": true&#44; \"multiline\": false}. Field names become template variables."`
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Orientation string `json:"orientation"`
+	Body        string `json:"body"`
+	// FieldsJSON is the wire/storage form of the template's form-field
+	// definitions: a JSON-encoded []FieldDef. It is no longer edited as
+	// raw JSON in the admin UI — the dedicated template editor exposes a
+	// structured fields editor that round-trips through this field.
+	FieldsJSON string `json:"fields_json,omitempty"`
 }
 
 // ParsedFields returns the FieldDef list parsed from the FieldsJSON string.
@@ -101,13 +105,17 @@ func (m *Module) ConfigSpec() config.Spec {
 				FieldName: "Templates",
 				Label:     "Sign Templates",
 				ItemLabel: "Template",
-				Help:      "Sign templates members can fill in and print. Body is markdown with Go template syntax. Available variables: {{.DiscordHandle}}, {{.Date}}, plus any custom field names you define in the Fields JSON below.",
 				KeyField:  "Slug",
+				// Templates are edited through a dedicated WYSIWYG-ish
+				// editor at /admin/signs/templates/{slug} (see admin.go),
+				// not through the generic JSON-blob array editor.
+				Hidden: true,
 			},
 		},
 		Sections: []config.SectionDef{
 			{Name: "printer", Title: "Printer (IPP)"},
 		},
+		ExtraContent: m.renderTemplatesPanel,
 	}
 }
 
