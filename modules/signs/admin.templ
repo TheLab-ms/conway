@@ -56,8 +56,7 @@ templ renderTemplatesListPanel(templates []Template) {
 			</ul>
 		}
 		<div class="card-footer text-secondary small">
-			Body uses Markdown with Go-template <code>{`{{.Variable}}`}</code> syntax.
-			Always-available variables: <code>{`{{.DiscordHandle}}`}</code>, <code>{`{{.Date}}`}</code>.
+			Click <strong>Edit</strong> on a template to customize its markdown body, form fields, and live preview.
 		</div>
 	</div>
 }
@@ -146,7 +145,13 @@ templ renderTemplateEditor(v editorView) {
 
 						<div class="card mb-3">
 							<div class="card-header d-flex justify-content-between align-items-center">
-								<strong>Body (Markdown)</strong>
+								<div>
+									<strong>Body (Markdown)</strong>
+									<span class="text-secondary small ms-2">
+										— Markdown with Go-template <code>{`{{.Variable}}`}</code> syntax.
+										Always-available: <code>{`{{.DiscordHandle}}`}</code>, <code>{`{{.Date}}`}</code>.
+									</span>
+								</div>
 								<button type="button" class="btn btn-sm btn-link p-0" data-bs-toggle="collapse" data-bs-target="#md-help">
 									Cheatsheet
 								</button>
