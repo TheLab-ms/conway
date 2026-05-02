@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -310,4 +311,44 @@ func TestSignsAdmin_PreviewEmptyBodyShowsHTMLError(t *testing.T) {
 	require.Contains(t, resp.Header.Get("Content-Type"), "text/html",
 		"empty-body preview should return styled HTML, not text/plain")
 	require.Contains(t, body, "Preview unavailable")
+}
+
+// TestSignsAdmin_PreviewAcceptsMultipart guards against a regression where
+// the live-preview pane (which submits via `new FormData(form)` from JS,
+// serializing as multipart/form-data) would always 422 because
+// parseTemplateForm only called r.ParseForm() — which does not parse
+// multipart bodies. The fix in parseTemplateForm dispatches on
+// Content-Type; this test exercises the multipart path end-to-end.
+func TestSignsAdmin_PreviewAcceptsMultipart(t *testing.T) {
+	t.Parallel()
+	env := NewTestEnv(t)
+	adminID := seedMember(t, env, "signs-admin@example.com",
+		WithConfirmed(), WithLeadership())
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	require.NoError(t, mw.WriteField("slug", "mp-test"))
+	require.NoError(t, mw.WriteField("name", "MP Test"))
+	require.NoError(t, mw.WriteField("orientation", "portrait"))
+	require.NoError(t, mw.WriteField("body", "# Multipart\n\nValue: **{{.Foo}}**"))
+	require.NoError(t, mw.WriteField("field_name[]", "Foo"))
+	require.NoError(t, mw.WriteField("field_label[]", "Foo"))
+	require.NoError(t, mw.WriteField("preview_Foo", "from-multipart"))
+	require.NoError(t, mw.Close())
+
+	req := authedRequest(t, env, adminID, http.MethodPost,
+		"/admin/signs/preview", strings.NewReader(buf.String()))
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := noRedirectClient().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode,
+		"multipart preview should succeed (browsers send multipart by default for FormData)")
+	require.Equal(t, "application/pdf", resp.Header.Get("Content-Type"))
+	pdfBuf := new(bytes.Buffer)
+	_, err = pdfBuf.ReadFrom(resp.Body)
+	require.NoError(t, err)
+	require.True(t, bytes.HasPrefix(pdfBuf.Bytes(), []byte("%PDF-")),
+		"expected PDF magic, got %q", string(pdfBuf.Bytes()[:min(8, pdfBuf.Len())]))
 }

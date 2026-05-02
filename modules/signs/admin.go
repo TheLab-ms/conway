@@ -53,7 +53,18 @@ type templateForm struct {
 // repeated field_name[]/field_label[]/field_placeholder[]/field_required[]/
 // field_multiline[] groups into a Template + FieldsJSON.
 func parseTemplateForm(r *http.Request) (templateForm, error) {
-	if err := r.ParseForm(); err != nil {
+	// Accept both application/x-www-form-urlencoded (server-side POST from
+	// the editor's submit button) and multipart/form-data (live preview
+	// uses `new FormData(form)` in JS, which always serializes as
+	// multipart). r.ParseForm() alone does NOT parse multipart bodies, so
+	// without this the body / field_*[] keys would arrive empty and the
+	// preview would always 422 with "Add some markdown content…".
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "multipart/") {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			return templateForm{}, err
+		}
+	} else if err := r.ParseForm(); err != nil {
 		return templateForm{}, err
 	}
 
