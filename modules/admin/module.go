@@ -15,6 +15,7 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/config"
+	"github.com/TheLab-ms/conway/modules/members/memberdb"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/skip2/go-qrcode"
 	"github.com/stripe/stripe-go/v78"
@@ -170,9 +171,7 @@ func (m *Module) AttachRoutes(router *engine.Router) {
 			return
 		}
 
-		var id int64
-		err := m.db.QueryRowContext(r.Context(),
-			"INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id", email).Scan(&id)
+		id, err := memberdb.FindOrCreateByEmail(r.Context(), m.db, email)
 		if engine.HandleError(w, err) {
 			return
 		}

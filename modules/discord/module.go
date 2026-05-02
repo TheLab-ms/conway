@@ -17,6 +17,7 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/members/memberdb"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
 )
@@ -408,9 +409,7 @@ func (m *Module) handleLoginCallback(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Fallback: create account directly if no confirmation function is set
-			err = m.db.QueryRowContext(r.Context(),
-				"INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id",
-				discordUser.Email).Scan(&memberID)
+			memberID, err = memberdb.FindOrCreateByEmail(r.Context(), m.db, discordUser.Email)
 			if err != nil {
 				engine.SystemError(w, err.Error())
 				return

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/modules/members/memberdb"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 )
@@ -228,10 +229,7 @@ func (s *Module) handleConfirmSignup(w http.ResponseWriter, r *http.Request) {
 	provider := claims.Issuer
 
 	// Create the member
-	var memberID int64
-	err = s.db.QueryRowContext(r.Context(),
-		"INSERT INTO members (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email=email RETURNING id",
-		email).Scan(&memberID)
+	memberID, err := memberdb.FindOrCreateByEmail(r.Context(), s.db, email)
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return
