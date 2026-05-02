@@ -17,6 +17,8 @@ import (
 	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/TheLab-ms/conway/modules"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/email"
+	"github.com/TheLab-ms/conway/modules/machines"
 	"github.com/TheLab-ms/conway/modules/signs"
 	"github.com/playwright-community/playwright-go"
 )
@@ -32,9 +34,12 @@ type TestEnv struct {
 	baseURL     string
 	db          *sql.DB
 	authIssuer  *engine.TokenIssuer
+	fobIssuer   *engine.TokenIssuer
 	cancel      context.CancelFunc
 	SignsPrinter *fakePrinter
 	SignsModule  *signs.Module
+	EmailModule    *email.Module
+	MachinesModule *machines.Module
 }
 
 func TestMain(m *testing.M) {
@@ -96,6 +101,8 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	authIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "auth.pem"))
 	oauthIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "oauth2.pem"))
 	fobIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "fobs.pem"))
+	discordIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "discord.pem"))
+	googleIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "google.pem"))
 
 	// Listen on an ephemeral port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -117,19 +124,29 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	authModule := auth.New(db, self, nil, authIssuer)
 	a.Router.Authenticator = authModule
 
+	// Mirror main.go: register /healthz on the router so health probe tests
+	// can exercise it. Gated by auth.OnlyLAN which 403s on CF-Connecting-IP.
+	a.Router.HandleFunc("/healthz", auth.OnlyLAN(engine.ServeHealthProbe(db)))
+
 	signsPrinter := &fakePrinter{}
 	var signsModule *signs.Module
+	var emailModule *email.Module
+	var machinesModule *machines.Module
 	modules.Register(a, modules.Options{
-		Database:    db,
-		Self:        self,
-		AuthIssuer:  authIssuer,
-		OAuthIssuer: oauthIssuer,
-		FobIssuer:   fobIssuer,
-		Turnstile:   nil,
-		EmailSender: nil,
-		SpaceHost:   "127.0.0.1",
-		SignsPrinter: signsPrinter,
+		Database:      db,
+		Self:          self,
+		AuthIssuer:    authIssuer,
+		OAuthIssuer:   oauthIssuer,
+		FobIssuer:     fobIssuer,
+		DiscordIssuer: discordIssuer,
+		GoogleIssuer:  googleIssuer,
+		Turnstile:     nil,
+		EmailSender:   nil,
+		SpaceHost:     "127.0.0.1",
+		SignsPrinter:  signsPrinter,
 		OnSignsModule: func(m *signs.Module) { signsModule = m },
+		OnEmailModule: func(m *email.Module) { emailModule = m },
+		OnMachinesModule: func(m *machines.Module) { machinesModule = m },
 	})
 
 	// Seed printer state
@@ -152,12 +169,15 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	// we skip ProcMgr.Run to avoid double-binding.
 
 	env := &TestEnv{
-		baseURL:      baseURL,
-		db:           db,
-		authIssuer:   authIssuer,
-		cancel:       cancel,
-		SignsPrinter: signsPrinter,
-		SignsModule:  signsModule,
+		baseURL:        baseURL,
+		db:             db,
+		authIssuer:     authIssuer,
+		fobIssuer:      fobIssuer,
+		cancel:         cancel,
+		SignsPrinter:   signsPrinter,
+		SignsModule:    signsModule,
+		EmailModule:    emailModule,
+		MachinesModule: machinesModule,
 	}
 
 	// Wait for server to be ready
@@ -235,6 +255,8 @@ func NewTestEnvForStripe(t *testing.T) *TestEnv {
 	authIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "auth.pem"))
 	oauthIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "oauth2.pem"))
 	fobIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "fobs.pem"))
+	discordIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "discord.pem"))
+	googleIssuer := engine.NewTokenIssuer(filepath.Join(tmpDir, "google.pem"))
 
 	baseURL := "http://localhost:18080"
 	self, err := url.Parse(baseURL)
@@ -254,14 +276,16 @@ func NewTestEnvForStripe(t *testing.T) *TestEnv {
 	a.Router.Authenticator = authModule
 
 	modules.Register(a, modules.Options{
-		Database:    db,
-		Self:        self,
-		AuthIssuer:  authIssuer,
-		OAuthIssuer: oauthIssuer,
-		FobIssuer:   fobIssuer,
-		Turnstile:   nil,
-		EmailSender: nil,
-		SpaceHost:   "localhost",
+		Database:      db,
+		Self:          self,
+		AuthIssuer:    authIssuer,
+		OAuthIssuer:   oauthIssuer,
+		FobIssuer:     fobIssuer,
+		DiscordIssuer: discordIssuer,
+		GoogleIssuer:  googleIssuer,
+		Turnstile:     nil,
+		EmailSender:   nil,
+		SpaceHost:     "localhost",
 	})
 
 	seedPrinterState(db)
@@ -273,6 +297,7 @@ func NewTestEnvForStripe(t *testing.T) *TestEnv {
 		baseURL:    baseURL,
 		db:         db,
 		authIssuer: authIssuer,
+		fobIssuer:  fobIssuer,
 		cancel:     cancel,
 	}
 

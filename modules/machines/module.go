@@ -415,3 +415,9 @@ func (m *Module) reloadConfig(ctx context.Context) {
 func (m *Module) GetConfiguredPrinterCount() int {
 	return len(m.configs)
 }
+
+// SetTestStream injects a stream multiplexer for the given serial. TEST-ONLY hook;
+// production code populates this map from the bambu config.
+func (m *Module) SetTestStream(serial string, source func(ctx context.Context) (io.ReadCloser, error)) {
+	m.streams[serial] = engine.NewStreamMux(source)
+}

@@ -52,6 +52,14 @@ type Options struct {
 	// This is a TEST-ONLY hook: production code should not need access to
 	// internal module handles. Used by e2e tests to drive ProcessOne.
 	OnSignsModule func(*signs.Module)
+
+	// OnEmailModule, if set, is called with the email module after registration.
+	// TEST-ONLY hook used to drive the workqueue manually and swap the Sender.
+	OnEmailModule func(*email.Module)
+
+	// OnMachinesModule, if set, is called with the machines module after registration.
+	// TEST-ONLY hook used to inject test stream sources.
+	OnMachinesModule func(*machines.Module)
 }
 
 // Register adds all modules to the app and returns the auth module
@@ -69,7 +77,11 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	// Now add auth routes
 	a.Add(authModule)
 
-	a.Add(email.New(opts.Database, opts.EmailSender))
+	emailMod := email.New(opts.Database, opts.EmailSender)
+	a.Add(emailMod)
+	if opts.OnEmailModule != nil {
+		opts.OnEmailModule(emailMod)
+	}
 	a.Add(oauth2.New(opts.Database, opts.Self, opts.OAuthIssuer))
 	a.Add(payment.New(opts.Database, opts.Self, engine.NewEventLogger(opts.Database, "stripe")))
 	a.Add(waiver.New(opts.Database))
@@ -95,6 +107,9 @@ func Register(a *engine.App, opts Options) *auth.Module {
 
 	a.Add(machinesMod)
 	machinesMod.SetConfigLoader(a.ConfigStore())
+	if opts.OnMachinesModule != nil {
+		opts.OnMachinesModule(machinesMod)
+	}
 
 	// Google OAuth login module
 	googleMod := google.New(opts.Database, opts.Self, opts.GoogleIssuer)
