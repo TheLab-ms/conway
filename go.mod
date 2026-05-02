@@ -4,21 +4,21 @@ go 1.25.0
 
 require (
 	github.com/a-h/templ v0.3.1001
-	github.com/caarlos0/env/v11 v11.3.1
+	github.com/caarlos0/env/v11 v11.4.1
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/gavv/httpexpect/v2 v2.16.0
 	github.com/go-pdf/fpdf v0.9.0
-	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/phin1x/go-ipp v1.7.0
 	github.com/playwright-community/playwright-go v0.5200.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/stretchr/testify v1.11.1
 	github.com/stripe/stripe-go/v78 v78.12.0
-	golang.org/x/image v0.38.0
-	golang.org/x/oauth2 v0.32.0
-	golang.org/x/time v0.14.0
-	modernc.org/sqlite v1.39.1
+	golang.org/x/image v0.39.0
+	golang.org/x/oauth2 v0.36.0
+	golang.org/x/time v0.15.0
+	modernc.org/sqlite v1.50.0
 )
 
 require (
@@ -45,7 +45,7 @@ require (
 	github.com/klauspost/compress v1.15.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/natefinch/atomic v1.0.1 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
@@ -61,16 +61,15 @@ require (
 	github.com/yalp/jsonpath v0.0.0-20180802001716-5cc68e5049a0 // indirect
 	github.com/yudai/gojsondiff v1.0.0 // indirect
 	github.com/yudai/golcs v0.0.0-20170316035057-ecda9a501e82 // indirect
-	golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b // indirect
-	golang.org/x/mod v0.31.0 // indirect
-	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/tools v0.40.0 // indirect
+	golang.org/x/mod v0.35.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/tools v0.44.0 // indirect
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.66.10 // indirect
+	modernc.org/libc v1.72.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 	moul.io/http2curl/v2 v2.3.0 // indirect
