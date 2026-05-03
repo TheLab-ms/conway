@@ -1,0 +1,173 @@
+package twilio
+
+import (
+	"fmt"
+
+	"github.com/TheLab-ms/conway/modules/admin"
+	"github.com/TheLab-ms/conway/modules/bootstrap"
+)
+
+templ renderInboxList(tabs []*admin.NavTab, msgs []*message, unread int, unreadOnly bool) {
+	@bootstrap.View() {
+		@admin.Navbar(tabs)
+		<div class="container my-5">
+			<div class="d-flex align-items-center mb-4">
+				<h1 class="mb-0">Inbox</h1>
+				if unread > 0 {
+					<span class="badge bg-primary ms-3">{ fmt.Sprintf("%d unread", unread) }</span>
+				}
+				<div class="ms-auto btn-group btn-group-sm" role="group">
+					if unreadOnly {
+						<a href="/admin/inbox" class="btn btn-outline-secondary">All</a>
+						<a href="/admin/inbox?unread=1" class="btn btn-secondary active">Unread</a>
+					} else {
+						<a href="/admin/inbox" class="btn btn-secondary active">All</a>
+						<a href="/admin/inbox?unread=1" class="btn btn-outline-secondary">Unread</a>
+					}
+				</div>
+			</div>
+			<div class="card">
+				if len(msgs) == 0 {
+					<div class="card-body text-center text-muted py-5">
+						No messages.
+					</div>
+				} else {
+					<div class="list-group list-group-flush">
+						for _, msg := range msgs {
+							@inboxRow(msg)
+						}
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ inboxRow(msg *message) {
+	<a href={ templ.SafeURL(fmt.Sprintf("/admin/inbox/%d", msg.ID)) } class={ inboxRowClass(msg) }>
+		<div class="d-flex w-100 align-items-center">
+			<div class="me-3">
+				if msg.IsUnread() {
+					<span class="badge bg-primary rounded-pill" style="width: 0.6rem; height: 0.6rem; padding: 0;">&nbsp;</span>
+				} else {
+					<span class="d-inline-block" style="width: 0.6rem; height: 0.6rem;">&nbsp;</span>
+				}
+			</div>
+			<div class="me-3" style="min-width: 5rem;">
+				if msg.Kind == kindVoicemail {
+					<span class="badge text-bg-info">Voicemail</span>
+				} else {
+					<span class="badge text-bg-success">SMS</span>
+				}
+			</div>
+			<div class="flex-grow-1 overflow-hidden">
+				<div class={ fmt.Sprintf("d-flex justify-content-between align-items-baseline %s", boldIfUnread(msg)) }>
+					<span class="text-truncate">{ formatNumber(msg.From) }</span>
+					<small class="text-muted ms-3 flex-shrink-0">{ msg.CreatedRel() }</small>
+				</div>
+				<div class="text-muted text-truncate small">
+					{ msg.Preview() }
+					if msg.Duration() != "" {
+						<span class="ms-2">({ msg.Duration() })</span>
+					}
+				</div>
+			</div>
+		</div>
+	</a>
+}
+
+templ renderInboxDetail(tabs []*admin.NavTab, msg *message) {
+	@bootstrap.View() {
+		@admin.Navbar(tabs)
+		<div class="container my-5" style="max-width: 760px;">
+			<div class="mb-3">
+				<a href="/admin/inbox" class="text-decoration-none">&larr; Back to inbox</a>
+			</div>
+			<div class="card">
+				<div class="card-header d-flex align-items-center">
+					if msg.Kind == kindVoicemail {
+						<span class="badge text-bg-info me-2">Voicemail</span>
+					} else {
+						<span class="badge text-bg-success me-2">SMS</span>
+					}
+					<h2 class="h5 mb-0">{ formatNumber(msg.From) }</h2>
+					<span class="ms-auto text-muted small">{ msg.CreatedRel() }</span>
+				</div>
+				<div class="card-body">
+					<dl class="row mb-3 small text-muted">
+						<dt class="col-sm-2">From</dt>
+						<dd class="col-sm-10">{ msg.From }</dd>
+						<dt class="col-sm-2">To</dt>
+						<dd class="col-sm-10">{ msg.To }</dd>
+						if msg.Kind == kindVoicemail {
+							<dt class="col-sm-2">Duration</dt>
+							<dd class="col-sm-10">
+								if msg.Duration() != "" {
+									{ msg.Duration() }
+								} else {
+									unknown
+								}
+							</dd>
+						}
+					</dl>
+					if msg.Kind == kindVoicemail {
+						if msg.HasRecording {
+							<audio controls preload="metadata" class="w-100 mb-3" src={ string(templ.SafeURL(fmt.Sprintf("/admin/inbox/%d/audio", msg.ID))) }>
+								Your browser does not support audio playback.
+							</audio>
+						} else {
+							<div class="alert alert-secondary py-2 mb-3 small">
+								Recording is downloading from Twilio. Refresh in a few seconds.
+								if msg.DownloadAttempts > 0 {
+									<span class="ms-1">(attempts: { fmt.Sprint(msg.DownloadAttempts) })</span>
+								}
+							</div>
+						}
+						<h3 class="h6 text-muted">Transcription</h3>
+						if msg.Body != "" {
+							<p class="mb-0" style="white-space: pre-wrap;">{ msg.Body }</p>
+						} else {
+							<p class="text-muted fst-italic mb-0">No transcription available.</p>
+						}
+					} else {
+						<p class="mb-0" style="white-space: pre-wrap;">{ msg.Body }</p>
+					}
+				</div>
+				<div class="card-footer d-flex">
+					<form method="post" action={ templ.SafeURL(fmt.Sprintf("/admin/inbox/%d/read", msg.ID)) } class="me-auto">
+						<button type="submit" class="btn btn-sm btn-outline-secondary">Mark unread</button>
+					</form>
+					<form method="post" action={ templ.SafeURL(fmt.Sprintf("/admin/inbox/%d/delete", msg.ID)) } onsubmit="return confirm('Permanently delete this message?');">
+						<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+					</form>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+func inboxRowClass(msg *message) string {
+	if msg.IsUnread() {
+		return "list-group-item list-group-item-action py-3"
+	}
+	return "list-group-item list-group-item-action py-3 text-muted"
+}
+
+func boldIfUnread(msg *message) string {
+	if msg.IsUnread() {
+		return "fw-semibold"
+	}
+	return ""
+}
+
+// formatNumber lightly prettifies +1XXXYYYZZZZ → +1 (XXX) YYY-ZZZZ.
+// Falls back to the raw input on any non-North-American format.
+func formatNumber(n string) string {
+	if len(n) == 12 && n[0] == '+' && n[1] == '1' {
+		return fmt.Sprintf("+1 (%s) %s-%s", n[2:5], n[5:8], n[8:12])
+	}
+	if n == "" {
+		return "(unknown)"
+	}
+	return n
+}

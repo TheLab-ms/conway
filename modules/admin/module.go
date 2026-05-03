@@ -50,6 +50,17 @@ func New(db *sql.DB, self *url.URL, linksIss *engine.TokenIssuer, eventLogger *e
 	}
 }
 
+// AddNavTab appends a tab to the admin navbar. The slice backing m.nav is
+// captured by reference in handler closures and is read at request time, so
+// tabs added before the HTTP server starts will appear on every admin page.
+func (m *Module) AddNavTab(title, path string) {
+	m.nav = append(m.nav, &navbarTab{Title: title, Path: path})
+}
+
+// NavTabs returns the current admin navbar tabs. Other modules can use this
+// to render the same navbar on their own pages for a consistent UX.
+func (m *Module) NavTabs() []*NavTab { return m.nav }
+
 // SetConfigRegistry sets the config registry for dynamic configuration UI.
 // This should be called after all modules are registered with the App.
 func (m *Module) SetConfigRegistry(registry *config.Registry) {

@@ -22,6 +22,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/payment"
 	"github.com/TheLab-ms/conway/modules/signs"
 	"github.com/TheLab-ms/conway/modules/triggers"
+	"github.com/TheLab-ms/conway/modules/twilio"
 	"github.com/TheLab-ms/conway/modules/waiver"
 )
 
@@ -135,11 +136,23 @@ func Register(a *engine.App, opts Options) *auth.Module {
 		opts.OnSignsModule(signsMod)
 	}
 
+	// Twilio module: SMS + voicemail inbox. Registered before admin so its
+	// ConfigSpec lands in the registry, but the inbox tab + nav-provider
+	// wiring happens after admin is constructed below.
+	twilioMod := twilio.New(opts.Database, opts.Self, engine.NewEventLogger(opts.Database, "twilio"))
+	a.Add(twilioMod)
+	twilioMod.SetConfigLoader(a.ConfigStore())
+
 	// Admin module added last so it can access the fully-populated config registry
 	adminMod := admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin"))
 	adminMod.SetConfigRegistry(a.Configs())
 	adminMod.SetConfigStore(a.ConfigStore())
 	a.Add(adminMod)
+
+	// Wire the inbox into the admin navbar and let the inbox pages render
+	// the same navbar as the rest of admin. Done after both modules exist.
+	adminMod.AddNavTab("Inbox", "/admin/inbox")
+	twilioMod.SetNavProvider(adminMod.NavTabs)
 
 	return authModule
 }

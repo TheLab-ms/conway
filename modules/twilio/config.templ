@@ -1,0 +1,28 @@
+package twilio
+
+templ configDescription() {
+	<strong>How the Twilio integration works</strong>
+	<ul class="mb-0 mt-2">
+		<li><strong>Inbound SMS</strong> texts arrive instantly in the <a href="/admin/inbox">Inbox</a>.</li>
+		<li><strong>Inbound calls</strong> are answered with the configured greeting and recorded as voicemail. Recordings download automatically and are stored in Conway.</li>
+		<li><strong>Retention:</strong> messages and recordings are deleted after the configured number of days (default 30) to limit storage growth.</li>
+		<li><strong>Security:</strong> webhook requests are signature-verified using the auth token below. Only Twilio can post to these endpoints.</li>
+	</ul>
+}
+
+templ authSectionDescription() {
+	Find these values on the <a href="https://console.twilio.com" target="_blank" rel="noopener">Twilio Console</a> dashboard. The auth token is used to sign incoming webhooks and authenticate recording downloads — keep it secret.
+}
+
+templ voiceSectionDescription(selfURL string) {
+	<p class="mb-2">In the Twilio console, configure your phone number's webhooks to point to:</p>
+	<ul class="mb-2">
+		<li><strong>Voice (A call comes in):</strong> <code>{ selfURL }/twilio/voice</code> (HTTP POST)</li>
+		<li><strong>Messaging (A message comes in):</strong> <code>{ selfURL }/twilio/sms</code> (HTTP POST)</li>
+	</ul>
+	<p class="mb-0 text-muted small">The recording and transcription callback URLs are set automatically inside the TwiML response — you do not need to configure them.</p>
+}
+
+templ retentionSectionDescription() {
+	Voicemails consume the most space. The default 30-day retention keeps the database small while giving leadership ample time to follow up on messages.
+}
