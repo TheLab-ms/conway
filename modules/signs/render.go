@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+	"unicode/utf8"
 
 	"github.com/go-pdf/fpdf"
 )
@@ -29,6 +30,40 @@ func RenderSign(t Template, data SignData) ([]byte, error) {
 	return renderMarkdownPDF(buf.String(), t.Orientation)
 }
 
+// sanitizeForPDF returns s with any characters our PDF backend can't safely
+// render replaced with U+FFFD ("�").
+//
+// fpdf v0.9.0 panics with an index-out-of-range in generateCIDFontMap when a
+// document contains any codepoint outside the BMP (U+0000–U+FFFF) — its CID
+// map is a fixed-size 65536-entry array. Emojis (U+1F300+) and other
+// supplementary-plane characters that members might paste from a phone
+// keyboard would otherwise crash the whole sign-render worker. Invalid UTF-8
+// byte sequences are replaced for the same reason.
+func sanitizeForPDF(s string) string {
+	if utf8.ValidString(s) {
+		hasNonBMP := false
+		for _, r := range s {
+			if r > 0xFFFF {
+				hasNonBMP = true
+				break
+			}
+		}
+		if !hasNonBMP {
+			return s
+		}
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r == utf8.RuneError || r > 0xFFFF {
+			b.WriteRune('\uFFFD')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // renderMarkdownPDF converts a small subset of markdown into a printable PDF.
 //
 // Supported syntax (line-based):
@@ -48,6 +83,12 @@ func renderMarkdownPDF(md, orientation string) ([]byte, error) {
 	}
 
 	pdf := fpdf.New(orient, "mm", "Letter", "")
+	// Register the bundled UTF-8 font (see fonts.go) before the first page
+	// so SetFont(signFontFamily, ...) calls below can render the full
+	// Unicode range. fpdf's default core fonts are cp1252 only and would
+	// mojibake any non-cp1252 input from members.
+	pdf.AddUTF8FontFromBytes(signFontFamily, "", fontDejaVuSansRegular)
+	pdf.AddUTF8FontFromBytes(signFontFamily, "B", fontDejaVuSansBold)
 	pdf.SetMargins(15, 30, 15)
 	pdf.SetAutoPageBreak(true, 15)
 	pdf.AddPage()
@@ -59,7 +100,7 @@ func renderMarkdownPDF(md, orientation string) ([]byte, error) {
 	pdf.SetFillColor(0x00, 0xC8, 0x53)
 	pdf.Rect(0, 0, pageW, 8, "F")
 
-	lines := strings.Split(md, "\n")
+	lines := strings.Split(sanitizeForPDF(md), "\n")
 
 	var paraBuf []string
 	flushPara := func() {
@@ -119,7 +160,7 @@ func renderMarkdownPDF(md, orientation string) ([]byte, error) {
 			flushPara()
 			startY := pdf.GetY()
 			pdf.SetTextColor(0x00, 0xC8, 0x53)
-			pdf.SetFont("Helvetica", "B", 18)
+			pdf.SetFont(signFontFamily, "B", 18)
 			pdf.SetXY(15, startY)
 			pdf.Cell(6, 9, "•")
 			pdf.SetTextColor(20, 20, 20)
@@ -203,7 +244,7 @@ func writeRichText(pdf *fpdf.Fpdf, text, baseStyle string, fontSize, lineH float
 		if bold {
 			style = "B"
 		}
-		pdf.SetFont("Helvetica", style, fontSize)
+		pdf.SetFont(signFontFamily, style, fontSize)
 		w := pdf.GetStringWidth(word)
 		if lineWidth+w > width && lineWidth > 0 {
 			pdf.Ln(lineH)
