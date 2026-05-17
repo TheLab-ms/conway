@@ -70,6 +70,16 @@ pub static SYNC_COMPLETE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 // Signal for door unlock (after successful auth)
 pub static DOOR_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
+/// Reader-side user feedback to play after an access decision.
+#[derive(Debug, Clone, Copy)]
+pub enum AccessOutcome {
+    Granted,
+    Denied,
+}
+
+// Signal to drive reader LED/beeper after each access decision.
+pub static READER_FEEDBACK: Signal<CriticalSectionRawMutex, AccessOutcome> = Signal::new();
+
 // Signal to request watchdog feed (proves access_task is responsive)
 pub static WATCHDOG_FEED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
@@ -162,16 +172,31 @@ async fn main(spawner: embassy_executor::Spawner) {
     let (stack, runner) = embassy_net::new(wifi_device, net_config, stack_resources, seed);
     let stack: &'static Stack<'static> = STACK.init(stack);
 
-    // Setup GPIO pins
+    // Setup GPIO pins (see HARDWARE.md for full pin map).
+    //
+    // Wiegand inputs: driven by SN74LVC2G17 non-inverting Schmitt buffer
+    // (3V3 output, actively driven), so no internal pull is required.
     let d0 = Input::new(
         peripherals.GPIO25,
-        InputConfig::default().with_pull(Pull::Up),
+        InputConfig::default().with_pull(Pull::None),
     );
     let d1 = Input::new(
         peripherals.GPIO33,
-        InputConfig::default().with_pull(Pull::Up),
+        InputConfig::default().with_pull(Pull::None),
     );
+
+    // Output drivers: SS8050 NPN low-side switches, so GPIO HIGH = load energized.
     let door = Output::new(peripherals.GPIO32, Level::Low, OutputConfig::default());
+    let reader_led = Output::new(peripherals.GPIO26, Level::Low, OutputConfig::default());
+    let reader_beep = Output::new(peripherals.GPIO27, Level::Low, OutputConfig::default());
+    let status_led = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());
+
+    // CONFIG button: external 10k pull-up to 3V3 + 100nF debounce cap.
+    // GPIO35 is input-only on the ESP32, so we rely on the external pull-up.
+    let config_btn = Input::new(
+        peripherals.GPIO35,
+        InputConfig::default().with_pull(Pull::None),
+    );
 
     // Create Wiegand reader
     let wiegand = Wiegand::new(d0, d1);
@@ -182,6 +207,12 @@ async fn main(spawner: embassy_executor::Spawner) {
     spawner.spawn(wiegand_task(wiegand)).unwrap();
     spawner.spawn(access_task(fobs, wdt)).unwrap();
     spawner.spawn(door_task(door)).unwrap();
+    spawner
+        .spawn(reader_feedback_task(reader_led, reader_beep))
+        .unwrap();
+    spawner
+        .spawn(status_and_config_task(status_led, config_btn, stack))
+        .unwrap();
     spawner.spawn(sync_task(stack, fobs, etag)).unwrap();
     spawner.spawn(watchdog_feed_task()).unwrap();
 }
@@ -303,12 +334,14 @@ async fn access_task(
                     if allowed {
                         log::info!("access GRANTED (after sync)");
                         failed_attempts = 0;
+                        READER_FEEDBACK.signal(AccessOutcome::Granted);
                         DOOR_SIGNAL.signal(());
                     } else {
                         log::warn!("access DENIED (after sync)");
                         failed_attempts = failed_attempts.saturating_add(1);
                         let delay_ms = (1u64 << failed_attempts.min(3)) * 1000;
                         backoff_until = now + delay_ms;
+                        READER_FEEDBACK.signal(AccessOutcome::Denied);
                     }
                 }
                 continue;
@@ -344,6 +377,7 @@ async fn access_task(
                             allowed: true,
                         })
                         .await;
+                    READER_FEEDBACK.signal(AccessOutcome::Granted);
                     DOOR_SIGNAL.signal(());
                 } else {
                     log::warn!("access DENIED - requesting async sync");
@@ -353,6 +387,7 @@ async fn access_task(
                             allowed: false,
                         })
                         .await;
+                    READER_FEEDBACK.signal(AccessOutcome::Denied);
 
                     // Request sync asynchronously and set up pending recheck.
                     // Do NOT wait - the sync_task will signal SYNC_COMPLETE when done.
@@ -423,6 +458,116 @@ async fn watchdog_feed_task() {
     loop {
         Timer::after(Duration::from_secs(10)).await;
         WATCHDOG_FEED.signal(());
+    }
+}
+
+/// Reader-side feedback task - drives the reader LED and beeper after
+/// each access decision.
+///
+/// - Granted: LED on for 200ms with a 100ms beep at the start.
+/// - Denied:  three 100ms beeps (100ms gap), LED stays off.
+#[embassy_executor::task]
+async fn reader_feedback_task(mut led: Output<'static>, mut beep: Output<'static>) {
+    loop {
+        match READER_FEEDBACK.wait().await {
+            AccessOutcome::Granted => {
+                led.set_high();
+                beep.set_high();
+                Timer::after(Duration::from_millis(100)).await;
+                beep.set_low();
+                Timer::after(Duration::from_millis(100)).await;
+                led.set_low();
+            }
+            AccessOutcome::Denied => {
+                for _ in 0..3 {
+                    beep.set_high();
+                    Timer::after(Duration::from_millis(100)).await;
+                    beep.set_low();
+                    Timer::after(Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+}
+
+/// Combined status-LED heartbeat + CONFIG button handler.
+///
+/// One task owns the status LED so the factory-reset acknowledgement can
+/// flash it without any cross-task synchronization.
+///
+/// Heartbeat:
+///   - 1Hz toggle (500ms period) when the network stack has an IPv4 lease.
+///   - 5Hz toggle (100ms period) otherwise, indicating "no IP / not ready".
+///
+/// CONFIG button (active-low, external pull-up):
+///   - Short press (>=50ms, <5s): signal SYNC_SIGNAL for an on-demand sync.
+///   - Long hold (>=5s):          flash the status LED 5x, log a placeholder
+///                                factory-reset message, then software-reset.
+#[embassy_executor::task]
+async fn status_and_config_task(
+    mut led: Output<'static>,
+    mut btn: Input<'static>,
+    stack: &'static Stack<'static>,
+) {
+    use embassy_futures::select::{Either, select};
+
+    const DEBOUNCE_MS: u64 = 50;
+    const LONG_HOLD_MS: u64 = 5_000;
+
+    loop {
+        // Choose heartbeat cadence based on network readiness each tick.
+        let period_ms = if stack.config_v4().is_some() {
+            500
+        } else {
+            100
+        };
+
+        match select(
+            btn.wait_for_falling_edge(),
+            Timer::after(Duration::from_millis(period_ms)),
+        )
+        .await
+        {
+            // Heartbeat tick.
+            Either::Second(()) => {
+                led.toggle();
+            }
+
+            // Button pressed (active-low edge).
+            Either::First(()) => {
+                Timer::after(Duration::from_millis(DEBOUNCE_MS)).await;
+                if btn.is_high() {
+                    // Bounce / glitch - ignore.
+                    continue;
+                }
+
+                // Wait for release or long-hold timeout.
+                match select(
+                    btn.wait_for_rising_edge(),
+                    Timer::after(Duration::from_millis(LONG_HOLD_MS - DEBOUNCE_MS)),
+                )
+                .await
+                {
+                    // Short press - released before long-hold threshold.
+                    Either::First(()) => {
+                        log::info!("config: manual sync requested");
+                        SYNC_SIGNAL.signal(());
+                    }
+
+                    // Long hold - factory reset placeholder.
+                    Either::Second(()) => {
+                        log::warn!("config: factory reset placeholder - rebooting");
+                        for _ in 0..5 {
+                            led.set_high();
+                            Timer::after(Duration::from_millis(100)).await;
+                            led.set_low();
+                            Timer::after(Duration::from_millis(100)).await;
+                        }
+                        esp_hal::system::software_reset();
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -63,18 +63,18 @@ impl<'a> Wiegand<'a> {
 
     /// Wait for either D0 or D1 edge and return the bit value.
     ///
-    /// NOTE: With optocoupler isolation (PC817), the signal is inverted:
-    /// - Reader idle (HIGH) -> LED on -> transistor on -> ESP32 sees LOW
-    /// - Reader pulse (LOW) -> LED off -> transistor off -> ESP32 sees HIGH
-    /// Therefore we detect RISING edges (the inverted falling edge from reader).
+    /// The as-built PCB uses a non-inverting SN74LVC2G17 dual Schmitt buffer
+    /// (Vcc=3V3, 5V-tolerant inputs) between the reader and the ESP32. The
+    /// reader's native Wiegand signaling is idle-HIGH with a brief LOW pulse
+    /// per bit, and the buffer preserves that polarity, so the ESP32 sees the
+    /// reader's true falling edges directly.
     async fn wait_for_bit(&mut self) -> u8 {
         use embassy_futures::select::Either;
 
-        // D0 rising edge = 0 bit, D1 rising edge = 1 bit
-        // (inverted from reader's falling edge by optocoupler)
+        // D0 falling edge = 0 bit, D1 falling edge = 1 bit.
         match embassy_futures::select::select(
-            self.d0.wait_for_rising_edge(),
-            self.d1.wait_for_rising_edge(),
+            self.d0.wait_for_falling_edge(),
+            self.d1.wait_for_falling_edge(),
         )
         .await
         {
