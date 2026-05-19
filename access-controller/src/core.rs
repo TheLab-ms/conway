@@ -152,12 +152,16 @@ impl AccessCore {
                     let allowed =
                         fobs.iter().any(|&f| f == fob) || fobs.iter().any(|&f| f == nfc);
                     if allowed {
-                        // Mirror main.rs:336-340 — failed_attempts is reset
-                        // to 0 here, but `backoff_until` is intentionally
-                        // *not* cleared. A grant after sync therefore still
-                        // honors any outstanding backoff window for future
-                        // card reads. Tests pin this behavior.
+                        // Defensively clear both failed_attempts and
+                        // backoff_until on a grant-after-sync. The state
+                        // machine currently can't reach SyncComplete-grant
+                        // with a future backoff_until (a sync-denial clears
+                        // pending_recheck, and a card outside backoff is
+                        // required to re-arm it), but keeping the two
+                        // counters in lockstep avoids surprises if that
+                        // invariant ever weakens.
                         self.failed_attempts = 0;
+                        self.backoff_until = 0;
                         let _ = out.push(Effect::Feedback(Outcome::Granted));
                         let _ = out.push(Effect::OpenDoor);
                     } else {

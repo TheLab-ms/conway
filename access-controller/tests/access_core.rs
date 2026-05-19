@@ -268,6 +268,8 @@ fn grant_after_sync_resets_failed_attempts() {
     let eff = s.sync();
     assert!(contains_open_door(&eff));
     assert_eq!(s.core.failed_attempts(), 0);
+    assert_eq!(s.core.backoff_until(), 0,
+        "grant-after-sync must clear backoff_until alongside failed_attempts");
 }
 
 // ---------------------------------------------------------------------------
