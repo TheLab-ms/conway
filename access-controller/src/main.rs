@@ -13,6 +13,7 @@ use esp_bootloader_esp_idf::esp_app_desc;
 esp_app_desc!();
 
 mod http;
+mod ota;
 mod sync;
 mod wiegand;
 

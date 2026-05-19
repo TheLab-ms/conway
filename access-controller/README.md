@@ -33,3 +33,65 @@ source network.env && cargo run --release
 
 The device will connect to WiFi, sync fobs from Conway, and begin accepting card scans.
 
+## OTA (over-the-air) firmware updates
+
+After the first USB flash the device can be updated over the LAN — no
+USB cable required.
+
+### One-time migration (required before first OTA)
+
+OTA needs a custom partition table (`partitions.csv` in this directory)
+and otadata slot that a stock factory build does not have. The first
+time you upgrade a device from a pre-OTA build you MUST reflash over
+USB so espflash writes the new partition table:
+
+```bash
+source network.env && cargo run --release
+```
+
+`espflash.toml` pins espflash to `partitions.csv` so this Just Works.
+After this one USB flash, the device permanently has two app slots
+(`ota_0`, `ota_1`) and an `otadata` partition; all subsequent updates
+can go over the network.
+
+### Updating over the network
+
+Build the firmware image, then POST it as a raw binary body:
+
+```bash
+# Produces ./firmware.bin (cargo build + espflash save-image).
+./build-ota.sh
+
+# Upload it. Replace <ip> with the device's address.
+curl --data-binary @firmware.bin \
+  -H 'Content-Type: application/octet-stream' \
+  http://<ip>/ota
+```
+
+On success the device replies with `ok: activated ota_N (... bytes),
+rebooting` and reboots into the new image about 250 ms later.
+
+The status page at `http://<ip>/` also has a file-picker that uses the
+same endpoint, including a progress bar, and a "Roll back to previous
+slot" button (which POSTs to `/ota/rollback`).
+
+### Security model
+
+There is **no authentication** on the OTA endpoint. Anyone with TCP
+access to port 80 on the device can replace the firmware. Run these
+devices on a trusted management VLAN/SSID only.
+
+The only checks performed on upload are:
+- `Content-Length` must fit inside the inactive app slot (~1.9 MiB);
+- the first byte must be `0xE9` (ESP image magic);
+- the received byte count must match `Content-Length`.
+
+### Rollback
+
+There is no automatic rollback. If a new image bricks WiFi/HTTP, the
+only recovery is a USB reflash. If a new image boots and is reachable
+but misbehaves, POST to `/ota/rollback` (or click the button on the
+status page) to flip `otadata` back to the previously running slot and
+reboot.
+
+

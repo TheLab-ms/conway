@@ -1,0 +1,4 @@
+# espflash configuration: tells `espflash flash` (used as the cargo runner
+# in .cargo/config.toml) to use our custom OTA-enabled partition table.
+[idf_format_args]
+partition_table = "partitions.csv"
