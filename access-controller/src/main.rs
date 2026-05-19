@@ -12,6 +12,7 @@
 use esp_bootloader_esp_idf::esp_app_desc;
 esp_app_desc!();
 
+mod http;
 mod sync;
 mod wiegand;
 
@@ -214,6 +215,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         .spawn(status_and_config_task(status_led, config_btn, stack))
         .unwrap();
     spawner.spawn(sync_task(stack, fobs, etag)).unwrap();
+    spawner.spawn(http::http_server_task(stack, fobs, etag)).unwrap();
     spawner.spawn(watchdog_feed_task()).unwrap();
 }
 
