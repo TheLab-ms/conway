@@ -283,12 +283,10 @@ fn parse_fob_list(json: &str) -> Result<heapless::Vec<u32, MAX_FOBS>, &'static s
 
 pub const MAX_EVENTS: usize = 20;
 
-/// Access event to report to Conway server.
-#[derive(Clone, Copy, Default)]
-pub struct AccessEvent {
-    pub fob: u32,
-    pub allowed: bool,
-}
+/// Re-export so existing `use crate::sync::AccessEvent` call sites keep
+/// compiling. The struct itself lives in the pure `events` module so the
+/// host-side simulation tests can use it without pulling in HAL deps.
+pub use access_controller::events::AccessEvent;
 
 /// Event buffer state.
 struct EventBufferInner {

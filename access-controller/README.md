@@ -24,6 +24,35 @@ Copy `network.env.example` to `network.env` and edit with your values:
 source network.env && cargo run --release
 ```
 
+## Deterministic simulation tests
+
+The crate's business-logic core (Wiegand frame decoders + the
+authorization state machine that drives `access_task`) is extracted into
+a small pure library that can be exercised on the host without any
+ESP32 hardware. Tests live in `tests/wiegand_decode.rs` and
+`tests/access_core.rs` and combine handwritten scenarios with
+`proptest`-based property tests over randomly generated event traces.
+
+Run them with the host toolchain (NOT the `esp` toolchain pinned by
+`rust-toolchain.toml`):
+
+```bash
+RUSTUP_TOOLCHAIN=stable cargo test \
+    --no-default-features --features sim \
+    --target x86_64-unknown-linux-gnu
+```
+
+The `sim` feature gates the binary out (`required-features = ["esp32"]`)
+and makes all hardware deps optional, so only pure code and tests are
+compiled. Default `cargo build --release` for the firmware is
+unaffected.
+
+Properties currently proven include: no `OpenDoor` effect without a
+current fob-cache hit (A1/A2/A3); silent backoff window (A4); 10-second
+recheck deadline never grants past expiry (A5); every granted card swipe
+is accompanied by an `allowed:true` audit record; and Wiegand
+frame-parity / fob-format invariants (W1–W4).
+
 ## Flashing an ESP32
 
 1. Connect ESP32 via USB

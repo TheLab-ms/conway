@@ -5,6 +5,10 @@
 use embassy_time::{Duration, Instant, with_timeout};
 use esp_hal::gpio::Input;
 
+// Re-export the pure decoder types so existing callers (`use crate::wiegand::WiegandRead`)
+// continue to compile unchanged.
+pub use access_controller::decode::{decode_26, decode_34, WiegandRead};
+
 const DEBOUNCE: Duration = Duration::from_micros(500);
 const BIT_TIMEOUT: Duration = Duration::from_millis(25);
 
@@ -52,8 +56,8 @@ impl<'a> Wiegand<'a> {
 
         // Decode based on bit count
         match count {
-            26 => Self::decode_26(bits),
-            34 => Self::decode_34(bits),
+            26 => decode_26(bits),
+            34 => decode_34(bits),
             _ => {
                 log::warn!("wiegand: unknown format ({} bits)", count);
                 None
@@ -81,77 +85,5 @@ impl<'a> Wiegand<'a> {
             Either::First(()) => 0,
             Either::Second(()) => 1,
         }
-    }
-
-    fn decode_26(raw: u64) -> Option<WiegandRead> {
-        let raw = raw as u32;
-        let leading = (raw >> 25) & 1;
-        let trailing = raw & 1;
-        let data = (raw >> 1) & 0xFF_FFFF;
-
-        // Even parity on upper 12 bits, odd parity on lower 12 bits
-        let upper = data >> 12;
-        let lower = data & 0xFFF;
-        let even_ok = (upper.count_ones() % 2) == leading;
-        let odd_ok = (lower.count_ones() % 2) != trailing;
-        if !even_ok || !odd_ok {
-            log::warn!("wiegand: 26-bit parity failed");
-            return None;
-        }
-
-        let facility = (data >> 16) & 0xFF;
-        let card = data & 0xFFFF;
-        Some(WiegandRead {
-            facility,
-            card,
-            raw_data: data,
-        })
-    }
-
-    fn decode_34(raw: u64) -> Option<WiegandRead> {
-        let leading = ((raw >> 33) & 1) as u32;
-        let trailing = (raw & 1) as u32;
-        let data = ((raw >> 1) & 0xFFFF_FFFF) as u32;
-
-        // Even parity on upper 16 bits, odd parity on lower 16 bits
-        let upper = data >> 16;
-        let lower = data & 0xFFFF;
-        let even_ok = (upper.count_ones() % 2) == leading;
-        let odd_ok = (lower.count_ones() % 2) != trailing;
-        if !even_ok || !odd_ok {
-            log::warn!("wiegand: 34-bit parity failed");
-            return None;
-        }
-
-        // Match original implementation: 8-bit facility, 16-bit card
-        // (This is technically incorrect for H10304 which has 16-bit facility,
-        // but we depend on this behavior for compatibility with existing fob database)
-        let facility = (data >> 16) & 0xFF;
-        let card = data & 0xFFFF;
-        Some(WiegandRead {
-            facility,
-            card,
-            raw_data: data,
-        })
-    }
-}
-
-/// Decoded Wiegand credential.
-#[derive(Debug, Clone, Copy)]
-pub struct WiegandRead {
-    pub facility: u32,
-    pub card: u32,
-    pub raw_data: u32,
-}
-
-impl WiegandRead {
-    /// Convert to H10301 fob format: facility code + 5-digit card ID.
-    pub fn to_fob(&self) -> u32 {
-        self.facility * 100_000 + self.card
-    }
-
-    /// Convert raw data to NFC UID (byte-reversed).
-    pub fn to_nfc_uid(&self) -> u32 {
-        self.raw_data.swap_bytes()
     }
 }

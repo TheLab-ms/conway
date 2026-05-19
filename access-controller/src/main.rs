@@ -39,6 +39,7 @@ use static_cell::StaticCell;
 
 use crate::sync::{AccessEvent, EventBuffer};
 use crate::wiegand::{Wiegand, WiegandRead};
+use access_controller::core::{AccessCore, CardRead, Effect, Input as CoreInput, Outcome};
 
 // Configuration constants
 pub const MAX_FOBS: usize = 512;
@@ -288,16 +289,20 @@ async fn wiegand_task(mut wiegand: Wiegand<'static>) {
 ///
 /// This task also handles watchdog feeding. When WATCHDOG_FEED is signaled,
 /// this task feeds the hardware watchdog, proving it is not blocked.
+///
+/// All actual decision logic lives in the pure `AccessCore` state machine
+/// (`access_controller::core`) so it can be exercised deterministically from
+/// host tests. This function is now a thin adapter that:
+///   1. selects on the three input signals,
+///   2. snapshots the fob cache + current time,
+///   3. calls `core.step(...)` to get a list of `Effect`s,
+///   4. dispatches each effect to the appropriate Embassy primitive.
 #[embassy_executor::task]
 async fn access_task(
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     wdt: &'static Mutex<CriticalSectionRawMutex, WdtType>,
 ) {
-    // Pending credentials that were denied but might be valid after sync.
-    // We check these after each sync completes without blocking main auth flow.
-    let mut pending_recheck: Option<(u32, u32, u64)> = None; // (fob, nfc, deadline)
-    let mut backoff_until: u64 = 0;
-    let mut failed_attempts: u8 = 0;
+    let mut core = AccessCore::new();
 
     loop {
         // Use select3 to handle card reads, sync completion, AND watchdog feed requests.
@@ -311,91 +316,49 @@ async fn access_task(
 
         let now = embassy_time::Instant::now().as_millis();
 
-        match event {
-            // Watchdog feed request - feed the hardware watchdog to prove we're alive
-            embassy_futures::select::Either3::Third(()) => {
-                wdt.lock().await.feed();
-                log::debug!("watchdog: fed");
-                continue;
-            }
+        let input = match event {
+            embassy_futures::select::Either3::First(read) => CoreInput::Card(CardRead {
+                fob: read.to_fob(),
+                nfc: read.to_nfc_uid(),
+            }),
+            embassy_futures::select::Either3::Second(()) => CoreInput::SyncComplete,
+            embassy_futures::select::Either3::Third(()) => CoreInput::WatchdogFeed,
+        };
 
-            // Sync completed - check if pending credential is now valid
-            embassy_futures::select::Either3::Second(()) => {
-                if let Some((fob, nfc, deadline)) = pending_recheck.take() {
-                    if now > deadline {
-                        log::debug!("pending recheck expired");
-                        continue;
-                    }
+        // Snapshot the cache once and pass it as a slice; mirrors the
+        // single-lock-acquisition behavior of the original code.
+        let effects = {
+            let fob_list = fobs.lock().await;
+            core.step(now, fob_list.as_slice(), input)
+        };
 
-                    // Recheck authorization with updated fob list
-                    let allowed = {
-                        let fob_list = fobs.lock().await;
-                        fob_list.iter().any(|&f| f == fob)
-                            || fob_list.iter().any(|&f| f == nfc)
-                    };
-
-                    if allowed {
-                        log::info!("access GRANTED (after sync)");
-                        failed_attempts = 0;
-                        READER_FEEDBACK.signal(AccessOutcome::Granted);
-                        DOOR_SIGNAL.signal(());
-                    } else {
-                        log::warn!("access DENIED (after sync)");
-                        failed_attempts = failed_attempts.saturating_add(1);
-                        let delay_ms = (1u64 << failed_attempts.min(3)) * 1000;
-                        backoff_until = now + delay_ms;
-                        READER_FEEDBACK.signal(AccessOutcome::Denied);
-                    }
-                }
-                continue;
-            }
-
-            // New card read - process immediately
-            embassy_futures::select::Either3::First(read) => {
-                if now < backoff_until {
-                    log::debug!("card ignored (backoff)");
-                    continue;
-                }
-
-                let fob = read.to_fob();
-                let nfc = read.to_nfc_uid();
-
-                // Check authorization against local cache (never blocks on network)
-                let (fob_allowed, nfc_allowed) = {
-                    let fob_list = fobs.lock().await;
-                    let fob_ok = fob_list.iter().any(|&f| f == fob);
-                    let nfc_ok = !fob_ok && fob_list.iter().any(|&f| f == nfc);
-                    (fob_ok, nfc_ok)
-                };
-
-                let allowed = fob_allowed || nfc_allowed;
-
-                if allowed {
+        for effect in effects.iter() {
+            match effect {
+                Effect::OpenDoor => {
                     log::info!("access GRANTED");
-                    failed_attempts = 0;
-                    let credential = if fob_allowed { fob } else { nfc };
-                    EVENT_BUFFER
-                        .push(AccessEvent {
-                            fob: credential,
-                            allowed: true,
-                        })
-                        .await;
-                    READER_FEEDBACK.signal(AccessOutcome::Granted);
                     DOOR_SIGNAL.signal(());
-                } else {
-                    log::warn!("access DENIED - requesting async sync");
+                }
+                Effect::Feedback(Outcome::Granted) => {
+                    READER_FEEDBACK.signal(AccessOutcome::Granted);
+                }
+                Effect::Feedback(Outcome::Denied) => {
+                    log::warn!("access DENIED");
+                    READER_FEEDBACK.signal(AccessOutcome::Denied);
+                }
+                Effect::Record(ev) => {
                     EVENT_BUFFER
                         .push(AccessEvent {
-                            fob,
-                            allowed: false,
+                            fob: ev.fob,
+                            allowed: ev.allowed,
                         })
                         .await;
-                    READER_FEEDBACK.signal(AccessOutcome::Denied);
-
-                    // Request sync asynchronously and set up pending recheck.
-                    // Do NOT wait - the sync_task will signal SYNC_COMPLETE when done.
+                }
+                Effect::RequestSync => {
                     SYNC_SIGNAL.signal(());
-                    pending_recheck = Some((fob, nfc, now + 10_000)); // 10 second deadline
+                }
+                Effect::FeedWatchdog => {
+                    wdt.lock().await.feed();
+                    log::debug!("watchdog: fed");
                 }
             }
         }
