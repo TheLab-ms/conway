@@ -115,7 +115,7 @@ pub fn status() -> Result<OtaStatus, OtaError> {
     let current = {
         let mut region = otadata.as_embedded_storage(&mut flash);
         let mut ota = Ota::new(&mut region).map_err(|_| OtaError::Ota)?;
-        ota.current_slot().map_err(|_| OtaError::Ota)?
+        effective_current(ota.current_slot().map_err(|_| OtaError::Ota)?)
     };
 
     let next = current.next();
@@ -154,7 +154,7 @@ pub fn rollback() -> Result<Slot, OtaError> {
 
     let mut region = otadata.as_embedded_storage(&mut flash);
     let mut ota = Ota::new(&mut region).map_err(|_| OtaError::Ota)?;
-    let cur = ota.current_slot().map_err(|_| OtaError::Ota)?;
+    let cur = effective_current(ota.current_slot().map_err(|_| OtaError::Ota)?);
     let other = cur.next();
     ota.set_current_slot(other).map_err(|_| OtaError::Ota)?;
     Ok(other)
@@ -209,7 +209,7 @@ impl OtaWriter {
         let current = {
             let mut region = otadata.as_embedded_storage(&mut flash);
             let mut ota = Ota::new(&mut region).map_err(|_| OtaError::Ota)?;
-            ota.current_slot().map_err(|_| OtaError::Ota)?
+            effective_current(ota.current_slot().map_err(|_| OtaError::Ota)?)
         };
         let next = current.next();
 
@@ -341,13 +341,32 @@ pub fn slot_label(slot: Slot) -> &'static str {
     }
 }
 
+/// Normalize `Slot::None` (returned when `otadata` is erased, e.g. on a
+/// fresh USB flash) into the slot the IDF bootloader actually boots from
+/// in that state.
+///
+/// This firmware is built without a factory partition, so when otadata
+/// is invalid the bootloader falls back to `ota_0`. Crucially,
+/// `Slot::None.next()` in `esp-bootloader-esp-idf` returns `Slot0`,
+/// which would cause `OtaWriter::begin` to pick `ota_0` as the "next"
+/// slot - i.e. write the new image directly over the currently
+/// executing app and then point otadata at the half-written result.
+/// Normalizing here ensures the first OTA after a USB flash lands in
+/// `ota_1` instead of bricking the device.
+fn effective_current(slot: Slot) -> Slot {
+    match slot {
+        Slot::None => Slot::Slot0,
+        s => s,
+    }
+}
+
 fn app_subtype_for(slot: Slot) -> AppPartitionSubType {
     match slot {
-        // Slot::None means "no OTA has happened yet"; the bootloader
-        // will boot the factory image if present, else ota_0. We treat
-        // it as ota_0 here since the firmware is built without a
-        // factory partition.
-        Slot::None | Slot::Slot0 => AppPartitionSubType::Ota0,
+        Slot::Slot0 => AppPartitionSubType::Ota0,
         Slot::Slot1 => AppPartitionSubType::Ota1,
+        // Callers must normalize `Slot::None` via `effective_current`
+        // before reaching here; if they don't, fall back to ota_0 so we
+        // at least describe a real partition rather than panicking.
+        Slot::None => AppPartitionSubType::Ota0,
     }
 }
