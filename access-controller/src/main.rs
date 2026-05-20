@@ -87,6 +87,23 @@ pub static SYNC_COMPLETE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 // Signal for door unlock (after successful auth)
 pub static DOOR_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
+// Signal raised by `POST /unlock` to request a manual door pulse.
+pub static MANUAL_UNLOCK: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
+/// Sentinel `fob` value used when recording a manual-unlock event so the
+/// Conway audit trail can distinguish it from a real card swipe.
+pub const MANUAL_UNLOCK_FOB: u32 = 0;
+
+/// Most recent door event (swipe or manual unlock). Rendered on the
+/// HTTP status page; not persisted across reboots.
+#[derive(Debug, Clone, Copy)]
+pub struct LastSwipe {
+    pub fob: u32,
+    pub allowed: bool,
+    pub at_uptime_ms: u64,
+    pub manual: bool,
+}
+
 /// Reader-side user feedback to play after an access decision.
 #[derive(Debug, Clone, Copy)]
 pub enum AccessOutcome {
@@ -104,6 +121,8 @@ pub static WATCHDOG_FEED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static FOBS: StaticCell<Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>> =
     StaticCell::new();
 static ETAG: StaticCell<Mutex<CriticalSectionRawMutex, HString<64>>> = StaticCell::new();
+static LAST_SWIPE: StaticCell<Mutex<CriticalSectionRawMutex, Option<LastSwipe>>> =
+    StaticCell::new();
 static STACK_RESOURCES: StaticCell<StackResources<8>> = StaticCell::new();
 static STACK: StaticCell<Stack<'static>> = StaticCell::new();
 
@@ -173,6 +192,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     // Initialize shared state (fobs and etag start empty, populated by sync)
     let fobs = FOBS.init(Mutex::new(heapless::Vec::new()));
     let etag = ETAG.init(Mutex::new(HString::new()));
+    let last_swipe = LAST_SWIPE.init(Mutex::new(None));
 
     log::info!("storage: fob cache initialized (empty, will sync from server)");
 
@@ -284,7 +304,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     spawner.spawn(net_task(runner)).unwrap();
     spawner.spawn(wifi_task(wifi_controller, rt_config)).unwrap();
     spawner.spawn(wiegand_task(wiegand)).unwrap();
-    spawner.spawn(access_task(fobs, wdt)).unwrap();
+    spawner.spawn(access_task(fobs, last_swipe, wdt)).unwrap();
     spawner.spawn(door_task(door)).unwrap();
     spawner
         .spawn(reader_feedback_task(reader_led, reader_beep))
@@ -297,7 +317,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         spawner.spawn(sync_task(stack, fobs, etag, rt_config)).unwrap();
     }
     spawner
-        .spawn(http::http_server_task(stack, fobs, etag, rt_config))
+        .spawn(http::http_server_task(stack, fobs, etag, last_swipe, rt_config))
         .unwrap();
     spawner.spawn(watchdog_feed_task()).unwrap();
 
@@ -425,29 +445,55 @@ async fn wiegand_task(mut wiegand: Wiegand<'static>) {
 #[embassy_executor::task]
 async fn access_task(
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
+    last_swipe: &'static Mutex<CriticalSectionRawMutex, Option<LastSwipe>>,
     wdt: &'static Mutex<CriticalSectionRawMutex, WdtType>,
 ) {
     let mut core = AccessCore::new();
 
     loop {
-        // Use select3 to handle card reads, sync completion, AND watchdog feed requests.
-        // This ensures we can service all events without blocking.
-        let event = embassy_futures::select::select3(
+        // Select across all firmware-level inputs: card reads, sync
+        // completion, watchdog feed ticks, and operator-initiated
+        // manual unlocks from the HTTP server.
+        let event = embassy_futures::select::select4(
             WIEGAND_CHANNEL.receive(),
             SYNC_COMPLETE.wait(),
             WATCHDOG_FEED.wait(),
+            MANUAL_UNLOCK.wait(),
         )
         .await;
 
         let now = embassy_time::Instant::now().as_millis();
 
+        // Manual unlock is handled entirely in the firmware adapter -
+        // it doesn't run through AccessCore because there's no
+        // authorization decision to make.
+        if let embassy_futures::select::Either4::Fourth(()) = event {
+            log::warn!("access MANUAL UNLOCK via HTTP");
+            DOOR_SIGNAL.signal(());
+            READER_FEEDBACK.signal(AccessOutcome::Granted);
+            EVENT_BUFFER
+                .push(AccessEvent {
+                    fob: MANUAL_UNLOCK_FOB,
+                    allowed: true,
+                })
+                .await;
+            *last_swipe.lock().await = Some(LastSwipe {
+                fob: MANUAL_UNLOCK_FOB,
+                allowed: true,
+                at_uptime_ms: now,
+                manual: true,
+            });
+            continue;
+        }
+
         let input = match event {
-            embassy_futures::select::Either3::First(read) => CoreInput::Card(CardRead {
+            embassy_futures::select::Either4::First(read) => CoreInput::Card(CardRead {
                 fob: read.to_fob(),
                 nfc: read.to_nfc_uid(),
             }),
-            embassy_futures::select::Either3::Second(()) => CoreInput::SyncComplete,
-            embassy_futures::select::Either3::Third(()) => CoreInput::WatchdogFeed,
+            embassy_futures::select::Either4::Second(()) => CoreInput::SyncComplete,
+            embassy_futures::select::Either4::Third(()) => CoreInput::WatchdogFeed,
+            embassy_futures::select::Either4::Fourth(()) => unreachable!(),
         };
 
         // Snapshot the cache once and pass it as a slice; mirrors the
@@ -477,6 +523,13 @@ async fn access_task(
                             allowed: ev.allowed,
                         })
                         .await;
+                    // Mirror the record into the UI's last-swipe slot.
+                    *last_swipe.lock().await = Some(LastSwipe {
+                        fob: ev.fob,
+                        allowed: ev.allowed,
+                        at_uptime_ms: now,
+                        manual: false,
+                    });
                 }
                 Effect::RequestSync => {
                     SYNC_SIGNAL.signal(());

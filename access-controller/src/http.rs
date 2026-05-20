@@ -19,7 +19,9 @@ use heapless::String as HString;
 
 use crate::ota::{self, OtaError, OtaWriter};
 use crate::settings::{self, Settings, MAX_PASSWORD, MAX_SSID};
-use crate::{DeviceMode, RuntimeConfig, EVENT_BUFFER, MAX_FOBS, WATCHDOG_FEED};
+use crate::{
+    DeviceMode, LastSwipe, RuntimeConfig, EVENT_BUFFER, MANUAL_UNLOCK, MAX_FOBS, WATCHDOG_FEED,
+};
 
 const HTTP_PORT: u16 = 80;
 /// Timeout for normal short requests.
@@ -45,6 +47,7 @@ pub async fn http_server_task(
     stack: &'static Stack<'static>,
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &'static Mutex<CriticalSectionRawMutex, HString<64>>,
+    last_swipe: &'static Mutex<CriticalSectionRawMutex, Option<LastSwipe>>,
     rt: &'static RuntimeConfig,
 ) {
     // Wait for the network stack to be ready before binding.
@@ -76,7 +79,7 @@ pub async fn http_server_task(
         let peer = socket.remote_endpoint();
         log::info!("http: connection from {:?}", peer);
 
-        handle_connection(&mut socket, fobs, etag, stack, rt).await;
+        handle_connection(&mut socket, fobs, etag, last_swipe, stack, rt).await;
 
         let _ = socket.flush().await;
         socket.close();
@@ -87,6 +90,7 @@ async fn handle_connection(
     socket: &mut TcpSocket<'_>,
     fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &Mutex<CriticalSectionRawMutex, HString<64>>,
+    last_swipe: &Mutex<CriticalSectionRawMutex, Option<LastSwipe>>,
     stack: &Stack<'static>,
     rt: &'static RuntimeConfig,
 ) {
@@ -145,7 +149,7 @@ async fn handle_connection(
             send_redirect(socket, "/config").await;
         }
         ("GET", "/") | ("GET", "/status") => {
-            send_status_page(socket, fobs, etag, stack, rt).await;
+            send_status_page(socket, fobs, etag, last_swipe, stack, rt).await;
         }
         ("GET", "/config") => {
             send_config_page(socket, rt).await;
@@ -187,6 +191,9 @@ async fn handle_connection(
         }
         ("POST", "/ota/rollback") => {
             handle_ota_rollback(socket).await;
+        }
+        ("POST", "/unlock") => {
+            handle_manual_unlock(socket, rt).await;
         }
         ("GET", _) if rt.mode == DeviceMode::Onboarding => {
             // Any unknown GET while onboarding: bounce to /config so
@@ -328,6 +335,26 @@ async fn send_ota_error(socket: &mut TcpSocket<'_>, err: OtaError) {
     send_text(socket, err.http_status(), body.as_bytes()).await;
 }
 
+/// Operator-initiated door pulse. Forbidden while onboarding (the
+/// device isn't yet trusted to be on a private LAN). Otherwise the
+/// access_task observes `MANUAL_UNLOCK`, fires `DOOR_SIGNAL` +
+/// `READER_FEEDBACK::Granted`, and records an audit entry with the
+/// `MANUAL_UNLOCK_FOB` sentinel.
+async fn handle_manual_unlock(socket: &mut TcpSocket<'_>, rt: &'static RuntimeConfig) {
+    if rt.mode == DeviceMode::Onboarding {
+        send_status_line(
+            socket,
+            "403 Forbidden",
+            b"manual unlock is disabled during onboarding\n",
+        )
+        .await;
+        return;
+    }
+    log::warn!("http: manual unlock requested by {:?}", socket.remote_endpoint());
+    MANUAL_UNLOCK.signal(());
+    send_text(socket, "200 OK", b"ok: door pulsed\n").await;
+}
+
 /// Case-insensitive scan for `Content-Length: <decimal>` in the header block.
 fn parse_content_length(headers: &str) -> Option<u32> {
     for line in headers.lines() {
@@ -367,17 +394,20 @@ async fn send_status_page(
     socket: &mut TcpSocket<'_>,
     fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &Mutex<CriticalSectionRawMutex, HString<64>>,
+    last_swipe: &Mutex<CriticalSectionRawMutex, Option<LastSwipe>>,
     stack: &Stack<'static>,
     rt: &'static RuntimeConfig,
 ) {
     // Gather state.
-    let uptime_secs = Instant::now().as_millis() / 1000;
+    let uptime_ms = Instant::now().as_millis();
+    let uptime_secs = uptime_ms / 1000;
     let fob_count = fobs.lock().await.len();
     let pending_events = EVENT_BUFFER.len().await;
     let current_etag = {
         let g = etag.lock().await;
         g.clone()
     };
+    let last_swipe_snap: Option<LastSwipe> = *last_swipe.lock().await;
 
     // Snapshot live settings so the page reflects current creds and
     // Conway URL even after a /config save (which reboots, but better
@@ -444,8 +474,57 @@ async fn send_status_page(
         ""
     };
 
-    // Build body. 4 KiB is plenty for this page including the upload form.
-    let mut body: HString<4096> = HString::new();
+    // Format the last-swipe row, e.g.
+    //   "fob 1234567 <span class=ok>Granted</span> &middot; 12s ago (manual)"
+    // or "(none)" if no swipe has been recorded since boot.
+    let mut last_swipe_html: HString<192> = HString::new();
+    match last_swipe_snap {
+        None => {
+            let _ = last_swipe_html.push_str("(none)");
+        }
+        Some(ls) => {
+            let age_ms = uptime_ms.saturating_sub(ls.at_uptime_ms);
+            let age_secs = age_ms / 1000;
+            let (status_class, status_text) = if ls.allowed {
+                ("ok", "Granted")
+            } else {
+                ("err", "Denied")
+            };
+            let label = if ls.manual { " (manual)" } else { "" };
+            if age_secs < 60 {
+                let _ = write!(
+                    last_swipe_html,
+                    "fob {} &middot; <span class=\"{}\">{}</span> &middot; {}s ago{}",
+                    ls.fob, status_class, status_text, age_secs, label
+                );
+            } else {
+                let _ = write!(
+                    last_swipe_html,
+                    "fob {} &middot; <span class=\"{}\">{}</span> &middot; {}m {}s ago{}",
+                    ls.fob,
+                    status_class,
+                    status_text,
+                    age_secs / 60,
+                    age_secs % 60,
+                    label
+                );
+            }
+        }
+    }
+
+    // Manual-unlock button is hidden in onboarding mode (POST /unlock
+    // returns 403 there anyway).
+    let unlock_section: &str = if is_onboarding {
+        ""
+    } else {
+        "<h2>Door</h2>\
+         <p><button id=\"unlockbtn\">Unlock door</button> \
+         <span id=\"unlockstatus\"></span></p>"
+    };
+
+    // Build body. 5 KiB is plenty for this page including the upload
+    // form, last-swipe row, and unlock button.
+    let mut body: HString<5120> = HString::new();
     let _ = write!(
         body,
         "<!doctype html>\
@@ -465,9 +544,11 @@ th{{background:#f3f3f3}}progress{{width:100%}}\
 <tr><th>Conway server</th><td>{chost}:{cport}</td></tr>\
 <tr><th>Cached fobs</th><td>{fobs}</td></tr>\
 <tr><th>Pending events</th><td>{events}</td></tr>\
+<tr><th>Last swipe</th><td>{last_swipe}</td></tr>\
 <tr><th>Sync ETag</th><td>{etag}</td></tr>\
 <tr><th>OTA slot</th><td>{ota}</td></tr>\
 </table>\
+{unlock_section}\
 <h2>Firmware update</h2>\
 <p>Max image size: {maxk} KiB. The device will reboot into the new \
 image on success.</p>\
@@ -481,7 +562,9 @@ image on success.</p>\
 <script>\
 const f=document.getElementById('otaform'),fi=document.getElementById('otafile'),\
 p=document.getElementById('otaprog'),s=document.getElementById('otastatus'),\
-rb=document.getElementById('rollbackbtn');\
+rb=document.getElementById('rollbackbtn'),\
+ub=document.getElementById('unlockbtn'),\
+us=document.getElementById('unlockstatus');\
 f.addEventListener('submit',e=>{{e.preventDefault();const file=fi.files[0];if(!file)return;\
 s.textContent='Uploading '+file.size+' bytes...';s.className='';\
 const x=new XMLHttpRequest();x.open('POST','/ota');\
@@ -494,6 +577,12 @@ x.send(file);}});\
 rb.addEventListener('click',()=>{{if(!confirm('Roll back and reboot?'))return;\
 fetch('/ota/rollback',{{method:'POST'}}).then(r=>r.text()).then(t=>{{s.textContent=t;}})\
 .catch(e=>{{s.textContent='rollback failed';s.className='err';}});}});\
+if(ub){{ub.addEventListener('click',()=>{{if(!confirm('Unlock the door now?'))return;\
+us.textContent='unlocking...';us.className='';\
+fetch('/unlock',{{method:'POST'}}).then(r=>r.text().then(t=>{{\
+us.textContent=t.trim();us.className=r.ok?'ok':'err';\
+if(r.ok)setTimeout(()=>location.reload(),800);}}))\
+.catch(e=>{{us.textContent='unlock failed';us.className='err';}});}});}}\
 </script>\
 </body></html>",
         firmware = firmware,
@@ -505,6 +594,7 @@ fetch('/ota/rollback',{{method:'POST'}}).then(r=>r.text()).then(t=>{{s.textConte
         cport = conway_port,
         fobs = fob_count,
         events = pending_events,
+        last_swipe = last_swipe_html.as_str(),
         etag = if current_etag.is_empty() {
             "(none)"
         } else {
@@ -512,6 +602,7 @@ fetch('/ota/rollback',{{method:'POST'}}).then(r=>r.text()).then(t=>{{s.textConte
         },
         ota = ota_str.as_str(),
         maxk = next_slot_size / 1024,
+        unlock_section = unlock_section,
     );
 
     let mut header: HString<160> = HString::new();
