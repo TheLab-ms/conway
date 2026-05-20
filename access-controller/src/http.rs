@@ -18,7 +18,8 @@ use embedded_io_async::Write;
 use heapless::String as HString;
 
 use crate::ota::{self, OtaError, OtaWriter};
-use crate::{EVENT_BUFFER, MAX_FOBS, SSID, WATCHDOG_FEED};
+use crate::settings::{self, Settings, MAX_PASSWORD, MAX_SSID};
+use crate::{DeviceMode, RuntimeConfig, EVENT_BUFFER, MAX_FOBS, WATCHDOG_FEED};
 
 const HTTP_PORT: u16 = 80;
 /// Timeout for normal short requests.
@@ -34,12 +35,17 @@ const REQ_BUF_LEN: usize = 2048;
 /// enough to leave plenty of TCP rx headroom.
 const OTA_CHUNK: usize = 2048;
 
+/// Max size for a `POST /config` form body. The on-wire form is
+/// well under 256 bytes even at max field lengths.
+const CONFIG_BODY_MAX: usize = 512;
+
 /// HTTP server task. Runs forever, accepting one connection at a time.
 #[embassy_executor::task]
 pub async fn http_server_task(
     stack: &'static Stack<'static>,
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &'static Mutex<CriticalSectionRawMutex, HString<64>>,
+    rt: &'static RuntimeConfig,
 ) {
     // Wait for the network stack to be ready before binding.
     loop {
@@ -70,7 +76,7 @@ pub async fn http_server_task(
         let peer = socket.remote_endpoint();
         log::info!("http: connection from {:?}", peer);
 
-        handle_connection(&mut socket, fobs, etag, stack).await;
+        handle_connection(&mut socket, fobs, etag, stack, rt).await;
 
         let _ = socket.flush().await;
         socket.close();
@@ -82,6 +88,7 @@ async fn handle_connection(
     fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &Mutex<CriticalSectionRawMutex, HString<64>>,
     stack: &Stack<'static>,
+    rt: &'static RuntimeConfig,
 ) {
     // Read until we have the request headers (terminated by \r\n\r\n).
     let mut buf = [0u8; REQ_BUF_LEN];
@@ -132,8 +139,41 @@ async fn handle_connection(
     let leftover = &buf[header_end..len];
 
     match (method, path) {
+        // In onboarding mode, redirect "/" to the config page so that
+        // captive-portal browsers land right on the form.
+        ("GET", "/") if rt.mode == DeviceMode::Onboarding => {
+            send_redirect(socket, "/config").await;
+        }
         ("GET", "/") | ("GET", "/status") => {
-            send_status_page(socket, fobs, etag, stack).await;
+            send_status_page(socket, fobs, etag, stack, rt).await;
+        }
+        ("GET", "/config") => {
+            send_config_page(socket, rt).await;
+        }
+        ("POST", "/config") => {
+            let cl = match parse_content_length(headers_str) {
+                Some(n) if (n as usize) <= CONFIG_BODY_MAX => n,
+                Some(_) => {
+                    send_status_line(socket, "413 Payload Too Large", b"body too large\n").await;
+                    return;
+                }
+                None => {
+                    send_status_line(socket, "411 Length Required", b"need Content-Length\n").await;
+                    return;
+                }
+            };
+            handle_config_post(socket, cl, leftover, rt).await;
+        }
+        // Captive portal probes - send everyone to /config.
+        ("GET", "/generate_204")
+        | ("GET", "/gen_204")
+        | ("GET", "/hotspot-detect.html")
+        | ("GET", "/library/test/success.html")
+        | ("GET", "/connecttest.txt")
+        | ("GET", "/ncsi.txt")
+        | ("GET", "/redirect")
+        | ("GET", "/success.txt") => {
+            send_redirect(socket, "/config").await;
         }
         ("POST", "/ota") => {
             let cl = match parse_content_length(headers_str) {
@@ -147,6 +187,11 @@ async fn handle_connection(
         }
         ("POST", "/ota/rollback") => {
             handle_ota_rollback(socket).await;
+        }
+        ("GET", _) if rt.mode == DeviceMode::Onboarding => {
+            // Any unknown GET while onboarding: bounce to /config so
+            // OS captive-portal heuristics fire.
+            send_redirect(socket, "/config").await;
         }
         ("GET", _) => {
             send_status_line(socket, "404 Not Found", b"not found\n").await;
@@ -323,6 +368,7 @@ async fn send_status_page(
     fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &Mutex<CriticalSectionRawMutex, HString<64>>,
     stack: &Stack<'static>,
+    rt: &'static RuntimeConfig,
 ) {
     // Gather state.
     let uptime_secs = Instant::now().as_millis() / 1000;
@@ -331,6 +377,34 @@ async fn send_status_page(
     let current_etag = {
         let g = etag.lock().await;
         g.clone()
+    };
+
+    // Snapshot live settings so the page reflects current creds and
+    // Conway URL even after a /config save (which reboots, but better
+    // safe than sorry if we ever support hot-reload).
+    let (cur_ssid, conway_host_str, conway_port, is_onboarding) = {
+        let s = rt.settings.lock().await;
+        let mut hs: HString<24> = HString::new();
+        let _ = write!(
+            hs,
+            "{}.{}.{}.{}",
+            s.conway_host[0], s.conway_host[1], s.conway_host[2], s.conway_host[3]
+        );
+        let displayed_ssid: HString<48> = if rt.mode == DeviceMode::Onboarding {
+            let mut t: HString<48> = HString::new();
+            let _ = t.push_str(rt.ap_ssid.as_str());
+            let _ = t.push_str(" (onboarding AP)");
+            t
+        } else {
+            let mut t: HString<48> = HString::new();
+            let _ = t.push_str(if s.ssid.is_empty() {
+                "(unset)"
+            } else {
+                s.ssid.as_str()
+            });
+            t
+        };
+        (displayed_ssid, hs, s.conway_port, rt.mode == DeviceMode::Onboarding)
     };
 
     let mut ip_str: HString<32> = HString::new();
@@ -362,6 +436,14 @@ async fn send_status_page(
         }
     }
 
+    let banner = if is_onboarding {
+        "<p class=\"err\"><b>Onboarding mode.</b> This device is not yet \
+         configured. Open <a href=\"/config\">Configuration</a> to set the \
+         WiFi network and Conway server address.</p>"
+    } else {
+        ""
+    };
+
     // Build body. 4 KiB is plenty for this page including the upload form.
     let mut body: HString<4096> = HString::new();
     let _ = write!(
@@ -374,11 +456,13 @@ th,td{{text-align:left;padding:.25rem .75rem;border-bottom:1px solid #ddd}}\
 th{{background:#f3f3f3}}progress{{width:100%}}\
 .err{{color:#b00}}.ok{{color:#070}}</style></head><body>\
 <h1>Conway Access Controller</h1>\
-<p>Firmware v{firmware}</p>\
+<p>Firmware v{firmware} &middot; <a href=\"/config\">Configuration</a></p>\
+{banner}\
 <table>\
 <tr><th>Uptime</th><td>{uptime} s</td></tr>\
 <tr><th>WiFi SSID</th><td>{ssid}</td></tr>\
 <tr><th>IPv4</th><td>{ip}</td></tr>\
+<tr><th>Conway server</th><td>{chost}:{cport}</td></tr>\
 <tr><th>Cached fobs</th><td>{fobs}</td></tr>\
 <tr><th>Pending events</th><td>{events}</td></tr>\
 <tr><th>Sync ETag</th><td>{etag}</td></tr>\
@@ -413,9 +497,12 @@ fetch('/ota/rollback',{{method:'POST'}}).then(r=>r.text()).then(t=>{{s.textConte
 </script>\
 </body></html>",
         firmware = firmware,
+        banner = banner,
         uptime = uptime_secs,
-        ssid = SSID,
+        ssid = cur_ssid.as_str(),
         ip = ip_str.as_str(),
+        chost = conway_host_str.as_str(),
+        cport = conway_port,
         fobs = fob_count,
         events = pending_events,
         etag = if current_etag.is_empty() {
@@ -446,6 +533,307 @@ fetch('/ota/rollback',{{method:'POST'}}).then(r=>r.text()).then(t=>{{s.textConte
     if let Err(e) = socket.write_all(body.as_bytes()).await {
         log::warn!("http: write body failed: {:?}", e);
     }
+}
+
+/// Render the configuration form, pre-filled with current settings.
+async fn send_config_page(socket: &mut TcpSocket<'_>, rt: &'static RuntimeConfig) {
+    let (ssid, password, host_str, port, mode) = {
+        let s = rt.settings.lock().await;
+        let mut hs: HString<24> = HString::new();
+        let _ = write!(
+            hs,
+            "{}.{}.{}.{}",
+            s.conway_host[0], s.conway_host[1], s.conway_host[2], s.conway_host[3]
+        );
+        (s.ssid.clone(), s.password.clone(), hs, s.conway_port, rt.mode)
+    };
+
+    let banner = if mode == DeviceMode::Onboarding {
+        let mut b: HString<256> = HString::new();
+        let _ = write!(
+            b,
+            "<p class=\"info\">You are connected to the onboarding network \
+             <b>{}</b>. Fill in your WiFi credentials and Conway server \
+             address. The device will save and reboot.</p>",
+            rt.ap_ssid.as_str()
+        );
+        b
+    } else {
+        HString::new()
+    };
+
+    let mut body: HString<3072> = HString::new();
+    let mut esc_ssid: HString<128> = HString::new();
+    html_escape_into(&ssid, &mut esc_ssid);
+    let mut esc_pw: HString<256> = HString::new();
+    html_escape_into(&password, &mut esc_pw);
+
+    let _ = write!(
+        body,
+        "<!doctype html>\
+<html><head><meta charset=\"utf-8\"><title>Conway Configuration</title>\
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+<style>body{{font-family:system-ui,sans-serif;margin:2rem;max-width:30rem}}\
+label{{display:block;margin-top:1rem;font-weight:600}}\
+input{{width:100%;padding:.5rem;font-size:1rem;box-sizing:border-box;margin-top:.25rem}}\
+button{{margin-top:1.5rem;padding:.6rem 1.2rem;font-size:1rem}}\
+.info{{padding:.75rem;background:#eef;border-left:4px solid #44a;border-radius:4px}}\
+.err{{color:#b00}}.row{{display:flex;gap:.5rem}}.row>div:first-child{{flex:3}}.row>div:last-child{{flex:1}}\
+</style></head><body>\
+<h1>Conway Configuration</h1>\
+{banner}\
+<form method=\"POST\" action=\"/config\">\
+<label>WiFi SSID<input name=\"ssid\" value=\"{ssid}\" maxlength=\"{max_ssid}\" required></label>\
+<label>WiFi Password<input name=\"password\" value=\"{pw}\" maxlength=\"{max_pw}\" type=\"text\"></label>\
+<div class=\"row\">\
+<div><label>Conway Host (IPv4)<input name=\"host\" value=\"{host}\" required pattern=\"[0-9.]+\"></label></div>\
+<div><label>Port<input name=\"port\" value=\"{port}\" type=\"number\" min=\"1\" max=\"65535\" required></label></div>\
+</div>\
+<button type=\"submit\">Save &amp; reboot</button>\
+</form>\
+<p style=\"margin-top:2rem\"><a href=\"/status\">Back to status</a></p>\
+</body></html>",
+        banner = banner.as_str(),
+        ssid = esc_ssid.as_str(),
+        pw = esc_pw.as_str(),
+        host = host_str.as_str(),
+        port = port,
+        max_ssid = MAX_SSID,
+        max_pw = MAX_PASSWORD,
+    );
+
+    let mut header: HString<160> = HString::new();
+    let _ = write!(
+        header,
+        "HTTP/1.1 200 OK\r\n\
+         Content-Type: text/html; charset=utf-8\r\n\
+         Content-Length: {}\r\n\
+         Cache-Control: no-store\r\n\
+         Connection: close\r\n\
+         \r\n",
+        body.len()
+    );
+    let _ = socket.write_all(header.as_bytes()).await;
+    let _ = socket.write_all(body.as_bytes()).await;
+}
+
+/// Receive a urlencoded config form, validate, persist, then reboot.
+async fn handle_config_post(
+    socket: &mut TcpSocket<'_>,
+    content_length: u32,
+    leftover: &[u8],
+    rt: &'static RuntimeConfig,
+) {
+    let mut body: alloc::vec::Vec<u8> =
+        alloc::vec::Vec::with_capacity(content_length as usize);
+    body.extend_from_slice(leftover);
+    while body.len() < content_length as usize {
+        let mut chunk = [0u8; 256];
+        let want = (content_length as usize - body.len()).min(chunk.len());
+        match socket.read(&mut chunk[..want]).await {
+            Ok(0) => {
+                send_status_line(socket, "400 Bad Request", b"short body\n").await;
+                return;
+            }
+            Ok(n) => body.extend_from_slice(&chunk[..n]),
+            Err(_) => {
+                send_status_line(socket, "400 Bad Request", b"read error\n").await;
+                return;
+            }
+        }
+    }
+
+    let body_str = match core::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(_) => {
+            send_status_line(socket, "400 Bad Request", b"invalid utf-8\n").await;
+            return;
+        }
+    };
+
+    let mut ssid: alloc::string::String = alloc::string::String::new();
+    let mut password: alloc::string::String = alloc::string::String::new();
+    let mut host: alloc::string::String = alloc::string::String::new();
+    let mut port_str: alloc::string::String = alloc::string::String::new();
+
+    for pair in body_str.split('&') {
+        let (k, v) = match pair.split_once('=') {
+            Some(kv) => kv,
+            None => continue,
+        };
+        let decoded = match urldecode(v) {
+            Some(d) => d,
+            None => {
+                send_status_line(socket, "400 Bad Request", b"bad urlencoding\n").await;
+                return;
+            }
+        };
+        match k {
+            "ssid" => ssid = decoded,
+            "password" => password = decoded,
+            "host" => host = decoded,
+            "port" => port_str = decoded,
+            _ => {}
+        }
+    }
+
+    if ssid.is_empty() || ssid.len() > MAX_SSID {
+        send_status_line(socket, "400 Bad Request", b"ssid empty or too long\n").await;
+        return;
+    }
+    if password.len() > MAX_PASSWORD {
+        send_status_line(socket, "400 Bad Request", b"password too long\n").await;
+        return;
+    }
+    let host_octets = match settings::parse_ipv4(&host) {
+        Some(o) => o,
+        None => {
+            send_status_line(socket, "400 Bad Request", b"host must be dotted-quad IPv4\n").await;
+            return;
+        }
+    };
+    let port: u16 = match port_str.parse() {
+        Ok(p) if p > 0 => p,
+        _ => {
+            send_status_line(socket, "400 Bad Request", b"invalid port\n").await;
+            return;
+        }
+    };
+
+    let new = Settings {
+        ssid,
+        password,
+        conway_host: host_octets,
+        conway_port: port,
+    };
+
+    // Update in-memory copy first so other tasks see fresh values if
+    // they happen to read between save and reset.
+    {
+        let mut guard = rt.settings.lock().await;
+        *guard = new.clone();
+    }
+
+    // Feed the WDT - the flash write can take a while.
+    WATCHDOG_FEED.signal(());
+
+    if let Err(e) = settings::save(&new) {
+        log::error!("config: save failed: {}", e);
+        let mut msg: HString<96> = HString::new();
+        let _ = write!(msg, "save failed: {}\n", e);
+        send_text(socket, "500 Internal Server Error", msg.as_bytes()).await;
+        return;
+    }
+
+    let resp = b"<!doctype html><html><body><h1>Saved</h1>\
+        <p>Settings stored. The device will reboot in 2 seconds and try \
+        to join the new network. If it doesn't come back online, hold the \
+        CONFIG button for 5 seconds to factory-reset.</p></body></html>";
+    send_html(socket, "200 OK", resp).await;
+    let _ = socket.flush().await;
+    socket.close();
+
+    log::warn!("config: settings saved, rebooting");
+    Timer::after(Duration::from_secs(2)).await;
+    esp_hal::system::software_reset();
+}
+
+/// Decode application/x-www-form-urlencoded.
+fn urldecode(input: &str) -> Option<alloc::string::String> {
+    let bytes = input.as_bytes();
+    let mut out: alloc::vec::Vec<u8> = alloc::vec::Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b'%' => {
+                if i + 2 >= bytes.len() {
+                    return None;
+                }
+                let hi = hex_nibble(bytes[i + 1])?;
+                let lo = hex_nibble(bytes[i + 2])?;
+                out.push((hi << 4) | lo);
+                i += 3;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    alloc::string::String::from_utf8(out).ok()
+}
+
+fn hex_nibble(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Append `src` to `dst` with HTML-attribute-safe escaping. Silently
+/// truncates if `dst` would overflow.
+fn html_escape_into<const N: usize>(src: &str, dst: &mut HString<N>) {
+    for c in src.chars() {
+        let r: &str = match c {
+            '&' => "&amp;",
+            '<' => "&lt;",
+            '>' => "&gt;",
+            '"' => "&quot;",
+            '\'' => "&#39;",
+            _ => {
+                let mut tmp = [0u8; 4];
+                let s = c.encode_utf8(&mut tmp);
+                if dst.push_str(s).is_err() {
+                    return;
+                }
+                continue;
+            }
+        };
+        if dst.push_str(r).is_err() {
+            return;
+        }
+    }
+}
+
+async fn send_redirect(socket: &mut TcpSocket<'_>, location: &str) {
+    let body = b"<a href=\"/config\">Configure</a>\n";
+    let mut header: HString<256> = HString::new();
+    let _ = write!(
+        header,
+        "HTTP/1.1 302 Found\r\n\
+         Location: {}\r\n\
+         Content-Type: text/html; charset=utf-8\r\n\
+         Content-Length: {}\r\n\
+         Cache-Control: no-store\r\n\
+         Connection: close\r\n\
+         \r\n",
+        location,
+        body.len()
+    );
+    let _ = socket.write_all(header.as_bytes()).await;
+    let _ = socket.write_all(body).await;
+}
+
+async fn send_html(socket: &mut TcpSocket<'_>, status: &str, body: &[u8]) {
+    let mut header: HString<160> = HString::new();
+    let _ = write!(
+        header,
+        "HTTP/1.1 {}\r\n\
+         Content-Type: text/html; charset=utf-8\r\n\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\
+         \r\n",
+        status,
+        body.len()
+    );
+    let _ = socket.write_all(header.as_bytes()).await;
+    let _ = socket.write_all(body).await;
 }
 
 /// Find the position just past the `\r\n\r\n` that terminates an HTTP header

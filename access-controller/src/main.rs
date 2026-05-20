@@ -12,16 +12,20 @@
 use esp_bootloader_esp_idf::esp_app_desc;
 esp_app_desc!();
 
+mod dhcp_server;
+mod dns_server;
 mod http;
 mod ota;
+mod settings;
 mod sync;
 mod wiegand;
 
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::format;
 use core::mem::MaybeUninit;
-use embassy_net::{Config as NetConfig, Stack, StackResources};
+use embassy_net::{Config as NetConfig, Stack, StackResources, StaticConfigV4};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
@@ -33,10 +37,13 @@ use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
 use esp_hal::time::Duration as HalDuration;
 use esp_hal::timer::timg::{MwdtStage, MwdtStageAction, TimerGroup, Wdt};
 use esp_println::logger::init_logger;
-use esp_radio::wifi::{ClientConfig, Config as WifiConfig, ModeConfig, WifiController};
+use esp_radio::wifi::{
+    AccessPointConfig, AuthMethod, ClientConfig, Config as WifiConfig, ModeConfig, WifiController,
+};
 use heapless::String as HString;
 use static_cell::StaticCell;
 
+use crate::settings::Settings;
 use crate::sync::{AccessEvent, EventBuffer};
 use crate::wiegand::{Wiegand, WiegandRead};
 use access_controller::core::{AccessCore, CardRead, Effect, Input as CoreInput, Outcome};
@@ -44,19 +51,26 @@ use access_controller::core::{AccessCore, CardRead, Effect, Input as CoreInput, 
 // Configuration constants
 pub const MAX_FOBS: usize = 512;
 
-pub const SSID: &str = match option_env!("CONWAY_SSID") {
-    Some(s) => s,
-    None => "unconfigured",
-};
-pub const PASSWORD: &str = match option_env!("CONWAY_PASSWORD") {
-    Some(s) => s,
-    None => "",
-};
-pub const CONWAY_HOST: &str = match option_env!("CONWAY_HOST") {
-    Some(s) => s,
-    None => "192.168.1.1",
-};
-pub const CONWAY_PORT: u16 = 8080;
+/// Runtime device mode chosen at boot. Determines which WiFi interface
+/// embassy-net is bound to and whether DHCP/DNS servers run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceMode {
+    /// Joined a configured WiFi network. Normal operation.
+    Station,
+    /// First-boot / post-factory-reset onboarding. Broadcasts an open
+    /// SSID, runs DHCP+DNS, captive-portal HTTP redirects.
+    Onboarding,
+}
+
+/// Live settings + current mode, used by every task that needs them.
+pub struct RuntimeConfig {
+    pub settings: Mutex<CriticalSectionRawMutex, Settings>,
+    pub mode: DeviceMode,
+    /// SSID we are broadcasting in onboarding mode (for the UI to show).
+    pub ap_ssid: HString<32>,
+}
+
+static CONFIG: StaticCell<RuntimeConfig> = StaticCell::new();
 
 // Channel for Wiegand reads -> access control task
 static WIEGAND_CHANNEL: Channel<CriticalSectionRawMutex, WiegandRead, 4> = Channel::new();
@@ -133,11 +147,27 @@ async fn main(spawner: embassy_executor::Spawner) {
     let wdt = WDT.init(Mutex::new(wdt));
     log::info!("watchdog: initialized with 30s timeout");
 
+    // Load persisted settings. Empty / missing => first boot or post-
+    // factory-reset, so we come up in AP onboarding mode.
+    let loaded = settings::load().unwrap_or_else(Settings::defaults_from_env);
+    let mode = if loaded.is_provisioned() {
+        DeviceMode::Station
+    } else {
+        DeviceMode::Onboarding
+    };
     log::info!(
-        "config: ssid={}, host={}:{}",
-        SSID,
-        CONWAY_HOST,
-        CONWAY_PORT
+        "config: mode={:?} ssid={} host={}.{}.{}.{}:{}",
+        mode,
+        if loaded.ssid.is_empty() {
+            "<unset>"
+        } else {
+            loaded.ssid.as_str()
+        },
+        loaded.conway_host[0],
+        loaded.conway_host[1],
+        loaded.conway_host[2],
+        loaded.conway_host[3],
+        loaded.conway_port,
     );
 
     // Initialize shared state (fobs and etag start empty, populated by sync)
@@ -157,23 +187,69 @@ async fn main(spawner: embassy_executor::Spawner) {
     let (wifi_controller, interfaces) =
         esp_radio::wifi::new(esp_radio_ctrl, peripherals.WIFI, wifi_config).unwrap();
 
-    // Setup Embassy network stack
+    // Setup Embassy network stack. STA mode runs DHCP client; AP mode
+    // uses our static 192.168.4.1/24 + our DHCP server.
     let stack_resources = STACK_RESOURCES.init(StackResources::new());
-    let net_config = NetConfig::dhcpv4(Default::default());
 
-    // Use MAC address as seed for network stack RNG
-    // Not cryptographically secure, but sufficient for TCP sequence numbers
+    // MAC-derived RNG seed (also drives the onboarding SSID).
     let mac = esp_radio::wifi::sta_mac();
     let seed = u64::from_le_bytes([mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], 0, 0]);
     log::info!("rng: seed={:016X}", seed);
 
-    let wifi_device: esp_radio::wifi::WifiDevice<'static> =
-        unsafe { core::mem::transmute(interfaces.sta) };
+    // Build the AP SSID up front so both the WiFi task and the UI can
+    // see it (the latter via RuntimeConfig).
+    let ap_ssid_str = format!(
+        "conway-{:02X}{:02X}{:02X}",
+        mac[3], mac[4], mac[5]
+    );
+    let mut ap_ssid_hs: HString<32> = HString::new();
+    let _ = ap_ssid_hs.push_str(&ap_ssid_str);
+    log::info!("onboarding: AP SSID = {}", ap_ssid_str);
+
+    // Pick the right interface for the chosen mode and produce the
+    // matching IP config.
+    let (wifi_device, net_config) = match mode {
+        DeviceMode::Station => {
+            let dev: esp_radio::wifi::WifiDevice<'static> =
+                unsafe { core::mem::transmute(interfaces.sta) };
+            (dev, NetConfig::dhcpv4(Default::default()))
+        }
+        DeviceMode::Onboarding => {
+            let dev: esp_radio::wifi::WifiDevice<'static> =
+                unsafe { core::mem::transmute(interfaces.ap) };
+            let static_cfg = StaticConfigV4 {
+                address: embassy_net::Ipv4Cidr::new(
+                    embassy_net::Ipv4Address::new(
+                        dhcp_server::AP_IP[0],
+                        dhcp_server::AP_IP[1],
+                        dhcp_server::AP_IP[2],
+                        dhcp_server::AP_IP[3],
+                    ),
+                    24,
+                ),
+                gateway: Some(embassy_net::Ipv4Address::new(
+                    dhcp_server::AP_IP[0],
+                    dhcp_server::AP_IP[1],
+                    dhcp_server::AP_IP[2],
+                    dhcp_server::AP_IP[3],
+                )),
+                dns_servers: heapless::Vec::new(),
+            };
+            (dev, NetConfig::ipv4_static(static_cfg))
+        }
+    };
     let wifi_controller: WifiController<'static> =
         unsafe { core::mem::transmute(wifi_controller) };
 
     let (stack, runner) = embassy_net::new(wifi_device, net_config, stack_resources, seed);
     let stack: &'static Stack<'static> = STACK.init(stack);
+
+    // Publish shared runtime config (settings + mode) for all tasks.
+    let rt_config = CONFIG.init(RuntimeConfig {
+        settings: Mutex::new(loaded.clone()),
+        mode,
+        ap_ssid: ap_ssid_hs.clone(),
+    });
 
     // Setup GPIO pins (see HARDWARE.md for full pin map).
     //
@@ -206,7 +282,7 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     // Spawn tasks
     spawner.spawn(net_task(runner)).unwrap();
-    spawner.spawn(wifi_task(wifi_controller)).unwrap();
+    spawner.spawn(wifi_task(wifi_controller, rt_config)).unwrap();
     spawner.spawn(wiegand_task(wiegand)).unwrap();
     spawner.spawn(access_task(fobs, wdt)).unwrap();
     spawner.spawn(door_task(door)).unwrap();
@@ -216,9 +292,20 @@ async fn main(spawner: embassy_executor::Spawner) {
     spawner
         .spawn(status_and_config_task(status_led, config_btn, stack))
         .unwrap();
-    spawner.spawn(sync_task(stack, fobs, etag)).unwrap();
-    spawner.spawn(http::http_server_task(stack, fobs, etag)).unwrap();
+    // Sync task only makes sense in station mode (it talks to Conway).
+    if mode == DeviceMode::Station {
+        spawner.spawn(sync_task(stack, fobs, etag, rt_config)).unwrap();
+    }
+    spawner
+        .spawn(http::http_server_task(stack, fobs, etag, rt_config))
+        .unwrap();
     spawner.spawn(watchdog_feed_task()).unwrap();
+
+    // Onboarding-only services.
+    if mode == DeviceMode::Onboarding {
+        spawner.spawn(dhcp_server::dhcp_server_task(stack)).unwrap();
+        spawner.spawn(dns_server::dns_server_task(stack)).unwrap();
+    }
 }
 
 /// Runs the embassy-net stack, processing incoming/outgoing packets and maintaining network state.
@@ -229,43 +316,81 @@ async fn net_task(mut runner: embassy_net::Runner<'static, esp_radio::wifi::Wifi
 }
 
 /// WiFi connection management.
-/// Tries to connect every 5 seconds, with a 20 second timeout.
+///
+/// In `Station` mode, retries connection every 5 seconds. In `Onboarding`
+/// mode brings up the AP exactly once and then idles - the AP is a
+/// background service that doesn't need re-application unless the radio
+/// firmware crashes (in which case the hardware watchdog will reboot us).
 #[embassy_executor::task]
-async fn wifi_task(mut controller: WifiController<'static>) {
+async fn wifi_task(mut controller: WifiController<'static>, rt: &'static RuntimeConfig) {
     use alloc::string::ToString;
 
-    loop {
-        if !controller.is_connected().unwrap_or(false) {
-            log::info!("wifi: connecting to {}", SSID);
+    match rt.mode {
+        DeviceMode::Onboarding => {
+            let ssid = rt.ap_ssid.as_str().to_string();
+            log::info!("wifi: starting AP SSID={} (open)", ssid);
 
-            let _ = controller.stop();
-            Timer::after(Duration::from_millis(100)).await;
+            let ap_config = AccessPointConfig::default()
+                .with_ssid(ssid.as_str().into())
+                .with_auth_method(AuthMethod::None)
+                .with_channel(6)
+                .with_max_connections(4);
 
-            let client_config = ClientConfig::default()
-                .with_ssid(SSID.to_string())
-                .with_password(PASSWORD.to_string());
-
-            if let Err(e) = controller.set_config(&ModeConfig::Client(client_config)) {
-                log::error!("wifi: set_config failed: {:?}", e);
+            if let Err(e) = controller.set_config(&ModeConfig::AccessPoint(ap_config)) {
+                log::error!("wifi: AP set_config failed: {:?}", e);
             }
             if let Err(e) = controller.start() {
-                log::error!("wifi: start failed: {:?}", e);
+                log::error!("wifi: AP start failed: {:?}", e);
             }
-            if let Err(e) = controller.connect() {
-                log::error!("wifi: connect failed: {:?}", e);
-            }
+            log::info!("wifi: AP up");
 
-            // Wait for connection
-            for _ in 0..100 {
-                if controller.is_connected().unwrap_or(false) {
-                    log::info!("wifi: connected");
-                    break;
-                }
-                Timer::after(Duration::from_millis(200)).await;
+            // Idle - the AP runs autonomously in the radio.
+            loop {
+                Timer::after(Duration::from_secs(60)).await;
             }
         }
+        DeviceMode::Station => {
+            // Snapshot the credentials once at boot. Changes go through
+            // settings::save() + software_reset() so we don't need to
+            // hot-reload here.
+            let (ssid, password) = {
+                let s = rt.settings.lock().await;
+                (s.ssid.clone(), s.password.clone())
+            };
 
-        Timer::after(Duration::from_secs(5)).await;
+            loop {
+                if !controller.is_connected().unwrap_or(false) {
+                    log::info!("wifi: connecting to {}", ssid);
+
+                    let _ = controller.stop();
+                    Timer::after(Duration::from_millis(100)).await;
+
+                    let client_config = ClientConfig::default()
+                        .with_ssid(ssid.to_string())
+                        .with_password(password.to_string());
+
+                    if let Err(e) = controller.set_config(&ModeConfig::Client(client_config)) {
+                        log::error!("wifi: set_config failed: {:?}", e);
+                    }
+                    if let Err(e) = controller.start() {
+                        log::error!("wifi: start failed: {:?}", e);
+                    }
+                    if let Err(e) = controller.connect() {
+                        log::error!("wifi: connect failed: {:?}", e);
+                    }
+
+                    for _ in 0..100 {
+                        if controller.is_connected().unwrap_or(false) {
+                            log::info!("wifi: connected");
+                            break;
+                        }
+                        Timer::after(Duration::from_millis(200)).await;
+                    }
+                }
+
+                Timer::after(Duration::from_secs(5)).await;
+            }
+        }
     }
 }
 
@@ -384,6 +509,7 @@ async fn sync_task(
     stack: &'static Stack<'static>,
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &'static Mutex<CriticalSectionRawMutex, HString<64>>,
+    rt: &'static RuntimeConfig,
 ) {
     // Wait for network
     loop {
@@ -407,7 +533,7 @@ async fn sync_task(
             continue;
         }
 
-        crate::sync::sync_with_conway(stack, fobs, etag).await;
+        crate::sync::sync_with_conway(stack, fobs, etag, rt).await;
     }
 }
 
@@ -520,9 +646,13 @@ async fn status_and_config_task(
                         SYNC_SIGNAL.signal(());
                     }
 
-                    // Long hold - factory reset placeholder.
+                    // Long hold - factory reset. Wipe persisted settings
+                    // so the next boot comes up in AP onboarding mode.
                     Either::Second(()) => {
-                        log::warn!("config: factory reset placeholder - rebooting");
+                        log::warn!("config: factory reset - wiping NVS and rebooting");
+                        if let Err(e) = settings::erase() {
+                            log::error!("config: settings::erase failed: {}", e);
+                        }
                         for _ in 0..5 {
                             led.set_high();
                             Timer::after(Duration::from_millis(100)).await;

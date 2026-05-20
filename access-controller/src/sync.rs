@@ -17,7 +17,7 @@ use embedded_io_async::Write;
 use heapless::String as HString;
 use smoltcp::wire::IpAddress;
 
-use crate::{CONWAY_HOST, CONWAY_PORT, EVENT_BUFFER, MAX_FOBS, SYNC_COMPLETE};
+use crate::{EVENT_BUFFER, MAX_FOBS, RuntimeConfig, SYNC_COMPLETE};
 
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -27,7 +27,25 @@ pub async fn sync_with_conway(
     stack: &'static Stack<'static>,
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
     etag: &'static Mutex<CriticalSectionRawMutex, HString<64>>,
+    rt: &'static RuntimeConfig,
 ) {
+    // Snapshot host + port from the live config so a `/config` POST that
+    // updates them takes effect on the next sync without restart.
+    let (host_octets, host_port) = {
+        let s = rt.settings.lock().await;
+        (s.conway_host, s.conway_port)
+    };
+    let host_str = {
+        use core::fmt::Write;
+        let mut s: HString<24> = HString::new();
+        let _ = write!(
+            s,
+            "{}.{}.{}.{}",
+            host_octets[0], host_octets[1], host_octets[2], host_octets[3]
+        );
+        s
+    };
+
     // Peek at pending events without removing them from the buffer.
     // They will only be removed after the server acknowledges receipt.
     let mut events: [AccessEvent; MAX_EVENTS] = [AccessEvent::default(); MAX_EVENTS];
@@ -54,15 +72,13 @@ pub async fn sync_with_conway(
         guard.clone()
     };
 
-    // Parse host as IP address
-    let remote_addr = match parse_ipv4(CONWAY_HOST) {
-        Some(ip) => IpAddress::Ipv4(ip),
-        None => {
-            log::error!("sync: invalid IP address: {}", CONWAY_HOST);
-            SYNC_COMPLETE.signal(());
-            return;
-        }
-    };
+    // Build IP endpoint directly from settings octets.
+    let remote_addr = IpAddress::Ipv4(smoltcp::wire::Ipv4Address::new(
+        host_octets[0],
+        host_octets[1],
+        host_octets[2],
+        host_octets[3],
+    ));
 
     // Create TCP socket
     let mut rx_buf = [0u8; 2048];
@@ -71,7 +87,7 @@ pub async fn sync_with_conway(
     socket.set_timeout(Some(IO_TIMEOUT));
 
     // Connect to server
-    let remote = smoltcp::wire::IpEndpoint::new(remote_addr, CONWAY_PORT);
+    let remote = smoltcp::wire::IpEndpoint::new(remote_addr, host_port);
     log::debug!("sync: connecting to {:?}", remote);
 
     if let Err(e) = socket.connect(remote).await {
@@ -90,7 +106,7 @@ pub async fn sync_with_conway(
          Content-Type: application/json\r\n\
          Content-Length: {}\r\n\
          Connection: close\r\n",
-        CONWAY_HOST,
+        host_str.as_str(),
         body.len()
     );
     if !current_etag.is_empty() {
@@ -234,7 +250,9 @@ fn extract_header<'a>(response: &'a str, name: &str) -> Option<&'a str> {
     None
 }
 
-/// Parse IPv4 address string.
+/// Parse IPv4 address string. Currently unused inside this module but
+/// kept for tests / potential future callers.
+#[allow(dead_code)]
 fn parse_ipv4(s: &str) -> Option<smoltcp::wire::Ipv4Address> {
     let mut octets = [0u8; 4];
     let mut octet_idx = 0;
