@@ -285,7 +285,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     );
 
     // Output drivers: SS8050 NPN low-side switches, so GPIO HIGH = load energized.
-    let door = Output::new(peripherals.GPIO32, Level::Low, OutputConfig::default());
+    let door = Output::new(peripherals.GPIO12, Level::Low, OutputConfig::default());
     let reader_led = Output::new(peripherals.GPIO26, Level::Low, OutputConfig::default());
     let reader_beep = Output::new(peripherals.GPIO27, Level::Low, OutputConfig::default());
     let status_led = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());

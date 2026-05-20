@@ -85,7 +85,7 @@ base-driver = load energized**.
 | Header pin | DevKit GPIO | Net          | Direction | Function                                                |
 |-----------:|:-----------:|--------------|-----------|---------------------------------------------------------|
 | 6          | GPIO35      | `CONFIG_BTN` | input     | Tact switch (ext 10kΩ pull-up to 3V3, 100nF debounce)   |
-| 7          | GPIO32      | `DOOR`       | output    | Drives Q1 (door relay), active-HIGH                     |
+| 7          | GPIO12      | `DOOR`       | output    | Drives Q1 (door relay), active-HIGH                     |
 | 8          | GPIO33      | `WIEG_D1`    | input     | Wiegand D1 via SN74LVC2G17, falling edge = '1' bit      |
 | 9          | GPIO25      | `WIEG_D0`    | input     | Wiegand D0 via SN74LVC2G17, falling edge = '0' bit      |
 | 10         | GPIO26      | `READER_LED` | output    | Drives Q2 (reader's LED line), active-HIGH              |
