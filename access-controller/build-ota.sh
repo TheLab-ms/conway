@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Builds an OTA-flashable .bin. Network/Conway config is provisioned at
+# runtime via the onboarding captive portal; network.env (if present) only
+# sets optional compile-time defaults.
+#
 # Build a firmware image suitable for upload via POST /ota.
 #
 # Produces ./firmware.bin in the current directory. Upload with:

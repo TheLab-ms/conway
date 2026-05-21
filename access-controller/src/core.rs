@@ -126,17 +126,28 @@ impl AccessCore {
     /// Step the state machine.
     ///
     /// - `now_ms`: virtual wall clock (milliseconds).
-    /// - `fobs`: snapshot of authorized credential IDs at this instant.
+    /// - `local_fobs`: locally-managed authorized credential IDs (from the
+    ///   HTTP UI, persisted in flash). Checked first; a hit always grants
+    ///   regardless of Conway state.
+    /// - `remote_fobs`: snapshot of the Conway-synced cache. Checked only
+    ///   when `local_fobs` does not contain the credential.
+    /// - `conway_enabled`: whether a Conway host is configured. When
+    ///   `false`, denials apply backoff immediately (no `RequestSync`, no
+    ///   recheck window) since there is no remote authority to consult.
     /// - `input`: the event being delivered.
     ///
     /// Returns the ordered list of effects the firmware adapter must apply.
     pub fn step(
         &mut self,
         now_ms: u64,
-        fobs: &[u32],
+        local_fobs: &[u32],
+        remote_fobs: &[u32],
+        conway_enabled: bool,
         input: Input,
     ) -> HVec<Effect, MAX_EFFECTS_PER_STEP> {
         let mut out: HVec<Effect, MAX_EFFECTS_PER_STEP> = HVec::new();
+
+        let contains = |slice: &[u32], v: u32| slice.contains(&v);
 
         match input {
             Input::WatchdogFeed => {
@@ -149,8 +160,10 @@ impl AccessCore {
                         // Recheck expired; do nothing.
                         return out;
                     }
-                    let allowed =
-                        fobs.iter().any(|&f| f == fob) || fobs.iter().any(|&f| f == nfc);
+                    let allowed = contains(local_fobs, fob)
+                        || contains(local_fobs, nfc)
+                        || contains(remote_fobs, fob)
+                        || contains(remote_fobs, nfc);
                     if allowed {
                         // Defensively clear both failed_attempts and
                         // backoff_until on a grant-after-sync. The state
@@ -182,8 +195,17 @@ impl AccessCore {
                 let fob = read.fob;
                 let nfc = read.nfc;
 
-                let fob_ok = fobs.iter().any(|&f| f == fob);
-                let nfc_ok = !fob_ok && fobs.iter().any(|&f| f == nfc);
+                // Local list wins. Only consult the remote cache on a
+                // local miss; local can grant but cannot revoke remote.
+                let local_fob_ok = contains(local_fobs, fob);
+                let local_nfc_ok = !local_fob_ok && contains(local_fobs, nfc);
+                let remote_fob_ok = !local_fob_ok && !local_nfc_ok && contains(remote_fobs, fob);
+                let remote_nfc_ok = !local_fob_ok
+                    && !local_nfc_ok
+                    && !remote_fob_ok
+                    && contains(remote_fobs, nfc);
+                let fob_ok = local_fob_ok || remote_fob_ok;
+                let nfc_ok = local_nfc_ok || remote_nfc_ok;
                 let allowed = fob_ok || nfc_ok;
 
                 if allowed {
@@ -198,8 +220,18 @@ impl AccessCore {
                 } else {
                     let _ = out.push(Effect::Record(AccessEvent { fob, allowed: false }));
                     let _ = out.push(Effect::Feedback(Outcome::Denied));
-                    let _ = out.push(Effect::RequestSync);
-                    self.pending_recheck = Some((fob, nfc, now_ms + RECHECK_DEADLINE_MS));
+                    if conway_enabled {
+                        // Ask the sync task to refresh; arm recheck window
+                        // so a freshly-synced fob can still get in.
+                        let _ = out.push(Effect::RequestSync);
+                        self.pending_recheck = Some((fob, nfc, now_ms + RECHECK_DEADLINE_MS));
+                    } else {
+                        // Standalone: no remote authority will ever grant,
+                        // so apply backoff immediately to throttle bruteforce.
+                        self.failed_attempts = self.failed_attempts.saturating_add(1);
+                        let delay_ms = (1u64 << self.failed_attempts.min(3)) * 1000;
+                        self.backoff_until = now_ms + delay_ms;
+                    }
                 }
             }
         }

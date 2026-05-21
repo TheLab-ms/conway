@@ -34,6 +34,8 @@ use proptest::prelude::*;
 struct Sim {
     core: AccessCore,
     fobs: Vec<u32>,
+    local_fobs: Vec<u32>,
+    conway_enabled: bool,
     now_ms: u64,
     history: Vec<(u64, Input, Vec<Effect>)>,
 }
@@ -43,9 +45,18 @@ impl Sim {
         Self {
             core: AccessCore::new(),
             fobs: Vec::new(),
+            local_fobs: Vec::new(),
+            conway_enabled: true,
             now_ms: 0,
             history: Vec::new(),
         }
+    }
+
+    /// Construct a sim for standalone-mode tests: no Conway host configured.
+    fn new_standalone() -> Self {
+        let mut s = Self::new();
+        s.conway_enabled = false;
+        s
     }
 
     fn add_fob(&mut self, f: u32) {
@@ -58,12 +69,24 @@ impl Sim {
         self.fobs.retain(|&x| x != f);
     }
 
+    fn add_local_fob(&mut self, f: u32) {
+        if !self.local_fobs.contains(&f) {
+            self.local_fobs.push(f);
+        }
+    }
+
     fn tick(&mut self, dt_ms: u64) {
         self.now_ms = self.now_ms.saturating_add(dt_ms);
     }
 
     fn input(&mut self, i: Input) -> Vec<Effect> {
-        let eff = self.core.step(self.now_ms, &self.fobs, i);
+        let eff = self.core.step(
+            self.now_ms,
+            &self.local_fobs,
+            &self.fobs,
+            self.conway_enabled,
+            i,
+        );
         let v: Vec<Effect> = eff.iter().copied().collect();
         self.history.push((self.now_ms, i, v.clone()));
         v
@@ -292,6 +315,85 @@ fn watchdog_feed_does_not_disturb_pending_recheck() {
     s.input(Input::WatchdogFeed);
     assert_eq!(s.core.pending_recheck(), pending_before,
         "watchdog input must not clear pending recheck");
+}
+
+// ---------------------------------------------------------------------------
+// Local-fob precedence + standalone-mode tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn local_fob_grants_even_when_remote_cache_empty() {
+    let mut s = Sim::new();
+    s.add_local_fob(42);
+    let eff = s.card(42, 0);
+    assert!(contains_open_door(&eff));
+    assert!(contains_outcome(&eff, Outcome::Granted));
+    // Records as allowed with the matching credential.
+    assert!(eff.iter().any(|e| matches!(
+        e,
+        Effect::Record(AccessEvent { fob: 42, allowed: true })
+    )));
+    // Should never emit RequestSync on a clean local grant.
+    assert!(!contains_request_sync(&eff));
+}
+
+#[test]
+fn local_miss_falls_through_to_remote_grant() {
+    // The local list cannot revoke a remote grant — a remote-only fob still
+    // gets in even when local_fobs is populated (just not with this one).
+    let mut s = Sim::new();
+    s.add_local_fob(1);
+    s.add_local_fob(2);
+    s.add_fob(99);
+    let eff = s.card(99, 0);
+    assert!(contains_open_door(&eff), "remote-only fob must still grant");
+    assert!(contains_outcome(&eff, Outcome::Granted));
+}
+
+#[test]
+fn local_grant_works_in_standalone_mode() {
+    let mut s = Sim::new_standalone();
+    s.add_local_fob(7);
+    let eff = s.card(7, 0);
+    assert!(contains_open_door(&eff));
+    assert!(!contains_request_sync(&eff),
+        "standalone must never emit RequestSync");
+}
+
+#[test]
+fn standalone_card_miss_applies_backoff_immediately_without_request_sync() {
+    let mut s = Sim::new_standalone();
+    let eff = s.card(1, 2);
+    assert!(!contains_open_door(&eff));
+    assert!(contains_outcome(&eff, Outcome::Denied));
+    // No RequestSync, no pending recheck — backoff is applied right away.
+    assert!(!contains_request_sync(&eff),
+        "standalone deny must not emit RequestSync");
+    assert!(s.core.pending_recheck().is_none(),
+        "standalone deny must not arm a recheck window");
+    assert_eq!(s.core.failed_attempts(), 1);
+    assert_eq!(s.core.backoff_until(), s.now_ms + 2_000);
+
+    // Second card during the backoff window is silently dropped.
+    s.tick(500);
+    let eff2 = s.card(1, 2);
+    assert!(eff2.is_empty());
+
+    // After the backoff expires, another miss escalates to 4s.
+    s.tick(2_000);
+    let eff3 = s.card(1, 2);
+    assert!(contains_outcome(&eff3, Outcome::Denied));
+    assert_eq!(s.core.failed_attempts(), 2);
+    assert_eq!(s.core.backoff_until(), s.now_ms + 4_000);
+}
+
+#[test]
+fn standalone_sync_complete_is_a_noop_even_with_no_pending() {
+    // Defensive: sync_task is gated off in standalone, but if a stray
+    // SyncComplete sneaks in, it must do nothing harmful.
+    let mut s = Sim::new_standalone();
+    let eff = s.sync();
+    assert!(eff.is_empty());
 }
 
 // ---------------------------------------------------------------------------

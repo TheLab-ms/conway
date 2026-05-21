@@ -14,6 +14,7 @@ esp_app_desc!();
 
 mod dhcp_server;
 mod dns_server;
+mod fob_store;
 mod http;
 mod ota;
 mod settings;
@@ -43,6 +44,7 @@ use esp_radio::wifi::{
 use heapless::String as HString;
 use static_cell::StaticCell;
 
+use crate::fob_store::{LocalFob, MAX_LOCAL_FOBS};
 use crate::settings::Settings;
 use crate::sync::{AccessEvent, EventBuffer};
 use crate::wiegand::{Wiegand, WiegandRead};
@@ -90,9 +92,15 @@ pub static DOOR_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 // Signal raised by `POST /unlock` to request a manual door pulse.
 pub static MANUAL_UNLOCK: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
-/// Sentinel `fob` value used when recording a manual-unlock event so the
-/// Conway audit trail can distinguish it from a real card swipe.
-pub const MANUAL_UNLOCK_FOB: u32 = 0;
+/// Sentinel `fob` value logged for web-UI-initiated manual unlocks so the
+/// Conway audit trail can distinguish them from real card swipes.
+///
+/// Chosen outside the Wiegand-26 card-number range: Wiegand-26 frames a
+/// 24-bit card number (bits 1-24) with two parity bits, so any value
+/// >= 2^24 cannot collide with a real swipe. `u32::MAX` is used for
+/// obviousness in logs. The previous sentinel of `0` was ambiguous
+/// because fob ID 0 is a legal Wiegand-26 transmission.
+pub const MANUAL_UNLOCK_FOB: u32 = u32::MAX;
 
 /// Most recent door event (swipe or manual unlock). Rendered on the
 /// HTTP status page; not persisted across reboots.
@@ -120,6 +128,12 @@ pub static WATCHDOG_FEED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 // Static cells for 'static lifetime requirements
 static FOBS: StaticCell<Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>> =
     StaticCell::new();
+/// Locally-managed fob list, edited via the HTTP UI and persisted in the
+/// `fobs` partition. Always wins over the Conway-synced cache, and is the
+/// only authority when running standalone (no Conway host configured).
+static LOCAL_FOBS: StaticCell<
+    Mutex<CriticalSectionRawMutex, heapless::Vec<LocalFob, MAX_LOCAL_FOBS>>,
+> = StaticCell::new();
 static ETAG: StaticCell<Mutex<CriticalSectionRawMutex, HString<64>>> = StaticCell::new();
 static LAST_SWIPE: StaticCell<Mutex<CriticalSectionRawMutex, Option<LastSwipe>>> =
     StaticCell::new();
@@ -175,17 +189,14 @@ async fn main(spawner: embassy_executor::Spawner) {
         DeviceMode::Onboarding
     };
     log::info!(
-        "config: mode={:?} ssid={} host={}.{}.{}.{}:{}",
+        "config: mode={:?} ssid={} host={} port={}",
         mode,
         if loaded.ssid.is_empty() {
             "<unset>"
         } else {
             loaded.ssid.as_str()
         },
-        loaded.conway_host[0],
-        loaded.conway_host[1],
-        loaded.conway_host[2],
-        loaded.conway_host[3],
+        loaded.conway_host_str(),
         loaded.conway_port,
     );
 
@@ -193,6 +204,15 @@ async fn main(spawner: embassy_executor::Spawner) {
     let fobs = FOBS.init(Mutex::new(heapless::Vec::new()));
     let etag = ETAG.init(Mutex::new(HString::new()));
     let last_swipe = LAST_SWIPE.init(Mutex::new(None));
+
+    // Load locally-managed fobs from flash. Empty on first boot / after a
+    // factory reset.
+    let local_fobs_loaded = fob_store::load();
+    log::info!(
+        "storage: loaded {} local fobs from flash",
+        local_fobs_loaded.len()
+    );
+    let local_fobs = LOCAL_FOBS.init(Mutex::new(local_fobs_loaded));
 
     log::info!("storage: fob cache initialized (empty, will sync from server)");
 
@@ -304,7 +324,9 @@ async fn main(spawner: embassy_executor::Spawner) {
     spawner.spawn(net_task(runner)).unwrap();
     spawner.spawn(wifi_task(wifi_controller, rt_config)).unwrap();
     spawner.spawn(wiegand_task(wiegand)).unwrap();
-    spawner.spawn(access_task(fobs, last_swipe, wdt)).unwrap();
+    spawner
+        .spawn(access_task(fobs, local_fobs, last_swipe, wdt, rt_config))
+        .unwrap();
     spawner.spawn(door_task(door)).unwrap();
     spawner
         .spawn(reader_feedback_task(reader_led, reader_beep))
@@ -312,12 +334,21 @@ async fn main(spawner: embassy_executor::Spawner) {
     spawner
         .spawn(status_and_config_task(status_led, config_btn, stack))
         .unwrap();
-    // Sync task only makes sense in station mode (it talks to Conway).
-    if mode == DeviceMode::Station {
+    // Sync task only makes sense in station mode AND when a Conway host
+    // is configured. Standalone mode (no host) skips it entirely.
+    let conway_enabled = {
+        let s = rt_config.settings.lock().await;
+        s.conway_enabled()
+    };
+    if mode == DeviceMode::Station && conway_enabled {
         spawner.spawn(sync_task(stack, fobs, etag, rt_config)).unwrap();
+    } else if mode == DeviceMode::Station {
+        log::info!("sync: disabled (standalone mode, no Conway host configured)");
     }
     spawner
-        .spawn(http::http_server_task(stack, fobs, etag, last_swipe, rt_config))
+        .spawn(http::http_server_task(
+            stack, fobs, local_fobs, etag, last_swipe, rt_config,
+        ))
         .unwrap();
     spawner.spawn(watchdog_feed_task()).unwrap();
 
@@ -445,8 +476,10 @@ async fn wiegand_task(mut wiegand: Wiegand<'static>) {
 #[embassy_executor::task]
 async fn access_task(
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
+    local_fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<LocalFob, MAX_LOCAL_FOBS>>,
     last_swipe: &'static Mutex<CriticalSectionRawMutex, Option<LastSwipe>>,
     wdt: &'static Mutex<CriticalSectionRawMutex, WdtType>,
+    rt: &'static RuntimeConfig,
 ) {
     let mut core = AccessCore::new();
 
@@ -496,11 +529,26 @@ async fn access_task(
             embassy_futures::select::Either4::Fourth(()) => unreachable!(),
         };
 
-        // Snapshot the cache once and pass it as a slice; mirrors the
-        // single-lock-acquisition behavior of the original code.
+        // Snapshot both caches once and pass them as slices. Local list is
+        // checked first by AccessCore; the conway_enabled flag controls
+        // whether denials trigger a RequestSync or apply backoff immediately.
+        let conway_enabled = rt.settings.lock().await.conway_enabled();
         let effects = {
             let fob_list = fobs.lock().await;
-            core.step(now, fob_list.as_slice(), input)
+            let local_list = local_fobs.lock().await;
+            // Project LocalFob -> u32 ids into a small stack buffer so
+            // AccessCore stays oblivious to label metadata.
+            let mut local_ids: heapless::Vec<u32, MAX_LOCAL_FOBS> = heapless::Vec::new();
+            for f in local_list.iter() {
+                let _ = local_ids.push(f.id);
+            }
+            core.step(
+                now,
+                local_ids.as_slice(),
+                fob_list.as_slice(),
+                conway_enabled,
+                input,
+            )
         };
 
         for effect in effects.iter() {
@@ -705,6 +753,9 @@ async fn status_and_config_task(
                         log::warn!("config: factory reset - wiping NVS and rebooting");
                         if let Err(e) = settings::erase() {
                             log::error!("config: settings::erase failed: {}", e);
+                        }
+                        if let Err(e) = fob_store::erase() {
+                            log::error!("config: fob_store::erase failed: {}", e);
                         }
                         for _ in 0..5 {
                             led.set_high();

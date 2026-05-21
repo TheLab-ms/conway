@@ -17,6 +17,7 @@ use embassy_time::{Duration, Instant, Timer};
 use embedded_io_async::Write;
 use heapless::String as HString;
 
+use crate::fob_store::{self, LocalFob, MAX_LABEL_LEN, MAX_LOCAL_FOBS};
 use crate::ota::{self, OtaError, OtaWriter};
 use crate::settings::{self, Settings, MAX_PASSWORD, MAX_SSID};
 use crate::{
@@ -46,6 +47,7 @@ const CONFIG_BODY_MAX: usize = 512;
 pub async fn http_server_task(
     stack: &'static Stack<'static>,
     fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
+    local_fobs: &'static Mutex<CriticalSectionRawMutex, heapless::Vec<LocalFob, MAX_LOCAL_FOBS>>,
     etag: &'static Mutex<CriticalSectionRawMutex, HString<64>>,
     last_swipe: &'static Mutex<CriticalSectionRawMutex, Option<LastSwipe>>,
     rt: &'static RuntimeConfig,
@@ -79,7 +81,7 @@ pub async fn http_server_task(
         let peer = socket.remote_endpoint();
         log::info!("http: connection from {:?}", peer);
 
-        handle_connection(&mut socket, fobs, etag, last_swipe, stack, rt).await;
+        handle_connection(&mut socket, fobs, local_fobs, etag, last_swipe, stack, rt).await;
 
         let _ = socket.flush().await;
         socket.close();
@@ -89,6 +91,7 @@ pub async fn http_server_task(
 async fn handle_connection(
     socket: &mut TcpSocket<'_>,
     fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
+    local_fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<LocalFob, MAX_LOCAL_FOBS>>,
     etag: &Mutex<CriticalSectionRawMutex, HString<64>>,
     last_swipe: &Mutex<CriticalSectionRawMutex, Option<LastSwipe>>,
     stack: &Stack<'static>,
@@ -149,7 +152,7 @@ async fn handle_connection(
             send_redirect(socket, "/config").await;
         }
         ("GET", "/") | ("GET", "/status") => {
-            send_status_page(socket, fobs, etag, last_swipe, stack, rt).await;
+            send_status_page(socket, fobs, local_fobs, etag, last_swipe, stack, rt).await;
         }
         ("GET", "/config") => {
             send_config_page(socket, rt).await;
@@ -167,6 +170,37 @@ async fn handle_connection(
                 }
             };
             handle_config_post(socket, cl, leftover, rt).await;
+        }
+        ("GET", "/fobs") => {
+            send_fobs_page(socket, local_fobs, rt).await;
+        }
+        ("POST", "/fobs") => {
+            let cl = match parse_content_length(headers_str) {
+                Some(n) if (n as usize) <= CONFIG_BODY_MAX => n,
+                Some(_) => {
+                    send_status_line(socket, "413 Payload Too Large", b"body too large\n").await;
+                    return;
+                }
+                None => {
+                    send_status_line(socket, "411 Length Required", b"need Content-Length\n").await;
+                    return;
+                }
+            };
+            handle_fob_add(socket, cl, leftover, local_fobs).await;
+        }
+        ("POST", "/fobs/delete") => {
+            let cl = match parse_content_length(headers_str) {
+                Some(n) if (n as usize) <= CONFIG_BODY_MAX => n,
+                Some(_) => {
+                    send_status_line(socket, "413 Payload Too Large", b"body too large\n").await;
+                    return;
+                }
+                None => {
+                    send_status_line(socket, "411 Length Required", b"need Content-Length\n").await;
+                    return;
+                }
+            };
+            handle_fob_delete(socket, cl, leftover, local_fobs).await;
         }
         // Captive portal probes - send everyone to /config.
         ("GET", "/generate_204")
@@ -393,6 +427,7 @@ async fn send_text(socket: &mut TcpSocket<'_>, status: &str, body: &[u8]) {
 async fn send_status_page(
     socket: &mut TcpSocket<'_>,
     fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
+    local_fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<LocalFob, MAX_LOCAL_FOBS>>,
     etag: &Mutex<CriticalSectionRawMutex, HString<64>>,
     last_swipe: &Mutex<CriticalSectionRawMutex, Option<LastSwipe>>,
     stack: &Stack<'static>,
@@ -402,6 +437,7 @@ async fn send_status_page(
     let uptime_ms = Instant::now().as_millis();
     let uptime_secs = uptime_ms / 1000;
     let fob_count = fobs.lock().await.len();
+    let local_fob_count = local_fobs.lock().await.len();
     let pending_events = EVENT_BUFFER.len().await;
     let current_etag = {
         let g = etag.lock().await;
@@ -412,14 +448,10 @@ async fn send_status_page(
     // Snapshot live settings so the page reflects current creds and
     // Conway URL even after a /config save (which reboots, but better
     // safe than sorry if we ever support hot-reload).
-    let (cur_ssid, conway_host_str, conway_port, is_onboarding) = {
+    let (cur_ssid, conway_host_str, conway_port, conway_enabled, is_onboarding) = {
         let s = rt.settings.lock().await;
         let mut hs: HString<24> = HString::new();
-        let _ = write!(
-            hs,
-            "{}.{}.{}.{}",
-            s.conway_host[0], s.conway_host[1], s.conway_host[2], s.conway_host[3]
-        );
+        let _ = hs.push_str(&s.conway_host_str());
         let displayed_ssid: HString<48> = if rt.mode == DeviceMode::Onboarding {
             let mut t: HString<48> = HString::new();
             let _ = t.push_str(rt.ap_ssid.as_str());
@@ -434,7 +466,13 @@ async fn send_status_page(
             });
             t
         };
-        (displayed_ssid, hs, s.conway_port, rt.mode == DeviceMode::Onboarding)
+        (
+            displayed_ssid,
+            hs,
+            s.conway_port,
+            s.conway_enabled(),
+            rt.mode == DeviceMode::Onboarding,
+        )
     };
 
     let mut ip_str: HString<32> = HString::new();
@@ -522,6 +560,15 @@ async fn send_status_page(
          <span id=\"unlockstatus\"></span></p>"
     };
 
+    // Compose the "Conway server" row: either "host:port" or just
+    // "(standalone)" with no port suffix.
+    let mut conway_row: HString<48> = HString::new();
+    if conway_enabled {
+        let _ = write!(conway_row, "{}:{}", conway_host_str.as_str(), conway_port);
+    } else {
+        let _ = conway_row.push_str(conway_host_str.as_str()); // already "(standalone)"
+    }
+
     // Build body. 5 KiB is plenty for this page including the upload
     // form, last-swipe row, and unlock button.
     let mut body: HString<5120> = HString::new();
@@ -535,17 +582,18 @@ th,td{{text-align:left;padding:.25rem .75rem;border-bottom:1px solid #ddd}}\
 th{{background:#f3f3f3}}progress{{width:100%}}\
 .err{{color:#b00}}.ok{{color:#070}}</style></head><body>\
 <h1>Conway Access Controller</h1>\
-<p>Firmware v{firmware} &middot; <a href=\"/config\">Configuration</a></p>\
+<p>Firmware v{firmware} &middot; <a href=\"/config\">Configuration</a> &middot; <a href=\"/fobs\">Local fobs</a></p>\
 {banner}\
 <table>\
 <tr><th>Uptime</th><td>{uptime} s</td></tr>\
 <tr><th>WiFi SSID</th><td>{ssid}</td></tr>\
 <tr><th>IPv4</th><td>{ip}</td></tr>\
-<tr><th>Conway server</th><td>{chost}:{cport}</td></tr>\
-<tr><th>Cached fobs</th><td>{fobs}</td></tr>\
-<tr><th>Pending events</th><td>{events}</td></tr>\
+<tr><th>Conway server</th><td>{conway_row}</td></tr>\
+<tr><th>Cached fobs (Conway)</th><td>{fobs}</td></tr>\
+<tr><th>Local fobs</th><td>{local_fobs} (<a href=\"/fobs\">manage</a>)</td></tr>\
+<tr title=\"Access decisions buffered locally; flushed to Conway on next sync.\"><th>Pending events (queued for Conway)</th><td>{events}</td></tr>\
 <tr><th>Last swipe</th><td>{last_swipe}</td></tr>\
-<tr><th>Sync ETag</th><td>{etag}</td></tr>\
+<tr title=\"Opaque token returned by Conway; used to detect changes on next sync.\"><th>Last sync token</th><td>{etag}</td></tr>\
 <tr><th>OTA slot</th><td>{ota}</td></tr>\
 </table>\
 {unlock_section}\
@@ -590,9 +638,9 @@ if(r.ok)setTimeout(()=>location.reload(),800);}}))\
         uptime = uptime_secs,
         ssid = cur_ssid.as_str(),
         ip = ip_str.as_str(),
-        chost = conway_host_str.as_str(),
-        cport = conway_port,
+        conway_row = conway_row.as_str(),
         fobs = fob_count,
+        local_fobs = local_fob_count,
         events = pending_events,
         last_swipe = last_swipe_html.as_str(),
         etag = if current_etag.is_empty() {
@@ -631,11 +679,9 @@ async fn send_config_page(socket: &mut TcpSocket<'_>, rt: &'static RuntimeConfig
     let (ssid, password, host_str, port, mode) = {
         let s = rt.settings.lock().await;
         let mut hs: HString<24> = HString::new();
-        let _ = write!(
-            hs,
-            "{}.{}.{}.{}",
-            s.conway_host[0], s.conway_host[1], s.conway_host[2], s.conway_host[3]
-        );
+        if let Some(h) = s.conway_host {
+            let _ = write!(hs, "{}.{}.{}.{}", h[0], h[1], h[2], h[3]);
+        }
         (s.ssid.clone(), s.password.clone(), hs, s.conway_port, rt.mode)
     };
 
@@ -675,11 +721,12 @@ button{{margin-top:1.5rem;padding:.6rem 1.2rem;font-size:1rem}}\
 {banner}\
 <form method=\"POST\" action=\"/config\">\
 <label>WiFi SSID<input name=\"ssid\" value=\"{ssid}\" maxlength=\"{max_ssid}\" required></label>\
-<label>WiFi Password<input name=\"password\" value=\"{pw}\" maxlength=\"{max_pw}\" type=\"text\"></label>\
+<label>WiFi Password<input name=\"password\" value=\"{pw}\" maxlength=\"{max_pw}\" type=\"password\"><label style=\"display:inline;font-weight:normal;font-size:.9rem\"><input type=\"checkbox\" style=\"width:auto;margin-right:.25rem\" onclick=\"this.parentElement.previousElementSibling.type=this.checked?'text':'password'\"> Show</label></label>\
 <div class=\"row\">\
-<div><label>Conway Host (IPv4)<input name=\"host\" value=\"{host}\" required pattern=\"[0-9.]+\"></label></div>\
+<div><label>Conway Host (IPv4, blank for standalone)<input name=\"host\" value=\"{host}\" pattern=\"|[0-9.]+\"></label></div>\
 <div><label>Port<input name=\"port\" value=\"{port}\" type=\"number\" min=\"1\" max=\"65535\" required></label></div>\
 </div>\
+<p style=\"font-size:.9rem;color:#555;margin-top:.5rem\">Leave Conway Host blank to operate standalone. Only locally-added fobs will be accepted; events are not buffered.</p>\
 <button type=\"submit\">Save &amp; reboot</button>\
 </form>\
 <p style=\"margin-top:2rem\"><a href=\"/status\">Back to status</a></p>\
@@ -723,12 +770,12 @@ async fn handle_config_post(
         let want = (content_length as usize - body.len()).min(chunk.len());
         match socket.read(&mut chunk[..want]).await {
             Ok(0) => {
-                send_status_line(socket, "400 Bad Request", b"short body\n").await;
+                send_config_error(socket, "400 Bad Request", "short body").await;
                 return;
             }
             Ok(n) => body.extend_from_slice(&chunk[..n]),
             Err(_) => {
-                send_status_line(socket, "400 Bad Request", b"read error\n").await;
+                send_config_error(socket, "400 Bad Request", "read error").await;
                 return;
             }
         }
@@ -737,7 +784,7 @@ async fn handle_config_post(
     let body_str = match core::str::from_utf8(&body) {
         Ok(s) => s,
         Err(_) => {
-            send_status_line(socket, "400 Bad Request", b"invalid utf-8\n").await;
+            send_config_error(socket, "400 Bad Request", "invalid utf-8").await;
             return;
         }
     };
@@ -755,7 +802,7 @@ async fn handle_config_post(
         let decoded = match urldecode(v) {
             Some(d) => d,
             None => {
-                send_status_line(socket, "400 Bad Request", b"bad urlencoding\n").await;
+                send_config_error(socket, "400 Bad Request", "bad urlencoding").await;
                 return;
             }
         };
@@ -769,24 +816,34 @@ async fn handle_config_post(
     }
 
     if ssid.is_empty() || ssid.len() > MAX_SSID {
-        send_status_line(socket, "400 Bad Request", b"ssid empty or too long\n").await;
+        send_config_error(socket, "400 Bad Request", "ssid empty or too long").await;
         return;
     }
     if password.len() > MAX_PASSWORD {
-        send_status_line(socket, "400 Bad Request", b"password too long\n").await;
+        send_config_error(socket, "400 Bad Request", "password too long").await;
         return;
     }
-    let host_octets = match settings::parse_ipv4(&host) {
-        Some(o) => o,
-        None => {
-            send_status_line(socket, "400 Bad Request", b"host must be dotted-quad IPv4\n").await;
-            return;
+    let host_octets = if host.is_empty() {
+        // Standalone mode: no Conway server.
+        None
+    } else {
+        match settings::parse_ipv4(&host) {
+            Some(o) => Some(o),
+            None => {
+                send_config_error(
+                    socket,
+                    "400 Bad Request",
+                    "host must be dotted-quad IPv4 (or blank for standalone)",
+                )
+                .await;
+                return;
+            }
         }
     };
     let port: u16 = match port_str.parse() {
         Ok(p) if p > 0 => p,
         _ => {
-            send_status_line(socket, "400 Bad Request", b"invalid port\n").await;
+            send_config_error(socket, "400 Bad Request", "invalid port").await;
             return;
         }
     };
@@ -819,7 +876,10 @@ async fn handle_config_post(
     let resp = b"<!doctype html><html><body><h1>Saved</h1>\
         <p>Settings stored. The device will reboot in 2 seconds and try \
         to join the new network. If it doesn't come back online, hold the \
-        CONFIG button for 5 seconds to factory-reset.</p></body></html>";
+        CONFIG button for 5 seconds to factory-reset.</p>\
+        <p>After reboot the device joins your WiFi via DHCP \xe2\x80\x94 find \
+        the new IP in your router's DHCP lease table; the status page will be \
+        at <code>http://&lt;ip&gt;/</code>.</p></body></html>";
     send_html(socket, "200 OK", resp).await;
     let _ = socket.flush().await;
     socket.close();
@@ -892,8 +952,32 @@ fn html_escape_into<const N: usize>(src: &str, dst: &mut HString<N>) {
     }
 }
 
+/// Send an HTML-wrapped configuration error page (used by `POST /config`
+/// validation failures) so users get a styled message with a link back to
+/// the form, not bare plaintext.
+async fn send_config_error(socket: &mut TcpSocket<'_>, status: &str, message: &str) {
+    let mut esc = alloc::string::String::with_capacity(message.len() + 16);
+    html_escape_str(message, &mut esc);
+    let mut body = alloc::string::String::with_capacity(esc.len() + 192);
+    let _ = core::fmt::Write::write_fmt(
+        &mut body,
+        format_args!(
+            "<!doctype html><meta charset=utf-8><title>Configuration error</title>\
+<h1>Configuration error</h1><p>{}</p><p><a href=\"/config\">Back to form</a></p>",
+            esc
+        ),
+    );
+    send_html(socket, status, body.as_bytes()).await;
+}
+
 async fn send_redirect(socket: &mut TcpSocket<'_>, location: &str) {
-    let body = b"<a href=\"/config\">Configure</a>\n";
+    let mut esc_loc = alloc::string::String::with_capacity(location.len());
+    html_escape_str(location, &mut esc_loc);
+    let mut body = alloc::string::String::with_capacity(esc_loc.len() + 32);
+    let _ = core::fmt::Write::write_fmt(
+        &mut body,
+        format_args!("<a href=\"{}\">Continue</a>\n", esc_loc),
+    );
     let mut header: HString<256> = HString::new();
     let _ = write!(
         header,
@@ -908,7 +992,21 @@ async fn send_redirect(socket: &mut TcpSocket<'_>, location: &str) {
         body.len()
     );
     let _ = socket.write_all(header.as_bytes()).await;
-    let _ = socket.write_all(body).await;
+    let _ = socket.write_all(body.as_bytes()).await;
+}
+
+/// HTML-escape `src` into an `alloc::string::String`.
+fn html_escape_str(src: &str, dst: &mut alloc::string::String) {
+    for c in src.chars() {
+        match c {
+            '&' => dst.push_str("&amp;"),
+            '<' => dst.push_str("&lt;"),
+            '>' => dst.push_str("&gt;"),
+            '"' => dst.push_str("&quot;"),
+            '\'' => dst.push_str("&#39;"),
+            _ => dst.push(c),
+        }
+    }
 }
 
 async fn send_html(socket: &mut TcpSocket<'_>, status: &str, body: &[u8]) {
@@ -931,4 +1029,302 @@ async fn send_html(socket: &mut TcpSocket<'_>, status: &str, body: &[u8]) {
 /// block. Returns the index of the first byte AFTER the terminator, or `None`.
 fn find_double_crlf(buf: &[u8]) -> Option<usize> {
     buf.windows(4).position(|w| w == b"\r\n\r\n").map(|p| p + 4)
+}
+
+// ----------------------------------------------------------------------------
+// /fobs - local fob management UI.
+// ----------------------------------------------------------------------------
+
+/// Render the local fob list with an "add" form and per-row delete buttons.
+///
+/// The list can grow up to `MAX_LOCAL_FOBS` (128) entries; rendered HTML is
+/// dynamically sized via `alloc::string::String` so we never need to size a
+/// large `HString` on the stack.
+async fn send_fobs_page(
+    socket: &mut TcpSocket<'_>,
+    local_fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<LocalFob, MAX_LOCAL_FOBS>>,
+    rt: &'static RuntimeConfig,
+) {
+    // Snapshot the list into an alloc Vec so we release the mutex before
+    // any (potentially long) socket writes.
+    let snapshot: alloc::vec::Vec<LocalFob> = {
+        let g = local_fobs.lock().await;
+        g.iter().cloned().collect()
+    };
+    let count = snapshot.len();
+    let conway_enabled = rt.settings.lock().await.conway_enabled();
+
+    let mut body = alloc::string::String::with_capacity(2048 + count * 96);
+    body.push_str(
+        "<!doctype html><html><head><meta charset=\"utf-8\">\
+<title>Local Fobs</title>\
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+<style>body{font-family:system-ui,sans-serif;margin:2rem;max-width:40rem}\
+table{border-collapse:collapse;margin-top:1rem;width:100%}\
+th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid #ddd}\
+th{background:#f3f3f3}input{padding:.4rem;font-size:1rem}\
+.add{display:flex;gap:.5rem;align-items:end;margin-top:1rem}\
+.add label{display:flex;flex-direction:column;font-size:.9rem}\
+button{padding:.4rem .8rem;font-size:1rem}\
+.info{padding:.6rem;background:#eef;border-left:4px solid #44a;border-radius:4px;margin-bottom:1rem}\
+.del{background:#fdd;border:1px solid #b00;color:#b00}\
+form.inline{display:inline}</style></head><body>\
+<h1>Local Fobs</h1>\
+<p><a href=\"/status\">&larr; Status</a></p>",
+    );
+    if !conway_enabled {
+        body.push_str(
+            "<div class=\"info\"><b>Standalone mode.</b> No Conway server is configured; \
+this list is the sole source of authorization.</div>",
+        );
+    } else {
+        body.push_str(
+            "<div class=\"info\">Local fobs always grant access. They are checked \
+before the Conway-synced cache. Local entries can only <em>grant</em> access; \
+to revoke a Conway-issued fob, disable it in Conway.</div>",
+        );
+    }
+    let _ = core::fmt::Write::write_fmt(
+        &mut body,
+        format_args!("<p>{} / {} entries.</p>", count, MAX_LOCAL_FOBS),
+    );
+
+    body.push_str(
+        "<form method=\"POST\" action=\"/fobs\" class=\"add\">\
+<label>Fob ID<input name=\"id\" type=\"number\" min=\"1\" max=\"4294967295\" required></label>\
+<label>Label<input name=\"label\" maxlength=\"16\" placeholder=\"e.g. Alice\"></label>\
+<button type=\"submit\">Add</button></form>",
+    );
+
+    if count == 0 {
+        body.push_str("<p><i>No local fobs yet.</i></p>");
+    } else {
+        body.push_str("<table><tr><th>ID</th><th>Label</th><th></th></tr>");
+        for f in snapshot.iter() {
+            // Escape label for HTML safety.
+            let mut esc: alloc::string::String = alloc::string::String::with_capacity(f.label.len());
+            for c in f.label.chars() {
+                match c {
+                    '&' => esc.push_str("&amp;"),
+                    '<' => esc.push_str("&lt;"),
+                    '>' => esc.push_str("&gt;"),
+                    '"' => esc.push_str("&quot;"),
+                    '\'' => esc.push_str("&#39;"),
+                    _ => esc.push(c),
+                }
+            }
+            let _ = core::fmt::Write::write_fmt(
+                &mut body,
+                format_args!(
+                    "<tr><td>{id}</td><td>{label}</td>\
+<td><form method=\"POST\" action=\"/fobs/delete\" class=\"inline\" \
+onsubmit=\"return confirm('Delete fob {id}?')\">\
+<input type=\"hidden\" name=\"id\" value=\"{id}\">\
+<button class=\"del\" type=\"submit\">Delete</button></form></td></tr>",
+                    id = f.id,
+                    label = esc,
+                ),
+            );
+        }
+        body.push_str("</table>");
+    }
+    body.push_str("</body></html>");
+
+    let mut header: HString<160> = HString::new();
+    let _ = write!(
+        header,
+        "HTTP/1.1 200 OK\r\n\
+         Content-Type: text/html; charset=utf-8\r\n\
+         Content-Length: {}\r\n\
+         Cache-Control: no-store\r\n\
+         Connection: close\r\n\
+         \r\n",
+        body.len()
+    );
+    let _ = socket.write_all(header.as_bytes()).await;
+    let _ = socket.write_all(body.as_bytes()).await;
+}
+
+/// Read the full body of a small urlencoded form post into a Vec.
+async fn read_form_body(
+    socket: &mut TcpSocket<'_>,
+    content_length: u32,
+    leftover: &[u8],
+) -> Option<alloc::vec::Vec<u8>> {
+    let mut body: alloc::vec::Vec<u8> = alloc::vec::Vec::with_capacity(content_length as usize);
+    body.extend_from_slice(leftover);
+    while body.len() < content_length as usize {
+        let mut chunk = [0u8; 256];
+        let want = (content_length as usize - body.len()).min(chunk.len());
+        match socket.read(&mut chunk[..want]).await {
+            Ok(0) => return None,
+            Ok(n) => body.extend_from_slice(&chunk[..n]),
+            Err(_) => return None,
+        }
+    }
+    Some(body)
+}
+
+async fn handle_fob_add(
+    socket: &mut TcpSocket<'_>,
+    content_length: u32,
+    leftover: &[u8],
+    local_fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<LocalFob, MAX_LOCAL_FOBS>>,
+) {
+    let body = match read_form_body(socket, content_length, leftover).await {
+        Some(b) => b,
+        None => {
+            send_status_line(socket, "400 Bad Request", b"short body\n").await;
+            return;
+        }
+    };
+    let body_str = match core::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(_) => {
+            send_status_line(socket, "400 Bad Request", b"invalid utf-8\n").await;
+            return;
+        }
+    };
+
+    let mut id_str = alloc::string::String::new();
+    let mut label = alloc::string::String::new();
+    for pair in body_str.split('&') {
+        let (k, v) = match pair.split_once('=') {
+            Some(kv) => kv,
+            None => continue,
+        };
+        let decoded = match urldecode(v) {
+            Some(d) => d,
+            None => {
+                send_status_line(socket, "400 Bad Request", b"bad urlencoding\n").await;
+                return;
+            }
+        };
+        match k {
+            "id" => id_str = decoded,
+            "label" => label = decoded,
+            _ => {}
+        }
+    }
+
+    let id: u32 = match id_str.trim().parse() {
+        Ok(n) if n > 0 => n,
+        _ => {
+            send_status_line(socket, "400 Bad Request", b"id must be a positive integer\n").await;
+            return;
+        }
+    };
+    if label.len() > MAX_LABEL_LEN {
+        send_status_line(socket, "400 Bad Request", b"label too long (max 16 bytes)\n").await;
+        return;
+    }
+    let mut label_hs: HString<MAX_LABEL_LEN> = HString::new();
+    if label_hs.push_str(&label).is_err() {
+        send_status_line(socket, "400 Bad Request", b"label too long\n").await;
+        return;
+    }
+
+    // Update in-memory list, then persist. We swap-replace any existing
+    // entry with the same id (so the form doubles as "rename").
+    let to_save: alloc::vec::Vec<LocalFob> = {
+        let mut g = local_fobs.lock().await;
+        if let Some(existing) = g.iter_mut().find(|f| f.id == id) {
+            existing.label = label_hs.clone();
+        } else if g
+            .push(LocalFob {
+                id,
+                label: label_hs.clone(),
+            })
+            .is_err()
+        {
+            send_status_line(
+                socket,
+                "507 Insufficient Storage",
+                b"local fob list is full\n",
+            )
+            .await;
+            return;
+        }
+        g.iter().cloned().collect()
+    };
+
+    WATCHDOG_FEED.signal(());
+    if let Err(e) = fob_store::save(&to_save) {
+        log::error!("fobs: save failed: {}", e);
+        let mut msg: HString<96> = HString::new();
+        let _ = write!(msg, "save failed: {}\n", e);
+        send_text(socket, "500 Internal Server Error", msg.as_bytes()).await;
+        return;
+    }
+
+    log::info!("fobs: added id={} label={:?}", id, label_hs.as_str());
+    send_redirect(socket, "/fobs").await;
+}
+
+async fn handle_fob_delete(
+    socket: &mut TcpSocket<'_>,
+    content_length: u32,
+    leftover: &[u8],
+    local_fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<LocalFob, MAX_LOCAL_FOBS>>,
+) {
+    let body = match read_form_body(socket, content_length, leftover).await {
+        Some(b) => b,
+        None => {
+            send_status_line(socket, "400 Bad Request", b"short body\n").await;
+            return;
+        }
+    };
+    let body_str = match core::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(_) => {
+            send_status_line(socket, "400 Bad Request", b"invalid utf-8\n").await;
+            return;
+        }
+    };
+
+    let mut id_str = alloc::string::String::new();
+    for pair in body_str.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == "id" {
+                id_str = urldecode(v).unwrap_or_default();
+            }
+        }
+    }
+    let id: u32 = match id_str.trim().parse() {
+        Ok(n) => n,
+        Err(_) => {
+            send_status_line(socket, "400 Bad Request", b"id must be a positive integer\n").await;
+            return;
+        }
+    };
+
+    let (removed, to_save) = {
+        let mut g = local_fobs.lock().await;
+        let before = g.len();
+        // heapless Vec has no retain - rebuild.
+        let mut new: heapless::Vec<LocalFob, MAX_LOCAL_FOBS> = heapless::Vec::new();
+        for f in g.iter() {
+            if f.id != id {
+                let _ = new.push(f.clone());
+            }
+        }
+        let removed = before != new.len();
+        *g = new;
+        (removed, g.iter().cloned().collect::<alloc::vec::Vec<_>>())
+    };
+
+    if !removed {
+        log::warn!("fobs: delete id={} not found", id);
+    } else {
+        WATCHDOG_FEED.signal(());
+        if let Err(e) = fob_store::save(&to_save) {
+            log::error!("fobs: save failed: {}", e);
+            let mut msg: HString<96> = HString::new();
+            let _ = write!(msg, "save failed: {}\n", e);
+            send_text(socket, "500 Internal Server Error", msg.as_bytes()).await;
+            return;
+        }
+        log::info!("fobs: deleted id={}", id);
+    }
+    send_redirect(socket, "/fobs").await;
 }

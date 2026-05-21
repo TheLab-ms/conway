@@ -30,10 +30,22 @@ pub async fn sync_with_conway(
     rt: &'static RuntimeConfig,
 ) {
     // Snapshot host + port from the live config so a `/config` POST that
-    // updates them takes effect on the next sync without restart.
+    // updates them takes effect on the next sync without restart. If the
+    // host has been cleared (standalone mode), there is nothing to sync.
     let (host_octets, host_port) = {
         let s = rt.settings.lock().await;
-        (s.conway_host, s.conway_port)
+        match s.conway_host {
+            Some(h) => (h, s.conway_port),
+            None => {
+                // Shouldn't happen normally - sync_task isn't spawned
+                // when host is None - but a hot config change could land
+                // us here. Drop pending events on the floor to avoid
+                // unbounded growth.
+                log::debug!("sync: standalone mode, skipping");
+                SYNC_COMPLETE.signal(());
+                return;
+            }
+        }
     };
     let host_str = {
         use core::fmt::Write;

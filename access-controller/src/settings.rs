@@ -21,11 +21,17 @@
 //!
 //! Settings serialization (all little-endian):
 //! ```text
-//!   ssid:  u8 length, then bytes (max 32)
-//!   pass:  u8 length, then bytes (max 64)
-//!   host:  4 bytes (IPv4 octets)
-//!   port:  u16
+//!   ssid:      u8 length, then bytes (max 32)
+//!   pass:      u8 length, then bytes (max 64)
+//!   host_flag: u8     (0 = standalone / no Conway, 1 = Some)
+//!   host:      4 bytes (IPv4 octets, only present if host_flag == 1)
+//!   port:      u16    (always present; meaningless when host_flag == 0)
 //! ```
+//!
+//! Version note: v1 stored `host` unconditionally without `host_flag`. v2
+//! makes Conway host optional. v1 records are ignored on load (a
+//! reflash-required migration anyway, since this change ships with the
+//! `fobs` partition table addition).
 //!
 //! Empty / unprovisioned state: a zero-length SSID. The boot path treats
 //! this (and "no valid record found") as "not provisioned" and brings up
@@ -43,7 +49,7 @@ const SECTOR: u32 = 4096;
 const SLOTS: [u32; 2] = [NVS_BASE, NVS_BASE + SECTOR];
 
 const MAGIC: u32 = 0x434F4E57; // "CONW"
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 const HEADER_LEN: usize = 20;
 
 pub const MAX_SSID: usize = 32;
@@ -53,16 +59,17 @@ pub const MAX_PASSWORD: usize = 64;
 pub struct Settings {
     pub ssid: String,
     pub password: String,
-    pub conway_host: [u8; 4],
+    /// IPv4 address of the Conway server. `None` => standalone mode: the
+    /// device boots, joins WiFi, serves the UI, and authorizes against the
+    /// local fob list only. `sync_task` is not spawned in that case.
+    pub conway_host: Option<[u8; 4]>,
     pub conway_port: u16,
 }
 
 impl Settings {
     /// Settings that boot the device into AP onboarding mode (empty SSID).
     pub fn defaults_from_env() -> Self {
-        let host = option_env!("CONWAY_HOST")
-            .and_then(parse_ipv4)
-            .unwrap_or([192, 168, 1, 1]);
+        let host = option_env!("CONWAY_HOST").and_then(parse_ipv4);
         Self {
             ssid: option_env!("CONWAY_SSID").unwrap_or("").into(),
             password: option_env!("CONWAY_PASSWORD").unwrap_or("").into(),
@@ -75,17 +82,22 @@ impl Settings {
         !self.ssid.is_empty()
     }
 
+    /// `true` when a Conway server is configured and `sync_task` should run.
+    pub fn conway_enabled(&self) -> bool {
+        self.conway_host.is_some()
+    }
+
     pub fn conway_host_str(&self) -> alloc::string::String {
         use core::fmt::Write;
         let mut s = alloc::string::String::new();
-        let _ = write!(
-            s,
-            "{}.{}.{}.{}",
-            self.conway_host[0],
-            self.conway_host[1],
-            self.conway_host[2],
-            self.conway_host[3]
-        );
+        match self.conway_host {
+            None => {
+                s.push_str("(standalone)");
+            }
+            Some(h) => {
+                let _ = write!(s, "{}.{}.{}.{}", h[0], h[1], h[2], h[3]);
+            }
+        }
         s
     }
 
@@ -94,7 +106,13 @@ impl Settings {
         out.extend_from_slice(&self.ssid.as_bytes()[..self.ssid.len().min(MAX_SSID)]);
         out.push(self.password.len().min(MAX_PASSWORD) as u8);
         out.extend_from_slice(&self.password.as_bytes()[..self.password.len().min(MAX_PASSWORD)]);
-        out.extend_from_slice(&self.conway_host);
+        match self.conway_host {
+            None => out.push(0),
+            Some(h) => {
+                out.push(1);
+                out.extend_from_slice(&h);
+            }
+        }
         out.extend_from_slice(&self.conway_port.to_le_bytes());
     }
 
@@ -116,17 +134,30 @@ impl Settings {
         let password = core::str::from_utf8(&buf[p..p + pw_len]).ok()?.into();
         p += pw_len;
 
-        if p + 6 > buf.len() {
+        let host_flag = *buf.get(p)?;
+        p += 1;
+        let conway_host = match host_flag {
+            0 => None,
+            1 => {
+                if p + 4 > buf.len() {
+                    return None;
+                }
+                let h = [buf[p], buf[p + 1], buf[p + 2], buf[p + 3]];
+                p += 4;
+                Some(h)
+            }
+            _ => return None,
+        };
+
+        if p + 2 > buf.len() {
             return None;
         }
-        let host = [buf[p], buf[p + 1], buf[p + 2], buf[p + 3]];
-        p += 4;
         let port = u16::from_le_bytes([buf[p], buf[p + 1]]);
 
         Some(Self {
             ssid,
             password,
-            conway_host: host,
+            conway_host,
             conway_port: port,
         })
     }

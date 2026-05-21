@@ -1,89 +1,79 @@
-# Access Controller v2
+# Conway Access Controller
 
-ESP32 door access controller firmware written in Rust using Embassy async. Reads Wiegand 26/34-bit RFID credentials, authenticates against the Conway fob API, and controls a door relay.
+ESP32 door access controller firmware written in Rust using Embassy async. Reads Wiegand 26/34-bit RFID credentials, authenticates against the Conway fob API (or a local fob list), and drives a door relay.
 
 ## Hardware
 
-- ESP32 (4MB flash)
-- Wiegand RFID reader on GPIO14 (D0) and GPIO27 (D1)
-- Door relay on GPIO25
+See [HARDWARE.md](HARDWARE.md) for pin map, power chain, and CN1 wiring.
 
 ## Requirements
 
-- [Rust ESP toolchain](https://docs.esp-rs.org/book/installation/index.html): `rustup +esp`
-- espflash: `cargo install espflash`
+- [Rust ESP toolchain](https://docs.esp-rs.org/book/installation/index.html) (`rustup +esp`). The installer also provides `xtensa-esp32-elf-gcc`, the linker referenced by `.cargo/config.toml`.
+- `espflash`: `cargo install espflash`
+- USB-serial driver for your board's bridge chip (CP2102 or CH340 — see HARDWARE.md).
+
+## First flash
+
+1. Connect the ESP32 via USB.
+2. From this directory, run:
+
+   ```bash
+   cargo run --release
+   ```
+
+   Per `.cargo/config.toml` this builds, flashes, and opens the serial monitor in one step.
+3. If auto-reset doesn't trigger, hold BOOT, tap RESET, release BOOT, then re-run.
+
+After flashing, press RESET (or power-cycle) and continue with **First boot** below.
+
+## First boot
+
+On first power-up (or after a factory reset) the device starts an open WiFi AP named `conway-XXXXXX`, where `XXXXXX` is the last 3 bytes of the MAC.
+
+1. Join the `conway-XXXXXX` network from a phone or laptop.
+2. Any browser request triggers a captive portal at <http://192.168.4.1/config> (all DNS is hijacked to the device).
+3. Enter your real WiFi SSID and password. Optionally enter the Conway server IPv4; leave it blank to run standalone.
+4. Save. The device reboots and joins your network over DHCP.
+
+Tip: find the device's new IP from your router's DHCP lease table or from the serial monitor (look for the `IPv4` line). The status page is then at `http://<ip>/`.
+
+## Physical controls
+
+- **CONFIG button, short press:** sync fobs with Conway immediately.
+- **CONFIG button, hold ≥ 5 s:** factory reset. Wipes WiFi credentials and the local fob list, then reboots into the onboarding AP.
+- **STATUS LED:** heartbeat indicates the firmware is running.
+
+See HARDWARE.md for the full controls and indicator table.
 
 ## Configuration
 
-Copy `network.env.example` to `network.env` and edit with your values:
+Primary configuration is the web UI at `http://<ip>/config` (also reachable via the onboarding captive portal). Settings are persisted in NVS.
 
-## Build and Flash
+`network.env` is *optional*: it lets you bake compile-time WiFi/Conway defaults into the firmware for development. Production users should leave it unset and provision via the onboarding portal above. See `network.env.example`. These values are `option_env!` fallbacks consulted only when NVS is empty (see `src/settings.rs`).
 
-```bash
-# Build
-source network.env && cargo run --release
-```
+## Local fobs and standalone mode
 
-## Deterministic simulation tests
+The controller can operate without a Conway backend — useful for small installations, lab setups, or as a fallback. Local fobs added via the HTTP UI always take precedence over the Conway-synced cache; a "standalone" deployment simply has no Conway cache at all.
 
-The crate's business-logic core (Wiegand frame decoders + the
-authorization state machine that drives `access_task`) is extracted into
-a small pure library that can be exercised on the host without any
-ESP32 hardware. Tests live in `tests/wiegand_decode.rs` and
-`tests/access_core.rs` and combine handwritten scenarios with
-`proptest`-based property tests over randomly generated event traces.
+To run standalone:
 
-Run them with the host toolchain (NOT the `esp` toolchain pinned by
-`rust-toolchain.toml`):
+1. Provision WiFi via the onboarding AP (or `/config`) as usual.
+2. On the `/config` form, leave the Conway Host field blank.
+3. Open `/fobs` and add fob IDs (with optional labels). Up to 128 entries are persisted in flash.
 
-```bash
-RUSTUP_TOOLCHAIN=stable cargo test \
-    --no-default-features --features sim \
-    --target x86_64-unknown-linux-gnu
-```
+In standalone mode:
 
-The `sim` feature gates the binary out (`required-features = ["esp32"]`)
-and makes all hardware deps optional, so only pure code and tests are
-compiled. Default `cargo build --release` for the firmware is
-unaffected.
+- Denied swipes apply the backoff schedule immediately (no remote recheck window, since there is no remote authority).
+- Access events are dropped rather than buffered.
+- The status page shows `(standalone)` for the Conway server.
 
-Properties currently proven include: no `OpenDoor` effect without a
-current fob-cache hit (A1/A2/A3); silent backoff window (A4); 10-second
-recheck deadline never grants past expiry (A5); every granted card swipe
-is accompanied by an `allowed:true` audit record; and Wiegand
-frame-parity / fob-format invariants (W1–W4).
+Local fobs work the same way in either mode: a local hit grants unconditionally. A local miss falls through to the remote cache (if Conway is configured); local cannot *revoke* a remote grant.
 
-## Flashing an ESP32
-
-1. Connect ESP32 via USB
-2. Hold BOOT button, press RESET, release BOOT (if auto-reset doesn't work)
-3. Run the flash command above
-4. After flashing, press RESET or power cycle
-
-The device will connect to WiFi, sync fobs from Conway, and begin accepting card scans.
+> **Upgrading from an older build:** reflash once over USB with `cargo run --release` so espflash writes the new partition table (adds the `fobs` data partition and `ota_0`/`ota_1`/`otadata` for OTA). All subsequent updates can use OTA.
 
 ## OTA (over-the-air) firmware updates
 
-After the first USB flash the device can be updated over the LAN — no
-USB cable required.
-
-### One-time migration (required before first OTA)
-
-OTA needs a custom partition table (`partitions.csv` in this directory)
-and otadata slot that a stock factory build does not have. The first
-time you upgrade a device from a pre-OTA build you MUST reflash over
-USB so espflash writes the new partition table:
-
-```bash
-source network.env && cargo run --release
-```
-
-`espflash.toml` pins espflash to `partitions.csv` so this Just Works.
-After this one USB flash, the device permanently has two app slots
-(`ota_0`, `ota_1`) and an `otadata` partition; all subsequent updates
-can go over the network.
-
-### Updating over the network
+After the first USB flash the device can be updated over the LAN — no USB cable required.
 
 Build the firmware image, then POST it as a raw binary body:
 
@@ -97,30 +87,36 @@ curl --data-binary @firmware.bin \
   http://<ip>/ota
 ```
 
-On success the device replies with `ok: activated ota_N (... bytes),
-rebooting` and reboots into the new image about 250 ms later.
+On success the device replies with `ok: activated ota_N (... bytes), rebooting` and reboots into the new image about 250 ms later.
 
-The status page at `http://<ip>/` also has a file-picker that uses the
-same endpoint, including a progress bar, and a "Roll back to previous
-slot" button (which POSTs to `/ota/rollback`).
-
-### Security model
-
-There is **no authentication** on the OTA endpoint. Anyone with TCP
-access to port 80 on the device can replace the firmware. Run these
-devices on a trusted management VLAN/SSID only.
+The status page at `http://<ip>/` also has a file-picker that uses the same endpoint, including a progress bar, and a "Roll back to previous slot" button (which POSTs to `/ota/rollback`).
 
 The only checks performed on upload are:
+
 - `Content-Length` must fit inside the inactive app slot (~1.9 MiB);
 - the first byte must be `0xE9` (ESP image magic);
 - the received byte count must match `Content-Length`.
 
 ### Rollback
 
-There is no automatic rollback. If a new image bricks WiFi/HTTP, the
-only recovery is a USB reflash. If a new image boots and is reachable
-but misbehaves, POST to `/ota/rollback` (or click the button on the
-status page) to flip `otadata` back to the previously running slot and
-reboot.
+There is no automatic rollback. If a new image bricks WiFi/HTTP, the only recovery is a USB reflash. If a new image boots and is reachable but misbehaves, POST to `/ota/rollback` (or click the button on the status page) to flip `otadata` back to the previously running slot and reboot.
 
+## Security
 
+There is **no authentication** on any HTTP endpoint — `/config`, `/unlock`, `/fobs`, `/ota`, and `/ota/rollback` are all open. Anyone with TCP access to port 80 on the device can change settings, unlock the door, or replace the firmware. Run these devices on a trusted management VLAN/SSID only.
+
+## Deterministic simulation tests
+
+The crate's business-logic core (Wiegand frame decoders + the authorization state machine that drives `access_task`) is extracted into a small pure library that can be exercised on the host without any ESP32 hardware. Tests live in `tests/wiegand_decode.rs` and `tests/access_core.rs` and combine handwritten scenarios with `proptest`-based property tests over randomly generated event traces.
+
+Run them with the host toolchain (NOT the `esp` toolchain pinned by `rust-toolchain.toml`):
+
+```bash
+RUSTUP_TOOLCHAIN=stable cargo test \
+    --no-default-features --features sim \
+    --target $(rustc -vV | sed -n 's|host: ||p')
+```
+
+The `sim` feature gates the binary out (`required-features = ["esp32"]`) and makes all hardware deps optional, so only pure code and tests are compiled. Default `cargo build --release` for the firmware is unaffected.
+
+Properties currently proven include: no `OpenDoor` effect without a current fob-cache hit (A1/A2/A3); silent backoff window (A4); 10-second recheck deadline never grants past expiry (A5); every granted card swipe is accompanied by an `allowed:true` audit record; and Wiegand frame-parity / fob-format invariants (W1–W4).

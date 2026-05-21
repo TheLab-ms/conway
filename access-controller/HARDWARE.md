@@ -118,9 +118,9 @@ the **external** pull-up + debounce cap rather than an internal pull.
   - Fast 5× flash immediately before a CONFIG-button factory-reset reboot.
 - **CONFIG button** (GPIO35, active-LOW):
   - **Short press** (≥50 ms, <5 s): requests an on-demand Conway sync.
-  - **Long hold** (≥5 s): logs a factory-reset placeholder and reboots via
-    `esp_hal::system::software_reset()`. (Actual factory-reset state-clearing
-    is not yet implemented.)
+  - **Long hold** (≥5 s): Holding CONFIG for ≥5 seconds wipes both the `nvs`
+    partition (WiFi credentials + Conway host) and the `fobs` partition (local
+    fob list), then reboots into onboarding AP mode.
 
 ## Firmware caveats / things to remember
 
