@@ -131,3 +131,42 @@ the **external** pull-up + debounce cap rather than an internal pull.
 - There is no on-board flyback diode for the relay (see above).
 - The DevKit's on-board USB-UART (CP2102 / CH340 depending on revision)
   handles flashing; the carrier board exposes no USB of its own.
+
+## At-rest encryption / device provisioning
+
+The firmware encrypts both persistent partitions (`nvs` for WiFi+Conway
+host settings, `fobs` for the local fob list) with ChaCha20-Poly1305
+keys derived from a per-device 32-byte root in eFuse **BLOCK3**.
+
+Each unit must be provisioned **exactly once** with `tools/provision-device-key.sh`
+(see `tools/README.md`). This is normally a factory step:
+
+```sh
+./tools/provision-device-key.sh /dev/ttyUSB0    # device in download mode
+```
+
+Until that runs, the firmware boots in "unprovisioned" mode: it logs a
+loud warning, loads return empty, and saves return an error. After
+provisioning, encrypted persistence becomes available on the next boot.
+
+### Threat model — what this defends
+
+- ✅ **`espflash read-flash` of a stolen unit**: flash dump yields
+  only ciphertext for `nvs` and `fobs`; WiFi PSK and fob list cannot
+  be recovered from the dump alone.
+- ❌ **`espefuse.py summary` over UART download mode**: BLOCK3 is
+  *not* read-protected (RD_DIS is not set). It cannot be — the ESP32
+  classic AES peripheral has no BLOCK3 key-feeder, so the CPU must
+  remain able to read the key in order to derive the AEAD sub-keys.
+  An attacker with download-mode access recovers the key in cleartext.
+- ❌ **Code execution on a running device**: derived sub-keys live in
+  RAM.
+- ❌ **Modified/malicious firmware**: OTA is currently **unsigned**.
+  This is the next weakest link after flash encryption; if you need a
+  stronger trust boundary, both signing OTA and enabling ESP32 native
+  flash encryption + Secure Boot v1 are required.
+
+For threat models that include UART-bootloader attackers, enable
+ESP32 native flash encryption + Secure Boot v1 instead. That moves
+the root key into BLOCK1/BLOCK2 where even the CPU cannot read it
+(only the flash-encryption peripheral consumes it).

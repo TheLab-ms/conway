@@ -19,6 +19,14 @@ required-features = ["esp32"]
 heapless = "0.8"
 log = "0.4"
 
+# Crypto for at-rest encryption of fobs + network config. All pure-Rust,
+# constant-time, no_std-compatible. Available to both firmware and host
+# `sim` tests so `crypto` round-trip tests can run on the host.
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+hkdf             = { version = "0.12", default-features = false }
+sha2             = { version = "0.10", default-features = false }
+zeroize          = { version = "1.7",  default-features = false }
+
 # Firmware-only deps (only present when the `esp32` feature is enabled)
 esp-hal = { version = "1.0", features = ["unstable", "rt"], optional = true }
 esp-radio = { version = "0.17", default-features = false, features = ["wifi", "smoltcp", "log-04", "unstable"], optional = true }
@@ -78,4 +86,11 @@ lto = true
 # esp-storage's ROM-call shims require opt-level >= 2 to inline correctly;
 # building it at "s" panics at compile time.
 [profile.release.package.esp-storage]
+opt-level = 3
+
+# Keep AEAD + hash hot loops at -O3 for sane code size and speed; the
+# default release "s" inlines poorly and bloats both stores' boot path.
+[profile.release.package.chacha20poly1305]
+opt-level = 3
+[profile.release.package.sha2]
 opt-level = 3

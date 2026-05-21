@@ -1,36 +1,61 @@
 //! Persistent local fob list, stored in the dedicated `fobs` partition.
 //!
-//! Same ping-pong + CRC design as `settings.rs`, but for a list of
-//! `(fob_id, label)` records that the operator can edit via the HTTP UI.
+//! ## Layout
 //!
-//! Local fobs are checked **before** the Conway-synced cache and always
-//! grant access regardless of Conway state. They survive reboots; the
-//! Conway cache does not.
+//! Same ping-pong + monotonic-seq design as `settings.rs`: two 4 KiB
+//! sectors at the start of the `fobs` partition, written alternately so
+//! a power loss mid-write always leaves the previous-good sector intact.
 //!
-//! Partition (see `partitions.csv`):
-//!   `fobs, data, nvs, 0x11000, 0xF000`  (60 KiB)
+//! ## Confidentiality
 //!
-//! We use only the first two 4 KiB sectors of that partition for the
-//! ping-pong; the remaining 52 KiB is reserved for future growth (larger
-//! lists, audit-log persistence, etc.).
+//! Each sector now stores an encrypted record under
+//! ChaCha20-Poly1305 with a per-device key derived from eFuse BLOCK3
+//! (see [`crate::device_key`] for threat model). The CRC-32 of the
+//! v1 layout has been replaced by the Poly1305 tag, which is strictly
+//! stronger (it also authenticates the header, defending against
+//! cross-sector and cross-partition splicing attacks).
 //!
-//! Record format inside a sector (all little-endian):
+//! Envelope is defined by [`crate::crypto`]:
 //! ```text
-//!   0..4    magic = 0x46_4F_42_53  ("FOBS")
-//!   4..8    version = 1
-//!   8..12   seq (monotonic counter, wraps at u32::MAX)
-//!   12..14  count (number of entries)
-//!   14..16  reserved (0)
-//!   16..20  crc32 (IEEE) over [0..16] + entries (with crc field as 0)
-//!   20..    entries, each:
-//!             id:        u32  (4 bytes)
-//!             label_len: u8   (1 byte, 0..=MAX_LABEL_LEN)
-//!             label:     UTF-8 bytes (label_len)
+//!   [header(32)] [ciphertext(N)] [tag(16)]
+//!   header = magic("FOBS") | version=3 | seq u64 | payload_len u16
+//!          | reserved(2) | nonce(12 = seq_le8 || "FOB1")
 //! ```
+//!
+//! ## Plaintext payload
+//!
+//! Identical to the previous (v1) format, sans the outer 20-byte CRC
+//! header. A repeated sequence of `(id: u32 LE, label_len: u8, label: utf8)`:
+//!
+//! ```text
+//!   count u16 LE
+//!   repeat count times:
+//!     id u32 LE
+//!     label_len u8
+//!     label utf8[label_len]
+//! ```
+//!
+//! ## Behavior when device key is not provisioned
+//!
+//! [`load`] returns an empty `Vec`. [`save`] returns
+//! `Err("device not provisioned")`. Operator is responsible for running
+//! `tools/provision-device-key.sh` once per unit. See
+//! `crate::device_key` docs for the full provisioning story.
+//!
+//! ## Migration from older firmware
+//!
+//! There is none. Bumping from v1 to v3 is a breaking change — operators
+//! must perform a factory wipe (long-press CONFIG ≥ 5 s) after upgrading
+//! firmware on a previously-provisioned device. This was an explicit
+//! design choice to keep this module simple and to eliminate a
+//! plaintext-fallback codepath that would silently degrade security.
 
 use embedded_storage::{ReadStorage, Storage};
 use esp_storage::FlashStorage;
 use heapless::{String as HString, Vec as HVec};
+
+use crate::device_key;
+use access_controller::crypto;
 
 /// Start of the `fobs` partition. Keep in sync with `partitions.csv`.
 const FOBS_BASE: u32 = 0x11000;
@@ -39,17 +64,19 @@ const SECTOR: u32 = 4096;
 /// Ping-pong: first two sectors of the partition.
 const SLOTS: [u32; 2] = [FOBS_BASE, FOBS_BASE + SECTOR];
 
+/// Per-store magic (preserved across format versions for log clarity).
 const MAGIC: u32 = 0x46_4F_42_53; // "FOBS"
-const VERSION: u32 = 1;
-const HEADER_LEN: usize = 20;
 
 /// Maximum number of local fobs. Each entry is at most 4 + 1 + 16 = 21
-/// bytes, so 128 entries + 20 byte header = 2708 bytes, comfortably
-/// inside one 4 KiB sector.
+/// bytes; the count prefix adds 2; envelope adds 48; total worst case
+/// 2 + 128·21 + 48 = 2738 B, comfortably inside a 4 KiB sector.
 pub const MAX_LOCAL_FOBS: usize = 128;
 
 /// Maximum label length in bytes (UTF-8).
 pub const MAX_LABEL_LEN: usize = 16;
+
+/// Plaintext payload upper bound (count prefix + max entries).
+const MAX_PLAINTEXT: usize = 2 + MAX_LOCAL_FOBS * (4 + 1 + MAX_LABEL_LEN);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalFob {
@@ -57,28 +84,13 @@ pub struct LocalFob {
     pub label: HString<MAX_LABEL_LEN>,
 }
 
-fn crc32(bytes: &[u8]) -> u32 {
-    // Same plain IEEE CRC-32 as settings.rs (table-less).
-    let mut crc: u32 = 0xFFFF_FFFF;
-    for &b in bytes {
-        crc ^= b as u32;
-        for _ in 0..8 {
-            let mask = (crc & 1).wrapping_neg();
-            crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
-        }
-    }
-    !crc
-}
-
-struct Record {
-    seq: u32,
-    count: usize,
-    payload: alloc::vec::Vec<u8>,
-}
+// ---------- plaintext serialization -----------------------------------
 
 fn serialize(fobs: &[LocalFob]) -> alloc::vec::Vec<u8> {
-    let mut out = alloc::vec::Vec::with_capacity(fobs.len() * (4 + 1 + MAX_LABEL_LEN));
-    for f in fobs {
+    let mut out = alloc::vec::Vec::with_capacity(2 + fobs.len() * (4 + 1 + MAX_LABEL_LEN));
+    let n = fobs.len().min(MAX_LOCAL_FOBS) as u16;
+    out.extend_from_slice(&n.to_le_bytes());
+    for f in fobs.iter().take(n as usize) {
         out.extend_from_slice(&f.id.to_le_bytes());
         let bytes = f.label.as_bytes();
         let len = bytes.len().min(MAX_LABEL_LEN) as u8;
@@ -88,9 +100,16 @@ fn serialize(fobs: &[LocalFob]) -> alloc::vec::Vec<u8> {
     out
 }
 
-fn deserialize(buf: &[u8], count: usize) -> Option<HVec<LocalFob, MAX_LOCAL_FOBS>> {
+fn deserialize(buf: &[u8]) -> Option<HVec<LocalFob, MAX_LOCAL_FOBS>> {
+    if buf.len() < 2 {
+        return None;
+    }
+    let count = u16::from_le_bytes([buf[0], buf[1]]) as usize;
+    if count > MAX_LOCAL_FOBS {
+        return None;
+    }
     let mut out: HVec<LocalFob, MAX_LOCAL_FOBS> = HVec::new();
-    let mut p = 0usize;
+    let mut p = 2usize;
     for _ in 0..count {
         if p + 5 > buf.len() {
             return None;
@@ -106,103 +125,73 @@ fn deserialize(buf: &[u8], count: usize) -> Option<HVec<LocalFob, MAX_LOCAL_FOBS
         p += label_len;
         let mut label: HString<MAX_LABEL_LEN> = HString::new();
         label.push_str(label_str).ok()?;
-        if out.push(LocalFob { id, label }).is_err() {
-            log::warn!("fob_store: truncated load at MAX_LOCAL_FOBS={}", MAX_LOCAL_FOBS);
-            break;
-        }
+        // Push cannot fail because count <= MAX_LOCAL_FOBS.
+        let _ = out.push(LocalFob { id, label });
     }
     Some(out)
 }
 
-fn read_slot(flash: &mut FlashStorage, base: u32) -> Option<Record> {
-    let mut hdr = [0u8; HEADER_LEN];
-    flash.read(base, &mut hdr).ok()?;
-    let magic = u32::from_le_bytes([hdr[0], hdr[1], hdr[2], hdr[3]]);
-    if magic != MAGIC {
-        return None;
-    }
-    let version = u32::from_le_bytes([hdr[4], hdr[5], hdr[6], hdr[7]]);
-    if version != VERSION {
-        return None;
-    }
-    let seq = u32::from_le_bytes([hdr[8], hdr[9], hdr[10], hdr[11]]);
-    let count = u16::from_le_bytes([hdr[12], hdr[13]]) as usize;
-    let stored_crc = u32::from_le_bytes([hdr[16], hdr[17], hdr[18], hdr[19]]);
+// ---------- sector I/O ------------------------------------------------
 
-    // Payload upper bound for capacity check.
-    let max_payload = SECTOR as usize - HEADER_LEN;
-    let est_payload = count.saturating_mul(4 + 1 + MAX_LABEL_LEN);
-    if est_payload > max_payload {
-        return None;
-    }
-
-    // We can't know exact payload length without parsing, so read up to
-    // the per-record upper bound. Trim later during deserialization.
-    let read_len = est_payload.min(max_payload);
-    let mut payload = alloc::vec![0u8; read_len];
-    if read_len > 0 {
-        flash.read(base + HEADER_LEN as u32, &mut payload).ok()?;
-    }
-
-    // CRC is computed over header (with crc zeroed) + the actual variable
-    // payload. We don't know the *actual* length without parsing, so we
-    // compute progressively: parse, then verify CRC against the parsed
-    // prefix length.
-    let parsed = deserialize(&payload, count)?;
-    let used = serialized_len(&parsed);
-    if used > payload.len() {
-        return None;
-    }
-    let mut hdr_for_crc = hdr;
-    hdr_for_crc[16..20].copy_from_slice(&[0, 0, 0, 0]);
-    let mut crc_input = alloc::vec::Vec::with_capacity(HEADER_LEN + used);
-    crc_input.extend_from_slice(&hdr_for_crc);
-    crc_input.extend_from_slice(&payload[..used]);
-    if crc32(&crc_input) != stored_crc {
-        log::warn!("fob_store: slot @0x{:X} CRC mismatch", base);
-        return None;
-    }
-
-    Some(Record {
-        seq,
-        count,
-        payload: payload[..used].to_vec(),
-    })
+struct Record {
+    seq: u64,
+    payload: alloc::vec::Vec<u8>,
 }
 
-fn serialized_len(fobs: &[LocalFob]) -> usize {
-    fobs.iter().map(|f| 4 + 1 + f.label.len()) .sum()
+fn read_slot(flash: &mut FlashStorage, base: u32, key: &[u8; 32]) -> Option<Record> {
+    // Read header first to learn payload_len, then read the rest.
+    let mut hdr = [0u8; crypto::HEADER_LEN];
+    flash.read(base, &mut hdr).ok()?;
+    let (seq, payload_len) = crypto::parse_header(&hdr, MAGIC, crypto::DOMAIN_FOBS)?;
+    let pt_len = payload_len as usize;
+    if pt_len > MAX_PLAINTEXT
+        || crypto::HEADER_LEN + pt_len + crypto::TAG_LEN > SECTOR as usize
+    {
+        return None;
+    }
+
+    let total = crypto::HEADER_LEN + pt_len + crypto::TAG_LEN;
+    let mut sealed = alloc::vec![0u8; total];
+    flash.read(base, &mut sealed).ok()?;
+
+    let mut plaintext = alloc::vec![0u8; pt_len];
+    match crypto::open(key, MAGIC, crypto::DOMAIN_FOBS, &sealed, &mut plaintext) {
+        Ok(_n) => Some(Record { seq, payload: plaintext }),
+        Err(e) => {
+            log::warn!("fob_store: slot @0x{:X} AEAD open failed: {:?}", base, e);
+            None
+        }
+    }
 }
 
 fn write_slot(
     flash: &mut FlashStorage,
     base: u32,
-    seq: u32,
+    seq: u64,
     fobs: &[LocalFob],
+    key: &[u8; 32],
 ) -> Result<(), &'static str> {
-    let payload = serialize(fobs);
-    if HEADER_LEN + payload.len() > SECTOR as usize {
+    let plaintext = serialize(fobs);
+    if plaintext.len() > MAX_PLAINTEXT {
+        return Err("payload too large");
+    }
+    let total = crypto::HEADER_LEN + plaintext.len() + crypto::TAG_LEN;
+    if total > SECTOR as usize {
         return Err("payload too large");
     }
     if fobs.len() > u16::MAX as usize {
         return Err("too many fobs");
     }
 
+    // Build full sector buffer so the underlying FlashStorage write is a
+    // single sector-aligned erase+program. Unused tail stays 0xFF so a
+    // future shorter record's read past payload_len cannot leak stale
+    // ciphertext (the AEAD never reads past the declared len anyway).
     let mut buf = alloc::vec![0xFFu8; SECTOR as usize];
-    buf[0..4].copy_from_slice(&MAGIC.to_le_bytes());
-    buf[4..8].copy_from_slice(&VERSION.to_le_bytes());
-    buf[8..12].copy_from_slice(&seq.to_le_bytes());
-    buf[12..14].copy_from_slice(&(fobs.len() as u16).to_le_bytes());
-    buf[14..16].copy_from_slice(&[0, 0]);
-    buf[16..20].copy_from_slice(&[0, 0, 0, 0]); // crc placeholder
-    buf[HEADER_LEN..HEADER_LEN + payload.len()].copy_from_slice(&payload);
+    crypto::seal(key, MAGIC, seq, crypto::DOMAIN_FOBS, &plaintext, &mut buf[..total])
+        .map_err(|_| "crypto seal failed")?;
 
-    let crc = crc32(&buf[..HEADER_LEN + payload.len()]);
-    buf[16..20].copy_from_slice(&crc.to_le_bytes());
-
-    flash
-        .write(base, &buf)
-        .map_err(|_| "flash write failed")?;
+    flash.write(base, &buf).map_err(|_| "flash write failed")?;
     Ok(())
 }
 
@@ -211,15 +200,43 @@ fn erase_slot(flash: &mut FlashStorage, base: u32) -> Result<(), &'static str> {
     flash.write(base, &blank).map_err(|_| "flash erase failed")
 }
 
+/// Read just the 32-byte envelope header from a slot and return its
+/// `seq` if the header is structurally valid (magic / version / nonce
+/// consistent), regardless of whether the AEAD body decrypts.
+///
+/// Used by [`save`] to derive `next_seq`: if a previous save was
+/// interrupted mid-write, the half-written slot's tag/ciphertext will
+/// fail to open and `read_slot` returns `None`, but the header itself
+/// is the first thing written and is almost always intact. Skipping
+/// such a slot when picking `next_seq` would let a retry reuse the same
+/// nonce with different plaintext — catastrophic for ChaCha20-Poly1305.
+/// Parsing the header recovers the seq cheaply and closes that gap.
+fn peek_slot_seq(flash: &mut FlashStorage, base: u32) -> Option<u64> {
+    let mut hdr = [0u8; crypto::HEADER_LEN];
+    flash.read(base, &mut hdr).ok()?;
+    crypto::parse_header(&hdr, MAGIC, crypto::DOMAIN_FOBS).map(|(seq, _)| seq)
+}
+
+// ---------- public API ------------------------------------------------
+
 /// Load the most recent valid local-fob list. Returns an empty list if
-/// neither slot contains a valid record (== never written, or wiped).
+/// neither slot contains a valid encrypted record, or if the device is
+/// not yet provisioned with a per-device key.
 pub fn load() -> HVec<LocalFob, MAX_LOCAL_FOBS> {
+    let Some(key) = device_key::fobs_key() else {
+        if device_key::state() != device_key::KeyState::Uninit {
+            log::warn!("fob_store: device unprovisioned, skipping load");
+        }
+        return HVec::new();
+    };
     let mut flash = FlashStorage::new();
-    let a = read_slot(&mut flash, SLOTS[0]);
-    let b = read_slot(&mut flash, SLOTS[1]);
+    let a = read_slot(&mut flash, SLOTS[0], key);
+    let b = read_slot(&mut flash, SLOTS[1], key);
     let winner = match (a, b) {
         (Some(a), Some(b)) => {
-            if a.seq.wrapping_sub(b.seq) as i32 >= 0 {
+            // Signed diff handles u64 wraparound (irrelevant in practice
+            // — saves are operator-driven — but free correctness).
+            if (a.seq.wrapping_sub(b.seq)) as i64 >= 0 {
                 a
             } else {
                 b
@@ -229,33 +246,52 @@ pub fn load() -> HVec<LocalFob, MAX_LOCAL_FOBS> {
         (None, Some(b)) => b,
         (None, None) => return HVec::new(),
     };
-    deserialize(&winner.payload, winner.count).unwrap_or_default()
+    deserialize(&winner.payload).unwrap_or_default()
 }
 
 /// Persist new fob list. Writes to the older slot, then erases the other.
+/// Returns an error if the device is not yet provisioned.
 pub fn save(fobs: &[LocalFob]) -> Result<(), &'static str> {
+    let Some(key) = device_key::fobs_key() else {
+        return Err("device not provisioned (eFuse BLOCK3 unset)");
+    };
     let mut flash = FlashStorage::new();
-    let a = read_slot(&mut flash, SLOTS[0]);
-    let b = read_slot(&mut flash, SLOTS[1]);
+    let a = read_slot(&mut flash, SLOTS[0], key);
+    let b = read_slot(&mut flash, SLOTS[1], key);
 
-    let (write_idx, next_seq) = match (&a, &b) {
-        (None, _) => (0, b.as_ref().map(|r| r.seq.wrapping_add(1)).unwrap_or(1)),
-        (Some(_), None) => (1, a.as_ref().unwrap().seq.wrapping_add(1)),
+    // Pick write slot based on which successfully-opened slot is older
+    // (or use slot 0 if neither opens).
+    let write_idx: u8 = match (&a, &b) {
+        (None, None) => 0,
+        (None, Some(_)) => 0,
+        (Some(_), None) => 1,
         (Some(ra), Some(rb)) => {
-            if ra.seq.wrapping_sub(rb.seq) as i32 >= 0 {
-                (1, ra.seq.wrapping_add(1))
+            if (ra.seq.wrapping_sub(rb.seq)) as i64 >= 0 {
+                1
             } else {
-                (0, rb.seq.wrapping_add(1))
+                0
             }
         }
     };
 
-    write_slot(&mut flash, SLOTS[write_idx], next_seq, fobs)?;
-    let other = 1 - write_idx;
+    // Compute next_seq from ANY parseable header (open success not
+    // required) to avoid nonce reuse after an interrupted prior save.
+    // See H1 in the security review and `peek_slot_seq` docs above.
+    let seq_a = peek_slot_seq(&mut flash, SLOTS[0]);
+    let seq_b = peek_slot_seq(&mut flash, SLOTS[1]);
+    let max_hdr_seq = match (seq_a, seq_b) {
+        (Some(x), Some(y)) => Some(if (x.wrapping_sub(y)) as i64 >= 0 { x } else { y }),
+        (Some(x), None) | (None, Some(x)) => Some(x),
+        (None, None) => None,
+    };
+    let next_seq = max_hdr_seq.map(|s| s.wrapping_add(1)).unwrap_or(1u64);
+
+    write_slot(&mut flash, SLOTS[write_idx as usize], next_seq, fobs, key)?;
+    let other = (1 - write_idx) as usize;
     let _ = erase_slot(&mut flash, SLOTS[other]);
 
     log::info!(
-        "fob_store: saved seq={} to slot {} ({} fobs)",
+        "fob_store: saved seq={} to slot {} ({} fobs, encrypted)",
         next_seq,
         write_idx,
         fobs.len()
@@ -263,7 +299,8 @@ pub fn save(fobs: &[LocalFob]) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// Wipe both slots.
+/// Wipe both slots. Always succeeds even if the device is unprovisioned
+/// (factory reset must work on broken units too).
 pub fn erase() -> Result<(), &'static str> {
     let mut flash = FlashStorage::new();
     erase_slot(&mut flash, SLOTS[0])?;

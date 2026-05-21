@@ -8,18 +8,16 @@
 //! highest sequence number wins. This gives single-shot wear leveling and
 //! crash-safe atomic updates without pulling in a full K/V store.
 //!
-//! Record format inside a sector (all little-endian):
-//! ```text
-//!   0..4    magic = 0x434F4E57  ("CONW")
-//!   4..8    version = 1
-//!   8..12   seq (monotonic counter, wraps at u32::MAX)
-//!   12..14  payload length (bytes)
-//!   14..16  reserved (0)
-//!   16..20  crc32 (IEEE) over [0..16] + payload (with crc field as 0)
-//!   20..    payload (Settings serialization)
-//! ```
+//! ## Encryption (v3)
 //!
-//! Settings serialization (all little-endian):
+//! Each sector stores a record encrypted under ChaCha20-Poly1305 with a
+//! per-device sub-key derived from eFuse BLOCK3 (see
+//! [`crate::device_key`]). Envelope format is defined in
+//! [`crate::crypto`]; the Poly1305 tag has fully replaced the v1/v2
+//! CRC-32 (the tag also authenticates the 32-byte header as AAD,
+//! preventing cross-sector / cross-partition splicing).
+//!
+//! Plaintext payload format is unchanged from v2 (all little-endian):
 //! ```text
 //!   ssid:      u8 length, then bytes (max 32)
 //!   pass:      u8 length, then bytes (max 64)
@@ -28,18 +26,26 @@
 //!   port:      u16    (always present; meaningless when host_flag == 0)
 //! ```
 //!
-//! Version note: v1 stored `host` unconditionally without `host_flag`. v2
-//! makes Conway host optional. v1 records are ignored on load (a
-//! reflash-required migration anyway, since this change ships with the
-//! `fobs` partition table addition).
+//! ## Migration note
 //!
-//! Empty / unprovisioned state: a zero-length SSID. The boot path treats
-//! this (and "no valid record found") as "not provisioned" and brings up
-//! the device in AP onboarding mode.
+//! v1/v2 plaintext records are **not** accepted. Upgrading firmware on a
+//! previously-provisioned device requires a factory wipe (long-press
+//! CONFIG ≥ 5 s) and re-onboarding. This was an explicit design choice
+//! over a backward-compatible plaintext-fallback codepath.
+//!
+//! ## Unprovisioned behavior
+//!
+//! [`load`] returns `None` (which the boot path already handles by
+//! falling back to compile-time `option_env!` defaults / AP onboarding).
+//! [`save`] returns an error. Provision via
+//! `tools/provision-device-key.sh` once per unit.
 
 use alloc::string::String;
 use embedded_storage::{ReadStorage, Storage};
 use esp_storage::FlashStorage;
+
+use crate::device_key;
+use access_controller::crypto;
 
 /// First byte of the `nvs` partition (see `partitions.csv`).
 const NVS_BASE: u32 = 0x9000;
@@ -49,11 +55,13 @@ const SECTOR: u32 = 4096;
 const SLOTS: [u32; 2] = [NVS_BASE, NVS_BASE + SECTOR];
 
 const MAGIC: u32 = 0x434F4E57; // "CONW"
-const VERSION: u32 = 2;
-const HEADER_LEN: usize = 20;
 
 pub const MAX_SSID: usize = 32;
 pub const MAX_PASSWORD: usize = 64;
+
+/// Plaintext payload upper bound: 1+32 (ssid) + 1+64 (pw) + 1 (flag)
+/// + 4 (host) + 2 (port) = 105. Round up for safety/headroom.
+const MAX_PLAINTEXT: usize = 128;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -163,113 +171,84 @@ impl Settings {
     }
 }
 
-fn crc32(bytes: &[u8]) -> u32 {
-    // Plain IEEE 802.3 polynomial CRC-32, table-less so we don't pay any
-    // .rodata cost. ~1us per record on the ESP32 - irrelevant.
-    let mut crc: u32 = 0xFFFF_FFFF;
-    for &b in bytes {
-        crc ^= b as u32;
-        for _ in 0..8 {
-            let mask = (crc & 1).wrapping_neg();
-            crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
-        }
-    }
-    !crc
-}
-
-/// One stored record (header + payload), in-memory.
 struct Record {
-    seq: u32,
+    seq: u64,
     payload: alloc::vec::Vec<u8>,
 }
 
-fn read_slot(flash: &mut FlashStorage, base: u32) -> Option<Record> {
-    let mut hdr = [0u8; HEADER_LEN];
+fn read_slot(flash: &mut FlashStorage, base: u32, key: &[u8; 32]) -> Option<Record> {
+    let mut hdr = [0u8; crypto::HEADER_LEN];
     flash.read(base, &mut hdr).ok()?;
-    let magic = u32::from_le_bytes([hdr[0], hdr[1], hdr[2], hdr[3]]);
-    if magic != MAGIC {
-        return None;
-    }
-    let version = u32::from_le_bytes([hdr[4], hdr[5], hdr[6], hdr[7]]);
-    if version != VERSION {
-        return None;
-    }
-    let seq = u32::from_le_bytes([hdr[8], hdr[9], hdr[10], hdr[11]]);
-    let len = u16::from_le_bytes([hdr[12], hdr[13]]) as usize;
-    if len > (SECTOR as usize - HEADER_LEN) {
-        return None;
-    }
-    let stored_crc = u32::from_le_bytes([hdr[16], hdr[17], hdr[18], hdr[19]]);
-
-    let mut payload = alloc::vec![0u8; len];
-    if len > 0 {
-        flash.read(base + HEADER_LEN as u32, &mut payload).ok()?;
-    }
-
-    // Recompute CRC over header (with crc field zeroed) + payload.
-    let mut hdr_for_crc = hdr;
-    hdr_for_crc[16..20].copy_from_slice(&[0, 0, 0, 0]);
-    let mut crc_input = alloc::vec::Vec::with_capacity(HEADER_LEN + len);
-    crc_input.extend_from_slice(&hdr_for_crc);
-    crc_input.extend_from_slice(&payload);
-    let calc = crc32(&crc_input);
-    if calc != stored_crc {
-        log::warn!("settings: slot @0x{:X} CRC mismatch", base);
+    let (seq, payload_len) = crypto::parse_header(&hdr, MAGIC, crypto::DOMAIN_SETTINGS)?;
+    let pt_len = payload_len as usize;
+    if pt_len > MAX_PLAINTEXT
+        || crypto::HEADER_LEN + pt_len + crypto::TAG_LEN > SECTOR as usize
+    {
         return None;
     }
 
-    Some(Record { seq, payload })
+    let total = crypto::HEADER_LEN + pt_len + crypto::TAG_LEN;
+    let mut sealed = alloc::vec![0u8; total];
+    flash.read(base, &mut sealed).ok()?;
+
+    let mut plaintext = alloc::vec![0u8; pt_len];
+    match crypto::open(key, MAGIC, crypto::DOMAIN_SETTINGS, &sealed, &mut plaintext) {
+        Ok(_n) => Some(Record { seq, payload: plaintext }),
+        Err(e) => {
+            log::warn!("settings: slot @0x{:X} AEAD open failed: {:?}", base, e);
+            None
+        }
+    }
 }
 
 fn write_slot(
     flash: &mut FlashStorage,
     base: u32,
-    seq: u32,
+    seq: u64,
     payload: &[u8],
+    key: &[u8; 32],
 ) -> Result<(), &'static str> {
-    if HEADER_LEN + payload.len() > SECTOR as usize {
+    let total = crypto::HEADER_LEN + payload.len() + crypto::TAG_LEN;
+    if total > SECTOR as usize {
         return Err("payload too large");
     }
-
-    // Build the full sector buffer so the underlying FlashStorage write is
-    // a single sector-aligned operation (it would otherwise read-modify-
-    // erase-write internally, which is fine but wasteful).
     let mut buf = alloc::vec![0xFFu8; SECTOR as usize];
-    buf[0..4].copy_from_slice(&MAGIC.to_le_bytes());
-    buf[4..8].copy_from_slice(&VERSION.to_le_bytes());
-    buf[8..12].copy_from_slice(&seq.to_le_bytes());
-    buf[12..14].copy_from_slice(&(payload.len() as u16).to_le_bytes());
-    buf[14..16].copy_from_slice(&[0, 0]);
-    buf[16..20].copy_from_slice(&[0, 0, 0, 0]); // crc placeholder
-    buf[HEADER_LEN..HEADER_LEN + payload.len()].copy_from_slice(payload);
-
-    let crc = crc32(&buf[..HEADER_LEN + payload.len()]);
-    buf[16..20].copy_from_slice(&crc.to_le_bytes());
-
-    flash
-        .write(base, &buf)
-        .map_err(|_| "flash write failed")?;
-    Ok(())
+    crypto::seal(key, MAGIC, seq, crypto::DOMAIN_SETTINGS, payload, &mut buf[..total])
+        .map_err(|_| "crypto seal failed")?;
+    flash.write(base, &buf).map_err(|_| "flash write failed")
 }
 
 fn erase_slot(flash: &mut FlashStorage, base: u32) -> Result<(), &'static str> {
-    // Writing all-0xFF performs an erase + write under the hood for
-    // FlashStorage, but to be explicit we just write a blank sector so
-    // the magic check fails on next read.
     let blank = alloc::vec![0xFFu8; SECTOR as usize];
     flash.write(base, &blank).map_err(|_| "flash erase failed")
 }
 
+/// Read just the 32-byte envelope header from a slot and return its
+/// `seq` if the header is structurally valid (magic / version / nonce
+/// consistent), regardless of whether the AEAD body decrypts.
+///
+/// Used by [`save`] to derive `next_seq` so an interrupted prior save's
+/// half-written slot — whose body fails to open but whose header is
+/// intact — still bumps the counter. Without this, the retry could
+/// reuse the same `(seq, domain)` nonce with different plaintext, which
+/// is fatal for ChaCha20-Poly1305. See H1 in the security review.
+fn peek_slot_seq(flash: &mut FlashStorage, base: u32) -> Option<u64> {
+    let mut hdr = [0u8; crypto::HEADER_LEN];
+    flash.read(base, &mut hdr).ok()?;
+    crypto::parse_header(&hdr, MAGIC, crypto::DOMAIN_SETTINGS).map(|(seq, _)| seq)
+}
+
 /// Load the most recent valid settings record. Returns `None` if neither
-/// sector contains a valid record (== never provisioned, or wiped).
+/// sector contains a valid record (== never provisioned, or wiped), or
+/// if the device key is unavailable.
 pub fn load() -> Option<Settings> {
+    let key = device_key::settings_key()?;
     let mut flash = FlashStorage::new();
-    let a = read_slot(&mut flash, SLOTS[0]);
-    let b = read_slot(&mut flash, SLOTS[1]);
+    let a = read_slot(&mut flash, SLOTS[0], key);
+    let b = read_slot(&mut flash, SLOTS[1], key);
     let winner = match (a, b) {
         (Some(a), Some(b)) => {
-            // Choose by signed seq diff so wraparound is handled.
-            if a.seq.wrapping_sub(b.seq) as i32 >= 0 {
+            if (a.seq.wrapping_sub(b.seq)) as i64 >= 0 {
                 a
             } else {
                 b
@@ -283,35 +262,50 @@ pub fn load() -> Option<Settings> {
 }
 
 /// Persist new settings. Writes to the older slot, then erases the other.
+/// Returns an error if the device is not yet provisioned with a key.
 pub fn save(s: &Settings) -> Result<(), &'static str> {
+    let Some(key) = device_key::settings_key() else {
+        return Err("device not provisioned (eFuse BLOCK3 unset)");
+    };
     let mut flash = FlashStorage::new();
-    let a = read_slot(&mut flash, SLOTS[0]);
-    let b = read_slot(&mut flash, SLOTS[1]);
+    let a = read_slot(&mut flash, SLOTS[0], key);
+    let b = read_slot(&mut flash, SLOTS[1], key);
 
-    let (write_idx, next_seq) = match (&a, &b) {
-        (None, _) => (0, b.as_ref().map(|r| r.seq.wrapping_add(1)).unwrap_or(1)),
-        (Some(_), None) => (1, a.as_ref().unwrap().seq.wrapping_add(1)),
+    // Pick write slot from successfully-opened slots only (older one).
+    let write_idx: u8 = match (&a, &b) {
+        (None, None) => 0,
+        (None, Some(_)) => 0,
+        (Some(_), None) => 1,
         (Some(ra), Some(rb)) => {
-            // Write into the older one.
-            if ra.seq.wrapping_sub(rb.seq) as i32 >= 0 {
-                (1, ra.seq.wrapping_add(1))
+            if (ra.seq.wrapping_sub(rb.seq)) as i64 >= 0 {
+                1
             } else {
-                (0, rb.seq.wrapping_add(1))
+                0
             }
         }
     };
 
+    // next_seq: max over ANY parseable header (even if AEAD open fails)
+    // + 1. Defends against nonce reuse after an interrupted prior save.
+    // See H1 in the security review and `peek_slot_seq` docs above.
+    let seq_a = peek_slot_seq(&mut flash, SLOTS[0]);
+    let seq_b = peek_slot_seq(&mut flash, SLOTS[1]);
+    let max_hdr_seq = match (seq_a, seq_b) {
+        (Some(x), Some(y)) => Some(if (x.wrapping_sub(y)) as i64 >= 0 { x } else { y }),
+        (Some(x), None) | (None, Some(x)) => Some(x),
+        (None, None) => None,
+    };
+    let next_seq = max_hdr_seq.map(|s| s.wrapping_add(1)).unwrap_or(1u64);
+
     let mut payload = alloc::vec::Vec::with_capacity(128);
     s.serialize(&mut payload);
 
-    write_slot(&mut flash, SLOTS[write_idx], next_seq, &payload)?;
-
-    // Erase the other slot so a future power loss can't pick it up.
-    let other = 1 - write_idx;
+    write_slot(&mut flash, SLOTS[write_idx as usize], next_seq, &payload, key)?;
+    let other = (1 - write_idx) as usize;
     let _ = erase_slot(&mut flash, SLOTS[other]);
 
     log::info!(
-        "settings: saved seq={} to slot {} ({} bytes)",
+        "settings: saved seq={} to slot {} ({} bytes plaintext, encrypted)",
         next_seq,
         write_idx,
         payload.len()

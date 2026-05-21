@@ -105,6 +105,14 @@ There is no automatic rollback. If a new image bricks WiFi/HTTP, the only recove
 
 There is **no authentication** on any HTTP endpoint — `/config`, `/unlock`, `/fobs`, `/ota`, and `/ota/rollback` are all open. Anyone with TCP access to port 80 on the device can change settings, unlock the door, or replace the firmware. Run these devices on a trusted management VLAN/SSID only.
 
+### At-rest encryption
+
+Both persistent partitions (`nvs` = WiFi/Conway config, `fobs` = local fob list) are encrypted with ChaCha20-Poly1305 using per-device keys derived (HKDF-SHA256) from a 32-byte root in eFuse BLOCK3. This defends against `espflash read-flash` of a stolen unit — a flash dump yields only ciphertext.
+
+Each device must be provisioned **exactly once** with `tools/provision-device-key.sh` (see `tools/README.md` and `HARDWARE.md`). Until provisioned, the firmware logs a loud warning and refuses to persist new state; loads return empty (settings then fall back to `option_env!` defaults from `network.env`).
+
+**Known limits:** UART-bootloader access (`espefuse.py summary`) can still read BLOCK3 — the ESP32 classic AES peripheral has no BLOCK3 key-feeder, so the CPU must keep the bytes readable. OTA is also currently **unsigned**, so an attacker on the management VLAN can replace the firmware. If your threat model includes either, enable ESP32 native flash encryption + Secure Boot v1 and sign OTA images.
+
 ## Deterministic simulation tests
 
 The crate's business-logic core (Wiegand frame decoders + the authorization state machine that drives `access_task`) is extracted into a small pure library that can be exercised on the host without any ESP32 hardware. Tests live in `tests/wiegand_decode.rs` and `tests/access_core.rs` and combine handwritten scenarios with `proptest`-based property tests over randomly generated event traces.

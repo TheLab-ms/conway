@@ -504,13 +504,34 @@ async fn send_status_page(
         }
     }
 
-    let banner = if is_onboarding {
-        "<p class=\"err\"><b>Onboarding mode.</b> This device is not yet \
-         configured. Open <a href=\"/config\">Configuration</a> to set the \
-         WiFi network and Conway server address.</p>"
-    } else {
-        ""
-    };
+    let mut banner: HString<1024> = HString::new();
+    if is_onboarding {
+        if banner
+            .push_str(
+                "<p class=\"err\"><b>Onboarding mode.</b> This device is not yet \
+                 configured. Open <a href=\"/config\">Configuration</a> to set the \
+                 WiFi network and Conway server address.</p>",
+            )
+            .is_err()
+        {
+            log::error!("http: banner buffer overflow appending onboarding notice");
+        }
+    }
+    #[cfg(feature = "esp32")]
+    if !crate::device_key::is_ready() {
+        if banner
+            .push_str(
+                "<p class=\"err\"><b>Device key not provisioned.</b> The per-device \
+                 eFuse root key is unset (BLOCK3 is all-zero). At-rest encryption \
+                 is DISABLED: settings and local fobs cannot be saved. Run \
+                 <code>tools/provision-device-key.sh</code> against this unit, \
+                 then reboot. See <code>tools/README.md</code>.</p>",
+            )
+            .is_err()
+        {
+            log::error!("http: banner buffer overflow appending unprovisioned notice");
+        }
+    }
 
     // Format the last-swipe row, e.g.
     //   "fob 1234567 <span class=ok>Granted</span> &middot; 12s ago (manual)"
@@ -634,7 +655,7 @@ if(r.ok)setTimeout(()=>location.reload(),800);}}))\
 </script>\
 </body></html>",
         firmware = firmware,
-        banner = banner,
+        banner = banner.as_str(),
         uptime = uptime_secs,
         ssid = cur_ssid.as_str(),
         ip = ip_str.as_str(),

@@ -13,6 +13,7 @@ use esp_bootloader_esp_idf::esp_app_desc;
 esp_app_desc!();
 
 mod dhcp_server;
+mod device_key;
 mod dns_server;
 mod fob_store;
 mod http;
@@ -182,6 +183,33 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     // Load persisted settings. Empty / missing => first boot or post-
     // factory-reset, so we come up in AP onboarding mode.
+    //
+    // NOTE: `settings::load()` requires the per-device key, which in turn
+    // requires `esp_radio::init()` to have been called first (so the MAC,
+    // used as HKDF salt, is reliably readable). We therefore initialize
+    // the radio stack first, then derive the key, then load settings.
+    // This is a deliberate reorder vs. previous firmware where settings
+    // were loaded before radio init.
+
+    // Initialize esp-radio for WiFi.
+    // NOTE: esp_rtos::start() must be called before this (done above
+    // after peripherals init).
+    let esp_radio_ctrl = esp_radio::init().unwrap();
+
+    // Derive per-device storage key from eFuse BLOCK3. If unprovisioned,
+    // this logs a loud warning and `settings::load()`/`fob_store::load()`
+    // both return empty -- the device falls through to compile-time env
+    // defaults / onboarding mode just as on a freshly-wiped unit. See
+    // `src/device_key.rs` for the full threat model + provisioning steps.
+    device_key::init();
+    if !device_key::is_ready() {
+        log::warn!(
+            "boot: device is UNPROVISIONED -- at-rest encryption disabled. \
+             Persistent storage will not be written. \
+             Run tools/provision-device-key.sh to enable."
+        );
+    }
+
     let loaded = settings::load().unwrap_or_else(Settings::defaults_from_env);
     let mode = if loaded.is_provisioned() {
         DeviceMode::Station
@@ -206,7 +234,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     let last_swipe = LAST_SWIPE.init(Mutex::new(None));
 
     // Load locally-managed fobs from flash. Empty on first boot / after a
-    // factory reset.
+    // factory reset / when the device is unprovisioned.
     let local_fobs_loaded = fob_store::load();
     log::info!(
         "storage: loaded {} local fobs from flash",
@@ -216,11 +244,7 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     log::info!("storage: fob cache initialized (empty, will sync from server)");
 
-    // Initialize esp-radio for WiFi
-    // NOTE: esp_rtos::start() must be called before this (done above after peripherals init).
-    let esp_radio_ctrl = esp_radio::init().unwrap();
-
-    // Leak the controller to get 'static lifetime before creating WiFi
+    // Leak the radio controller to get 'static lifetime before creating WiFi.
     let esp_radio_ctrl: &'static _ = Box::leak(Box::new(esp_radio_ctrl));
 
     let wifi_config = WifiConfig::default();
