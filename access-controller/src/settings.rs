@@ -109,11 +109,17 @@ impl Settings {
         s
     }
 
-    fn serialize(&self, out: &mut alloc::vec::Vec<u8>) {
-        out.push(self.ssid.len().min(MAX_SSID) as u8);
-        out.extend_from_slice(&self.ssid.as_bytes()[..self.ssid.len().min(MAX_SSID)]);
-        out.push(self.password.len().min(MAX_PASSWORD) as u8);
-        out.extend_from_slice(&self.password.as_bytes()[..self.password.len().min(MAX_PASSWORD)]);
+    fn serialize(&self, out: &mut alloc::vec::Vec<u8>) -> Result<(), &'static str> {
+        if self.ssid.len() > MAX_SSID {
+            return Err("ssid too long");
+        }
+        if self.password.len() > MAX_PASSWORD {
+            return Err("password too long");
+        }
+        out.push(self.ssid.len() as u8);
+        out.extend_from_slice(self.ssid.as_bytes());
+        out.push(self.password.len() as u8);
+        out.extend_from_slice(self.password.as_bytes());
         match self.conway_host {
             None => out.push(0),
             Some(h) => {
@@ -122,6 +128,7 @@ impl Settings {
             }
         }
         out.extend_from_slice(&self.conway_port.to_le_bytes());
+        Ok(())
     }
 
     fn deserialize(buf: &[u8]) -> Option<Self> {
@@ -298,7 +305,7 @@ pub fn save(s: &Settings) -> Result<(), &'static str> {
     let next_seq = max_hdr_seq.map(|s| s.wrapping_add(1)).unwrap_or(1u64);
 
     let mut payload = alloc::vec::Vec::with_capacity(128);
-    s.serialize(&mut payload);
+    s.serialize(&mut payload)?;
 
     write_slot(&mut flash, SLOTS[write_idx as usize], next_seq, &payload, key)?;
     let other = (1 - write_idx) as usize;
