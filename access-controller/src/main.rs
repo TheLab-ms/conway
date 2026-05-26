@@ -474,8 +474,15 @@ async fn wifi_task(mut controller: WifiController<'static>, rt: &'static Runtime
 async fn wiegand_task(mut wiegand: Wiegand<'static>) {
     loop {
         if let Some(read) = wiegand.read().await {
-            log::info!("scan: fob={} nfc={:08X}", read.to_fob(), read.to_nfc_uid());
-            if WIEGAND_CHANNEL.try_send(read).is_err() {
+            // try_send FIRST, then log. The next call to wiegand.read()
+            // re-arms the edge-wait futures; anything that delays our
+            // return there (UART log over 115200 baud takes multiple ms)
+            // means edges from a back-to-back swipe are silently lost.
+            // log::info on every scan is also a UX/perf footgun in
+            // production - downgrade to debug.
+            let send_result = WIEGAND_CHANNEL.try_send(read);
+            log::debug!("scan: fob={} nfc={:08X}", read.to_fob(), read.to_nfc_uid());
+            if send_result.is_err() {
                 log::warn!("wiegand: channel full, read dropped");
             }
         }

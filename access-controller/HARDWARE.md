@@ -131,6 +131,15 @@ the **external** pull-up + debounce cap rather than an internal pull.
 - There is no on-board flyback diode for the relay (see above).
 - The DevKit's on-board USB-UART (CP2102 / CH340 depending on revision)
   handles flashing; the carrier board exposes no USB of its own.
+- **Wiegand decode is currently pure-async edge waits** (`src/wiegand.rs`)
+  driven by `wait_for_falling_edge` futures rebuilt on every bit. Edges
+  arriving between the previous future's resolution and the next `select`
+  being polled are not latched and are lost. The hot path
+  (`wiegand_task` in `src/main.rs`) is kept short — `try_send` first,
+  then `log::debug!` — but back-to-back swipes can still drop bits.
+  **Future work:** migrate decode to a hardware-latched edge counter
+  (PCNT) or RMT capture so edges are buffered in silicon. The ESP32 has
+  both peripherals available on `WIEG_D0`/`WIEG_D1`.
 
 ## At-rest encryption / device provisioning
 
