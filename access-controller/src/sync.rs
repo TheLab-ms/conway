@@ -316,13 +316,21 @@ fn parse_fob_list(json: &str) -> Result<heapless::Vec<u32, MAX_FOBS>, &'static s
     for part in inner.split(',') {
         let part = part.trim();
         if part.is_empty() {
+            // Tolerate `[]` and a single trailing comma so the cache
+            // doesn't get nuked by a stylistic server change. Embedded
+            // empties (e.g. `1,,2`) still parse as empty and are skipped.
             continue;
         }
-        if let Ok(fob) = part.parse::<u32>() {
-            if fobs.push(fob).is_err() {
-                log::warn!("sync: fob list truncated at {}", MAX_FOBS);
-                break;
-            }
+        // Strict: any non-empty element that does NOT parse as a bare
+        // u32 is a hard error. Previously this silently dropped the
+        // element, so a pretty-printed body or any schema evolution
+        // (e.g. `[{"id":1}, ...]`) yielded an empty list that was then
+        // committed as the live cache -> mass lockout with no signal.
+        let fob: u32 = part
+            .parse()
+            .map_err(|_| "fob list element is not a u32")?;
+        if fobs.push(fob).is_err() {
+            return Err("fob list exceeds MAX_FOBS");
         }
     }
 
