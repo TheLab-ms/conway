@@ -177,8 +177,41 @@ fn sync_complete_within_deadline_grants_if_added() {
     let eff = s.sync();
     assert!(contains_open_door(&eff), "should grant after sync added the fob");
     assert!(contains_outcome(&eff, Outcome::Granted));
+    // The retroactive grant must also emit a Record so Conway's audit
+    // log reflects that the door opened (otherwise the only event in
+    // the log is the earlier deny, which looks identical to a replay
+    // exploit during forensics).
+    assert!(
+        eff.iter().any(|e| matches!(
+            e,
+            Effect::Record(AccessEvent { fob: 100, allowed: true })
+        )),
+        "sync-grant must emit Record{{allowed:true}}; got {:?}",
+        eff
+    );
     // pending_recheck consumed
     assert!(s.core.pending_recheck().is_none());
+}
+
+#[test]
+fn sync_complete_within_deadline_grants_via_nfc_records_nfc() {
+    // When the sync-grant matched the NFC form (not the H10301 fob),
+    // the Record must carry the NFC value so Conway sees what physically
+    // unlocked the door.
+    let mut s = Sim::new();
+    s.card(100, 0xCAFEBABE); // denied
+    s.add_fob(0xCAFEBABE);
+    s.tick(5_000);
+    let eff = s.sync();
+    assert!(contains_open_door(&eff));
+    assert!(
+        eff.iter().any(|e| matches!(
+            e,
+            Effect::Record(AccessEvent { fob: 0xCAFEBABE, allowed: true })
+        )),
+        "sync-grant via NFC must record the NFC credential; got {:?}",
+        eff
+    );
 }
 
 #[test]
@@ -542,10 +575,10 @@ proptest! {
         }
     }
 
-    /// Audit-trail invariant: every `OpenDoor` from a `Card` input is
-    /// accompanied (in the same step) by a `Record { allowed: true }`.
-    /// Sync-path grants do NOT emit a Record (matches main.rs), so we only
-    /// check Card-driven grants.
+    /// Audit-trail invariant: every `OpenDoor` effect (from either a
+    /// `Card` input or a `SyncComplete` retroactive grant) is accompanied
+    /// in the same step by a `Record { allowed: true }`. Without this the
+    /// Conway audit log diverges from physical door state.
     #[test]
     fn prop_card_grant_implies_record_allowed_true(trace in arb_trace()) {
         let mut s = Sim::new();
@@ -563,7 +596,16 @@ proptest! {
                         )), "card grant without allowed=true record: {:?}", eff);
                     }
                 }
-                Step::Sync { dt_ms } => { s.tick(dt_ms as u64); let _ = s.sync(); }
+                Step::Sync { dt_ms } => {
+                    s.tick(dt_ms as u64);
+                    let eff = s.sync();
+                    if contains_open_door(&eff) {
+                        prop_assert!(eff.iter().any(|e| matches!(
+                            e,
+                            Effect::Record(AccessEvent { allowed: true, .. })
+                        )), "sync grant without allowed=true record: {:?}", eff);
+                    }
+                }
                 Step::Watchdog { dt_ms } => { s.tick(dt_ms as u64); let _ = s.input(Input::WatchdogFeed); }
             }
         }

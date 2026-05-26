@@ -160,10 +160,10 @@ impl AccessCore {
                         // Recheck expired; do nothing.
                         return out;
                     }
-                    let allowed = contains(local_fobs, fob)
-                        || contains(local_fobs, nfc)
-                        || contains(remote_fobs, fob)
-                        || contains(remote_fobs, nfc);
+                    let fob_ok = contains(local_fobs, fob) || contains(remote_fobs, fob);
+                    let nfc_ok = !fob_ok
+                        && (contains(local_fobs, nfc) || contains(remote_fobs, nfc));
+                    let allowed = fob_ok || nfc_ok;
                     if allowed {
                         // Defensively clear both failed_attempts and
                         // backoff_until on a grant-after-sync. The state
@@ -175,6 +175,16 @@ impl AccessCore {
                         // invariant ever weakens.
                         self.failed_attempts = 0;
                         self.backoff_until = 0;
+                        // Emit an audit Record for the retroactive grant.
+                        // Without this, Conway's log only ever sees the
+                        // original deny event from the Card step, while
+                        // the door physically opened — the exact signature
+                        // of a credential-replay exploit, but caused by us.
+                        let credential = if fob_ok { fob } else { nfc };
+                        let _ = out.push(Effect::Record(AccessEvent {
+                            fob: credential,
+                            allowed: true,
+                        }));
                         let _ = out.push(Effect::Feedback(Outcome::Granted));
                         let _ = out.push(Effect::OpenDoor);
                     } else {
