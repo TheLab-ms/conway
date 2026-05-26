@@ -76,7 +76,13 @@ pub struct RuntimeConfig {
 static CONFIG: StaticCell<RuntimeConfig> = StaticCell::new();
 
 // Channel for Wiegand reads -> access control task
-static WIEGAND_CHANNEL: Channel<CriticalSectionRawMutex, WiegandRead, 4> = Channel::new();
+// Bounded queue from the (interrupt-driven) Wiegand decoder to the
+// access_task. Capacity 4 was tight: any handler in http.rs that holds
+// fobs/local_fobs/settings/last_swipe across socket I/O (notably the
+// OTA upload) backpressures access_task; once 4 swipes queue up, the
+// 5th is dropped with only a warn. Bumped to 16 so a slow HTTP client
+// can't silently mask door swipes.
+static WIEGAND_CHANNEL: Channel<CriticalSectionRawMutex, WiegandRead, 16> = Channel::new();
 
 // Event buffer with peek/commit semantics for reliable delivery
 pub static EVENT_BUFFER: EventBuffer = EventBuffer::new();
