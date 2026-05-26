@@ -92,10 +92,15 @@ pub async fn sync_with_conway(
         host_octets[3],
     ));
 
-    // Create TCP socket
-    let mut rx_buf = [0u8; 2048];
-    let mut tx_buf = [0u8; 1024];
-    let mut socket = TcpSocket::new(*stack, &mut rx_buf, &mut tx_buf);
+    // Create TCP socket. Size buffers from MAX_FOBS: each fob serializes
+    // to up to 10 decimal digits + ',' = 11 bytes, plus '[' / ']' and
+    // ~1 KiB of HTTP response headers. With MAX_FOBS=512 this is ~7 KiB;
+    // a fixed 2 KiB buffer truncates silently and the cache goes stale.
+    // Heap-allocated so we don't blow the task stack.
+    const RESPONSE_CAP: usize = MAX_FOBS * 12 + 1024;
+    let mut rx_buf = alloc::vec![0u8; RESPONSE_CAP];
+    let mut tx_buf = alloc::vec![0u8; 1024];
+    let mut socket = TcpSocket::new(*stack, rx_buf.as_mut_slice(), tx_buf.as_mut_slice());
     socket.set_timeout(Some(IO_TIMEOUT));
 
     // Connect to server
@@ -142,9 +147,12 @@ pub async fn sync_with_conway(
         return;
     }
 
-    // Read response
-    let mut response_buf = [0u8; 2048];
+    // Read response. Buffer is sized for the worst-case fob list above.
+    // If the server somehow sends more, treat it as a hard error: do NOT
+    // replace the cache and do NOT commit events.
+    let mut response_buf = alloc::vec![0u8; RESPONSE_CAP];
     let mut total_read = 0;
+    let mut truncated = false;
 
     loop {
         match socket.read(&mut response_buf[total_read..]).await {
@@ -152,6 +160,7 @@ pub async fn sync_with_conway(
             Ok(n) => {
                 total_read += n;
                 if total_read >= response_buf.len() {
+                    truncated = true;
                     break;
                 }
             }
@@ -165,6 +174,15 @@ pub async fn sync_with_conway(
     }
 
     socket.abort();
+
+    if truncated {
+        log::error!(
+            "sync: response exceeded {} bytes, refusing to update cache",
+            RESPONSE_CAP
+        );
+        SYNC_COMPLETE.signal(());
+        return;
+    }
 
     // Parse HTTP response
     let response = match core::str::from_utf8(&response_buf[..total_read]) {
