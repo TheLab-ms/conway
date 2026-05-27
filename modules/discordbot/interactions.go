@@ -68,6 +68,12 @@ func (m *Module) handleInteraction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "config error", http.StatusInternalServerError)
 		return
 	}
+	m.handleInteractionWithConfig(w, r, cfg)
+}
+
+// handleInteractionWithConfig is the config-injected core of handleInteraction.
+// Split out so tests can drive the handler without standing up a config.Store.
+func (m *Module) handleInteractionWithConfig(w http.ResponseWriter, r *http.Request, cfg *Config) {
 	if cfg.ApplicationPublicKey == "" {
 		http.Error(w, "discord bot not configured", http.StatusServiceUnavailable)
 		return
