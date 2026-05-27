@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/bootstrap"
+	"github.com/TheLab-ms/conway/modules/members/memberdb"
 	"strconv"
 	"time"
 )
@@ -231,15 +232,9 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 						</script>
 						<label for="discount" class="form-label">Discount Type</label>
 					<select class="form-select" id="discount" name="discount">
-							<option value="" selected?={ member.DiscountType == nil || *member.DiscountType == "" }>None</option>
-							<option value="military" selected?={ member.DiscountType != nil && *member.DiscountType == "military" }>Military</option>
-							<option value="retired" selected?={ member.DiscountType != nil && *member.DiscountType == "retired" }>Retired</option>
-							<option value="unemployed" selected?={ member.DiscountType != nil && *member.DiscountType == "unemployed" }>Unemployed</option>
-							<option value="firstResponder" selected?={ member.DiscountType != nil && *member.DiscountType == "firstResponder" }>First Responder</option>
-							<option value="student" selected?={ member.DiscountType != nil && *member.DiscountType == "student" }>Student</option>
-							<option value="educator" selected?={ member.DiscountType != nil && *member.DiscountType == "educator" }>Educator</option>
-							<option value="emeritus" selected?={ member.DiscountType != nil && *member.DiscountType == "emeritus" }>Emeritus</option>
-							<option value="family" selected?={ member.DiscountType != nil && *member.DiscountType == "family" }>Family</option>
+							for _, opt := range memberdb.DiscountTypes {
+								<option value={ opt.Value } selected?={ discountSelected(member.DiscountType, opt.Value) }>{ opt.Label }</option>
+							}
 						</select>
 						<div class="mb-2 mt-2" id="family-email-field" style="display:none;">
 							<label for="family_email" class="form-label">Root Family Account Email Address</label>
@@ -384,6 +379,15 @@ func strPtrVal(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// discountSelected returns true if the member's current discount_type equals
+// the given option value. The empty option matches both NULL and "".
+func discountSelected(current *string, optValue string) bool {
+	if optValue == "" {
+		return current == nil || *current == ""
+	}
+	return current != nil && *current == optValue
 }
 
 templ renderMemberEventRows(events []*memberEvent, memberID int64, page int, hasMore bool) {
