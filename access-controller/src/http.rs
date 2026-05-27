@@ -21,8 +21,10 @@ use crate::fob_store::{self, LocalFob, MAX_LABEL_LEN, MAX_LOCAL_FOBS};
 use crate::ota::{self, OtaError, OtaWriter};
 use crate::settings::{self, Settings, MAX_PASSWORD, MAX_SSID};
 use crate::{
-    DeviceMode, LastSwipe, RuntimeConfig, EVENT_BUFFER, MANUAL_UNLOCK, MAX_FOBS, WATCHDOG_FEED,
+    DeviceMode, LastSwipe, PendingConfig, RuntimeConfig, EVENT_BUFFER, MANUAL_UNLOCK, MAX_FOBS,
+    PENDING_CONFIG, PENDING_CONFIG_TTL, WATCHDOG_FEED,
 };
+use access_controller::signing;
 
 const HTTP_PORT: u16 = 80;
 /// Timeout for normal short requests.
@@ -517,6 +519,30 @@ async fn send_status_page(
             log::error!("http: banner buffer overflow appending onboarding notice");
         }
     }
+    // Surface any staged pubkey-touching config so an operator standing
+    // at the device knows a short CONFIG press will commit + reboot
+    // rather than the usual "request a sync" semantics.
+    {
+        let g = PENDING_CONFIG.lock().await;
+        if let Some(p) = g.as_ref() {
+            let elapsed = Instant::now() - p.created_at;
+            if elapsed < PENDING_CONFIG_TTL {
+                let remaining = (PENDING_CONFIG_TTL - elapsed).as_secs();
+                let mut tmp: HString<256> = HString::new();
+                let _ = write!(
+                    tmp,
+                    "<p class=\"err\"><b>Pending config awaiting confirmation.</b> \
+                     A configuration change that touches the trusted signing key \
+                     has been staged. Press the CONFIG button within \
+                     <b>{}s</b> to commit and reboot, or wait for it to expire.</p>",
+                    remaining
+                );
+                if banner.push_str(tmp.as_str()).is_err() {
+                    log::error!("http: banner buffer overflow appending pending notice");
+                }
+            }
+        }
+    }
     #[cfg(feature = "esp32")]
     if !crate::device_key::is_ready() {
         if banner
@@ -697,13 +723,40 @@ if(r.ok)setTimeout(()=>location.reload(),800);}}))\
 
 /// Render the configuration form, pre-filled with current settings.
 async fn send_config_page(socket: &mut TcpSocket<'_>, rt: &'static RuntimeConfig) {
-    let (ssid, password, host_str, port, mode) = {
+    let (ssid, password, host_str, port, mode, current_pubkey_b64) = {
         let s = rt.settings.lock().await;
         let mut hs: HString<24> = HString::new();
         if let Some(h) = s.conway_host {
             let _ = write!(hs, "{}.{}.{}.{}", h[0], h[1], h[2], h[3]);
         }
-        (s.ssid.clone(), s.password.clone(), hs, s.conway_port, rt.mode)
+        let pk_b64 = s
+            .trusted_pubkey
+            .as_ref()
+            .map(|k| signing::b64_encode(k))
+            .unwrap_or_default();
+        (
+            s.ssid.clone(),
+            s.password.clone(),
+            hs,
+            s.conway_port,
+            rt.mode,
+            pk_b64,
+        )
+    };
+
+    // Snapshot any staged pending pubkey-touching config so the form
+    // can surface "already staged, press CONFIG within Xs" instead of
+    // silently re-staging on top of itself.
+    let pending_remaining_secs: Option<u64> = {
+        let g = PENDING_CONFIG.lock().await;
+        g.as_ref().and_then(|p| {
+            let elapsed = Instant::now() - p.created_at;
+            if elapsed < PENDING_CONFIG_TTL {
+                Some((PENDING_CONFIG_TTL - elapsed).as_secs())
+            } else {
+                None
+            }
+        })
     };
 
     let banner = if mode == DeviceMode::Onboarding {
@@ -720,45 +773,90 @@ async fn send_config_page(socket: &mut TcpSocket<'_>, rt: &'static RuntimeConfig
         HString::new()
     };
 
-    let mut body: HString<3072> = HString::new();
+    let mut pending_banner: alloc::string::String = alloc::string::String::new();
+    if let Some(secs) = pending_remaining_secs {
+        let _ = core::fmt::Write::write_fmt(
+            &mut pending_banner,
+            format_args!(
+                "<p class=\"warn\"><b>Pending config awaiting confirmation.</b> \
+                 Press the CONFIG button within <b>{} s</b> to commit. \
+                 Submitting again before then will overwrite the staged value.</p>",
+                secs
+            ),
+        );
+    }
+
+    let mut body: alloc::string::String = alloc::string::String::with_capacity(4096);
     let mut esc_ssid: HString<128> = HString::new();
     html_escape_into(&ssid, &mut esc_ssid);
     let mut esc_pw: HString<256> = HString::new();
     html_escape_into(&password, &mut esc_pw);
 
-    let _ = write!(
-        body,
-        "<!doctype html>\
+    let pubkey_status: alloc::string::String = if current_pubkey_b64.is_empty() {
+        alloc::string::String::from(
+            "<i>not set</i> &mdash; responses from the Conway server are accepted unsigned (back-compat).",
+        )
+    } else {
+        let mut s = alloc::string::String::with_capacity(current_pubkey_b64.len() + 64);
+        s.push_str("<code style=\"word-break:break-all\">");
+        s.push_str(&current_pubkey_b64);
+        s.push_str("</code>");
+        s
+    };
+
+    let _ = core::fmt::Write::write_fmt(
+        &mut body,
+        format_args!(
+            "<!doctype html>\
 <html><head><meta charset=\"utf-8\"><title>Conway Configuration</title>\
 <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
-<style>body{{font-family:system-ui,sans-serif;margin:2rem;max-width:30rem}}\
+<style>body{{font-family:system-ui,sans-serif;margin:2rem;max-width:32rem}}\
 label{{display:block;margin-top:1rem;font-weight:600}}\
-input{{width:100%;padding:.5rem;font-size:1rem;box-sizing:border-box;margin-top:.25rem}}\
+input[type=text],input[type=password],input[type=number]{{width:100%;padding:.5rem;font-size:1rem;box-sizing:border-box;margin-top:.25rem}}\
 button{{margin-top:1.5rem;padding:.6rem 1.2rem;font-size:1rem}}\
 .info{{padding:.75rem;background:#eef;border-left:4px solid #44a;border-radius:4px}}\
+.warn{{padding:.75rem;background:#ffe;border-left:4px solid #b80;border-radius:4px;margin:1rem 0}}\
 .err{{color:#b00}}.row{{display:flex;gap:.5rem}}.row>div:first-child{{flex:3}}.row>div:last-child{{flex:1}}\
+fieldset{{margin-top:1.5rem;padding:.75rem 1rem;border:1px solid #ccc;border-radius:4px}}\
+fieldset legend{{font-weight:600;padding:0 .5rem}}\
+.note{{font-size:.85rem;color:#555;margin-top:.5rem}}\
 </style></head><body>\
 <h1>Conway Configuration</h1>\
 {banner}\
+{pending}\
 <form method=\"POST\" action=\"/config\">\
-<label>WiFi SSID<input name=\"ssid\" value=\"{ssid}\" maxlength=\"{max_ssid}\" required></label>\
-<label>WiFi Password<input name=\"password\" value=\"{pw}\" maxlength=\"{max_pw}\" type=\"password\"><label style=\"display:inline;font-weight:normal;font-size:.9rem\"><input type=\"checkbox\" style=\"width:auto;margin-right:.25rem\" onclick=\"this.parentElement.previousElementSibling.type=this.checked?'text':'password'\"> Show</label></label>\
+<label>WiFi SSID<input type=\"text\" name=\"ssid\" value=\"{ssid}\" maxlength=\"{max_ssid}\" required></label>\
+<label>WiFi Password<input type=\"password\" name=\"password\" value=\"{pw}\" maxlength=\"{max_pw}\"><label style=\"display:inline;font-weight:normal;font-size:.9rem\"><input type=\"checkbox\" style=\"width:auto;margin-right:.25rem\" onclick=\"this.parentElement.previousElementSibling.type=this.checked?'text':'password'\"> Show</label></label>\
 <div class=\"row\">\
-<div><label>Conway Host (IPv4, blank for standalone)<input name=\"host\" value=\"{host}\" pattern=\"|[0-9.]+\"></label></div>\
-<div><label>Port<input name=\"port\" value=\"{port}\" type=\"number\" min=\"1\" max=\"65535\" required></label></div>\
+<div><label>Conway Host (IPv4, blank for standalone)<input type=\"text\" name=\"host\" value=\"{host}\" pattern=\"|[0-9.]+\"></label></div>\
+<div><label>Port<input type=\"number\" name=\"port\" value=\"{port}\" min=\"1\" max=\"65535\" required></label></div>\
 </div>\
-<p style=\"font-size:.9rem;color:#555;margin-top:.5rem\">Leave Conway Host blank to operate standalone. Only locally-added fobs will be accepted; events are not buffered.</p>\
-<button type=\"submit\">Save &amp; reboot</button>\
+<p class=\"note\">Leave Conway Host blank to operate standalone. Only locally-added fobs will be accepted; events are not buffered.</p>\
+<fieldset>\
+<legend>Response signing key (Ed25519)</legend>\
+<p>Current trusted key: {pubkey_status}</p>\
+<label>Set / replace key (standard base64, 44 chars)<input type=\"text\" name=\"trusted_pubkey\" value=\"\" maxlength=\"64\" placeholder=\"leave blank for no change\"></label>\
+<label style=\"font-weight:normal;margin-top:.75rem\"><input type=\"checkbox\" name=\"clear_pubkey\" value=\"1\" style=\"width:auto;margin-right:.5rem\">Clear the trusted key (disables signature enforcement)</label>\
+<p class=\"note\"><b>Any change to this field requires physical confirmation.</b> \
+After submitting, you have {ttl}s to press the CONFIG button on the device to commit. \
+Other fields above are saved <em>only</em> on that physical confirmation when this field changes; \
+when this field is left untouched they save immediately and the device reboots.</p>\
+</fieldset>\
+<button type=\"submit\">Save</button>\
 </form>\
 <p style=\"margin-top:2rem\"><a href=\"/status\">Back to status</a></p>\
 </body></html>",
-        banner = banner.as_str(),
-        ssid = esc_ssid.as_str(),
-        pw = esc_pw.as_str(),
-        host = host_str.as_str(),
-        port = port,
-        max_ssid = MAX_SSID,
-        max_pw = MAX_PASSWORD,
+            banner = banner.as_str(),
+            pending = pending_banner.as_str(),
+            ssid = esc_ssid.as_str(),
+            pw = esc_pw.as_str(),
+            host = host_str.as_str(),
+            port = port,
+            max_ssid = MAX_SSID,
+            max_pw = MAX_PASSWORD,
+            pubkey_status = pubkey_status,
+            ttl = PENDING_CONFIG_TTL.as_secs(),
+        ),
     );
 
     let mut header: HString<160> = HString::new();
@@ -776,7 +874,11 @@ button{{margin-top:1.5rem;padding:.6rem 1.2rem;font-size:1rem}}\
     let _ = socket.write_all(body.as_bytes()).await;
 }
 
-/// Receive a urlencoded config form, validate, persist, then reboot.
+/// Receive a urlencoded config form, validate, then either persist
+/// immediately (and reboot) or — when the submission touches the
+/// `trusted_pubkey` field — stage the full new [`Settings`] in
+/// [`PENDING_CONFIG`] and render a confirmation page asking the
+/// operator to press the CONFIG button within [`PENDING_CONFIG_TTL`].
 async fn handle_config_post(
     socket: &mut TcpSocket<'_>,
     content_length: u32,
@@ -814,6 +916,8 @@ async fn handle_config_post(
     let mut password: alloc::string::String = alloc::string::String::new();
     let mut host: alloc::string::String = alloc::string::String::new();
     let mut port_str: alloc::string::String = alloc::string::String::new();
+    let mut trusted_pubkey_str: alloc::string::String = alloc::string::String::new();
+    let mut clear_pubkey: bool = false;
 
     for pair in body_str.split('&') {
         let (k, v) = match pair.split_once('=') {
@@ -832,6 +936,8 @@ async fn handle_config_post(
             "password" => password = decoded,
             "host" => host = decoded,
             "port" => port_str = decoded,
+            "trusted_pubkey" => trusted_pubkey_str = decoded,
+            "clear_pubkey" => clear_pubkey = decoded == "1" || decoded == "on",
             _ => {}
         }
     }
@@ -869,21 +975,122 @@ async fn handle_config_post(
         }
     };
 
+    // Resolve the pubkey field. Precedence:
+    //   1. non-empty `trusted_pubkey` -> stage Some(new_key)
+    //   2. clear_pubkey=1             -> stage None
+    //   3. otherwise                   -> preserve current pubkey, no
+    //                                    staging required (legacy path).
+    let trusted_trimmed = trusted_pubkey_str.trim();
+    let current_pubkey = rt.settings.lock().await.trusted_pubkey;
+
+    enum PubkeyChange {
+        Set([u8; 32]),
+        Clear,
+        Unchanged,
+    }
+    let change = if !trusted_trimmed.is_empty() {
+        match signing::b64_decode(trusted_trimmed) {
+            Some(v) if v.len() == 32 => {
+                let mut k = [0u8; 32];
+                k.copy_from_slice(&v);
+                PubkeyChange::Set(k)
+            }
+            Some(_) => {
+                send_config_error(
+                    socket,
+                    "400 Bad Request",
+                    "trusted_pubkey must decode to exactly 32 bytes (Ed25519 public key)",
+                )
+                .await;
+                return;
+            }
+            None => {
+                send_config_error(
+                    socket,
+                    "400 Bad Request",
+                    "trusted_pubkey is not valid base64",
+                )
+                .await;
+                return;
+            }
+        }
+    } else if clear_pubkey {
+        PubkeyChange::Clear
+    } else {
+        PubkeyChange::Unchanged
+    };
+
+    let new_pubkey = match change {
+        PubkeyChange::Set(k) => Some(k),
+        PubkeyChange::Clear => None,
+        PubkeyChange::Unchanged => current_pubkey,
+    };
+
     let new = Settings {
         ssid,
         password,
         conway_host: host_octets,
         conway_port: port,
+        trusted_pubkey: new_pubkey,
     };
 
-    // Update in-memory copy first so other tasks see fresh values if
-    // they happen to read between save and reset.
+    let requires_confirmation = matches!(change, PubkeyChange::Set(_) | PubkeyChange::Clear);
+
+    if requires_confirmation {
+        // Stage the FULL new Settings (not just the pubkey delta) so
+        // the commit on physical press is atomic with respect to any
+        // other fields the user also changed in the same submit.
+        {
+            let mut g = PENDING_CONFIG.lock().await;
+            *g = Some(PendingConfig {
+                settings: new,
+                created_at: Instant::now(),
+            });
+        }
+        let action_word = match change {
+            PubkeyChange::Set(_) => "install a new trusted signing key",
+            PubkeyChange::Clear => "clear the trusted signing key",
+            PubkeyChange::Unchanged => unreachable!(),
+        };
+        let mut resp = alloc::string::String::with_capacity(512);
+        let _ = core::fmt::Write::write_fmt(
+            &mut resp,
+            format_args!(
+                "<!doctype html><html><head><meta charset=\"utf-8\">\
+<title>Confirm on device</title>\
+<meta http-equiv=\"refresh\" content=\"{ttl}; url=/config\">\
+<style>body{{font-family:system-ui,sans-serif;margin:2rem;max-width:32rem}}\
+.warn{{padding:1rem;background:#ffe;border-left:4px solid #b80;border-radius:4px}}\
+</style></head><body>\
+<h1>Press CONFIG to confirm</h1>\
+<p class=\"warn\">This change will <b>{action}</b>. Because this affects the \
+device's trust anchor for the Conway server, it requires physical confirmation \
+to defend against silent LAN-side reconfiguration.</p>\
+<p><b>Press the CONFIG button on the device within {ttl} seconds.</b> \
+On confirmation, the device will save all settings from this form and reboot. \
+If you do not press the button in time, the staged change is discarded and \
+nothing is written.</p>\
+<p>This page will auto-refresh to <a href=\"/config\">/config</a> after the \
+window expires.</p>\
+</body></html>",
+                action = action_word,
+                ttl = PENDING_CONFIG_TTL.as_secs(),
+            ),
+        );
+        send_html(socket, "202 Accepted", resp.as_bytes()).await;
+        log::warn!(
+            "config: staged pubkey-touching config, awaiting CONFIG button (TTL {}s)",
+            PENDING_CONFIG_TTL.as_secs()
+        );
+        return;
+    }
+
+    // Legacy fast path: no pubkey change, save immediately and reboot.
     {
         let mut guard = rt.settings.lock().await;
         *guard = new.clone();
     }
 
-    // Feed the WDT - the flash write can take a while.
     WATCHDOG_FEED.signal(());
 
     if let Err(e) = settings::save(&new) {

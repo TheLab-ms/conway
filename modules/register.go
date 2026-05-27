@@ -39,6 +39,10 @@ type Options struct {
 	DiscordIssuer *engine.TokenIssuer
 	GoogleIssuer  *engine.TokenIssuer
 
+	// FobSigner signs the response body of POST /api/fobs so access
+	// controllers can verify authenticity against a pinned public key.
+	FobSigner *engine.Ed25519Signer
+
 	// Auth options
 	Turnstile *auth.TurnstileOptions
 
@@ -89,7 +93,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	a.Add(waiver.New(opts.Database))
 	a.Add(kiosk.New(opts.Database, opts.Self, opts.FobIssuer, opts.SpaceHost))
 	a.Add(metrics.New(opts.Database))
-	a.Add(fobapi.New(opts.Database, opts.Self))
+	a.Add(fobapi.New(opts.Database, opts.Self, opts.FobSigner))
 	a.Add(directory.New(opts.Database))
 
 	// Discord modules registered before machines, since the machines

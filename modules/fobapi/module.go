@@ -3,9 +3,11 @@ package fobapi
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -20,6 +22,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// SignatureHeader is the HTTP header carrying the base64-encoded raw
+// Ed25519 signature over the response body of POST /api/fobs. Clients
+// that have been configured with a trusted public key must verify this
+// header and reject any response that lacks a valid signature.
+const SignatureHeader = "X-Fob-Signature"
+
 const migration = `
 CREATE TABLE IF NOT EXISTS fob_clients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,17 +38,27 @@ CREATE TABLE IF NOT EXISTS fob_clients (
 `
 
 type Module struct {
-	db   *sql.DB
-	self *url.URL
+	db     *sql.DB
+	self   *url.URL
+	signer *engine.Ed25519Signer
 }
 
-func New(db *sql.DB, self *url.URL) *Module {
+func New(db *sql.DB, self *url.URL, signer *engine.Ed25519Signer) *Module {
 	engine.MustMigrate(db, migration)
 
 	// Add fob_client column to fob_swipes (idempotent - ignore error if exists)
 	db.Exec("ALTER TABLE fob_swipes ADD COLUMN fob_client INTEGER REFERENCES fob_clients(id)")
 
-	return &Module{db: db, self: self}
+	return &Module{db: db, self: self, signer: signer}
+}
+
+// PublicKeyBase64 returns the base64-encoded Ed25519 public key used to sign
+// responses, or an empty string if no signer is configured (tests).
+func (m *Module) PublicKeyBase64() string {
+	if m.signer == nil {
+		return ""
+	}
+	return m.signer.PublicKeyBase64()
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -128,8 +146,21 @@ func (m *Module) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(304)
 		return
 	}
+
+	// Serialize the body into a buffer so we can sign the exact bytes the
+	// client will see. The access-controller verifies the signature against
+	// the raw response body before parsing it.
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(&ids); err != nil {
+		engine.SystemError(w, err.Error())
+		return
+	}
+	if m.signer != nil {
+		sig := m.signer.Sign(body.Bytes())
+		w.Header().Set(SignatureHeader, base64.StdEncoding.EncodeToString(sig))
+	}
 	w.Header().Set("ETag", etag)
-	json.NewEncoder(w).Encode(&ids)
+	w.Write(body.Bytes())
 }
 
 // handleUpdateDoorName allows admins to assign a door name to a fob API client.

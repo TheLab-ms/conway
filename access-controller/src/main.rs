@@ -32,7 +32,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use esp_alloc as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
@@ -131,6 +131,32 @@ pub static READER_FEEDBACK: Signal<CriticalSectionRawMutex, AccessOutcome> = Sig
 
 // Signal to request watchdog feed (proves access_task is responsive)
 pub static WATCHDOG_FEED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
+/// Pending configuration staged by a `POST /config` that touches the
+/// `trusted_pubkey` field. Committed (written to flash + reboot) only
+/// after the operator presses the CONFIG button within
+/// [`PENDING_CONFIG_TTL`], proving physical possession of the device.
+///
+/// This prevents a LAN-resident attacker from silently pinning a
+/// trusted key (which would lock the controller to a fob list it can
+/// never recover from without a factory reset) or clearing an
+/// existing pin (which would lift signature enforcement).
+///
+/// Non-pubkey-affecting POSTs bypass this and take the existing
+/// immediate-save-then-reboot path; see `handle_config_post`.
+pub struct PendingConfig {
+    pub settings: Settings,
+    pub created_at: Instant,
+}
+
+pub static PENDING_CONFIG: Mutex<CriticalSectionRawMutex, Option<PendingConfig>> =
+    Mutex::new(None);
+
+/// Window during which a short CONFIG press will commit a pending
+/// pubkey-touching config. After this elapses the staged value is
+/// discarded on the next press and the press falls through to its
+/// normal "request sync" behavior.
+pub const PENDING_CONFIG_TTL: Duration = Duration::from_secs(60);
 
 // Static cells for 'static lifetime requirements
 static FOBS: StaticCell<Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>> =
@@ -779,9 +805,57 @@ async fn status_and_config_task(
                 .await
                 {
                     // Short press - released before long-hold threshold.
+                    // If a pubkey-touching config is staged and still
+                    // within its TTL, commit it now (this physical
+                    // press is the consent gate). Otherwise fall back
+                    // to the normal "request sync" semantics.
                     Either::First(()) => {
-                        log::info!("config: manual sync requested");
-                        SYNC_SIGNAL.signal(());
+                        let pending_action: Option<Settings> = {
+                            let mut g = PENDING_CONFIG.lock().await;
+                            match g.take() {
+                                Some(p) => {
+                                    let age = Instant::now() - p.created_at;
+                                    if age < PENDING_CONFIG_TTL {
+                                        Some(p.settings)
+                                    } else {
+                                        log::warn!(
+                                            "config: staged pending config expired ({}s), discarding",
+                                            age.as_secs()
+                                        );
+                                        None
+                                    }
+                                }
+                                None => None,
+                            }
+                        };
+                        if let Some(new_settings) = pending_action {
+                            log::warn!(
+                                "config: confirming staged config via CONFIG button - saving and rebooting"
+                            );
+                            WATCHDOG_FEED.signal(());
+                            if let Err(e) = settings::save(&new_settings) {
+                                log::error!("config: staged save failed: {}", e);
+                                // Acknowledge failure with a fast triple-flash and bail.
+                                for _ in 0..3 {
+                                    led.set_high();
+                                    Timer::after(Duration::from_millis(60)).await;
+                                    led.set_low();
+                                    Timer::after(Duration::from_millis(60)).await;
+                                }
+                                continue;
+                            }
+                            // Slow confirmation flash, then reset.
+                            for _ in 0..3 {
+                                led.set_high();
+                                Timer::after(Duration::from_millis(150)).await;
+                                led.set_low();
+                                Timer::after(Duration::from_millis(150)).await;
+                            }
+                            esp_hal::system::software_reset();
+                        } else {
+                            log::info!("config: manual sync requested");
+                            SYNC_SIGNAL.signal(());
+                        }
                     }
 
                     // Long hold - factory reset. Wipe persisted settings

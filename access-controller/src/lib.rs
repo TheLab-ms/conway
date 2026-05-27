@@ -18,3 +18,4 @@ pub mod core;
 pub mod crypto;
 pub mod decode;
 pub mod events;
+pub mod signing;

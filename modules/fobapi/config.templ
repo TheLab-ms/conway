@@ -63,7 +63,7 @@ templ renderControllersCard(clients []*fobClient) {
 	</div>
 }
 
-templ configInfoContent(selfURL string) {
+templ configInfoContent(selfURL, pubkey string) {
 	<h3 class="text-muted border-bottom pb-2 mb-3 h6">API Endpoint</h3>
 	<div class="p-3 rounded mb-4" style="background-color: var(--color-surface-alt);">
 		<div class="mb-2">
@@ -74,8 +74,27 @@ templ configInfoContent(selfURL string) {
 			<pre class="mb-0 p-2 rounded border" style="background-color: var(--color-surface);"><code>[&#123; "fob": 12345678, "allowed": true &#125;]</code></pre>
 			<small class="d-block mt-2" style="color: var(--color-text-muted);">Response &mdash; JSON array of authorized fob IDs:</small>
 			<pre class="mb-0 p-2 rounded border" style="background-color: var(--color-surface);"><code>[12345678, 23456789, 34567890]</code></pre>
+			<small class="d-block mt-2" style="color: var(--color-text-muted);">Response header &mdash; raw Ed25519 signature over the body bytes, base64-encoded:</small>
+			<pre class="mb-0 p-2 rounded border" style="background-color: var(--color-surface);"><code>X-Fob-Signature: &lt;base64(64-byte signature)&gt;</code></pre>
 		</div>
 	</div>
+	if pubkey != "" {
+		<h3 class="text-muted border-bottom pb-2 mb-3 h6">Response Signing Public Key</h3>
+		<p class="small" style="color: var(--color-text-muted);">
+			Paste this Ed25519 public key into each access controller's
+			<code>trusted_pubkey</code> setting. Once a controller is
+			configured with a key, it will reject any fob-list response that
+			is not signed by the matching server key.
+		</p>
+		<div class="d-flex align-items-center gap-2 mb-4">
+			<code id="fobapi-pubkey" class="p-2 rounded border flex-grow-1 text-break"
+				style="background-color: var(--color-surface);">{ pubkey }</code>
+			<button type="button" class="btn btn-sm btn-outline-secondary text-nowrap"
+				onclick="navigator.clipboard.writeText(document.getElementById('fobapi-pubkey').innerText).then(()=>{this.innerText='Copied';setTimeout(()=>this.innerText='Copy',1500)})">
+				Copy
+			</button>
+		</div>
+	}
 	<h3 class="text-muted border-bottom pb-2 mb-3 h6">Notes</h3>
 	<ul class="mb-0">
 		<li><strong>LAN only</strong> &mdash; requests from the internet receive HTTP 403.</li>

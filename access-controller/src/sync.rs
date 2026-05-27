@@ -32,10 +32,12 @@ pub async fn sync_with_conway(
     // Snapshot host + port from the live config so a `/config` POST that
     // updates them takes effect on the next sync without restart. If the
     // host has been cleared (standalone mode), there is nothing to sync.
-    let (host_octets, host_port) = {
+    // Also snapshot the optional trusted public key here so we don't
+    // have to re-lock `settings` after the response arrives.
+    let (host_octets, host_port, trusted_pubkey) = {
         let s = rt.settings.lock().await;
         match s.conway_host {
-            Some(h) => (h, s.conway_port),
+            Some(h) => (h, s.conway_port, s.trusted_pubkey),
             None => {
                 // Shouldn't happen normally - sync_task isn't spawned
                 // when host is None - but a hot config change could land
@@ -207,10 +209,40 @@ pub async fn sync_with_conway(
         200 => {
             // Extract ETag from headers
             let new_etag = extract_header(response, "etag");
+            // X-Fob-Signature must be present and verify against the
+            // body bytes whenever the device has been provisioned with
+            // a trusted_pubkey. Until a key is configured, the header
+            // is ignored — see RFC in `signing.rs` module docs.
+            let sig_header = extract_header(response, "x-fob-signature");
 
             // Find body (after \r\n\r\n)
             let body_start = response.find("\r\n\r\n").map(|i| i + 4);
             let response_body = body_start.map(|i| &response[i..]).unwrap_or("");
+
+            // Signature gate: must come BEFORE we replace the cache or
+            // commit events. A failed verify is treated identically to
+            // an unparseable body — events are kept buffered for retry
+            // against (presumably) the legitimate server later.
+            if let Some(pk) = trusted_pubkey.as_ref() {
+                let sig = match sig_header {
+                    Some(s) => s,
+                    None => {
+                        log::error!(
+                            "sync: trusted_pubkey configured but server omitted X-Fob-Signature; refusing update"
+                        );
+                        SYNC_COMPLETE.signal(());
+                        return;
+                    }
+                };
+                if !access_controller::signing::verify(pk, response_body.as_bytes(), sig) {
+                    log::error!(
+                        "sync: X-Fob-Signature failed to verify against trusted_pubkey; refusing update"
+                    );
+                    SYNC_COMPLETE.signal(());
+                    return;
+                }
+                log::debug!("sync: signature verified");
+            }
 
             // Parse fob list
             let new_fobs = match parse_fob_list(response_body) {

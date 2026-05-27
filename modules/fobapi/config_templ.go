@@ -71,7 +71,7 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", len(clients)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 23, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `modules/fobapi/config.templ`, Line: 23, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -99,7 +99,7 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(client.IPAddress)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 46, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `modules/fobapi/config.templ`, Line: 46, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -112,7 +112,7 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 				var templ_7745c5c3_Var5 templ.SafeURL
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/doors/%d", client.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 48, Col: 90}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `modules/fobapi/config.templ`, Line: 48, Col: 90}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -125,7 +125,7 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(client.DoorName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 50, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `modules/fobapi/config.templ`, Line: 50, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -138,7 +138,7 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(engine.FormatTimeAgo(client.LastSeen.Time, 0, ""))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 55, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `modules/fobapi/config.templ`, Line: 55, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -162,7 +162,7 @@ func renderControllersCard(clients []*fobClient) templ.Component {
 	})
 }
 
-func configInfoContent(selfURL string) templ.Component {
+func configInfoContent(selfURL, pubkey string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -190,13 +190,36 @@ func configInfoContent(selfURL string) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 70, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `modules/fobapi/config.templ`, Line: 70, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "/api/fobs</code></div><div class=\"ps-3 border-start border-2\"><small class=\"d-block\" style=\"color: var(--color-text-muted);\">Request body &mdash; JSON array of swipe events (may be empty):</small><pre class=\"mb-0 p-2 rounded border\" style=\"background-color: var(--color-surface);\"><code>[&#123; \"fob\": 12345678, \"allowed\": true &#125;]</code></pre><small class=\"d-block mt-2\" style=\"color: var(--color-text-muted);\">Response &mdash; JSON array of authorized fob IDs:</small><pre class=\"mb-0 p-2 rounded border\" style=\"background-color: var(--color-surface);\"><code>[12345678, 23456789, 34567890]</code></pre></div></div><h3 class=\"text-muted border-bottom pb-2 mb-3 h6\">Notes</h3><ul class=\"mb-0\"><li><strong>LAN only</strong> &mdash; requests from the internet receive HTTP 403.</li><li><strong>ETag caching</strong> &mdash; send <code>If-None-Match</code> with the returned <code>ETag</code>; a <code>304</code> means the fob list has not changed.</li><li>A reference ESP32 client implementation is in the <code>access-controller/</code> directory.</li></ul>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "/api/fobs</code></div><div class=\"ps-3 border-start border-2\"><small class=\"d-block\" style=\"color: var(--color-text-muted);\">Request body &mdash; JSON array of swipe events (may be empty):</small><pre class=\"mb-0 p-2 rounded border\" style=\"background-color: var(--color-surface);\"><code>[&#123; \"fob\": 12345678, \"allowed\": true &#125;]</code></pre><small class=\"d-block mt-2\" style=\"color: var(--color-text-muted);\">Response &mdash; JSON array of authorized fob IDs:</small><pre class=\"mb-0 p-2 rounded border\" style=\"background-color: var(--color-surface);\"><code>[12345678, 23456789, 34567890]</code></pre><small class=\"d-block mt-2\" style=\"color: var(--color-text-muted);\">Response header &mdash; raw Ed25519 signature over the body bytes, base64-encoded:</small><pre class=\"mb-0 p-2 rounded border\" style=\"background-color: var(--color-surface);\"><code>X-Fob-Signature: &lt;base64(64-byte signature)&gt;</code></pre></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if pubkey != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<h3 class=\"text-muted border-bottom pb-2 mb-3 h6\">Response Signing Public Key</h3><p class=\"small\" style=\"color: var(--color-text-muted);\">Paste this Ed25519 public key into each access controller's <code>trusted_pubkey</code> setting. Once a controller is configured with a key, it will reject any fob-list response that is not signed by the matching server key.</p><div class=\"d-flex align-items-center gap-2 mb-4\"><code id=\"fobapi-pubkey\" class=\"p-2 rounded border flex-grow-1 text-break\" style=\"background-color: var(--color-surface);\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var10 string
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(pubkey)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `modules/fobapi/config.templ`, Line: 91, Col: 60}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</code> <button type=\"button\" class=\"btn btn-sm btn-outline-secondary text-nowrap\" onclick=\"navigator.clipboard.writeText(document.getElementById('fobapi-pubkey').innerText).then(()=>{this.innerText='Copied';setTimeout(()=>this.innerText='Copy',1500)})\">Copy</button></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<h3 class=\"text-muted border-bottom pb-2 mb-3 h6\">Notes</h3><ul class=\"mb-0\"><li><strong>LAN only</strong> &mdash; requests from the internet receive HTTP 403.</li><li><strong>ETag caching</strong> &mdash; send <code>If-None-Match</code> with the returned <code>ETag</code>; a <code>304</code> means the fob list has not changed.</li><li>A reference ESP32 client implementation is in the <code>access-controller/</code> directory.</li></ul>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

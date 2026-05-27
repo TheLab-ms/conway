@@ -17,13 +17,19 @@
 //! CRC-32 (the tag also authenticates the 32-byte header as AAD,
 //! preventing cross-sector / cross-partition splicing).
 //!
-//! Plaintext payload format is unchanged from v2 (all little-endian):
+//! Plaintext payload format (all little-endian):
 //! ```text
-//!   ssid:      u8 length, then bytes (max 32)
-//!   pass:      u8 length, then bytes (max 64)
-//!   host_flag: u8     (0 = standalone / no Conway, 1 = Some)
-//!   host:      4 bytes (IPv4 octets, only present if host_flag == 1)
-//!   port:      u16    (always present; meaningless when host_flag == 0)
+//!   ssid:           u8 length, then bytes (max 32)
+//!   pass:           u8 length, then bytes (max 64)
+//!   host_flag:      u8     (0 = standalone / no Conway, 1 = Some)
+//!   host:           4 bytes (IPv4 octets, only present if host_flag == 1)
+//!   port:           u16    (always present; meaningless when host_flag == 0)
+//!   --- optional tail, present in v3.1+ records ---
+//!   pubkey_flag:    u8     (0 = no trusted pubkey, 1 = Some). If the
+//!                          byte (or the whole 33-byte tail) is missing
+//!                          the record is treated as having no pubkey,
+//!                          preserving v3.0 compatibility.
+//!   pubkey:         32 bytes (Ed25519 public key, only when flag == 1)
 //! ```
 //!
 //! ## Migration note
@@ -60,8 +66,9 @@ pub const MAX_SSID: usize = 32;
 pub const MAX_PASSWORD: usize = 64;
 
 /// Plaintext payload upper bound: 1+32 (ssid) + 1+64 (pw) + 1 (flag)
-/// + 4 (host) + 2 (port) = 105. Round up for safety/headroom.
-const MAX_PLAINTEXT: usize = 128;
+/// + 4 (host) + 2 (port) + 1 (pubkey_flag) + 32 (pubkey) = 138.
+/// Round up for safety/headroom.
+const MAX_PLAINTEXT: usize = 192;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -72,6 +79,20 @@ pub struct Settings {
     /// local fob list only. `sync_task` is not spawned in that case.
     pub conway_host: Option<[u8; 4]>,
     pub conway_port: u16,
+    /// Ed25519 public key the server uses to sign `POST /api/fobs`
+    /// responses. When `Some`, [`crate::sync`] requires the response to
+    /// carry a valid `X-Fob-Signature` over the body bytes or it
+    /// refuses to update the fob cache. When `None`, the header is
+    /// ignored (back-compat for existing deployments and a usable
+    /// state during initial provisioning).
+    ///
+    /// **Setting / clearing this field requires physical confirmation**
+    /// via the CONFIG button — see the staged-commit flow in
+    /// `crate::http`. An attacker on the LAN can therefore not silently
+    /// pin a key (which would freeze the fob list to one the device
+    /// can never recover from without a factory reset) nor silently
+    /// clear it (which would lift signature enforcement).
+    pub trusted_pubkey: Option<[u8; 32]>,
 }
 
 impl Settings {
@@ -83,6 +104,7 @@ impl Settings {
             password: option_env!("CONWAY_PASSWORD").unwrap_or("").into(),
             conway_host: host,
             conway_port: 8080,
+            trusted_pubkey: None,
         }
     }
 
@@ -128,6 +150,17 @@ impl Settings {
             }
         }
         out.extend_from_slice(&self.conway_port.to_le_bytes());
+        // Tail (v3.1): trusted pubkey, optional. Always emitted by this
+        // build so the format is unambiguous; older firmware that never
+        // wrote the tail will be decoded back as `None` by the
+        // boundary check in `deserialize`.
+        match self.trusted_pubkey {
+            None => out.push(0),
+            Some(ref k) => {
+                out.push(1);
+                out.extend_from_slice(k);
+            }
+        }
         Ok(())
     }
 
@@ -168,12 +201,33 @@ impl Settings {
             return None;
         }
         let port = u16::from_le_bytes([buf[p], buf[p + 1]]);
+        p += 2;
+
+        // Optional pubkey tail. Records written by v3.0 firmware end
+        // here; treat that as `trusted_pubkey = None` for back-compat.
+        // A malformed/truncated tail (flag=1 but <32 bytes follow) is
+        // a hard reject so we don't silently install an empty key.
+        let trusted_pubkey = match buf.get(p) {
+            None => None,
+            Some(&0) => None,
+            Some(&1) => {
+                p += 1;
+                if p + 32 > buf.len() {
+                    return None;
+                }
+                let mut k = [0u8; 32];
+                k.copy_from_slice(&buf[p..p + 32]);
+                Some(k)
+            }
+            Some(_) => return None,
+        };
 
         Some(Self {
             ssid,
             password,
             conway_host,
             conway_port: port,
+            trusted_pubkey,
         })
     }
 }

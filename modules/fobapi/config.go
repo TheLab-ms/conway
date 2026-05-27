@@ -16,7 +16,7 @@ func (m *Module) ConfigSpec() config.Spec {
 		ReadOnly:    true,
 		Order:       40,
 		Description: configDescription(),
-		InfoContent: configInfoContent(m.self.String()),
+		InfoContent: configInfoContent(m.self.String(), m.PublicKeyBase64()),
 		ExtraContent: func(ctx context.Context) templ.Component {
 			clients, err := m.listClients(ctx)
 			if err != nil {
