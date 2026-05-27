@@ -10,6 +10,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/directory"
 	"github.com/TheLab-ms/conway/modules/discord"
+	"github.com/TheLab-ms/conway/modules/discordbot"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/fobapi"
@@ -103,6 +104,13 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	discordMod.SetConfigLoader(a.ConfigStore())
 	authModule.DiscordLoginEnabled = discordMod.IsLoginEnabled
 	a.Add(discordMod)
+
+	// Discord signup notification bot: posts a Discord message announcing
+	// each new member and lets anyone in the channel assign a discount type
+	// via an interactive picker.
+	discordBotMod := discordbot.New(opts.Database, engine.NewEventLogger(opts.Database, "discordbot"), discordWebhookMod)
+	discordBotMod.SetConfigLoader(a.ConfigStore())
+	a.Add(discordBotMod)
 
 	machinesMod := machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu"))
 
