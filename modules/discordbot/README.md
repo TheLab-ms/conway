@@ -26,7 +26,7 @@ Posts a Discord message announcing each new Conway member and lets anyone in the
 - Permanent webhook-delivery failures are logged as `SignupNotifyError` events; the queue row is then deleted to prevent unbounded retry.
 - All discount labels and values in the picker are sourced from `modules/members/memberdb.DiscountTypes` — adding a new discount tier there automatically makes it selectable from Discord.
 - The custom_id format is `conway:set_discount:<memberID>`, embedding the target member ID directly so the handler is stateless.
-- `member_id` in `discordbot_signup_queue` references `members(id) ON DELETE CASCADE`, so deleting a member before the notification is delivered cleanly removes the pending notification.
+- `member_id` in `discordbot_signup_queue` declares a foreign key to `members(id)`, but Conway does not enable SQLite's `PRAGMA foreign_keys`, so the reference is declarative only. If a member is deleted before the notification is delivered, the queue row is orphaned; `GetItem`'s `JOIN` against `members` filters it out, so it will not be retried — but it will also not be auto-removed.
 
 ## Security
 

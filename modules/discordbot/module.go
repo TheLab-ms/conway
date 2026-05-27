@@ -48,6 +48,12 @@ type Module struct {
 	eventLogger  *engine.EventLogger
 	webhooks     discordwebhook.MessageQueuer
 	configLoader *config.Loader[Config]
+
+	// configOverride, when non-nil, is used in place of configLoader. It
+	// exists as a single test-injection seam so unit tests can drive the
+	// interaction handler and the workqueue without standing up a real
+	// config.Store. Production code never sets this.
+	configOverride func(context.Context) (*Config, error)
 }
 
 // New wires up the module. The webhooks queuer must be non-nil; it's where
@@ -64,9 +70,13 @@ func (m *Module) SetConfigLoader(store *config.Store) {
 	m.configLoader = config.NewLoader[Config](store, "discordbot")
 }
 
-// loadConfig returns the current config, or a zero-value config when no
-// loader was attached (which happens in narrow tests).
+// loadConfig returns the current config. The test seam configOverride wins
+// when set; otherwise the configured Loader is used; otherwise a zero-value
+// Config is returned (narrow cases where neither is wired).
 func (m *Module) loadConfig(ctx context.Context) (*Config, error) {
+	if m.configOverride != nil {
+		return m.configOverride(ctx)
+	}
 	if m.configLoader == nil {
 		return &Config{}, nil
 	}

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -61,16 +62,14 @@ func signedPost(t *testing.T, priv ed25519.PrivateKey, body []byte) *http.Reques
 }
 
 // newTestHandler returns a fully-wired http.HandlerFunc plus the underlying
-// *Module, with the config injected directly (no config.Store needed).
+// *Module, with the config injected directly via the configOverride seam.
 func newTestHandler(t *testing.T, cfg Config) (http.HandlerFunc, *Module, *fakeQueuer) {
 	t.Helper()
 	db := members.NewTestDB(t)
 	fq := &fakeQueuer{}
 	m := New(db, engine.NewEventLogger(db, "discordbot"), fq)
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		m.handleInteractionWithConfig(w, r, &cfg)
-	}
-	return handler, m, fq
+	m.configOverride = func(context.Context) (*Config, error) { return &cfg, nil }
+	return m.handleInteraction, m, fq
 }
 
 func insertMember(t *testing.T, m *Module, email string) int64 {
@@ -110,15 +109,10 @@ func TestHandleInteraction_BadSignatureRejected(t *testing.T) {
 	priv, pubHex := testKey(t)
 	handler, _, _ := newTestHandler(t, Config{Enabled: true, ApplicationPublicKey: pubHex})
 
-	// Sign one body, send a different one.
-	good := []byte(`{"type":1}`)
-	r := signedPost(t, priv, good)
-	r.Body = http.NoBody
-	r = httptest.NewRequest(http.MethodPost, "/discord/interactions",
-		bytes.NewReader([]byte(`{"type":2}`)))
-	// Re-attach the headers from the signed request.
-	signed := signedPost(t, priv, good)
-	r.Header = signed.Header
+	// Sign one body, swap in a different one so the signature no longer
+	// matches what's POSTed.
+	r := signedPost(t, priv, []byte(`{"type":1}`))
+	r.Body = io.NopCloser(bytes.NewReader([]byte(`{"type":2}`)))
 
 	w := httptest.NewRecorder()
 	handler(w, r)
