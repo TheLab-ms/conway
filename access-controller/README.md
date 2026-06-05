@@ -51,6 +51,8 @@ On first power-up (or after a factory reset) the device starts an open WiFi AP n
 
 Tip: find the device's new IP from your router's DHCP lease table or from the serial monitor (look for the `IPv4` line). The status page is then at `http://<ip>/`.
 
+> **Onboarding security warning.** The onboarding AP is **open (no WPA2)** and the captive portal is **plaintext HTTP**, so the WiFi password you type is transmitted in the clear over the air. Any passive radio listener within range can capture it, and a nearby device can also reach the open portal and complete or hijack onboarding. Onboard in a physically controlled area, and re-key the WiFi network afterward if you cannot rule out a listener. (A WPA2-protected AP with a per-device onboarding password is tracked as future work.)
+
 ## Physical controls
 
 - **CONFIG button, short press:** sync fobs with Conway immediately.
