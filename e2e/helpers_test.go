@@ -135,6 +135,7 @@ type memberConfig struct {
 	stripeSubState   string
 	stripeCustomerID string
 	discountType     string
+	discountStatus   string
 	discordUserID    string
 	discordUsername  string
 	discordAvatar    []byte
@@ -181,6 +182,12 @@ func WithStripeCustomerID(id string) MemberOption {
 // WithDiscount sets the member's discount type.
 func WithDiscount(discountType string) MemberOption {
 	return func(c *memberConfig) { c.discountType = discountType }
+}
+
+// WithDiscountStatus sets the member's discount approval status
+// ("requested" or "approved"). Empty leaves it NULL (status-less / admin-set).
+func WithDiscountStatus(status string) MemberOption {
+	return func(c *memberConfig) { c.discountStatus = status }
 }
 
 // WithDiscord sets the member's Discord user ID.
@@ -246,8 +253,8 @@ func seedMember(t *testing.T, env *TestEnv, email string, opts ...MemberOption) 
 
 	// Insert member
 	result, err := env.db.Exec(`
-		INSERT INTO members (email, name, name_override, bio, profile_picture, confirmed, leadership, non_billable, fob_id, fob_last_seen, stripe_subscription_state, stripe_customer_id, discount_type, discord_user_id, discord_username, discord_avatar)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO members (email, name, name_override, bio, profile_picture, confirmed, leadership, non_billable, fob_id, fob_last_seen, stripe_subscription_state, stripe_customer_id, discount_type, discount_status, discord_user_id, discord_username, discord_avatar)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cfg.email,
 		cfg.name, // Empty string is fine, column has NOT NULL DEFAULT ''
 		sql.NullString{String: cfg.nameOverride, Valid: cfg.nameOverride != ""},
@@ -259,6 +266,7 @@ func seedMember(t *testing.T, env *TestEnv, email string, opts ...MemberOption) 
 		sql.NullString{String: cfg.stripeSubState, Valid: cfg.stripeSubState != ""},
 		sql.NullString{String: cfg.stripeCustomerID, Valid: cfg.stripeCustomerID != ""},
 		sql.NullString{String: cfg.discountType, Valid: cfg.discountType != ""},
+		sql.NullString{String: cfg.discountStatus, Valid: cfg.discountStatus != ""},
 		sql.NullString{String: cfg.discordUserID, Valid: cfg.discordUserID != ""},
 		sql.NullString{String: cfg.discordUsername, Valid: cfg.discordUsername != ""},
 		cfg.discordAvatar,

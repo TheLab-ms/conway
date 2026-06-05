@@ -31,6 +31,7 @@ type member struct {
 	PaypalSubID     *string
 	PaypalPrice     *float64
 	DiscountType    *string
+	DiscountStatus  *string
 	RootFamilyEmail *string
 	BillAnnually    bool
 	FobLastSeen     *engine.LocalTime
@@ -47,11 +48,11 @@ type memberEvent struct {
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
 	mem := member{}
 	err := db.QueryRowContext(ctx, `
-		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_customer_id, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
+		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_customer_id, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, m.discount_status, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, id).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeCustomerID, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeCustomerID, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.DiscountStatus, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -129,8 +130,24 @@ var _ = handlePostForm(formHandler{
 		Fields: []string{"family_email", "discount"},
 		Query: `UPDATE members SET
 			discount_type = (CASE WHEN :discount = '' THEN NULL ELSE :discount END),
+			discount_status = NULL,
 			root_family_member = (SELECT id FROM members WHERE email = :family_email AND root_family_member IS NULL)
 			WHERE id = :route_id`,
+	},
+})
+
+// Approving a pending request marks it approved (which is what makes the
+// discount usable at checkout and re-shows the member's "Set Up Payment"
+// button). For a family request the admin also supplies the root account
+// email here so the linkage is completed at approval time.
+var _ = handlePostForm(formHandler{
+	Path: "/admin/members/{id}/updates/discount-approve",
+	Handler: &engine.FormHandler{
+		Fields: []string{"family_email"},
+		Query: `UPDATE members SET
+			discount_status = 'approved',
+			root_family_member = (CASE WHEN :family_email = '' THEN root_family_member ELSE (SELECT id FROM members WHERE email = :family_email AND root_family_member IS NULL) END)
+			WHERE id = :route_id AND discount_status = 'requested'`,
 	},
 })
 
@@ -210,6 +227,27 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 			<div class="card mt-3">
 				<div class="card-body">
 					<h2 class="card-title h5 mb-2">Discounts</h2>
+					if member.DiscountStatus != nil && *member.DiscountStatus == "requested" {
+						<div class="alert alert-warning" id="discount-request-pending">
+							<div class="mb-2">
+								<strong>Discount requested:</strong> { memberdb.DiscountLabel(derefStr(member.DiscountType)) }
+								<span class="text-muted">— awaiting approval</span>
+							</div>
+							<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/discount-approve", member.ID)) }>
+								if derefStr(member.DiscountType) == "family" {
+									<div class="mb-2">
+										<label for="approve_family_email" class="form-label">Root Family Account Email Address</label>
+										<input type="email" class="form-control" id="approve_family_email" name="family_email" placeholder="root@example.com" required/>
+										<div class="form-text">Family discounts must be linked to a root account at approval time.</div>
+									</div>
+								}
+								<button type="submit" class="btn btn-success">Approve discount</button>
+							</form>
+							<p class="card-subtitle mt-2 mb-0 text-muted small">
+								Leadership cannot deny a request; the member may remove it themselves at any time.
+							</p>
+						</div>
+					}
 					<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/discounts", member.ID)) }>
 						<script>
 							document.addEventListener('DOMContentLoaded', (event) => {
@@ -388,6 +426,13 @@ func discountSelected(current *string, optValue string) bool {
 		return current == nil || *current == ""
 	}
 	return current != nil && *current == optValue
+}
+
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 templ renderMemberEventRows(events []*memberEvent, memberID int64, page int, hasMore bool) {

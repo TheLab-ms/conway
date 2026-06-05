@@ -2,6 +2,7 @@ package members
 
 import (
 	"github.com/TheLab-ms/conway/modules/bootstrap"
+	"github.com/TheLab-ms/conway/modules/members/memberdb"
 )
 
 type donationItem struct {
@@ -19,6 +20,12 @@ type member struct {
 	HasKeyFob        bool
 	StripeConfigured bool
 	DonationItems    []donationItem
+
+	// Discount state, derived in renderMemberView.
+	DiscountType    string // canonical value, "" when none
+	DiscountLabel   string // human label for DiscountType
+	DiscountPending bool   // a request is awaiting leadership approval
+	DiscountActive  bool   // a usable discount is set (approved or admin-set)
 }
 
 templ renderMember(member *member) {
@@ -108,14 +115,71 @@ templ renderPaymentStep(member *member) {
 					<div class="mt-2">
 						if member.PaymentActive {
 							<a href="/payment/checkout" class="btn btn-outline-success btn-sm">Manage Payment</a>
+							if member.DiscountActive {
+								@renderDiscountRemove("Remove discount")
+							}
+						} else if member.DiscountPending {
+							@renderDiscountPending(member)
+						} else if member.DiscountActive {
+							@renderDiscountApproved(member)
 						} else {
 							<a href="/payment/checkout" class="btn btn-primary btn-sm">Set Up Payment</a>
+							@renderDiscountRequest()
 						}
 					</div>
 				}
 			</div>
 		</div>
 	</li>
+}
+
+// renderDiscountPending shows the paused-payment notice while leadership
+// reviews the request. The "Set Up Payment" button is intentionally absent so
+// the member can't accidentally pay full price.
+templ renderDiscountPending(member *member) {
+	<div class="alert alert-info py-2 px-3 mb-0" id="discount-pending">
+		<div class="mb-1"><strong>{ member.DiscountLabel } discount requested</strong></div>
+		<p class="mb-2 small">Waiting for leadership to approve. Payment setup is paused so you don't pay full price by mistake.</p>
+		@renderDiscountRemove("Cancel request")
+	</div>
+}
+
+// renderDiscountApproved shows the approved discount and re-enables the
+// "Set Up Payment" button (the discount is applied at checkout).
+templ renderDiscountApproved(member *member) {
+	<div class="mb-2" id="discount-approved">
+		<span class="badge bg-success-subtle text-success">{ member.DiscountLabel } discount approved</span>
+	</div>
+	<a href="/payment/checkout" class="btn btn-primary btn-sm">Set Up Payment</a>
+	@renderDiscountRemove("Remove discount")
+}
+
+// renderDiscountRequest renders the collapsible self-service discount request
+// form shown when a member has no discount yet.
+templ renderDiscountRequest() {
+	<div class="mt-2">
+		<button type="button" class="btn btn-link btn-sm p-0" id="discount-request-toggle" onclick="document.getElementById('discount-request-form').style.display='block';this.style.display='none'">Request a membership discount</button>
+		<form id="discount-request-form" method="post" action="/discount/request" style="display:none;" class="mt-2">
+			<label for="discount-request-select" class="form-label small mb-1">Discount type</label>
+			<select class="form-select form-select-sm mb-2" id="discount-request-select" name="discount">
+				for _, opt := range memberdb.DiscountTypes {
+					if opt.Value != "" {
+						<option value={ opt.Value }>{ opt.Label }</option>
+					}
+				}
+			</select>
+			<p class="small text-muted mb-2">Your request is sent to leadership for approval. Payment setup pauses until it's approved.</p>
+			<button type="submit" class="btn btn-primary btn-sm">Request discount</button>
+		</form>
+	</div>
+}
+
+// renderDiscountRemove is the inline form members use to clear their discount
+// at any time, regardless of approval status.
+templ renderDiscountRemove(label string) {
+	<form method="post" action="/discount/remove" class="d-inline ms-1">
+		<button type="submit" class="btn btn-outline-secondary btn-sm">{ label }</button>
+	</form>
 }
 
 templ renderStep(number string, title string, description string, complete bool, isCurrent bool, actionUrl templ.SafeURL, actionText string) {

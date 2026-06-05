@@ -232,16 +232,23 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 	memberID := auth.GetUserMeta(r.Context()).ID
 	var email string
 	var discountType *string
+	var discountStatus *string
 	var existingCustomerID *string
 	var existingSubID *string
 	var active bool
 	var annual bool
-	err = m.db.QueryRowContext(r.Context(), "SELECT email, discount_type, stripe_customer_id, stripe_subscription_id, bill_annually, (stripe_subscription_state IS NOT NULL AND stripe_subscription_state != 'canceled') FROM members WHERE id = ?", memberID).Scan(&email, &discountType, &existingCustomerID, &existingSubID, &annual, &active)
+	err = m.db.QueryRowContext(r.Context(), "SELECT email, discount_type, discount_status, stripe_customer_id, stripe_subscription_id, bill_annually, (stripe_subscription_state IS NOT NULL AND stripe_subscription_state != 'canceled') FROM members WHERE id = ?", memberID).Scan(&email, &discountType, &discountStatus, &existingCustomerID, &existingSubID, &annual, &active)
 	if err != nil {
 		m.eventLogger.LogEvent(r.Context(), memberID, "APIError", "", "", false, "db query: "+err.Error())
 		engine.SystemError(w, err.Error())
 		return
 	}
+
+	// A discount only applies once leadership has approved it. While a request
+	// is still pending (discount_status='requested') we treat the member as
+	// having no usable discount so no coupon is attached. Admin-set discounts
+	// are status-less (NULL) and count as usable.
+	discountUsable := discountType != nil && (discountStatus == nil || *discountStatus != "requested")
 
 	custID := ""
 	if existingCustomerID != nil {
@@ -298,7 +305,7 @@ func (m *Module) handleCheckoutForm(w http.ResponseWriter, r *http.Request) {
 	checkoutParams.LineItems[0].Price = &priceObj.ID
 
 	// Apply discount(s)
-	if discountType != nil {
+	if discountUsable {
 		coupIter := sc.Coupons.List(&stripe.CouponListParams{})
 
 		for coupIter.Next() {

@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 
@@ -20,8 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeQueuer captures QueueMessage calls; the bot tests only exercise
-// inbound interactions, so the outbound path is asserted elsewhere.
+// fakeQueuer captures QueueMessage calls; the bot tests only exercise inbound
+// interactions, so the outbound path is asserted elsewhere.
 type fakeQueuer struct {
 	mu   sync.Mutex
 	msgs []queuedMsg
@@ -40,8 +39,7 @@ func (f *fakeQueuer) QueueTemplateMessage(_ context.Context, _, _ string, _ map[
 	return nil
 }
 
-// testKey returns a freshly-generated key pair plus the hex-encoded public
-// key, suitable for injecting into the module config.
+// testKey returns a freshly-generated key pair plus the hex-encoded public key.
 func testKey(t *testing.T) (ed25519.PrivateKey, string) {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -83,11 +81,30 @@ func insertMember(t *testing.T, m *Module, email string) int64 {
 	return id
 }
 
+// insertRequestedMember inserts a member that has already requested the given
+// discount (discount_status='requested').
+func insertRequestedMember(t *testing.T, m *Module, email, discountType string) int64 {
+	t.Helper()
+	id := insertMember(t, m, email)
+	_, err := m.db.Exec(
+		"UPDATE members SET discount_type=?, discount_status='requested' WHERE id=?",
+		discountType, id)
+	require.NoError(t, err)
+	return id
+}
+
 func decodeResp(t *testing.T, w *httptest.ResponseRecorder) interactionResponse {
 	t.Helper()
 	var out interactionResponse
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&out))
 	return out
+}
+
+func discountStatus(t *testing.T, m *Module, id int64) *string {
+	t.Helper()
+	var s *string
+	require.NoError(t, m.db.QueryRow("SELECT discount_status FROM members WHERE id=?", id).Scan(&s))
+	return s
 }
 
 func TestHandleInteraction_PingReturnsPong(t *testing.T) {
@@ -109,8 +126,6 @@ func TestHandleInteraction_BadSignatureRejected(t *testing.T) {
 	priv, pubHex := testKey(t)
 	handler, _, _ := newTestHandler(t, Config{Enabled: true, ApplicationPublicKey: pubHex})
 
-	// Sign one body, swap in a different one so the signature no longer
-	// matches what's POSTed.
 	r := signedPost(t, priv, []byte(`{"type":1}`))
 	r.Body = io.NopCloser(bytes.NewReader([]byte(`{"type":2}`)))
 
@@ -131,13 +146,16 @@ func TestHandleInteraction_NotConfigured(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
-func TestHandleInteraction_ComponentUpdatesDiscount(t *testing.T) {
+// TestHandleInteraction_ApproveSetsApproved covers the happy path: clicking
+// Approve on a pending request flips discount_status to 'approved', removes the
+// button (UPDATE_MESSAGE with empty components), and logs an audit event.
+func TestHandleInteraction_ApproveSetsApproved(t *testing.T) {
 	t.Parallel()
 	priv, pubHex := testKey(t)
 	handler, m, _ := newTestHandler(t, Config{Enabled: true, ApplicationPublicKey: pubHex})
 
-	memberID := insertMember(t, m, "applicant@example.com")
-	body := componentBody(t, memberID, "student", "discord-uid-1", "alice")
+	memberID := insertRequestedMember(t, m, "applicant@example.com", "student")
+	body := approveBody(t, memberID, "discord-uid-1", "alice")
 
 	r := signedPost(t, priv, body)
 	w := httptest.NewRecorder()
@@ -148,78 +166,97 @@ func TestHandleInteraction_ComponentUpdatesDiscount(t *testing.T) {
 	require.Equal(t, responseTypeUpdateMessage, resp.Type)
 	require.NotNil(t, resp.Data)
 	require.NotNil(t, resp.Data.Components, "must be a non-nil slice so JSON is [] not null")
-	require.Len(t, resp.Data.Components, 0, "empty components array removes the picker")
+	require.Len(t, resp.Data.Components, 0, "empty components array removes the button")
 	require.Len(t, resp.Data.Embeds, 1)
+	require.Equal(t, "Discount approved", resp.Data.Embeds[0].Title)
 	require.Contains(t, resp.Data.Embeds[0].Description, "Student")
 	require.Contains(t, resp.Data.Embeds[0].Description, "<@discord-uid-1>")
 
-	// Verify the DB was actually updated.
-	var stored string
-	require.NoError(t, m.db.QueryRow(
-		"SELECT discount_type FROM members WHERE id=?", memberID).Scan(&stored))
-	require.Equal(t, "student", stored)
+	status := discountStatus(t, m, memberID)
+	require.NotNil(t, status)
+	require.Equal(t, "approved", *status)
 
-	// And an audit event was logged.
 	var n int
 	require.NoError(t, m.db.QueryRow(
-		`SELECT COUNT(*) FROM module_events WHERE module='discordbot' AND event_type='DiscountSetViaDiscord'`).Scan(&n))
+		`SELECT COUNT(*) FROM module_events WHERE module='discordbot' AND event_type='DiscountApprovedViaDiscord'`).Scan(&n))
 	require.Equal(t, 1, n)
 }
 
-func TestHandleInteraction_ComponentNoneClearsDiscount(t *testing.T) {
+// TestHandleInteraction_ApproveFamilyMentionsLinkage: family approvals remind
+// leadership to link the root account in the admin panel.
+func TestHandleInteraction_ApproveFamilyMentionsLinkage(t *testing.T) {
 	t.Parallel()
 	priv, pubHex := testKey(t)
 	handler, m, _ := newTestHandler(t, Config{Enabled: true, ApplicationPublicKey: pubHex})
 
-	memberID := insertMember(t, m, "x@y.z")
-	// Preset a non-null discount so we can prove None clears it.
-	_, err := m.db.Exec("UPDATE members SET discount_type='student' WHERE id=?", memberID)
-	require.NoError(t, err)
-
-	body := componentBody(t, memberID, noneSentinel, "u1", "alice")
-	r := signedPost(t, priv, body)
+	memberID := insertRequestedMember(t, m, "fam@example.com", "family")
+	r := signedPost(t, priv, approveBody(t, memberID, "u1", "alice"))
 	w := httptest.NewRecorder()
 	handler(w, r)
-	require.Equal(t, http.StatusOK, w.Code)
 
-	var stored *string
-	require.NoError(t, m.db.QueryRow(
-		"SELECT discount_type FROM members WHERE id=?", memberID).Scan(&stored))
-	require.Nil(t, stored, "_none sentinel must clear discount_type to NULL")
+	resp := decodeResp(t, w)
+	require.Contains(t, resp.Data.Embeds[0].Description, "root family account")
 }
 
-func TestHandleInteraction_ComponentRejectsUnknownDiscount(t *testing.T) {
+// TestHandleInteraction_ApproveWhenNotPending: clicking Approve on a request
+// that was already withdrawn (or approved) leaves the row untouched and shows
+// the "request closed" message.
+func TestHandleInteraction_ApproveWhenNotPending(t *testing.T) {
 	t.Parallel()
 	priv, pubHex := testKey(t)
 	handler, m, _ := newTestHandler(t, Config{Enabled: true, ApplicationPublicKey: pubHex})
 
-	memberID := insertMember(t, m, "x@y.z")
-	body := componentBody(t, memberID, "made-up-tier", "u1", "alice")
-
-	r := signedPost(t, priv, body)
+	// Member exists but has no pending request (member removed it).
+	memberID := insertMember(t, m, "withdrawn@example.com")
+	r := signedPost(t, priv, approveBody(t, memberID, "u1", "alice"))
 	w := httptest.NewRecorder()
 	handler(w, r)
 
 	require.Equal(t, http.StatusOK, w.Code)
 	resp := decodeResp(t, w)
-	require.Equal(t, responseTypeChannelMsg, resp.Type, "ephemeral error reply")
-	require.NotNil(t, resp.Data)
-	require.Equal(t, flagEphemeral, resp.Data.Flags)
-	require.Contains(t, strings.ToLower(resp.Data.Content), "unknown")
+	require.Equal(t, responseTypeUpdateMessage, resp.Type)
+	require.Equal(t, "Discount request closed", resp.Data.Embeds[0].Title)
+	require.Len(t, resp.Data.Components, 0)
 
-	// DB untouched.
-	var stored *string
+	// Status remains NULL; no event logged.
+	require.Nil(t, discountStatus(t, m, memberID))
+	var n int
 	require.NoError(t, m.db.QueryRow(
-		"SELECT discount_type FROM members WHERE id=?", memberID).Scan(&stored))
-	require.Nil(t, stored)
+		`SELECT COUNT(*) FROM module_events WHERE event_type='DiscountApprovedViaDiscord'`).Scan(&n))
+	require.Equal(t, 0, n)
 }
 
-func TestHandleInteraction_ComponentMissingMember(t *testing.T) {
+// TestHandleInteraction_ApproveMissingMember replies ephemerally.
+func TestHandleInteraction_ApproveMissingMember(t *testing.T) {
 	t.Parallel()
 	priv, pubHex := testKey(t)
 	handler, _, _ := newTestHandler(t, Config{Enabled: true, ApplicationPublicKey: pubHex})
 
-	body := componentBody(t, 999999, "student", "u1", "alice")
+	r := signedPost(t, priv, approveBody(t, 999999, "u1", "alice"))
+	w := httptest.NewRecorder()
+	handler(w, r)
+	require.Equal(t, http.StatusOK, w.Code)
+	resp := decodeResp(t, w)
+	require.Equal(t, responseTypeChannelMsg, resp.Type)
+	require.Equal(t, flagEphemeral, resp.Data.Flags)
+}
+
+// TestHandleInteraction_UnknownComponent replies ephemerally for a custom_id
+// that isn't an approve button.
+func TestHandleInteraction_UnknownComponent(t *testing.T) {
+	t.Parallel()
+	priv, pubHex := testKey(t)
+	handler, _, _ := newTestHandler(t, Config{Enabled: true, ApplicationPublicKey: pubHex})
+
+	body, err := json.Marshal(map[string]any{
+		"type": interactionTypeComponent,
+		"data": map[string]any{"custom_id": "conway:something_else:1"},
+		"member": map[string]any{
+			"user": map[string]any{"id": "u1", "username": "alice"},
+		},
+	})
+	require.NoError(t, err)
+
 	r := signedPost(t, priv, body)
 	w := httptest.NewRecorder()
 	handler(w, r)
@@ -229,15 +266,14 @@ func TestHandleInteraction_ComponentMissingMember(t *testing.T) {
 	require.Equal(t, flagEphemeral, resp.Data.Flags)
 }
 
-// componentBody returns the JSON body Discord would POST for a string-select
-// click on the signup message.
-func componentBody(t *testing.T, memberID int64, value, userID, username string) []byte {
+// approveBody returns the JSON body Discord POSTs for an Approve button click.
+func approveBody(t *testing.T, memberID int64, userID, username string) []byte {
 	t.Helper()
 	b := map[string]any{
 		"type": interactionTypeComponent,
 		"data": map[string]any{
-			"custom_id": fmt.Sprintf("%s%d", customIDPrefix, memberID),
-			"values":    []string{value},
+			"custom_id":      fmt.Sprintf("%s%d", approveCustomIDPrefix, memberID),
+			"component_type": componentTypeButton,
 		},
 		"member": map[string]any{
 			"user": map[string]any{"id": userID, "username": username},

@@ -7,73 +7,73 @@ import (
 	"github.com/TheLab-ms/conway/modules/members/memberdb"
 )
 
-// customIDPrefix tags interactions originating from a signup-notification
-// message. The full custom_id is "conway:set_discount:<memberID>" so the
-// interaction handler can route the click back to the right member without
-// any extra state.
-const customIDPrefix = "conway:set_discount:"
+// approveCustomIDPrefix tags interactions originating from a discount-request
+// notification. The full custom_id is "conway:approve_discount:<memberID>" so
+// the interaction handler can route the click back to the right member
+// without any extra state.
+const approveCustomIDPrefix = "conway:approve_discount:"
 
 // botUsername mirrors the hardcoded username used by modules/discordwebhook
-// so signup notifications appear under the same identity as other Conway
-// webhook posts.
+// so notifications appear under the same identity as other Conway webhook
+// posts.
 const botUsername = "Conway"
 
-// buildSignupPayload returns the JSON body POSTed to the signup channel
-// webhook. The message includes an embed describing the new member and a
-// single string-select component listing every memberdb.DiscountType value.
-func buildSignupPayload(memberID int64, email string) (string, error) {
-	options := make([]selectOption, 0, len(memberdb.DiscountTypes))
-	for _, opt := range memberdb.DiscountTypes {
-		// Discord's option values must be 1-100 chars. The empty "None"
-		// option needs a sentinel so it can round-trip through Discord;
-		// the interaction handler treats "_none" as NULL.
-		value := opt.Value
-		if value == "" {
-			value = noneSentinel
-		}
-		options = append(options, selectOption{
-			Label: opt.Label,
-			Value: value,
-		})
+// familyDiscountType is the one discount tier that needs a root-account
+// linkage leadership can only complete in the admin panel; the Discord
+// approval embed calls this out explicitly.
+const familyDiscountType = "family"
+
+// buildRequestPayload returns the JSON body POSTed to the leadership channel
+// webhook when a member requests a discount. The message includes an embed
+// describing the request and a single Approve button. There is intentionally
+// no deny/cancel control: leadership can only approve, and members remove
+// their own requests.
+func buildRequestPayload(memberID int64, email, discountType string) (string, error) {
+	label := memberdb.DiscountLabel(discountType)
+
+	desc := fmt.Sprintf("**%s** requested the **%s** discount.\nClick **Approve** to apply it.", email, label)
+	if discountType == familyDiscountType {
+		desc += "\n\n_Family discounts must also be linked to a root account in the admin panel._"
 	}
 
 	payload := webhookPayload{
 		Username: botUsername,
 		Embeds: []embed{{
-			Title:       "New member signed up",
-			Description: fmt.Sprintf("**%s** just created a Conway account.\nUse the menu below to assign a discount type (or leave as **None**).", email),
+			Title:       "Discount requested",
+			Description: desc,
 			Color:       0x5865F2, // Discord blurple.
 		}},
 		Components: []actionRow{{
 			Type: componentTypeActionRow,
-			Components: []selectMenu{{
-				Type:        componentTypeStringSelect,
-				CustomID:    fmt.Sprintf("%s%d", customIDPrefix, memberID),
-				Placeholder: "Assign a discount type...",
-				MinValues:   1,
-				MaxValues:   1,
-				Options:     options,
+			Components: []button{{
+				Type:     componentTypeButton,
+				Style:    buttonStyleSuccess,
+				Label:    "Approve",
+				CustomID: fmt.Sprintf("%s%d", approveCustomIDPrefix, memberID),
 			}},
 		}},
 	}
 
 	out, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("marshaling signup payload: %w", err)
+		return "", fmt.Errorf("marshaling discount-request payload: %w", err)
 	}
 	return string(out), nil
 }
-
-// noneSentinel is the Discord-side value standing in for the empty "no
-// discount" option; the empty string is reserved by Discord.
-const noneSentinel = "_none"
 
 // Discord component type constants.
 //
 // https://discord.com/developers/docs/interactions/message-components#component-object-component-types
 const (
-	componentTypeActionRow    = 1
-	componentTypeStringSelect = 3
+	componentTypeActionRow = 1
+	componentTypeButton    = 2
+)
+
+// Discord button style constants.
+//
+// https://discord.com/developers/docs/interactions/message-components#button-object-button-styles
+const (
+	buttonStyleSuccess = 3
 )
 
 // Interaction response types.
@@ -87,7 +87,7 @@ const (
 
 // Interaction request types.
 const (
-	interactionTypePing     = 1
+	interactionTypePing      = 1
 	interactionTypeComponent = 3
 )
 
@@ -105,21 +105,13 @@ type embed struct {
 }
 
 type actionRow struct {
-	Type       int          `json:"type"`
-	Components []selectMenu `json:"components"`
+	Type       int      `json:"type"`
+	Components []button `json:"components"`
 }
 
-type selectMenu struct {
-	Type        int            `json:"type"`
-	CustomID    string         `json:"custom_id"`
-	Placeholder string         `json:"placeholder,omitempty"`
-	MinValues   int            `json:"min_values,omitempty"`
-	MaxValues   int            `json:"max_values,omitempty"`
-	Options     []selectOption `json:"options"`
-}
-
-type selectOption struct {
-	Label   string `json:"label"`
-	Value   string `json:"value"`
-	Default bool   `json:"default,omitempty"`
+type button struct {
+	Type     int    `json:"type"`
+	Style    int    `json:"style"`
+	Label    string `json:"label"`
+	CustomID string `json:"custom_id"`
 }

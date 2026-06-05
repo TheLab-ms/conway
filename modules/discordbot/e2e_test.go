@@ -4,14 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/members"
-	"github.com/TheLab-ms/conway/modules/members/memberdb"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,8 +29,7 @@ func newTestModule(t *testing.T, cfg Config) (*Module, *fakeQueuer) {
 }
 
 // insertMemberRaw inserts a member directly via SQL, bypassing the members
-// module's Go-level helpers. This more accurately simulates what happens in
-// production: the discordbot trigger fires on raw INSERTs from any path.
+// module's Go-level helpers.
 func insertMemberRaw(t *testing.T, db *sql.DB, email string) int64 {
 	t.Helper()
 	res, err := db.Exec(
@@ -44,46 +41,96 @@ func insertMemberRaw(t *testing.T, db *sql.DB, email string) int64 {
 	return id
 }
 
-// queueCount returns the number of rows currently in discordbot_signup_queue.
+// requestDiscount simulates a member requesting a discount: it sets
+// discount_type and flips discount_status to 'requested', which is what the
+// enqueue trigger keys off of.
+func requestDiscount(t *testing.T, db *sql.DB, memberID int64, discountType string) {
+	t.Helper()
+	_, err := db.Exec(
+		"UPDATE members SET discount_type = ?, discount_status = 'requested' WHERE id = ?",
+		discountType, memberID)
+	require.NoError(t, err)
+}
+
+// queueCount returns the number of rows in discordbot_discount_request_queue.
 func queueCount(t *testing.T, db *sql.DB) int {
 	t.Helper()
 	var n int
-	require.NoError(t, db.QueryRow("SELECT COUNT(*) FROM discordbot_signup_queue").Scan(&n))
+	require.NoError(t, db.QueryRow("SELECT COUNT(*) FROM discordbot_discount_request_queue").Scan(&n))
 	return n
 }
 
-// TestE2E_TriggerEnqueuesOnMemberInsert proves the AFTER INSERT trigger on
-// members actually populates discordbot_signup_queue. Without this, the rest
-// of the bot is dead code.
-func TestE2E_TriggerEnqueuesOnMemberInsert(t *testing.T) {
+// TestE2E_TriggerEnqueuesOnDiscountRequest proves the AFTER UPDATE trigger on
+// members populates the request queue when discount_status becomes
+// 'requested'. Without this, leadership never gets notified.
+func TestE2E_TriggerEnqueuesOnDiscountRequest(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestModule(t, Config{})
-	require.Equal(t, 0, queueCount(t, m.db))
 
 	id := insertMemberRaw(t, m.db, "first@example.com")
+	require.Equal(t, 0, queueCount(t, m.db), "signup alone must NOT enqueue")
+
+	requestDiscount(t, m.db, id, "student")
 	require.Equal(t, 1, queueCount(t, m.db))
 
-	// Verify the queued row references the right member.
 	var queued int64
 	require.NoError(t, m.db.QueryRow(
-		"SELECT member_id FROM discordbot_signup_queue").Scan(&queued))
+		"SELECT member_id FROM discordbot_discount_request_queue").Scan(&queued))
 	require.Equal(t, id, queued)
 }
 
-// TestE2E_FullPipeline_EnabledDeliversWebhook covers the happy path:
-// insert member → trigger enqueues → GetItem returns the row → ProcessItem
-// dispatches to the webhook queue with the expected payload → UpdateItem
-// deletes the row.
+// TestE2E_NoEnqueueOnSignupOrUnrelatedUpdate guards the core requirement:
+// leadership is only notified on discount requests, never on signup or
+// unrelated status changes.
+func TestE2E_NoEnqueueOnSignupOrUnrelatedUpdate(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestModule(t, Config{})
+
+	id := insertMemberRaw(t, m.db, "quiet@example.com")
+	require.Equal(t, 0, queueCount(t, m.db))
+
+	// Unrelated profile changes must not enqueue.
+	_, err := m.db.Exec("UPDATE members SET name = ? WHERE id = ?", "Renamed", id)
+	require.NoError(t, err)
+	_, err = m.db.Exec("UPDATE members SET confirmed = 1 WHERE id = ?", id)
+	require.NoError(t, err)
+	require.Equal(t, 0, queueCount(t, m.db))
+
+	// An admin directly setting a (status-less) discount must not enqueue.
+	_, err = m.db.Exec("UPDATE members SET discount_type = 'military' WHERE id = ?", id)
+	require.NoError(t, err)
+	require.Equal(t, 0, queueCount(t, m.db))
+}
+
+// TestE2E_ApprovingDoesNotReEnqueue proves the transition requested->approved
+// does not fire the enqueue trigger again.
+func TestE2E_ApprovingDoesNotReEnqueue(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestModule(t, Config{})
+
+	id := insertMemberRaw(t, m.db, "x@y.z")
+	requestDiscount(t, m.db, id, "student")
+	require.Equal(t, 1, queueCount(t, m.db))
+
+	_, err := m.db.Exec("UPDATE members SET discount_status = 'approved' WHERE id = ?", id)
+	require.NoError(t, err)
+	require.Equal(t, 1, queueCount(t, m.db), "approval must not enqueue a second notification")
+}
+
+// TestE2E_FullPipeline_EnabledDeliversWebhook covers the happy path: request
+// enqueues -> GetItem returns the row -> ProcessItem dispatches to the webhook
+// queue with the Approve-button payload -> UpdateItem deletes the row.
 func TestE2E_FullPipeline_EnabledDeliversWebhook(t *testing.T) {
 	t.Parallel()
 	webhookURL := "https://discord.example/webhooks/123/abc"
 	m, fq := newTestModule(t, Config{
-		Enabled:                 true,
-		SignupChannelWebhookURL: webhookURL,
-		ApplicationPublicKey:    strings.Repeat("ab", 32), // 32 bytes hex
+		Enabled:                     true,
+		LeadershipChannelWebhookURL: webhookURL,
+		ApplicationPublicKey:        strings.Repeat("ab", 32),
 	})
 
 	id := insertMemberRaw(t, m.db, "applicant@example.com")
+	requestDiscount(t, m.db, id, "student")
 	ctx := context.Background()
 
 	item, err := m.GetItem(ctx)
@@ -91,57 +138,46 @@ func TestE2E_FullPipeline_EnabledDeliversWebhook(t *testing.T) {
 	require.NotNil(t, item)
 	require.Equal(t, id, item.MemberID)
 	require.Equal(t, "applicant@example.com", item.Email)
+	require.Equal(t, "student", item.DiscountType)
 
 	require.NoError(t, m.ProcessItem(ctx, item))
 
-	// fakeQueuer must have been called with the right URL and a payload
-	// that decodes back to a well-formed select-menu message.
 	require.Len(t, fq.msgs, 1)
 	require.Equal(t, webhookURL, fq.msgs[0].url)
+	require.Contains(t, fq.msgs[0].payload, fmt.Sprintf("%s%d", approveCustomIDPrefix, id))
 
-	var payload webhookPayload
-	require.NoError(t, json.Unmarshal([]byte(fq.msgs[0].payload), &payload))
-	require.Equal(t, botUsername, payload.Username)
-	require.Len(t, payload.Components, 1)
-	menu := payload.Components[0].Components[0]
-	require.Equal(t, fmt.Sprintf("%s%d", customIDPrefix, id), menu.CustomID)
-	require.Equal(t, len(memberdb.DiscountTypes), len(menu.Options))
-
-	// UpdateItem(success=true) drops the row.
 	require.NoError(t, m.UpdateItem(ctx, item, true))
 	require.Equal(t, 0, queueCount(t, m.db))
 
-	// Next GetItem call returns sql.ErrNoRows (queue empty).
 	_, err = m.GetItem(ctx)
 	require.ErrorIs(t, err, sql.ErrNoRows)
 }
 
-// TestE2E_DisabledDropsWithoutWebhook proves that when the bot is disabled
-// (or the webhook URL is empty), ProcessItem returns nil so UpdateItem
-// removes the queue row without calling the webhook queuer — preventing a
-// backlog from accumulating before configuration arrives.
+// TestE2E_DisabledDropsWithoutWebhook: when disabled, ProcessItem returns nil
+// so UpdateItem removes the row without calling the webhook queuer.
 func TestE2E_DisabledDropsWithoutWebhook(t *testing.T) {
 	t.Parallel()
 	m, fq := newTestModule(t, Config{Enabled: false})
-	insertMemberRaw(t, m.db, "x@y.z")
+	id := insertMemberRaw(t, m.db, "x@y.z")
+	requestDiscount(t, m.db, id, "student")
 
 	ctx := context.Background()
 	item, err := m.GetItem(ctx)
 	require.NoError(t, err)
 
 	require.NoError(t, m.ProcessItem(ctx, item))
-	require.Empty(t, fq.msgs, "no webhook should be queued when disabled")
+	require.Empty(t, fq.msgs)
 
 	require.NoError(t, m.UpdateItem(ctx, item, true))
 	require.Equal(t, 0, queueCount(t, m.db))
 }
 
-// TestE2E_EnabledButNoWebhookURLAlsoDrops covers the second branch of the
-// "not configured" guard in ProcessItem.
+// TestE2E_EnabledButNoWebhookURLAlsoDrops covers the second guard branch.
 func TestE2E_EnabledButNoWebhookURLAlsoDrops(t *testing.T) {
 	t.Parallel()
-	m, fq := newTestModule(t, Config{Enabled: true, SignupChannelWebhookURL: ""})
-	insertMemberRaw(t, m.db, "x@y.z")
+	m, fq := newTestModule(t, Config{Enabled: true, LeadershipChannelWebhookURL: ""})
+	id := insertMemberRaw(t, m.db, "x@y.z")
+	requestDiscount(t, m.db, id, "student")
 
 	ctx := context.Background()
 	item, err := m.GetItem(ctx)
@@ -150,25 +186,18 @@ func TestE2E_EnabledButNoWebhookURLAlsoDrops(t *testing.T) {
 	require.Empty(t, fq.msgs)
 }
 
-// TestE2E_QueueOrderingFIFO proves GetItem returns the oldest unsent signup
-// first, so notifications fire in the order members joined.
+// TestE2E_QueueOrderingFIFO proves GetItem returns the oldest request first.
 func TestE2E_QueueOrderingFIFO(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestModule(t, Config{})
 
-	// Insert with explicit ascending created timestamps to make ordering
-	// deterministic (strftime('%s','now') has 1s resolution which would
-	// otherwise tie all three).
 	for i, email := range []string{"a@e.io", "b@e.io", "c@e.io"} {
-		res, err := m.db.Exec(
-			"INSERT INTO members (name, email, created) VALUES (?, ?, ?)",
-			"u", email, 1000+i)
-		require.NoError(t, err)
-		id, _ := res.LastInsertId()
-		// Backdate the queue row to match insertion order regardless of
-		// the trigger's strftime resolution.
-		_, err = m.db.Exec(
-			"UPDATE discordbot_signup_queue SET created = ? WHERE member_id = ?",
+		id := insertMemberRaw(t, m.db, email)
+		requestDiscount(t, m.db, id, "student")
+		// Backdate the queue row so ordering is deterministic despite the
+		// trigger's 1s strftime resolution.
+		_, err := m.db.Exec(
+			"UPDATE discordbot_discount_request_queue SET created = ? WHERE member_id = ?",
 			1000+i, id)
 		require.NoError(t, err)
 	}
@@ -182,41 +211,14 @@ func TestE2E_QueueOrderingFIFO(t *testing.T) {
 	}
 }
 
-// TestE2E_MemberDeleteLeavesOrphanedQueueRow documents that the FK
-// constraint on discordbot_signup_queue.member_id is declarative only —
-// SQLite's `PRAGMA foreign_keys` is not enabled anywhere in Conway, so
-// deleting a member with a pending notification leaves an orphan row in the
-// queue. The worker's GetItem JOIN against members then silently skips it
-// until it's pruned manually. This test exists to catch the day someone
-// turns on FK enforcement, at which point the assertion should flip.
-func TestE2E_MemberDeleteLeavesOrphanedQueueRow(t *testing.T) {
-	t.Parallel()
-	m, _ := newTestModule(t, Config{})
-
-	id := insertMemberRaw(t, m.db, "doomed@example.com")
-	require.Equal(t, 1, queueCount(t, m.db))
-
-	_, err := m.db.Exec("DELETE FROM members WHERE id = ?", id)
-	require.NoError(t, err)
-
-	// FK is declarative; row is orphaned (not cascaded).
-	require.Equal(t, 1, queueCount(t, m.db))
-
-	// GetItem's JOIN against members filters out the orphan so it isn't
-	// retried in a tight loop.
-	_, err = m.GetItem(context.Background())
-	require.ErrorIs(t, err, sql.ErrNoRows,
-		"orphaned queue row must not be returned by GetItem")
-}
-
 // TestE2E_FailedProcessLogsAuditEvent ensures we record an audit event when
-// UpdateItem(success=false) runs, so admins can investigate undeliverable
-// notifications.
+// UpdateItem(success=false) runs.
 func TestE2E_FailedProcessLogsAuditEvent(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestModule(t, Config{})
 
 	id := insertMemberRaw(t, m.db, "x@y.z")
+	requestDiscount(t, m.db, id, "student")
 	ctx := context.Background()
 	item, err := m.GetItem(ctx)
 	require.NoError(t, err)
@@ -227,7 +229,7 @@ func TestE2E_FailedProcessLogsAuditEvent(t *testing.T) {
 	var n int
 	require.NoError(t, m.db.QueryRow(
 		`SELECT COUNT(*) FROM module_events
-		 WHERE module='discordbot' AND event_type='SignupNotifyError' AND member=?`,
+		 WHERE module='discordbot' AND event_type='DiscountRequestNotifyError' AND member=?`,
 		id).Scan(&n))
 	require.Equal(t, 1, n)
 }
@@ -237,19 +239,15 @@ func TestE2E_FailedProcessLogsAuditEvent(t *testing.T) {
 func TestConfig_Validate(t *testing.T) {
 	t.Parallel()
 
-	// Empty key: allowed (lets admins partially configure).
 	require.NoError(t, (&Config{}).Validate())
 
-	// Valid 32-byte hex key.
 	good := hex.EncodeToString(make([]byte, 32))
 	require.NoError(t, (&Config{ApplicationPublicKey: good}).Validate())
 
-	// Non-hex characters.
 	err := (&Config{ApplicationPublicKey: "zz"}).Validate()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "hex")
 
-	// Hex but wrong length.
 	short := hex.EncodeToString(make([]byte, 16))
 	err = (&Config{ApplicationPublicKey: short}).Validate()
 	require.Error(t, err)

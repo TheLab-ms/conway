@@ -1,32 +1,42 @@
 # discordbot
 
-Posts a Discord message announcing each new Conway member and lets anyone in the channel assign a discount type by picking from a string-select component. The picker locks itself after the first successful assignment.
+Notifies leadership when a member requests a membership discount and lets any authorized leader approve it from Discord with a single Approve button click. Leadership is **only** notified on a discount request — never on signup or on unrelated status changes — and there is intentionally no deny/cancel control (members remove their own requests; leadership can only approve).
 
 ## Functionality
 
-- AFTER INSERT trigger on `members` enqueues new member IDs into `discordbot_signup_queue`.
-- A 15s polling worker drains the queue, builds a rich Discord payload (embed + string-select listing every `memberdb.DiscountTypes` value), and forwards it via the `discordwebhook` module's `MessageQueuer` for rate-limited delivery.
-- `POST /discord/interactions` receives Discord's signed callbacks. The handler verifies the Ed25519 signature, updates `members.discount_type` (mapping the `_none` sentinel back to NULL), logs a `DiscountSetViaDiscord` audit event, and replies with `UPDATE_MESSAGE` containing an empty `components` array — which removes the picker so the discount cannot be changed a second time.
+- AFTER UPDATE OF `discount_status` trigger on `members` enqueues a member ID into `discordbot_discount_request_queue` whenever `discount_status` transitions into `'requested'`. Nothing is enqueued on signup, on unrelated updates, or on the `requested`→`approved` transition.
+- A 15s polling worker drains the queue, builds a rich Discord payload (an embed describing the request plus a single **Approve** button), and forwards it via the `discordwebhook` module's `MessageQueuer` for rate-limited delivery.
+- `POST /discord/interactions` receives Discord's signed callbacks. The handler verifies the Ed25519 signature, then atomically runs `UPDATE members SET discount_status='approved' WHERE id=? AND discount_status='requested'`, logs a `DiscountApprovedViaDiscord` audit event, and replies with `UPDATE_MESSAGE` (empty `components`) recording who approved and removing the button. If the request is no longer pending (the member withdrew it, or another leader already approved), it instead shows a "Discount request closed" message and changes nothing.
 - No Conway authentication is required: the route is unauthenticated and identity is established purely by Discord's request signature against the configured `ApplicationPublicKey`.
+
+## Discount lifecycle
+
+`members.discount_status` is `NULL | 'requested' | 'approved'`:
+
+- A member self-requests a discount on their dashboard → `discount_type` set and `discount_status='requested'`. This fires the notification.
+- A discount is **usable** (coupon applies at Stripe checkout, and the member's "Set Up Payment" button reappears) when `discount_type IS NOT NULL AND discount_status IS NOT 'requested'`.
+- Leadership approves either via the Discord **Approve** button or the admin member page → `discount_status='approved'`.
+- Admins who set a discount directly from the admin page leave it **status-less** (`discount_status = NULL`), which counts as usable immediately.
+- Members may remove their discount at any time, pending or approved (`discount_type` and `discount_status` both cleared).
 
 ## Setup
 
 1. Create a Discord application at <https://discord.com/developers/applications>.
 2. Copy the application's **Public Key** (hex) into the Conway admin UI under **Integrations → discordbot → Application Public Key**.
-3. In the target Discord channel, create a webhook and copy its URL into **Signup Channel Webhook URL** (stored as a secret).
+3. In the leadership channel, create a webhook and copy its URL into **Leadership Channel Webhook URL** (stored as a secret).
 4. In the Discord application's **General Information** page, set **Interactions Endpoint URL** to `https://<your-conway-host>/discord/interactions`. Discord will immediately probe the endpoint with a signed PING; saving succeeds only if signature verification passes.
 5. Toggle **Enabled** on.
 
 ## Behavioral details
 
-- The Discord application's bot account does not need to be invited to the server; webhook delivery is what posts the message, and interaction callbacks are routed by Discord's infrastructure based on the application's configured endpoint URL.
+- The Discord application's bot account does not need to be invited to the server; webhook delivery posts the message, and interaction callbacks are routed by Discord's infrastructure based on the application's configured endpoint URL.
 - Inbound interactions must be acknowledged within 3 seconds, so the entire happy path (signature verify, DB lookup, UPDATE, response build) runs inline on the request goroutine.
-- The `_none` option value is a sentinel: Discord rejects empty option values, so the `None` discount is sent as `_none` and the interaction handler maps it back to the empty string (which the SQL `CASE` then stores as NULL — matching the convention used by the admin discount form).
-- When the bot is disabled or unconfigured at the time a queued signup is processed, the queue row is dropped rather than retained. This avoids a backlog accumulating before configuration arrives; historical signups will not retroactively notify when the bot is later enabled.
-- Permanent webhook-delivery failures are logged as `SignupNotifyError` events; the queue row is then deleted to prevent unbounded retry.
-- All discount labels and values in the picker are sourced from `modules/members/memberdb.DiscountTypes` — adding a new discount tier there automatically makes it selectable from Discord.
-- The custom_id format is `conway:set_discount:<memberID>`, embedding the target member ID directly so the handler is stateless.
-- `member_id` in `discordbot_signup_queue` declares a foreign key to `members(id)`, but Conway does not enable SQLite's `PRAGMA foreign_keys`, so the reference is declarative only. If a member is deleted before the notification is delivered, the queue row is orphaned; `GetItem`'s `JOIN` against `members` filters it out, so it will not be retried — but it will also not be auto-removed.
+- Approval is atomic via the `WHERE ... AND discount_status='requested'` clause, so two leaders clicking Approve at once cannot double-approve; the loser sees "Discount request closed".
+- **Family** requests can be approved from Discord like any other tier, but the root-account linkage must still be completed in the admin panel; the request and approval messages call this out.
+- When the bot is disabled or unconfigured at the time a queued request is processed, the queue row is dropped rather than retained, to avoid a backlog accumulating before configuration arrives.
+- Permanent webhook-delivery failures are logged as `DiscountRequestNotifyError` events; the queue row is then deleted to prevent unbounded retry.
+- The custom_id format is `conway:approve_discount:<memberID>`, embedding the target member ID directly so the handler is stateless.
+- `member_id` in `discordbot_discount_request_queue` declares a foreign key to `members(id)`; Conway does not enable SQLite's `PRAGMA foreign_keys`, so the reference is declarative. `GetItem`'s `JOIN` against `members` filters out any orphaned row so it is not retried in a tight loop.
 
 ## Security
 

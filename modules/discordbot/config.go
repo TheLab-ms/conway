@@ -7,21 +7,23 @@ import (
 	"github.com/TheLab-ms/conway/engine/config"
 )
 
-// Config controls the Discord signup-notification bot.
+// Config controls the Discord discount-approval bot.
 //
-// SignupChannelWebhookURL is the Discord webhook URL used to POST the
-// announcement message when a new member joins Conway. The message contains a
-// string-select component letting any channel member assign a discount type.
+// LeadershipChannelWebhookURL is the Discord webhook URL used to POST a
+// notification when a member requests a membership discount. The message
+// contains an Approve button that any leader in the channel can click to
+// approve the request.
 //
 // ApplicationPublicKey is the hex-encoded Ed25519 public key shown on the
 // Discord application's "General Information" page. Discord signs every
-// inbound interaction (button/select click) with this key; we verify the
-// signature before trusting the request body.
+// inbound interaction (button click) with this key; we verify the signature
+// before trusting the request body.
 //
 // To wire this up in Discord:
 //
-//  1. Create a webhook on the signup channel (Channel Settings → Integrations
-//     → Webhooks → New Webhook), copy its URL into SignupChannelWebhookURL.
+//  1. Create a webhook on the leadership channel (Channel Settings →
+//     Integrations → Webhooks → New Webhook), copy its URL into
+//     LeadershipChannelWebhookURL.
 //  2. In the Discord Developer Portal, open your application and copy the
 //     "Public Key" from General Information into ApplicationPublicKey.
 //  3. Set "Interactions Endpoint URL" to
@@ -29,9 +31,9 @@ import (
 //     URL and refuse to save unless Conway responds correctly, so make sure
 //     Enabled=true and the public key is correct first.
 type Config struct {
-	Enabled                 bool   `json:"enabled" config:"label=Enabled,help=When on, new member signups post a Discord message with a discount-type picker. Inbound interactions are still verified regardless."`
-	SignupChannelWebhookURL string `json:"signup_channel_webhook_url" config:"label=Signup Channel Webhook URL,secret,help=Create a webhook on the desired channel (Channel Settings → Integrations → Webhooks → New Webhook) and paste its URL here."`
-	ApplicationPublicKey    string `json:"application_public_key" config:"label=Application Public Key,help=Hex-encoded Ed25519 public key from your Discord application's General Information page. Used to verify inbound button/select interactions."`
+	Enabled                     bool   `json:"enabled" config:"label=Enabled,help=When on, a member requesting a discount posts a Discord message with an Approve button. Inbound interactions are still verified regardless."`
+	LeadershipChannelWebhookURL string `json:"leadership_channel_webhook_url" config:"label=Leadership Channel Webhook URL,secret,help=Create a webhook on the leadership channel (Channel Settings → Integrations → Webhooks → New Webhook) and paste its URL here. Discount requests are posted here for approval."`
+	ApplicationPublicKey        string `json:"application_public_key" config:"label=Application Public Key,help=Hex-encoded Ed25519 public key from your Discord application's General Information page. Used to verify inbound button interactions."`
 }
 
 // Validate ensures the public key is a valid Ed25519 key when set. Other
@@ -55,7 +57,7 @@ func (c *Config) Validate() error {
 func (m *Module) ConfigSpec() config.Spec {
 	return config.Spec{
 		Module:   "discordbot",
-		Title:    "Discord Signup Bot",
+		Title:    "Discord Discount Approval Bot",
 		Type:     Config{},
 		Order:    11,
 		Category: "Integrations",

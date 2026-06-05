@@ -114,37 +114,29 @@ func (m *Module) handleInteraction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleComponent applies a string-select choice from the signup message.
+// handleComponent approves a pending discount request from the Approve button
+// on a leadership-channel notification.
 func (m *Module) handleComponent(ctx context.Context, w http.ResponseWriter, req *interactionRequest) {
-	if req.Data == nil || !strings.HasPrefix(req.Data.CustomID, customIDPrefix) {
+	if req.Data == nil || !strings.HasPrefix(req.Data.CustomID, approveCustomIDPrefix) {
 		writeEphemeral(w, "Unknown component.")
 		return
 	}
-	if len(req.Data.Values) == 0 {
-		writeEphemeral(w, "No value provided.")
-		return
-	}
 
-	memberID, err := strconv.ParseInt(strings.TrimPrefix(req.Data.CustomID, customIDPrefix), 10, 64)
+	memberID, err := strconv.ParseInt(strings.TrimPrefix(req.Data.CustomID, approveCustomIDPrefix), 10, 64)
 	if err != nil {
 		writeEphemeral(w, "Malformed member ID.")
 		return
 	}
 
-	chosen := req.Data.Values[0]
-	storeValue := chosen
-	if chosen == noneSentinel {
-		storeValue = ""
-	}
-	if !memberdb.IsValidDiscountType(storeValue) {
-		writeEphemeral(w, fmt.Sprintf("Unknown discount option %q.", chosen))
-		return
-	}
-
-	// Look up the member's email for the confirmation embed and to verify
-	// the row still exists before we touch it.
+	// Load the member's email and current discount type/status. We only
+	// approve a request that is still pending; if the member already removed
+	// it (or it was approved elsewhere), we say so and clear the button.
 	var email string
-	err = m.db.QueryRowContext(ctx, "SELECT email FROM members WHERE id = ?", memberID).Scan(&email)
+	var discountType *string
+	var discountStatus *string
+	err = m.db.QueryRowContext(ctx,
+		"SELECT email, discount_type, discount_status FROM members WHERE id = ?", memberID).
+		Scan(&email, &discountType, &discountStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeEphemeral(w, "That member no longer exists.")
 		return
@@ -152,17 +144,6 @@ func (m *Module) handleComponent(ctx context.Context, w http.ResponseWriter, req
 	if err != nil {
 		slog.Error("loading member for discord interaction", "error", err, "memberID", memberID)
 		writeEphemeral(w, "Database error — please try again.")
-		return
-	}
-
-	// UPDATE with the same CASE pattern used by the admin form so the empty
-	// string maps to NULL (matching the existing schema convention).
-	_, err = m.db.ExecContext(ctx,
-		`UPDATE members SET discount_type = (CASE WHEN ? = '' THEN NULL ELSE ? END) WHERE id = ?`,
-		storeValue, storeValue, memberID)
-	if err != nil {
-		slog.Error("updating discount_type from discord interaction", "error", err, "memberID", memberID)
-		writeEphemeral(w, "Failed to save — please try again.")
 		return
 	}
 
@@ -176,25 +157,60 @@ func (m *Module) handleComponent(ctx context.Context, w http.ResponseWriter, req
 		discordUsername = req.User.Username
 	}
 
-	label := memberdb.DiscountLabel(storeValue)
-	m.eventLogger.LogEvent(ctx, memberID, "DiscountSetViaDiscord", discordUserID, discordUsername, true,
-		fmt.Sprintf("set discount_type=%q for %s", storeValue, email))
+	// Approve only when still pending. The WHERE clause makes this atomic so
+	// two leaders clicking at once can't double-approve.
+	res, err := m.db.ExecContext(ctx,
+		`UPDATE members SET discount_status = 'approved' WHERE id = ? AND discount_status = 'requested'`,
+		memberID)
+	if err != nil {
+		slog.Error("approving discount from discord interaction", "error", err, "memberID", memberID)
+		writeEphemeral(w, "Failed to save — please try again.")
+		return
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		// Nothing to approve: the request was already resolved or removed.
+		writeJSON(w, interactionResponse{
+			Type: responseTypeUpdateMessage,
+			Data: &interactionResponseData{
+				Embeds: []embed{{
+					Title:       "Discount request closed",
+					Description: fmt.Sprintf("**%s**\n\nThis request is no longer pending (already approved or withdrawn).", email),
+					Color:       0x99AAB5, // Discord greyple.
+				}},
+				Components: []actionRow{}, // explicit empty = removes the button
+			},
+		})
+		return
+	}
 
-	// UPDATE_MESSAGE with empty components removes the picker, which is how
-	// we satisfy the "lock after first click" behavior the operator chose.
+	label := "None"
+	if discountType != nil {
+		label = memberdb.DiscountLabel(*discountType)
+	}
+	m.eventLogger.LogEvent(ctx, memberID, "DiscountApprovedViaDiscord", discordUserID, discordUsername, true,
+		fmt.Sprintf("approved %q discount for %s", label, email))
+
 	by := "Discord"
 	if discordUserID != "" {
 		by = fmt.Sprintf("<@%s>", discordUserID)
 	}
+	desc := fmt.Sprintf("**%s**\n\n**%s** discount approved by %s.", email, label, by)
+	if discountType != nil && *discountType == familyDiscountType {
+		desc += "\n\n_Remember to link the root family account in the admin panel._"
+	}
+
+	// UPDATE_MESSAGE with empty components removes the Approve button so the
+	// request can't be actioned twice.
 	writeJSON(w, interactionResponse{
 		Type: responseTypeUpdateMessage,
 		Data: &interactionResponseData{
 			Embeds: []embed{{
-				Title:       "New member signed up",
-				Description: fmt.Sprintf("**%s**\n\nDiscount set to **%s** by %s.", email, label, by),
+				Title:       "Discount approved",
+				Description: desc,
 				Color:       0x57F287, // Discord green.
 			}},
-			Components: []actionRow{}, // explicit empty = removes the picker
+			Components: []actionRow{}, // explicit empty = removes the button
 		},
 	})
 }
