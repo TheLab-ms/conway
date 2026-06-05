@@ -119,6 +119,8 @@ There is no automatic rollback. If a new image bricks WiFi/HTTP, the only recove
 
 There is **no authentication** on any HTTP endpoint — `/config`, `/unlock`, `/fobs`, `/ota`, and `/ota/rollback` are all open. Anyone with TCP access to port 80 on the device can change settings, unlock the door, or replace the firmware. Run these devices on a trusted management VLAN/SSID only.
 
+Because endpoints are unauthenticated, the `/config` form **never echoes the stored WiFi password back** — otherwise any LAN client could read the cleartext PSK from the page source. Leave the password field blank to keep the current password; only a non-blank submission changes it.
+
 ### At-rest encryption
 
 Both persistent partitions (`nvs` = WiFi/Conway config, `fobs` = local fob list) are encrypted with ChaCha20-Poly1305 using per-device keys derived (HKDF-SHA256) from a 32-byte root in eFuse BLOCK3. This defends against `espflash read-flash` of a stolen unit — a flash dump yields only ciphertext.

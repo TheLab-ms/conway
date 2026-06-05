@@ -814,8 +814,15 @@ async fn send_config_page(socket: &mut TcpSocket<'_>, rt: &'static RuntimeConfig
     let mut body: alloc::string::String = alloc::string::String::with_capacity(4096);
     let mut esc_ssid: HString<128> = HString::new();
     html_escape_into(&ssid, &mut esc_ssid);
-    let mut esc_pw: HString<256> = HString::new();
-    html_escape_into(&password, &mut esc_pw);
+    // SECURITY: never echo the stored WiFi password back into the form. Any
+    // unauthenticated LAN client can otherwise read the cleartext PSK via
+    // view-source. Render an empty field with a placeholder instead; a blank
+    // submission is treated as "keep current" in handle_config_post.
+    let pw_placeholder: &str = if password.is_empty() {
+        ""
+    } else {
+        "leave blank to keep current password"
+    };
 
     let pubkey_status: alloc::string::String = if current_pubkey_b64.is_empty() {
         alloc::string::String::from(
@@ -852,7 +859,7 @@ fieldset legend{{font-weight:600;padding:0 .5rem}}\
 {pending}\
 <form method=\"POST\" action=\"/config\">\
 <label>WiFi SSID<input type=\"text\" name=\"ssid\" value=\"{ssid}\" maxlength=\"{max_ssid}\" required></label>\
-<label>WiFi Password<input type=\"password\" name=\"password\" value=\"{pw}\" maxlength=\"{max_pw}\"><label style=\"display:inline;font-weight:normal;font-size:.9rem\"><input type=\"checkbox\" style=\"width:auto;margin-right:.25rem\" onclick=\"this.parentElement.previousElementSibling.type=this.checked?'text':'password'\"> Show</label></label>\
+<label>WiFi Password<input type=\"password\" name=\"password\" value=\"\" maxlength=\"{max_pw}\" placeholder=\"{pw_ph}\"><label style=\"display:inline;font-weight:normal;font-size:.9rem\"><input type=\"checkbox\" style=\"width:auto;margin-right:.25rem\" onclick=\"this.parentElement.previousElementSibling.type=this.checked?'text':'password'\"> Show</label></label>\
 <div class=\"row\">\
 <div><label>Conway Host (IPv4, blank for standalone)<input type=\"text\" name=\"host\" value=\"{host}\" pattern=\"|[0-9.]+\"></label></div>\
 <div><label>Port<input type=\"number\" name=\"port\" value=\"{port}\" min=\"1\" max=\"65535\" required></label></div>\
@@ -876,7 +883,7 @@ when this field is left untouched they save immediately and the device reboots.<
             pending = pending_banner.as_str(),
             unprov = unprovisioned_banner.as_str(),
             ssid = esc_ssid.as_str(),
-            pw = esc_pw.as_str(),
+            pw_ph = pw_placeholder,
             host = host_str.as_str(),
             port = port,
             max_ssid = MAX_SSID,
@@ -977,6 +984,15 @@ async fn handle_config_post(
         send_config_error(socket, "400 Bad Request", "password too long").await;
         return;
     }
+    // The config form never echoes the stored WiFi password back (so an
+    // unauthenticated LAN client cannot read the PSK via view-source), so a
+    // blank password field means "keep the currently stored password" rather
+    // than overwriting it with an empty value.
+    let password = if password.is_empty() {
+        rt.settings.lock().await.password.clone()
+    } else {
+        password
+    };
     let host_octets = if host.is_empty() {
         // Standalone mode: no Conway server.
         None
