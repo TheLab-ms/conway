@@ -117,7 +117,11 @@ the **external** pull-up + debounce cap rather than an internal pull.
   - 5 Hz fast blink while there is no IP / WiFi is not ready.
   - Fast 5× flash immediately before a CONFIG-button factory-reset reboot.
 - **CONFIG button** (GPIO35, active-LOW):
-  - **Short press** (≥50 ms, <5 s): requests an on-demand Conway sync.
+  - **Short press** (≥50 ms, <5 s): requests an on-demand Conway sync. *Exception:*
+    if a `/config` change touching the trusted signing key has been staged and is
+    still within its ~60 s confirmation window, the short press instead commits the
+    staged change (saves all submitted settings and reboots). This is the physical
+    confirmation that gates changes to the device's trust anchor.
   - **Long hold** (≥5 s): Holding CONFIG for ≥5 seconds wipes both the `nvs`
     partition (WiFi credentials + Conway host) and the `fobs` partition (local
     fob list), then reboots into onboarding AP mode.

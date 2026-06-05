@@ -55,7 +55,7 @@ Tip: find the device's new IP from your router's DHCP lease table or from the se
 
 ## Physical controls
 
-- **CONFIG button, short press:** sync fobs with Conway immediately.
+- **CONFIG button, short press:** sync fobs with Conway immediately. **Exception:** if a configuration change that touches the trusted signing key has been staged via `/config` (and is still within its ~60 s confirmation window), the short press instead **commits that staged change** — it saves all submitted settings and reboots. This is the physical confirmation that gates changes to the device's trust anchor; without the press, the staged change expires and nothing is written.
 - **CONFIG button, hold ≥ 5 s:** factory reset. Wipes WiFi credentials and the local fob list, then reboots into the onboarding AP.
 - **STATUS LED:** heartbeat indicates the firmware is running.
 

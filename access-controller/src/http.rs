@@ -836,6 +836,37 @@ async fn send_config_page(socket: &mut TcpSocket<'_>, rt: &'static RuntimeConfig
         s
     };
 
+    // The Ed25519 signing-key controls are an advanced, rarely-touched
+    // setting. Keep onboarding minimal by omitting them entirely while in
+    // Onboarding mode, and tuck them behind an <details> "Advanced"
+    // disclosure once the device is configured.
+    let advanced_section: alloc::string::String = if mode == DeviceMode::Onboarding {
+        alloc::string::String::new()
+    } else {
+        let mut s = alloc::string::String::with_capacity(1024);
+        let _ = core::fmt::Write::write_fmt(
+            &mut s,
+            format_args!(
+                "<details style=\"margin-top:1.5rem\">\
+<summary style=\"cursor:pointer;font-weight:600\">Advanced</summary>\
+<fieldset>\
+<legend>Response signing key (Ed25519)</legend>\
+<p>Current trusted key: {pubkey_status}</p>\
+<label>Set / replace key (standard base64, 44 chars)<input type=\"text\" name=\"trusted_pubkey\" value=\"\" maxlength=\"64\" placeholder=\"leave blank for no change\"></label>\
+<label style=\"font-weight:normal;margin-top:.75rem\"><input type=\"checkbox\" name=\"clear_pubkey\" value=\"1\" style=\"width:auto;margin-right:.5rem\">Clear the trusted key (disables signature enforcement)</label>\
+<p class=\"note\"><b>Any change to this field requires physical confirmation.</b> \
+After submitting, you have {ttl}s to press the CONFIG button on the device to commit. \
+Other fields above are saved <em>only</em> on that physical confirmation when this field changes; \
+when this field is left untouched they save immediately and the device reboots.</p>\
+</fieldset>\
+</details>",
+                pubkey_status = pubkey_status,
+                ttl = PENDING_CONFIG_TTL.as_secs(),
+            ),
+        );
+        s
+    };
+
     let _ = core::fmt::Write::write_fmt(
         &mut body,
         format_args!(
@@ -865,16 +896,7 @@ fieldset legend{{font-weight:600;padding:0 .5rem}}\
 <div><label>Port<input type=\"number\" name=\"port\" value=\"{port}\" min=\"1\" max=\"65535\" required></label></div>\
 </div>\
 <p class=\"note\">Leave Conway Host blank to operate standalone. Only locally-added fobs will be accepted; events are not buffered.</p>\
-<fieldset>\
-<legend>Response signing key (Ed25519)</legend>\
-<p>Current trusted key: {pubkey_status}</p>\
-<label>Set / replace key (standard base64, 44 chars)<input type=\"text\" name=\"trusted_pubkey\" value=\"\" maxlength=\"64\" placeholder=\"leave blank for no change\"></label>\
-<label style=\"font-weight:normal;margin-top:.75rem\"><input type=\"checkbox\" name=\"clear_pubkey\" value=\"1\" style=\"width:auto;margin-right:.5rem\">Clear the trusted key (disables signature enforcement)</label>\
-<p class=\"note\"><b>Any change to this field requires physical confirmation.</b> \
-After submitting, you have {ttl}s to press the CONFIG button on the device to commit. \
-Other fields above are saved <em>only</em> on that physical confirmation when this field changes; \
-when this field is left untouched they save immediately and the device reboots.</p>\
-</fieldset>\
+{advanced}\
 <button type=\"submit\">Save</button>\
 </form>\
 <p style=\"margin-top:2rem\"><a href=\"/status\">Back to status</a></p>\
@@ -888,8 +910,7 @@ when this field is left untouched they save immediately and the device reboots.<
             port = port,
             max_ssid = MAX_SSID,
             max_pw = MAX_PASSWORD,
-            pubkey_status = pubkey_status,
-            ttl = PENDING_CONFIG_TTL.as_secs(),
+            advanced = advanced_section.as_str(),
         ),
     );
 
