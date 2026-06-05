@@ -49,7 +49,7 @@ On first power-up (or after a factory reset) the device starts an open WiFi AP n
 3. Enter your real WiFi SSID and password. Optionally enter the Conway server IPv4; leave it blank to run standalone.
 4. Save. The device reboots and joins your network over DHCP.
 
-Tip: find the device's new IP from your router's DHCP lease table or from the serial monitor (look for the `IPv4` line). The status page is then at `http://<ip>/`.
+Tip: after onboarding the device joins your WiFi via DHCP and advertises its hostname (DHCP option 12) as `conway-XXXXXX`, so it appears under that name in your router's DHCP lease table — that is the easiest way to find its new IP. You can also read the IP from the serial monitor (look for the `IPv4` line). The status page is then at `http://<ip>/`. Note: the firmware does **not** run an mDNS/`.local` responder, so `conway-XXXXXX.local` will not resolve.
 
 > **Onboarding security warning.** The onboarding AP is **open (no WPA2)** and the captive portal is **plaintext HTTP**, so the WiFi password you type is transmitted in the clear over the air. Any passive radio listener within range can capture it, and a nearby device can also reach the open portal and complete or hijack onboarding. Onboard in a physically controlled area, and re-key the WiFi network afterward if you cannot rule out a listener. (A WPA2-protected AP with a per-device onboarding password is tracked as future work.)
 

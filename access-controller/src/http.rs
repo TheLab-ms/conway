@@ -1177,9 +1177,9 @@ window expires.</p>\
         <p>Settings stored. The device will reboot in 2 seconds and try \
         to join the new network. If it doesn't come back online, hold the \
         CONFIG button for 5 seconds to factory-reset.</p>\
-        <p>After reboot the device joins your WiFi via DHCP \xe2\x80\x94 find \
-        the new IP in your router's DHCP lease table; the status page will be \
-        at <code>http://&lt;ip&gt;/</code>.</p></body></html>";
+        <p>After reboot the device joins your WiFi via DHCP \xe2\x80\x94 it appears \
+        as host <code>conway-XXXXXX</code> in your router's DHCP lease table; the \
+        status page will be at <code>http://&lt;ip&gt;/</code>.</p></body></html>";
     send_html(socket, "200 OK", resp).await;
     let _ = socket.flush().await;
     socket.close();

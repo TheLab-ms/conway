@@ -308,7 +308,14 @@ async fn main(spawner: embassy_executor::Spawner) {
         DeviceMode::Station => {
             let dev: esp_radio::wifi::WifiDevice<'static> =
                 unsafe { core::mem::transmute(interfaces.sta) };
-            (dev, NetConfig::dhcpv4(Default::default()))
+            // Advertise the conway-XXXXXX hostname (DHCP option 12) so the
+            // unit is identifiable in the router's DHCP lease table after
+            // onboarding -- the primary way to find its new IP.
+            let mut dhcp = embassy_net::DhcpConfig::default();
+            let mut hostname = heapless::String::new();
+            let _ = hostname.push_str(&ap_ssid_str);
+            dhcp.hostname = Some(hostname);
+            (dev, NetConfig::dhcpv4(dhcp))
         }
         DeviceMode::Onboarding => {
             let dev: esp_radio::wifi::WifiDevice<'static> =
