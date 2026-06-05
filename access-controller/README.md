@@ -26,9 +26,23 @@ See [HARDWARE.md](HARDWARE.md) for pin map, power chain, and CN1 wiring.
 
 After flashing, press RESET (or power-cycle) and continue with **First boot** below.
 
+## Provision the per-device key (one-time, required)
+
+**Before onboarding will work, the device must have its per-device root key burned into eFuse BLOCK3.** This key derives the at-rest encryption keys for settings and the local fob list; until it is set, `Save` on the config page fails (settings cannot be encrypted) and onboarding cannot complete.
+
+This is normally a one-time factory step:
+
+```bash
+tools/provision-device-key.sh
+```
+
+The script refuses to run if BLOCK3 is already programmed, so it is safe to re-run. See [tools/README.md](tools/README.md) for details. A device whose key is unset shows a **"Device not provisioned"** banner on both the status and config pages.
+
 ## First boot
 
 On first power-up (or after a factory reset) the device starts an open WiFi AP named `conway-XXXXXX`, where `XXXXXX` is the last 3 bytes of the MAC.
+
+> **Prerequisite:** the per-device key must already be provisioned (see above). If it is not, the config page shows a "Device not provisioned" banner and `Save` will fail.
 
 1. Join the `conway-XXXXXX` network from a phone or laptop.
 2. Any browser request triggers a captive portal at <http://192.168.4.1/config> (all DNS is hijacked to the device).

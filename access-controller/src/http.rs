@@ -786,6 +786,31 @@ async fn send_config_page(socket: &mut TcpSocket<'_>, rt: &'static RuntimeConfig
         );
     }
 
+    // When the per-device eFuse root key is unset, at-rest encryption is
+    // disabled and `settings::save` will fail. Surface this on the config
+    // page itself (not just /status) so onboarding does not dead-end on a
+    // bare 500 after the operator fills in and submits the form.
+    let unprovisioned_banner: alloc::string::String = {
+        #[cfg(feature = "esp32")]
+        {
+            if !crate::device_key::is_ready() {
+                alloc::string::String::from(
+                    "<p class=\"err\"><b>Device not provisioned &mdash; Save will fail.</b> \
+                     The per-device eFuse root key is unset (BLOCK3 is all-zero), so \
+                     at-rest encryption is disabled and settings cannot be saved. \
+                     Provision the unit first: run <code>tools/provision-device-key.sh</code> \
+                     against it, then reboot. See <code>tools/README.md</code>.</p>",
+                )
+            } else {
+                alloc::string::String::new()
+            }
+        }
+        #[cfg(not(feature = "esp32"))]
+        {
+            alloc::string::String::new()
+        }
+    };
+
     let mut body: alloc::string::String = alloc::string::String::with_capacity(4096);
     let mut esc_ssid: HString<128> = HString::new();
     html_escape_into(&ssid, &mut esc_ssid);
@@ -822,6 +847,7 @@ fieldset legend{{font-weight:600;padding:0 .5rem}}\
 .note{{font-size:.85rem;color:#555;margin-top:.5rem}}\
 </style></head><body>\
 <h1>Conway Configuration</h1>\
+{unprov}\
 {banner}\
 {pending}\
 <form method=\"POST\" action=\"/config\">\
@@ -848,6 +874,7 @@ when this field is left untouched they save immediately and the device reboots.<
 </body></html>",
             banner = banner.as_str(),
             pending = pending_banner.as_str(),
+            unprov = unprovisioned_banner.as_str(),
             ssid = esc_ssid.as_str(),
             pw = esc_pw.as_str(),
             host = host_str.as_str(),
@@ -1095,9 +1122,17 @@ window expires.</p>\
 
     if let Err(e) = settings::save(&new) {
         log::error!("config: save failed: {}", e);
-        let mut msg: HString<96> = HString::new();
-        let _ = write!(msg, "save failed: {}\n", e);
-        send_text(socket, "500 Internal Server Error", msg.as_bytes()).await;
+        let mut msg: alloc::string::String = alloc::string::String::with_capacity(256);
+        let _ = core::fmt::Write::write_fmt(
+            &mut msg,
+            format_args!(
+                "Could not save settings: {}. If this device is not yet provisioned, \
+                 run tools/provision-device-key.sh against it and reboot before \
+                 onboarding (see tools/README.md).",
+                e
+            ),
+        );
+        send_config_error(socket, "500 Internal Server Error", &msg).await;
         return;
     }
 
