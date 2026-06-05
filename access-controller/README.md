@@ -129,6 +129,15 @@ Each device must be provisioned **exactly once** with `tools/provision-device-ke
 
 **Known limits:** UART-bootloader access (`espefuse.py summary`) can still read BLOCK3 — the ESP32 classic AES peripheral has no BLOCK3 key-feeder, so the CPU must keep the bytes readable. OTA is also currently **unsigned**, so an attacker on the management VLAN can replace the firmware. If your threat model includes either, enable ESP32 native flash encryption + Secure Boot v1 and sign OTA images.
 
+### Conway server trust
+
+The device authorizes fobs against the list returned by `POST /api/fobs` on the configured Conway host. **Two facts combine into a sharp edge:**
+
+1. The Conway host/port in `/config` can be changed with **no physical confirmation** — only changes to the trusted signing key are gated behind the CONFIG-button staged-commit flow. An attacker with HTTP access can therefore silently repoint the device at a rogue server.
+2. When **no trusted signing key is pinned** (`trusted_pubkey` unset — the default for back-compat), the device accepts fob-list responses **unsigned**. A rogue server can then return any fob list and open the door.
+
+**To make the LAN-trust model hold, pin a trusted Ed25519 signing key** (the public key whose private half the Conway server uses to sign `/api/fobs` responses). With a key pinned, a repointed device rejects unsigned/forged responses, so repointing alone cannot grant access. Setting or clearing the key requires a physical CONFIG-button press, so the trust anchor cannot be changed from the LAN alone. Configure the key in the **Advanced** section of `/config`.
+
 ## Deterministic simulation tests
 
 The crate's business-logic core (Wiegand frame decoders + the authorization state machine that drives `access_task`) is extracted into a small pure library that can be exercised on the host without any ESP32 hardware. Tests live in `tests/wiegand_decode.rs` and `tests/access_core.rs` and combine handwritten scenarios with `proptest`-based property tests over randomly generated event traces.
