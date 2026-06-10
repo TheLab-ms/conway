@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"github.com/TheLab-ms/conway/engine/config"
@@ -19,6 +20,11 @@ type Config struct {
 
 	// Sync Settings
 	SyncIntervalHours int `json:"sync_interval_hours" config:"label=Full Reconciliation Interval (hours),section=sync,default=24,min=1,max=168,help=How often to fully reconcile all Discord role assignments. Default: 24 hours."`
+
+	// Discount Approval Bot
+	ApprovalBotEnabled          bool   `json:"approval_bot_enabled" config:"label=Enabled,section=approvalbot,help=When on, a member requesting a discount posts a Discord message with an Approve button. Inbound interactions are still verified regardless."`
+	LeadershipChannelWebhookURL string `json:"leadership_channel_webhook_url" config:"label=Leadership Channel Webhook URL,secret,section=approvalbot,help=Create a webhook on the leadership channel (Channel Settings → Integrations → Webhooks → New Webhook) and paste its URL here. Discount requests are posted here for approval."`
+	ApplicationPublicKey        string `json:"application_public_key" config:"label=Application Public Key,section=approvalbot,help=Hex-encoded Ed25519 public key from your Discord application's General Information page. Used to verify inbound button interactions."`
 }
 
 // Validate validates the Discord configuration.
@@ -28,6 +34,15 @@ func (c *Config) Validate() error {
 	}
 	if c.SyncIntervalHours > 168 {
 		return fmt.Errorf("sync interval cannot exceed 168 hours (1 week)")
+	}
+	if c.ApplicationPublicKey != "" {
+		key, err := hex.DecodeString(c.ApplicationPublicKey)
+		if err != nil {
+			return fmt.Errorf("application public key must be hex-encoded: %w", err)
+		}
+		if len(key) != 32 {
+			return fmt.Errorf("application public key must decode to 32 bytes (got %d)", len(key))
+		}
 	}
 	return nil
 }
@@ -53,6 +68,11 @@ func (m *Module) ConfigSpec() config.Spec {
 			{
 				Name:  "sync",
 				Title: "Sync Settings",
+			},
+			{
+				Name:        "approvalbot",
+				Title:       "Discount Approval Bot",
+				Description: approvalBotSectionDescription(m.self.String()),
 			},
 		},
 		Order:    10,

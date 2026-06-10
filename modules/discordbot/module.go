@@ -27,6 +27,7 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/config"
+	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 )
 
@@ -54,7 +55,7 @@ type Module struct {
 	db           *sql.DB
 	eventLogger  *engine.EventLogger
 	webhooks     discordwebhook.MessageQueuer
-	configLoader *config.Loader[Config]
+	configLoader *config.Loader[discord.Config]
 
 	// configOverride, when non-nil, is used in place of configLoader. It
 	// exists as a single test-injection seam so unit tests can drive the
@@ -70,11 +71,12 @@ func New(db *sql.DB, eventLogger *engine.EventLogger, webhooks discordwebhook.Me
 	return &Module{db: db, eventLogger: eventLogger, webhooks: webhooks}
 }
 
-// SetConfigLoader binds the per-module config store. Must be called before
-// AttachWorkers/AttachRoutes are invoked (matching the pattern used by the
-// discord module).
+// SetConfigLoader binds the per-module config store. The approval-bot config
+// lives on the shared "discord" config page (and discord_config table), so we
+// load the discord module's Config and translate it into our local Config.
+// Must be called before AttachWorkers/AttachRoutes are invoked.
 func (m *Module) SetConfigLoader(store *config.Store) {
-	m.configLoader = config.NewLoader[Config](store, "discordbot")
+	m.configLoader = config.NewLoader[discord.Config](store, "discord")
 }
 
 // loadConfig returns the current config. The test seam configOverride wins
@@ -87,7 +89,15 @@ func (m *Module) loadConfig(ctx context.Context) (*Config, error) {
 	if m.configLoader == nil {
 		return &Config{}, nil
 	}
-	return m.configLoader.Load(ctx)
+	dc, err := m.configLoader.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Config{
+		Enabled:                     dc.ApprovalBotEnabled,
+		LeadershipChannelWebhookURL: dc.LeadershipChannelWebhookURL,
+		ApplicationPublicKey:        dc.ApplicationPublicKey,
+	}, nil
 }
 
 // AttachRoutes registers the inbound Discord interaction endpoint.

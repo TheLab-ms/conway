@@ -16,3 +16,12 @@ templ oauthSectionDescription(selfURL string) {
 templ botSectionDescription() {
 	The bot enables Conway to manage Discord roles based on payment status. Create a bot in your Discord application and invite it to your server with the <code>Manage Roles</code> permission. The bot's role must be positioned <strong>above</strong> the member role in Discord's role hierarchy.
 }
+
+templ approvalBotSectionDescription(selfURL string) {
+	The discount approval bot posts a message with an <strong>Approve</strong> button to the leadership channel whenever a member requests a membership discount. To wire it up:
+	<ol class="mb-0 mt-2">
+		<li>Create a webhook on the leadership channel (Channel Settings → Integrations → Webhooks → New Webhook) and paste its URL into <strong>Leadership Channel Webhook URL</strong>.</li>
+		<li>In the <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Discord Developer Portal</a>, open your application and copy the <strong>Public Key</strong> from General Information into <strong>Application Public Key</strong>.</li>
+		<li>Set the application's <strong>Interactions Endpoint URL</strong> to <code>{ selfURL }/discord/interactions</code>. Enable the bot and save the correct public key first, or Discord's verification ping will fail.</li>
+	</ol>
+}

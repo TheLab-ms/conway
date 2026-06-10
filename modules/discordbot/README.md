@@ -22,7 +22,7 @@ Notifies leadership when a member requests a membership discount and lets any au
 ## Setup
 
 1. Create a Discord application at <https://discord.com/developers/applications>.
-2. Copy the application's **Public Key** (hex) into the Conway admin UI under **Integrations → discordbot → Application Public Key**.
+2. Copy the application's **Public Key** (hex) into the Conway admin UI under **Integrations → Discord → Discount Approval Bot → Application Public Key**.
 3. In the leadership channel, create a webhook and copy its URL into **Leadership Channel Webhook URL** (stored as a secret).
 4. In the Discord application's **General Information** page, set **Interactions Endpoint URL** to `https://<your-conway-host>/discord/interactions`. Discord will immediately probe the endpoint with a signed PING; saving succeeds only if signature verification passes.
 5. Toggle **Enabled** on.

@@ -3,6 +3,7 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -2624,6 +2625,7 @@ func TestAdmin_DiscordConfigPage(t *testing.T) {
 	expect(t).Locator(page.GetByText("Bot Configuration")).ToBeVisible()
 	expect(t).Locator(page.GetByText("Notifications")).ToBeVisible()
 	expect(t).Locator(page.GetByText("Sync Settings")).ToBeVisible()
+	expect(t).Locator(page.GetByText("Discount Approval Bot")).ToBeVisible()
 
 	// Fill in all 6 fields across 3 sections
 	configPage.FillClientID("test-discord-client-id")
@@ -2721,6 +2723,69 @@ func TestAdmin_DiscordConfigValidation(t *testing.T) {
 
 	// Should show a validation error
 	configPage.ExpectValidationError()
+}
+
+// TestAdmin_DiscordApprovalBotConfig verifies that the discount approval bot
+// settings (formerly a standalone /admin/config/discordbot page) now live on
+// the Discord config page, save correctly, validate the public key, and that
+// the old standalone route no longer exists.
+func TestAdmin_DiscordApprovalBotConfig(t *testing.T) {
+	t.Parallel()
+	env, adminID, page := setupAdminTest(t)
+
+	configPage := NewAdminDiscordConfigPage(t, page, env.baseURL)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// The approval bot fields render on the Discord page.
+	publicKey := strings.Repeat("ab", 32) // 64 hex chars => 32 bytes
+	configPage.CheckApprovalBotEnabled()
+	configPage.FillApprovalBotWebhookURL("https://discord.com/api/webhooks/leadership/secret")
+	configPage.FillApplicationPublicKey(publicKey)
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+
+	// Verify the values landed in discord_config (not a separate table).
+	var enabled int
+	var webhook, pubKey string
+	err = env.db.QueryRow(`SELECT approval_bot_enabled, leadership_channel_webhook_url, application_public_key FROM discord_config ORDER BY version DESC LIMIT 1`).
+		Scan(&enabled, &webhook, &pubKey)
+	require.NoError(t, err)
+	assert.Equal(t, 1, enabled)
+	assert.Equal(t, "https://discord.com/api/webhooks/leadership/secret", webhook)
+	assert.Equal(t, publicKey, pubKey)
+
+	// Reload: the webhook is secret (shows placeholder), the public key is not.
+	configPage.Navigate()
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectHasLeadershipWebhook()
+	configPage.ExpectApplicationPublicKey(publicKey)
+
+	enabledChecked, err := page.Locator("#approval_bot_enabled").IsChecked()
+	require.NoError(t, err)
+	assert.True(t, enabledChecked, "approval bot enabled checkbox should stay checked")
+
+	// An invalid (non 32-byte) public key is rejected.
+	configPage.FillApplicationPublicKey("not-hex")
+	configPage.Submit()
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+	configPage.ExpectValidationError()
+
+	// The former standalone approval-bot config page no longer exists.
+	req := authedRequest(t, env, adminID, http.MethodGet, "/admin/config/discordbot", nil)
+	resp, err := noRedirectClient().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, "old discordbot config route should be gone")
 }
 
 // TestJourney_DiscordConfigEnablesLoginButton verifies the scenario: admin

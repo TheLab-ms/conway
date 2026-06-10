@@ -3,8 +3,6 @@ package discordbot
 import (
 	"encoding/hex"
 	"fmt"
-
-	"github.com/TheLab-ms/conway/engine/config"
 )
 
 // Config controls the Discord discount-approval bot.
@@ -51,15 +49,4 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("application public key must decode to 32 bytes (got %d)", len(key))
 	}
 	return nil
-}
-
-// ConfigSpec returns the configuration page specification for the bot.
-func (m *Module) ConfigSpec() config.Spec {
-	return config.Spec{
-		Module:   "discordbot",
-		Title:    "Discord Discount Approval Bot",
-		Type:     Config{},
-		Order:    11,
-		Category: "Integrations",
-	}
 }

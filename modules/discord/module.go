@@ -104,6 +104,11 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine
 	db.Exec("ALTER TABLE discord_webhooks ADD COLUMN trigger_op TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE discord_webhooks ADD COLUMN when_clause TEXT NOT NULL DEFAULT ''")
 
+	// Discount approval bot config (merged from the former discordbot config page).
+	db.Exec("ALTER TABLE discord_config ADD COLUMN approval_bot_enabled INTEGER NOT NULL DEFAULT 0")
+	db.Exec("ALTER TABLE discord_config ADD COLUMN leadership_channel_webhook_url TEXT NOT NULL DEFAULT ''")
+	db.Exec("ALTER TABLE discord_config ADD COLUMN application_public_key TEXT NOT NULL DEFAULT ''")
+
 	// Migrate legacy trigger_event-based webhooks that used the old member_events trigger.
 	// These become SQL triggers on the member_events table with INSERT operation.
 	migrateLegacyWebhooks(db)

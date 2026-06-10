@@ -975,6 +975,35 @@ func (p *AdminDiscordConfigPage) FillSyncIntervalHours(value string) {
 	require.NoError(p.t, err)
 }
 
+func (p *AdminDiscordConfigPage) CheckApprovalBotEnabled() {
+	err := p.page.Locator("#approval_bot_enabled").Check()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) FillApprovalBotWebhookURL(value string) {
+	err := p.page.Locator("#leadership_channel_webhook_url").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) FillApplicationPublicKey(value string) {
+	err := p.page.Locator("#application_public_key").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) ExpectHasLeadershipWebhook() {
+	locator := p.page.Locator("#leadership_channel_webhook_url")
+	placeholder, err := locator.GetAttribute("placeholder")
+	require.NoError(p.t, err)
+	require.Contains(p.t, placeholder, "secret is set")
+}
+
+func (p *AdminDiscordConfigPage) ExpectApplicationPublicKey(value string) {
+	locator := p.page.Locator("#application_public_key")
+	actual, err := locator.InputValue()
+	require.NoError(p.t, err)
+	require.Equal(p.t, value, actual)
+}
+
 func (p *AdminDiscordConfigPage) Submit() {
 	err := p.page.Locator("button[type='submit']:has-text('Save Changes')").Click()
 	require.NoError(p.t, err)
