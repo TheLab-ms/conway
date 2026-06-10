@@ -16,6 +16,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/playwright-community/playwright-go"
 	"github.com/stretchr/testify/require"
+	"github.com/stripe/stripe-go/v78"
+	stripeclient "github.com/stripe/stripe-go/v78/client"
 )
 
 // newPage creates a new browser page for a test and registers cleanup.
@@ -538,6 +540,45 @@ func startStripeCLI(t *testing.T, forwardURL string) {
 		_ = cmd.Process.Kill()
 		t.Fatal("timeout waiting for stripe CLI to become ready")
 	}
+}
+
+// getMemberSubscriptionID returns the Stripe subscription ID recorded for a
+// member, waiting briefly for the checkout webhook to populate it.
+func getMemberSubscriptionID(t *testing.T, env *TestEnv, email string) string {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var subID sql.NullString
+		err := env.db.QueryRow("SELECT stripe_subscription_id FROM members WHERE email = ?", email).Scan(&subID)
+		require.NoError(t, err, "could not query member subscription id")
+		if subID.Valid && subID.String != "" {
+			return subID.String
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("member has no stripe_subscription_id on file: email=%s", email)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// cancelStripeSubscription cancels a subscription immediately via the Stripe API,
+// mirroring what a member does in the Billing Portal. We drive cancellation
+// through the API rather than Stripe's hosted Billing Portal UI because that UI
+// is outside our control and changes frequently (e.g. gating the confirm button
+// behind a cancellation-reason survey), which makes browser automation against
+// it unreliable. The app behavior worth testing is our webhook handling, which
+// fires identically regardless of how the cancellation was initiated.
+func cancelStripeSubscription(t *testing.T, subID string) {
+	t.Helper()
+	apiKey := os.Getenv("STRIPE_TEST_KEY")
+	if apiKey == "" {
+		t.Fatal("stripe API key not configured - set STRIPE_TEST_KEY")
+	}
+	sc := &stripeclient.API{}
+	sc.Init(apiKey, nil)
+	_, err := sc.Subscriptions.Cancel(subID, &stripe.SubscriptionCancelParams{})
+	require.NoError(t, err, "could not cancel stripe subscription %s", subID)
+	t.Logf("Canceled stripe subscription %s", subID)
 }
 
 // waitForMemberState polls the database until the member's fields match the expected values or times out.

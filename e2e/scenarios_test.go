@@ -1295,8 +1295,15 @@ func TestStripe_SubscriptionLifecycle(t *testing.T) {
 	managePaymentBtn := page.Locator("a.btn-outline-success:has-text('Manage Payment')")
 	expect(t).Locator(managePaymentBtn).ToBeVisible()
 
-	// Step 5: Go to Billing Portal and cancel subscription
-	t.Log("Step 5: Opening Stripe Billing Portal to cancel subscription")
+	// Step 5: Open the Stripe Billing Portal.
+	//
+	// We verify that "Manage Payment" creates a valid Billing Portal session and
+	// redirects the member to it (this is our code). We deliberately do NOT drive
+	// the cancellation through the hosted portal UI: that UI is Stripe-controlled,
+	// changes frequently, and gates its confirm button behind a cancellation-reason
+	// survey, which makes browser automation against it consistently flaky. The
+	// actual cancellation is performed via the Stripe API below.
+	t.Log("Step 5: Opening Stripe Billing Portal")
 
 	err = managePaymentBtn.Click()
 	require.NoError(t, err)
@@ -1307,42 +1314,22 @@ func TestStripe_SubscriptionLifecycle(t *testing.T) {
 	})
 	require.NoError(t, err, "should redirect to Stripe Billing Portal")
 
-	// Wait for Billing Portal to fully render
-	time.Sleep(2 * time.Second)
-
-	// Find and click "Cancel subscription" link
-	cancelLink := page.Locator("a:has-text('Cancel subscription'), button:has-text('Cancel subscription')").First()
-	err = cancelLink.WaitFor(playwright.LocatorWaitForOptions{
-		State:   playwright.WaitForSelectorStateVisible,
-		Timeout: playwright.Float(15000),
-	})
-	require.NoError(t, err, "Cancel subscription link should be visible")
-	err = cancelLink.Click()
-	require.NoError(t, err)
-
-	// Wait for confirmation dialog
-	time.Sleep(2 * time.Second)
-
-	// Click the confirmation button
-	confirmBtn := page.Locator("button:has-text('Cancel subscription'), button:has-text('Cancel plan')").Last()
-	err = confirmBtn.WaitFor(playwright.LocatorWaitForOptions{
-		State:   playwright.WaitForSelectorStateVisible,
-		Timeout: playwright.Float(10000),
-	})
-	require.NoError(t, err, "Cancel confirmation button should be visible")
-	err = confirmBtn.Click()
-	require.NoError(t, err)
-
-	// Wait for cancellation to be processed
-	// Note: Stripe Billing Portal schedules cancellation at period end by default,
-	// so the subscription status may remain "active" with cancel_at_period_end=true.
-	time.Sleep(3 * time.Second)
-
 	// Navigate back to our app
 	_, err = page.Goto(env.baseURL + "/")
 	require.NoError(t, err)
 
-	t.Log("Test completed: subscription created and cancellation initiated via Billing Portal")
+	// Step 6: Cancel the subscription via the Stripe API (equivalent to the
+	// member canceling in the portal) and confirm our webhook handler reflects
+	// the cancellation by deactivating the member.
+	t.Log("Step 6: Canceling subscription and verifying webhook updates member state")
+	subID := getMemberSubscriptionID(t, env, email)
+	cancelStripeSubscription(t, subID)
+
+	waitForMemberState(t, env, email, 30*time.Second, func(subState, name string) bool {
+		return subState == "canceled"
+	})
+
+	t.Log("Test completed: subscription created via Checkout and canceled; member deactivated")
 }
 
 // TestStripe_SubscriptionWithAdminUIConfig tests the Stripe subscription workflow
