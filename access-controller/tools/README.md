@@ -5,15 +5,25 @@
 One-time provisioning of the per-device root key used for at-rest
 encryption of the `nvs` (settings) and `fobs` partitions.
 
-### Why this exists
+> **You usually do not need this script.** As of the current firmware,
+> the device **self-provisions on first boot**: if eFuse BLOCK3 is
+> blank, `device_key::auto_provision()` (called from `main.rs` right
+> after `esp_radio::init()`) generates a 256-bit key from the hardware
+> TRNG, burns it into BLOCK3, and verifies the readback — no host tool
+> or operator step required. This script is kept as a **fallback** for
+> the cases the firmware deliberately refuses to handle (see below).
+
+### Why this script still exists
 
 The firmware encrypts both partitions with ChaCha20-Poly1305 keys
-derived from 32 bytes stored in eFuse BLOCK3. Burning eFuse can
-brick a device if done wrong, so we keep that operation **out of the
-firmware itself** — a buggy build that mis-burns BLOCK3 would
-permanently corrupt every unit it touched. Instead, BLOCK3 is burned
-externally over UART download mode using `espefuse.py`, exactly once,
-per device.
+derived from 32 bytes stored in eFuse BLOCK3. Firmware self-provisioning
+covers the normal case, but it **only burns when BLOCK3 is blank and the
+eFuse coding scheme is NONE**, and it aborts on a TRNG fault or a
+readback mismatch. Use this script when you need to provision a unit
+whose firmware refused to (unsupported coding scheme), or to pre-burn
+keys at the factory in download mode without booting the app. It burns
+BLOCK3 externally over UART download mode using `espefuse.py`, exactly
+once per device.
 
 ### Usage
 
@@ -58,8 +68,8 @@ encrypted persistence disabled — `fob_store::save()` /
   per-device encryption.
 * Run on a trusted machine; the script never logs or echoes the key
   to stdout, but the tempfile briefly exists on disk under `$TMPDIR`.
-* This is normally a factory step. End users should never need to
-  re-run it.
+* With firmware self-provisioning this is rarely needed; it remains a
+  factory/recovery step. End users should never need to run it.
 
 ### Threat model
 

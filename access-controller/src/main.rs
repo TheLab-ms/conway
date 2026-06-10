@@ -258,6 +258,22 @@ async fn main(spawner: embassy_executor::Spawner) {
     // after peripherals init).
     let esp_radio_ctrl = esp_radio::init().unwrap();
 
+    // First-boot self-provisioning: if eFuse BLOCK3 is still blank, generate
+    // a random per-device root key from the hardware TRNG and burn it in, so
+    // no external script is needed to bootstrap the key. Must run after
+    // `esp_radio::init()` (RF on => true RNG) and before `device_key::init()`
+    // (which reads BLOCK3 and derives the sub-keys). The RNG + ADC1
+    // peripherals are consumed only for entropy and released internally.
+    match device_key::auto_provision(peripherals.RNG, peripherals.ADC1) {
+        device_key::ProvisionOutcome::Provisioned => {
+            log::info!("boot: device self-provisioned its root key on first boot");
+        }
+        device_key::ProvisionOutcome::AlreadyProvisioned => {}
+        device_key::ProvisionOutcome::Skipped => {
+            log::warn!("boot: root-key auto-provisioning was skipped (see error above)");
+        }
+    }
+
     // Derive per-device storage key from eFuse BLOCK3. If unprovisioned,
     // this logs a loud warning and `settings::load()`/`fob_store::load()`
     // both return empty -- the device falls through to compile-time env
@@ -268,7 +284,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         log::warn!(
             "boot: device is UNPROVISIONED -- at-rest encryption disabled. \
              Persistent storage will not be written. \
-             Run tools/provision-device-key.sh to enable."
+             First-boot auto-provisioning did not complete; see logs above."
         );
     }
 

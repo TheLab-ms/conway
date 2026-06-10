@@ -26,22 +26,38 @@
 //!
 //! ## Provisioning
 //!
-//! Per-device key lives in eFuse BLOCK3 (32 bytes, 256 bits). Burning
-//! eFuse from firmware is **not** done — esp-hal exposes reads only, and
-//! a buggy firmware build mis-burning BLOCK3 would brick the device
-//! irreversibly. Instead, provisioning is an external operator step:
+//! Per-device key lives in eFuse BLOCK3 (32 bytes, 256 bits). The firmware
+//! **self-provisions on first boot**: [`auto_provision`] reads BLOCK3, and
+//! if it is still blank (virgin silicon) it generates 256 bits from the
+//! hardware TRNG and burns them into BLOCK3 via the eFuse programming
+//! registers. No external script or host tooling is required — power on a
+//! fresh unit and it provisions itself, then [`init`] derives the sub-keys
+//! on that same boot.
 //!
-//! ```sh
-//! ./tools/provision-device-key.sh /dev/ttyUSB0
-//! ```
+//! eFuse BLOCK3 is one-time-writable (OTP), so [`auto_provision`] only ever
+//! burns when the block reads back all-zero; on an already-provisioned unit
+//! it is a no-op. The burn is guarded further by:
+//!   * a coding-scheme check (raw 32-byte writes are only valid under
+//!     coding scheme NONE; 3/4 and repeat encodings are refused), and
+//!   * a post-burn readback verify (the derived key is only trusted if the
+//!     bytes read back equal what we burned).
 //!
-//! which generates 32 bytes of OS entropy and writes them with
-//! `espefuse.py burn_block_data BLOCK3 ...`. See `tools/README.md`.
+//! The legacy operator script `tools/provision-device-key.sh` (host-side
+//! `espefuse.py burn_block_data`) still works and remains as a fallback for
+//! the rare case where self-provisioning is refused (e.g. unsupported
+//! coding scheme); see `tools/README.md`.
 //!
-//! On boot this module reads BLOCK3 via the PAC. If it is all-zero
-//! (unprovisioned), [`state()`] returns [`KeyState::Unprovisioned`] and
-//! both stores degrade safely: loads return empty, saves return an error
-//! that is surfaced in the HTTP UI and logs.
+//! If a burn is ever refused or fails verification, [`state()`] returns
+//! [`KeyState::Unprovisioned`] and both stores degrade safely: loads return
+//! empty, saves return an error that is surfaced in the HTTP UI and logs.
+//!
+//! ### Threat note on self-generated entropy
+//!
+//! The root key is produced by [`esp_hal::rng::Trng`], which mixes SAR-ADC
+//! noise (via [`esp_hal::rng::TrngSource`]) on top of the RF-derived noise
+//! already present once `esp_radio::init()` has run. [`auto_provision`]
+//! MUST therefore be called after radio init so the RNG is a true TRNG and
+//! not a boot-deterministic PRNG.
 //!
 //! ## Derivation
 //!
@@ -82,8 +98,11 @@ pub type Key = [u8; 32];
 pub enum KeyState {
     /// `init()` has not run yet.
     Uninit,
-    /// BLOCK3 is all zero — device has not been provisioned with
-    /// `tools/provision-device-key.sh`. Persistent stores will refuse to
+    /// BLOCK3 is all zero — the device is not provisioned with a root
+    /// key. Normally unreachable, because [`auto_provision`] burns a key
+    /// into blank BLOCK3 on first boot; this state is only reached if that
+    /// self-provisioning was refused (unsupported eFuse coding scheme) or
+    /// its post-burn readback failed. Persistent stores will refuse to
     /// save and return empty on load. The device still boots; the
     /// operator will see a "device not provisioned" banner in the HTTP
     /// UI and a loud log line at startup.
@@ -151,6 +170,231 @@ fn read_block3() -> Zeroizing<Key> {
     out
 }
 
+/// eFuse coding scheme stored in BLK0. `0` == NONE (full 256-bit BLOCK3
+/// usable, raw word writes valid). `1` == 3/4 encoding, `2` == repeat —
+/// both shrink the usable block and require encoded writes, so we refuse
+/// to auto-burn under them.
+const CODING_SCHEME_NONE: u8 = 0;
+
+/// eFuse controller op-codes (ESP32 TRM / esp-idf `efuse_ll.h`).
+const EFUSE_WRITE_OP_CODE: u16 = 0x5A5A;
+const EFUSE_READ_OP_CODE: u16 = 0x5AA5;
+
+/// Outcome of a first-boot [`auto_provision`] attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProvisionOutcome {
+    /// BLOCK3 already held a key; nothing was burned (the common case on
+    /// every boot after the first).
+    AlreadyProvisioned,
+    /// BLOCK3 was blank and we burned a fresh random root key into it.
+    Provisioned,
+    /// BLOCK3 was blank but we deliberately did **not** end up with a
+    /// usable key: the eFuse coding scheme is unsupported, the TRNG
+    /// returned an unusable value, or the post-burn readback did not match.
+    /// The reason is logged at `error` level. The device continues to boot
+    /// unprovisioned (encryption disabled).
+    Skipped,
+}
+
+/// Read the BLK0 coding scheme field (`RD_CODING_SCHEME`, 2 bits).
+fn coding_scheme() -> u8 {
+    esp_hal::peripherals::EFUSE::regs()
+        .blk0_rdata6()
+        .read()
+        .rd_coding_scheme()
+        .bits()
+}
+
+/// Clear every eFuse program (WDATA) register to zero so a subsequent
+/// program cycle burns *only* the bits we explicitly stage. Burning a
+/// zero bit is a no-op, so zeroing the other blocks' WDATA leaves them
+/// untouched. Mirrors esp-idf's `efuse_hal_clear_program_registers`.
+///
+/// The WDATA registers are written through raw register pointers
+/// (`as_ptr`) rather than the typed field writers: this PAC models several BLOCK3 words (e.g. WDATA3/WDATA4)
+/// as named ADC-calibration sub-fields instead of a single 32-bit value,
+/// and WDATA4 has no writer at all. Raw 32-bit stores sidestep that and are
+/// exactly what an eFuse program cycle consumes.
+fn clear_program_registers() {
+    let efuse = esp_hal::peripherals::EFUSE::regs();
+    let zero = |p: *mut u32| unsafe { p.write_volatile(0) };
+    zero(efuse.blk0_wdata0().as_ptr());
+    zero(efuse.blk0_wdata1().as_ptr());
+    zero(efuse.blk0_wdata2().as_ptr());
+    zero(efuse.blk0_wdata3().as_ptr());
+    zero(efuse.blk0_wdata4().as_ptr());
+    zero(efuse.blk0_wdata5().as_ptr());
+    zero(efuse.blk0_wdata6().as_ptr());
+    zero(efuse.blk1_wdata0().as_ptr());
+    zero(efuse.blk1_wdata1().as_ptr());
+    zero(efuse.blk1_wdata2().as_ptr());
+    zero(efuse.blk1_wdata3().as_ptr());
+    zero(efuse.blk1_wdata4().as_ptr());
+    zero(efuse.blk1_wdata5().as_ptr());
+    zero(efuse.blk1_wdata6().as_ptr());
+    zero(efuse.blk1_wdata7().as_ptr());
+    zero(efuse.blk2_wdata0().as_ptr());
+    zero(efuse.blk2_wdata1().as_ptr());
+    zero(efuse.blk2_wdata2().as_ptr());
+    zero(efuse.blk2_wdata3().as_ptr());
+    zero(efuse.blk2_wdata4().as_ptr());
+    zero(efuse.blk2_wdata5().as_ptr());
+    zero(efuse.blk2_wdata6().as_ptr());
+    zero(efuse.blk2_wdata7().as_ptr());
+    zero(efuse.blk3_wdata0().as_ptr());
+    zero(efuse.blk3_wdata1().as_ptr());
+    zero(efuse.blk3_wdata2().as_ptr());
+    zero(efuse.blk3_wdata3().as_ptr());
+    zero(efuse.blk3_wdata4().as_ptr());
+    zero(efuse.blk3_wdata5().as_ptr());
+    zero(efuse.blk3_wdata6().as_ptr());
+    zero(efuse.blk3_wdata7().as_ptr());
+}
+
+/// Program the eFuse controller timing for the current APB clock, then run
+/// one program cycle that burns `key` into BLOCK3, followed by a read cycle
+/// that refreshes the readback registers.
+///
+/// The firmware always runs at `CpuClock::max()` (APB = 80 MHz), so we use
+/// the 80 MHz timing row from esp-idf's `efuse_hal_set_timing`
+/// (clk_sel0=80, clk_sel1=128, dac_clk_div=100). Lower APB rows are not
+/// applicable here.
+///
+/// We never set any `RD_DIS` / read-protect bit: the CPU must keep read
+/// access to BLOCK3 to derive the AEAD sub-keys at every boot (the ESP32
+/// classic has no BLOCK3 key-feeder peripheral — see the module threat
+/// model).
+fn burn_block3(key: &Key) {
+    let efuse = esp_hal::peripherals::EFUSE::regs();
+
+    // eFuse programming timing for APB = 80 MHz.
+    efuse
+        .clk()
+        .modify(|_, w| unsafe { w.sel0().bits(80).sel1().bits(128) });
+    efuse
+        .dac_conf()
+        .modify(|_, w| unsafe { w.dac_clk_div().bits(100) });
+
+    // Stage exactly the 32 key bytes into BLOCK3's WDATA, everything else 0.
+    // Raw 32-bit stores (see `clear_program_registers`) because the typed
+    // field writers don't expose a plain 32-bit value on every BLOCK3 word.
+    clear_program_registers();
+    let word = |i: usize| u32::from_le_bytes([key[i], key[i + 1], key[i + 2], key[i + 3]]);
+    let wdata = [
+        efuse.blk3_wdata0().as_ptr(),
+        efuse.blk3_wdata1().as_ptr(),
+        efuse.blk3_wdata2().as_ptr(),
+        efuse.blk3_wdata3().as_ptr(),
+        efuse.blk3_wdata4().as_ptr(),
+        efuse.blk3_wdata5().as_ptr(),
+        efuse.blk3_wdata6().as_ptr(),
+        efuse.blk3_wdata7().as_ptr(),
+    ];
+    for (i, p) in wdata.iter().enumerate() {
+        unsafe { p.write_volatile(word(i * 4)) };
+    }
+
+    // Program cycle. `modify` preserves CONF bit16 (force_no_wr_rd_dis,
+    // part of the reset value) while setting the write op-code.
+    efuse
+        .conf()
+        .modify(|_, w| unsafe { w.op_code().bits(EFUSE_WRITE_OP_CODE) });
+    efuse.cmd().write(|w| w.pgm_cmd().set_bit());
+    while efuse.cmd().read().bits() != 0 {}
+
+    // Read cycle: reload the readback registers from the eFuse array so a
+    // subsequent `read_block3()` observes the freshly burned bits.
+    efuse
+        .conf()
+        .modify(|_, w| unsafe { w.op_code().bits(EFUSE_READ_OP_CODE) });
+    efuse.cmd().write(|w| w.read_cmd().set_bit());
+    while efuse.cmd().read().bits() != 0 {}
+}
+
+/// First-boot bootstrap: if eFuse BLOCK3 is blank, generate a fresh
+/// 256-bit random root key from the hardware TRNG and burn it in, so the
+/// device provisions itself with no external tooling or operator step.
+///
+/// Idempotent and safe to call on every boot: it is a no-op once BLOCK3
+/// holds a key (BLOCK3 is one-time-writable, so re-burning is both
+/// impossible and never attempted — the function gates hard on a blank
+/// readback).
+///
+/// MUST be called:
+///   * **after** `esp_radio::init()` — so the hardware RNG is a true TRNG
+///     (RF noise mixed in) and not a boot-deterministic PRNG; and
+///   * **before** [`init`] — which reads BLOCK3 and derives the sub-keys.
+///
+/// `rng` and `adc1` are consumed for the duration of key generation to
+/// stand up an esp-hal [`TrngSource`] (adds SAR-ADC entropy); both are
+/// released before the function returns.
+pub fn auto_provision(
+    rng: esp_hal::peripherals::RNG<'_>,
+    adc1: esp_hal::peripherals::ADC1<'_>,
+) -> ProvisionOutcome {
+    use esp_hal::rng::{Trng, TrngSource};
+
+    // Only a virgin unit should ever burn. Re-burning OTP is impossible and
+    // a buggy double-burn could corrupt the block, so gate hard on a blank
+    // readback.
+    if read_block3().iter().any(|&b| b != 0) {
+        return ProvisionOutcome::AlreadyProvisioned;
+    }
+
+    // Raw 32-byte BLOCK3 writes are only valid under coding scheme NONE.
+    let scheme = coding_scheme();
+    if scheme != CODING_SCHEME_NONE {
+        log::error!(
+            "device_key: eFuse coding scheme {} is not NONE — refusing to \
+             auto-burn BLOCK3 (3/4 and repeat encodings need encoded writes \
+             and would corrupt the key). Use tools/provision-device-key.sh.",
+            scheme
+        );
+        return ProvisionOutcome::Skipped;
+    }
+
+    // Generate the root key from the true RNG. `TrngSource` enables the
+    // SAR-ADC noise source; `Trng::try_new` then cannot fail.
+    let source = TrngSource::new(rng, adc1);
+    let mut key = Zeroizing::new([0u8; 32]);
+    {
+        let trng =
+            Trng::try_new().expect("TrngSource is alive, so Trng::try_new must succeed");
+        trng.read(&mut *key);
+    }
+
+    // An all-zero key is indistinguishable from "unprovisioned" and must
+    // never be burned. A true RNG returning 32 zero bytes is astronomically
+    // unlikely; treat it as an RNG fault and abort (next boot retries).
+    if key.iter().all(|&b| b == 0) {
+        log::error!("device_key: TRNG produced an all-zero key — aborting BLOCK3 burn");
+        drop(source);
+        return ProvisionOutcome::Skipped;
+    }
+
+    log::info!(
+        "device_key: BLOCK3 is blank — burning a fresh per-device root key \
+         (one-time, irreversible)"
+    );
+    burn_block3(&key);
+    drop(source); // release RNG + ADC1
+
+    // Verify the burn actually took. An undervolted or otherwise failed OTP
+    // write can leave bits unset; only trust the key if it reads back
+    // byte-for-byte.
+    let readback = read_block3();
+    if *readback != *key {
+        log::error!(
+            "device_key: BLOCK3 readback does not match the burned key — \
+             provisioning FAILED. Encryption stays disabled this boot."
+        );
+        return ProvisionOutcome::Skipped;
+    }
+
+    log::info!("device_key: auto-provisioned a per-device root key into eFuse BLOCK3");
+    ProvisionOutcome::Provisioned
+}
+
 /// Initialize the device key. Call exactly once, after `esp_radio::init()`
 /// (so the MAC is reliably readable) and before any call to
 /// [`crate::settings::load`] / [`crate::fob_store::load`].
@@ -165,8 +409,9 @@ pub fn init() {
     if ikm.iter().all(|&b| b == 0) {
         log::warn!(
             "device_key: BLOCK3 is all-zero — device is UNPROVISIONED. \
-             Encrypted at-rest storage is DISABLED. \
-             Run tools/provision-device-key.sh against this unit to enable."
+             Encrypted at-rest storage is DISABLED. First-boot \
+             auto-provisioning was refused or failed; check earlier logs. \
+             tools/provision-device-key.sh can provision this unit manually."
         );
         STATE.store(ST_UNPROVISIONED, Ordering::Release);
         return;
