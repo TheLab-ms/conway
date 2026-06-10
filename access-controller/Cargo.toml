@@ -39,8 +39,16 @@ esp-rtos = { version = "0.2", features = ["esp-radio", "embassy", "log-04"], opt
 esp-alloc = { version = "0.9", optional = true }
 esp-println = { version = "0.13", default-features = false, features = ["log", "uart"], optional = true }
 esp-bootloader-esp-idf = { version = "0.1", optional = true }
-esp-storage = { version = "0.6", features = ["esp32"], optional = true }
+esp-storage = { version = "0.6", features = ["esp32", "bytewise-read"], optional = true }
 embedded-storage = { version = "0.3", optional = true }
+
+# Wear-levelled, power-loss-safe FIFO queue in raw NOR flash, used by
+# `swipe_log` to persist fob swipes offline (standalone mode). Pinned to
+# 3.0.1 for its simple free-function queue API (`queue::push`/`iter`).
+# It speaks the async embedded-storage traits, so `esp-storage`'s blocking
+# `FlashStorage` is wrapped with `embassy-embedded-hal`'s `BlockingAsync`.
+sequential-storage = { version = "=3.0.1", default-features = false, optional = true }
+embassy-embedded-hal = { version = "0.5", default-features = false, optional = true }
 
 # Use same embassy versions that esp-rtos uses
 embassy-executor = { version = "0.9", optional = true }
@@ -67,6 +75,8 @@ esp32 = [
     "dep:esp-bootloader-esp-idf",
     "dep:esp-storage",
     "dep:embedded-storage",
+    "dep:sequential-storage",
+    "dep:embassy-embedded-hal",
     "dep:embassy-executor",
     "dep:embassy-time",
     "dep:embassy-sync",

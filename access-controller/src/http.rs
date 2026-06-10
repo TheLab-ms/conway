@@ -176,6 +176,9 @@ async fn handle_connection(
         ("GET", "/fobs") => {
             send_fobs_page(socket, local_fobs, rt).await;
         }
+        ("GET", "/swipes") => {
+            send_swipes_page(socket).await;
+        }
         ("POST", "/fobs") => {
             let cl = match parse_content_length(headers_str) {
                 Some(n) if (n as usize) <= CONFIG_BODY_MAX => n,
@@ -425,7 +428,22 @@ async fn send_text(socket: &mut TcpSocket<'_>, status: &str, body: &[u8]) {
     let _ = socket.write_all(body).await;
 }
 
-/// Render and send the HTML status page.
+/// `GET /swipes` - dump the offline swipe log as CSV.
+///
+/// Only standalone units populate this log (Conway units upload swipes to
+/// the server instead), so it is empty in Conway mode. Returns at most the
+/// most-recent 128 entries, oldest-first, as
+/// `fob,allowed,uptime_ms` rows. `uptime_ms` is milliseconds since the
+/// device booted (no RTC), so timestamps reset across reboots.
+async fn send_swipes_page(socket: &mut TcpSocket<'_>) {
+    let entries = crate::swipe_log::read_recent::<128>().await;
+    let mut body: HString<6144> = HString::new();
+    let _ = body.push_str("fob,allowed,uptime_ms\n");
+    for e in entries.iter() {
+        let _ = write!(body, "{},{},{}\n", e.fob, e.allowed as u8, e.at_ms);
+    }
+    send_text(socket, "200 OK", body.as_bytes()).await;
+}
 async fn send_status_page(
     socket: &mut TcpSocket<'_>,
     fobs: &Mutex<CriticalSectionRawMutex, heapless::Vec<u32, MAX_FOBS>>,
@@ -629,7 +647,7 @@ th,td{{text-align:left;padding:.25rem .75rem;border-bottom:1px solid #ddd}}\
 th{{background:#f3f3f3}}progress{{width:100%}}\
 .err{{color:#b00}}.ok{{color:#070}}</style></head><body>\
 <h1>Conway Access Controller</h1>\
-<p>Firmware v{firmware} &middot; <a href=\"/config\">Configuration</a> &middot; <a href=\"/fobs\">Local fobs</a></p>\
+<p>Firmware v{firmware} &middot; <a href=\"/config\">Configuration</a> &middot; <a href=\"/fobs\">Local fobs</a> &middot; <a href=\"/swipes\">Swipe log</a></p>\
 {banner}\
 <table>\
 <tr><th>Uptime</th><td>{uptime} s</td></tr>\

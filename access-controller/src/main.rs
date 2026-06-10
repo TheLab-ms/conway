@@ -19,6 +19,7 @@ mod fob_store;
 mod http;
 mod ota;
 mod settings;
+mod swipe_log;
 mod sync;
 mod wiegand;
 
@@ -47,6 +48,7 @@ use static_cell::StaticCell;
 
 use crate::fob_store::{LocalFob, MAX_LOCAL_FOBS};
 use crate::settings::Settings;
+use crate::swipe_log::SwipeLogEntry;
 use crate::sync::{AccessEvent, EventBuffer};
 use crate::wiegand::{Wiegand, WiegandRead};
 use access_controller::core::{AccessCore, CardRead, Effect, Input as CoreInput, Outcome};
@@ -83,6 +85,14 @@ static CONFIG: StaticCell<RuntimeConfig> = StaticCell::new();
 // 5th is dropped with only a warn. Bumped to 16 so a slow HTTP client
 // can't silently mask door swipes.
 static WIEGAND_CHANNEL: Channel<CriticalSectionRawMutex, WiegandRead, 16> = Channel::new();
+
+// Channel for offline swipe logging -> swipe_log_task (standalone mode).
+// `access_task` must never block on flash, so it only `try_send`s entries
+// here; `swipe_log_task` drains the queue and performs the blocking flash
+// writes. Capacity 16 absorbs a burst of swipes while a sector erase is in
+// flight; on overflow the entry is dropped with a warn (logging is
+// best-effort and must never delay the door).
+static SWIPE_LOG_CHANNEL: Channel<CriticalSectionRawMutex, SwipeLogEntry, 16> = Channel::new();
 
 // Event buffer with peek/commit semantics for reliable delivery
 pub static EVENT_BUFFER: EventBuffer = EventBuffer::new();
@@ -387,8 +397,18 @@ async fn main(spawner: embassy_executor::Spawner) {
     spawner.spawn(net_task(runner)).unwrap();
     spawner.spawn(wifi_task(wifi_controller, rt_config)).unwrap();
     spawner.spawn(wiegand_task(wiegand)).unwrap();
+    // Conway vs. standalone is fixed for this boot (changing the host goes
+    // through settings::save() + reboot). When no Conway host is configured
+    // we persist every swipe to flash instead of uploading it.
+    let conway_enabled = {
+        let s = rt_config.settings.lock().await;
+        s.conway_enabled()
+    };
+    let log_to_flash = !conway_enabled;
     spawner
-        .spawn(access_task(fobs, local_fobs, last_swipe, wdt, rt_config))
+        .spawn(access_task(
+            fobs, local_fobs, last_swipe, wdt, rt_config, log_to_flash,
+        ))
         .unwrap();
     spawner.spawn(door_task(door)).unwrap();
     spawner
@@ -398,15 +418,15 @@ async fn main(spawner: embassy_executor::Spawner) {
         .spawn(status_and_config_task(status_led, config_btn, stack))
         .unwrap();
     // Sync task only makes sense in station mode AND when a Conway host
-    // is configured. Standalone mode (no host) skips it entirely.
-    let conway_enabled = {
-        let s = rt_config.settings.lock().await;
-        s.conway_enabled()
-    };
+    // is configured. Standalone mode (no host) skips it entirely and
+    // instead drains the offline swipe log to flash.
     if mode == DeviceMode::Station && conway_enabled {
         spawner.spawn(sync_task(stack, fobs, etag, rt_config)).unwrap();
     } else if mode == DeviceMode::Station {
         log::info!("sync: disabled (standalone mode, no Conway host configured)");
+    }
+    if log_to_flash {
+        spawner.spawn(swipe_log_task()).unwrap();
     }
     spawner
         .spawn(http::http_server_task(
@@ -550,6 +570,9 @@ async fn access_task(
     last_swipe: &'static Mutex<CriticalSectionRawMutex, Option<LastSwipe>>,
     wdt: &'static Mutex<CriticalSectionRawMutex, WdtType>,
     rt: &'static RuntimeConfig,
+    // When true (standalone mode), every swipe is also handed to
+    // `swipe_log_task` for durable flash logging via `SWIPE_LOG_CHANNEL`.
+    log_to_flash: bool,
 ) {
     let mut core = AccessCore::new();
 
@@ -586,6 +609,20 @@ async fn access_task(
                 at_uptime_ms: now,
                 manual: true,
             });
+            // Standalone mode: persist to the offline flash log. Non-blocking
+            // try_send; if the queue is backed up we drop the entry rather
+            // than stall the door.
+            if log_to_flash
+                && SWIPE_LOG_CHANNEL
+                    .try_send(SwipeLogEntry {
+                        fob: MANUAL_UNLOCK_FOB,
+                        allowed: true,
+                        at_ms: now,
+                    })
+                    .is_err()
+            {
+                log::warn!("swipe_log: channel full, dropping manual-unlock entry");
+            }
             continue;
         }
 
@@ -648,6 +685,20 @@ async fn access_task(
                         at_uptime_ms: now,
                         manual: false,
                     });
+                    // Standalone mode: persist to the offline flash log.
+                    // Non-blocking; the blocking flash write happens in
+                    // swipe_log_task so the decision loop never stalls.
+                    if log_to_flash
+                        && SWIPE_LOG_CHANNEL
+                            .try_send(SwipeLogEntry {
+                                fob: ev.fob,
+                                allowed: ev.allowed,
+                                at_ms: now,
+                            })
+                            .is_err()
+                    {
+                        log::warn!("swipe_log: channel full, dropping swipe entry");
+                    }
                 }
                 Effect::RequestSync => {
                     SYNC_SIGNAL.signal(());
@@ -657,6 +708,25 @@ async fn access_task(
                     log::debug!("watchdog: fed");
                 }
             }
+        }
+    }
+}
+
+/// Offline swipe-logging task - persists fob swipes to flash.
+///
+/// Spawned only in standalone mode (no Conway host). It is the single
+/// writer to the swipe-log flash region, decoupling the latency-critical
+/// `access_task` from the blocking flash I/O: `access_task` `try_send`s
+/// entries into `SWIPE_LOG_CHANNEL`, and this task drains them and
+/// performs the actual (occasionally erase-bearing) writes. Mirrors the
+/// `access_task` -> `sync_task` decoupling used for networking.
+#[embassy_executor::task]
+async fn swipe_log_task() {
+    log::info!("swipe_log: offline logging enabled (standalone mode)");
+    loop {
+        let entry = SWIPE_LOG_CHANNEL.receive().await;
+        if let Err(e) = swipe_log::append(&entry).await {
+            log::warn!("swipe_log: append failed: {}", e);
         }
     }
 }
@@ -874,6 +944,9 @@ async fn status_and_config_task(
                         }
                         if let Err(e) = fob_store::erase() {
                             log::error!("config: fob_store::erase failed: {}", e);
+                        }
+                        if let Err(e) = swipe_log::erase() {
+                            log::error!("config: swipe_log::erase failed: {}", e);
                         }
                         for _ in 0..5 {
                             led.set_high();

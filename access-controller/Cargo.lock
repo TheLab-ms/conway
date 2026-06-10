@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "chacha20poly1305",
  "ed25519-compact",
+ "embassy-embedded-hal",
  "embassy-executor",
  "embassy-futures",
  "embassy-net",
@@ -26,6 +27,7 @@ dependencies = [
  "hkdf",
  "log",
  "proptest",
+ "sequential-storage",
  "sha2",
  "smoltcp",
  "static_cell",
@@ -1735,6 +1737,15 @@ name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+
+[[package]]
+name = "sequential-storage"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b80693b2169b3fe0f9c68d5fae804490cc437113c0526dbabb75c01e758db597"
+dependencies = [
+ "embedded-storage-async",
+]
 
 [[package]]
 name = "serde"
