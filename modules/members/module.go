@@ -26,7 +26,16 @@ type Module struct {
 
 func New(db *sql.DB) *Module {
 	engine.MustMigrate(db, migration)
+	migrateMembers(db)
 	return &Module{db: db}
+}
+
+// migrateMembers applies additive column migrations that can't be expressed via
+// CREATE TABLE IF NOT EXISTS on pre-existing databases. SQLite doesn't support
+// IF NOT EXISTS for ALTER TABLE, so we Exec separately and ignore the error
+// raised when the column already exists.
+func migrateMembers(db *sql.DB) {
+	db.Exec(`ALTER TABLE members ADD COLUMN discount_status TEXT CHECK (discount_status IN ('requested', 'approved'))`)
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
@@ -139,5 +148,6 @@ func (m *Module) handleDiscountRemove(w http.ResponseWriter, r *http.Request) {
 func NewTestDB(t *testing.T) *sql.DB {
 	d := engine.OpenTestDB(t)
 	engine.MustMigrate(d, migration)
+	migrateMembers(d)
 	return d
 }

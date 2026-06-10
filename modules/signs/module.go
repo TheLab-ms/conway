@@ -91,6 +91,10 @@ type Module struct {
 func New(db *sql.DB, eventLogger *engine.EventLogger) *Module {
 	if db != nil {
 		engine.MustMigrate(db, migration)
+		// Additive columns can't use IF NOT EXISTS with ALTER TABLE, and
+		// CREATE TABLE IF NOT EXISTS won't add columns to pre-existing tables.
+		// Exec separately and ignore the error when the column already exists.
+		db.Exec("ALTER TABLE signs_print_queue ADD COLUMN fields_json TEXT NOT NULL DEFAULT '{}'")
 	}
 	m := &Module{
 		db:          db,

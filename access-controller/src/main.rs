@@ -189,6 +189,30 @@ static WDT: StaticCell<Mutex<CriticalSectionRawMutex, WdtType>> = StaticCell::ne
 
 #[esp_rtos::main]
 async fn main(spawner: embassy_executor::Spawner) {
+    // Hardware init. MUST come before the logger: raising the CPU/APB clock
+    // here changes the divisor that drives UART0, so anything printed before
+    // we re-pin the console baud (below) comes out garbled.
+    let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let peripherals = esp_hal::init(hal_config);
+
+    // Re-establish the UART0 console at 115200 for the *current* (post-init)
+    // APB clock. esp-println's ESP32 backend prints via the ROM
+    // `uart_tx_one_char`, which just reuses whatever baud divisor UART0
+    // currently holds. The 2nd-stage bootloader programmed that divisor for
+    // its own clock; once `esp_hal::init` bumps the clock to `CpuClock::max()`
+    // the divisor no longer yields 115200 and all log output is garbage.
+    // Reprogramming UART0 with esp-hal recomputes the divisor from the live
+    // APB frequency, so the ROM printer (and thus `espflash --monitor`) is
+    // legible again. We never write through this handle, so leak it to keep
+    // the peripheral clock enabled and the divisor in place for the whole
+    // program lifetime.
+    let console = esp_hal::uart::UartTx::new(
+        peripherals.UART0,
+        esp_hal::uart::Config::default().with_baudrate(115_200),
+    )
+    .expect("UART0 console reconfig");
+    core::mem::forget(console);
+
     init_logger(log::LevelFilter::Info);
     log::info!("Conway Access Controller starting...");
 
@@ -202,10 +226,6 @@ async fn main(spawner: embassy_executor::Spawner) {
             esp_alloc::MemoryCapability::Internal.into(),
         ));
     }
-
-    // Hardware init
-    let hal_config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
-    let peripherals = esp_hal::init(hal_config);
 
     // Start the esp-rtos scheduler with a timer - MUST happen before esp_radio::init()
     // The scheduler requires a hardware timer for task scheduling and time management.
