@@ -112,7 +112,7 @@ func Register(a *engine.App, opts Options) *auth.Module {
 		}
 		return cfg.BotToken, nil
 	})
-	discordWebhookMod := discordwebhook.New(opts.Database, webhookSender)
+	discordWebhookMod := discordwebhook.New(opts.Database, engine.NewEventLogger(opts.Database, "discordwebhook"), webhookSender)
 	a.Add(discordWebhookMod)
 
 	discordMod := discord.New(opts.Database, opts.Self, opts.DiscordIssuer, engine.NewEventLogger(opts.Database, "discord"))

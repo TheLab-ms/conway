@@ -16,7 +16,7 @@ Any module (or SQL trigger) can deliver a message simply by inserting a row into
 
 ## Behavioral details
 
-- Backed by a SQLite table `discord_webhook_queue` created via migration on `New`; the `channel_id` column is added best-effort via `ALTER TABLE` on `New`. Also writes audit rows to a shared `discord_events` table (must exist; not created here).
+- Backed by a SQLite table `discord_webhook_queue` created via migration on `New`; the `channel_id` column is added best-effort via `ALTER TABLE` on `New`. Audit rows (`WebhookSent`/`WebhookError`) are written via the shared `engine.EventLogger` to the `module_events` table under module `discordwebhook`.
 - `AttachWorkers` registers two background workers:
   - Hourly cleanup deleting any queue rows older than 1 hour (`created` age > 3600s), regardless of delivery status.
   - 1Hz workqueue poller, rate-limited to 5 sends/sec globally (`maxRPS = 5`).

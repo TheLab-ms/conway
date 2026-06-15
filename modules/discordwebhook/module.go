@@ -51,34 +51,28 @@ type MessageQueuer interface {
 type Module struct {
 	db     *sql.DB
 	sender Sender
+	events *engine.EventLogger
 }
 
-func New(d *sql.DB, sender Sender) *Module {
+func New(d *sql.DB, events *engine.EventLogger, sender Sender) *Module {
 	engine.MustMigrate(d, migration)
 	// channel_id generalizes the queue to bot-API channel delivery. ALTER
 	// TABLE ADD COLUMN can't use IF NOT EXISTS, so run it best-effort and
 	// ignore the "duplicate column" error on subsequent boots.
 	d.Exec("ALTER TABLE discord_webhook_queue ADD COLUMN channel_id TEXT NOT NULL DEFAULT ''")
-	m := &Module{db: d, sender: sender}
+	m := &Module{db: d, sender: sender, events: events}
 	if m.sender == nil {
 		m.sender = newNoopSender()
 	}
 	return m
 }
 
-// logEvent logs a Discord webhook event to the shared discord_events table.
+// logEvent records a Discord delivery event to the shared module_events table.
 func (m *Module) logEvent(ctx context.Context, eventType string, success bool, details string) {
-	successInt := 0
-	if success {
-		successInt = 1
+	if m.events == nil {
+		return
 	}
-	_, err := m.db.ExecContext(ctx,
-		`INSERT INTO discord_events (event_type, success, details)
-		 VALUES (?, ?, ?)`,
-		eventType, successInt, details)
-	if err != nil {
-		slog.Error("failed to log discord webhook event", "error", err, "eventType", eventType)
-	}
+	m.events.LogEvent(ctx, 0, eventType, "", "", success, details)
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
