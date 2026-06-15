@@ -118,15 +118,15 @@ func TestE2E_ApprovingDoesNotReEnqueue(t *testing.T) {
 }
 
 // TestE2E_FullPipeline_EnabledDeliversWebhook covers the happy path: request
-// enqueues -> GetItem returns the row -> ProcessItem dispatches to the webhook
+// enqueues -> GetItem returns the row -> ProcessItem dispatches to the channel
 // queue with the Approve-button payload -> UpdateItem deletes the row.
 func TestE2E_FullPipeline_EnabledDeliversWebhook(t *testing.T) {
 	t.Parallel()
-	webhookURL := "https://discord.example/webhooks/123/abc"
+	channelID := "123456789012345678"
 	m, fq := newTestModule(t, Config{
-		Enabled:                     true,
-		LeadershipChannelWebhookURL: webhookURL,
-		ApplicationPublicKey:        strings.Repeat("ab", 32),
+		Enabled:              true,
+		LeadershipChannelID:  channelID,
+		ApplicationPublicKey: strings.Repeat("ab", 32),
 	})
 
 	id := insertMemberRaw(t, m.db, "applicant@example.com")
@@ -143,7 +143,7 @@ func TestE2E_FullPipeline_EnabledDeliversWebhook(t *testing.T) {
 	require.NoError(t, m.ProcessItem(ctx, item))
 
 	require.Len(t, fq.msgs, 1)
-	require.Equal(t, webhookURL, fq.msgs[0].url)
+	require.Equal(t, channelID, fq.msgs[0].channelID)
 	require.Contains(t, fq.msgs[0].payload, fmt.Sprintf("%s%d", approveCustomIDPrefix, id))
 
 	require.NoError(t, m.UpdateItem(ctx, item, true))
@@ -172,10 +172,10 @@ func TestE2E_DisabledDropsWithoutWebhook(t *testing.T) {
 	require.Equal(t, 0, queueCount(t, m.db))
 }
 
-// TestE2E_EnabledButNoWebhookURLAlsoDrops covers the second guard branch.
-func TestE2E_EnabledButNoWebhookURLAlsoDrops(t *testing.T) {
+// TestE2E_EnabledButNoChannelAlsoDrops covers the second guard branch.
+func TestE2E_EnabledButNoChannelAlsoDrops(t *testing.T) {
 	t.Parallel()
-	m, fq := newTestModule(t, Config{Enabled: true, LeadershipChannelWebhookURL: ""})
+	m, fq := newTestModule(t, Config{Enabled: true, LeadershipChannelID: ""})
 	id := insertMemberRaw(t, m.db, "x@y.z")
 	requestDiscount(t, m.db, id, "student")
 

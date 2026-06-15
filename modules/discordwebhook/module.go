@@ -24,12 +24,27 @@ CREATE INDEX IF NOT EXISTS discord_webhook_queue_send_at_idx ON discord_webhook_
 
 const maxRPS = 5
 
-type Sender func(ctx context.Context, webhookURL, payload string) error
+// OutboundMessage is one queued Discord message. Exactly one delivery target
+// is set: ChannelID routes through the bot REST API (required for interactive
+// components such as buttons), WebhookURL routes through a plain incoming
+// webhook (legacy, components are silently dropped by Discord).
+type OutboundMessage struct {
+	WebhookURL string
+	ChannelID  string
+	Payload    string
+}
 
-// MessageQueuer allows modules to queue Discord webhook messages.
-// Implemented by *Module.
+type Sender func(ctx context.Context, msg OutboundMessage) error
+
+// MessageQueuer allows modules to queue Discord messages. Implemented by
+// *Module.
 type MessageQueuer interface {
+	// QueueMessage enqueues a raw JSON payload for delivery to a webhook URL.
 	QueueMessage(ctx context.Context, webhookURL, payload string) error
+	// QueueChannelMessage enqueues a raw JSON payload for delivery to a
+	// channel via the bot REST API. Use this when the payload includes
+	// interactive components (buttons/select menus); plain webhooks drop them.
+	QueueChannelMessage(ctx context.Context, channelID, payload string) error
 	QueueTemplateMessage(ctx context.Context, webhookURL, tmpl string, replacements map[string]string) error
 }
 
@@ -40,6 +55,10 @@ type Module struct {
 
 func New(d *sql.DB, sender Sender) *Module {
 	engine.MustMigrate(d, migration)
+	// channel_id generalizes the queue to bot-API channel delivery. ALTER
+	// TABLE ADD COLUMN can't use IF NOT EXISTS, so run it best-effort and
+	// ignore the "duplicate column" error on subsequent boots.
+	d.Exec("ALTER TABLE discord_webhook_queue ADD COLUMN channel_id TEXT NOT NULL DEFAULT ''")
 	m := &Module{db: d, sender: sender}
 	if m.sender == nil {
 		m.sender = newNoopSender()
@@ -70,13 +89,13 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 
 func (m *Module) GetItem(ctx context.Context) (message, error) {
 	var item message
-	err := m.db.QueryRowContext(ctx, "SELECT id, webhook_url, payload, created FROM discord_webhook_queue WHERE unixepoch() >= send_at AND unixepoch() - created < 3600 ORDER BY send_at ASC LIMIT 1;").Scan(&item.ID, &item.WebhookURL, &item.Payload, &item.Created)
+	err := m.db.QueryRowContext(ctx, "SELECT id, webhook_url, channel_id, payload, created FROM discord_webhook_queue WHERE unixepoch() >= send_at AND unixepoch() - created < 3600 ORDER BY send_at ASC LIMIT 1;").Scan(&item.ID, &item.WebhookURL, &item.ChannelID, &item.Payload, &item.Created)
 	return item, err
 }
 
 func (m *Module) ProcessItem(ctx context.Context, item message) error {
-	slog.Info("sending discord webhook", "id", item.ID)
-	err := m.sender(ctx, item.WebhookURL, item.Payload)
+	slog.Info("sending discord message", "id", item.ID)
+	err := m.sender(ctx, OutboundMessage{WebhookURL: item.WebhookURL, ChannelID: item.ChannelID, Payload: item.Payload})
 	if err != nil {
 		m.logEvent(ctx, "WebhookError", false, fmt.Sprintf("id=%d: %s", item.ID, err.Error()))
 	}
@@ -93,9 +112,18 @@ func (m *Module) UpdateItem(ctx context.Context, item message, success bool) (er
 	return err
 }
 
-// QueueMessage adds a message to the webhook queue for delivery.
+// QueueMessage adds a webhook message to the queue for delivery.
 func (m *Module) QueueMessage(ctx context.Context, webhookURL, payload string) error {
 	_, err := m.db.ExecContext(ctx, "INSERT INTO discord_webhook_queue (webhook_url, payload) VALUES ($1, $2);", webhookURL, payload)
+	return err
+}
+
+// QueueChannelMessage adds a message to the queue for delivery to a Discord
+// channel via the bot REST API. This is the path that supports interactive
+// components (buttons). The bot must be a member of the channel's guild and
+// have permission to post there.
+func (m *Module) QueueChannelMessage(ctx context.Context, channelID, payload string) error {
+	_, err := m.db.ExecContext(ctx, "INSERT INTO discord_webhook_queue (webhook_url, channel_id, payload) VALUES ('', $1, $2);", channelID, payload)
 	return err
 }
 
@@ -111,6 +139,7 @@ func (m *Module) QueueTemplateMessage(ctx context.Context, webhookURL, tmpl stri
 type message struct {
 	ID         int64
 	WebhookURL string
+	ChannelID  string
 	Payload    string
 	Created    int64
 }

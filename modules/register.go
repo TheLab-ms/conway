@@ -2,10 +2,12 @@
 package modules
 
 import (
+	"context"
 	"database/sql"
 	"net/url"
 
 	"github.com/TheLab-ms/conway/engine"
+	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/directory"
@@ -98,7 +100,18 @@ func Register(a *engine.App, opts Options) *auth.Module {
 
 	// Discord modules registered before machines, since the machines
 	// migration creates triggers that reference discord tables.
-	webhookSender := discordwebhook.NewHTTPSender()
+	//
+	// The webhook sender resolves the bot token lazily from config on each
+	// send so channel-targeted messages (those bearing interactive buttons)
+	// can authenticate against the Discord REST API.
+	discordCfgLoader := config.NewLoader[discord.Config](a.ConfigStore(), "discord")
+	webhookSender := discordwebhook.NewHTTPSender(func(ctx context.Context) (string, error) {
+		cfg, err := discordCfgLoader.Load(ctx)
+		if err != nil {
+			return "", err
+		}
+		return cfg.BotToken, nil
+	})
 	discordWebhookMod := discordwebhook.New(opts.Database, webhookSender)
 	a.Add(discordWebhookMod)
 

@@ -19,19 +19,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeQueuer captures QueueMessage calls; the bot tests only exercise inbound
-// interactions, so the outbound path is asserted elsewhere.
+// fakeQueuer captures outbound queue calls; the bot tests only exercise
+// inbound interactions, so the outbound path is asserted elsewhere.
 type fakeQueuer struct {
 	mu   sync.Mutex
 	msgs []queuedMsg
 }
 
-type queuedMsg struct{ url, payload string }
+type queuedMsg struct {
+	url       string
+	channelID string
+	payload   string
+}
 
 func (f *fakeQueuer) QueueMessage(_ context.Context, url, payload string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.msgs = append(f.msgs, queuedMsg{url, payload})
+	f.msgs = append(f.msgs, queuedMsg{url: url, payload: payload})
+	return nil
+}
+
+func (f *fakeQueuer) QueueChannelMessage(_ context.Context, channelID, payload string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.msgs = append(f.msgs, queuedMsg{channelID: channelID, payload: payload})
 	return nil
 }
 

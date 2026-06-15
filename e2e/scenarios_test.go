@@ -2729,7 +2729,7 @@ func TestAdmin_DiscordApprovalBotConfig(t *testing.T) {
 	// The approval bot fields render on the Discord page.
 	publicKey := strings.Repeat("ab", 32) // 64 hex chars => 32 bytes
 	configPage.CheckApprovalBotEnabled()
-	configPage.FillApprovalBotWebhookURL("https://discord.com/api/webhooks/leadership/secret")
+	configPage.FillLeadershipChannelID("123456789012345678")
 	configPage.FillApplicationPublicKey(publicKey)
 	configPage.Submit()
 
@@ -2740,20 +2740,20 @@ func TestAdmin_DiscordApprovalBotConfig(t *testing.T) {
 
 	// Verify the values landed in discord_config (not a separate table).
 	var enabled int
-	var webhook, pubKey string
-	err = env.db.QueryRow(`SELECT approval_bot_enabled, leadership_channel_webhook_url, application_public_key FROM discord_config ORDER BY version DESC LIMIT 1`).
-		Scan(&enabled, &webhook, &pubKey)
+	var channelID, pubKey string
+	err = env.db.QueryRow(`SELECT approval_bot_enabled, leadership_channel_id, application_public_key FROM discord_config ORDER BY version DESC LIMIT 1`).
+		Scan(&enabled, &channelID, &pubKey)
 	require.NoError(t, err)
 	assert.Equal(t, 1, enabled)
-	assert.Equal(t, "https://discord.com/api/webhooks/leadership/secret", webhook)
+	assert.Equal(t, "123456789012345678", channelID)
 	assert.Equal(t, publicKey, pubKey)
 
-	// Reload: the webhook is secret (shows placeholder), the public key is not.
+	// Reload: the channel ID and public key are not secret, so both round-trip.
 	configPage.Navigate()
 	err = page.WaitForLoadState()
 	require.NoError(t, err)
 
-	configPage.ExpectHasLeadershipWebhook()
+	configPage.ExpectLeadershipChannelID("123456789012345678")
 	configPage.ExpectApplicationPublicKey(publicKey)
 
 	enabledChecked, err := page.Locator("#approval_bot_enabled").IsChecked()

@@ -7,10 +7,10 @@ import (
 
 // Config controls the Discord discount-approval bot.
 //
-// LeadershipChannelWebhookURL is the Discord webhook URL used to POST a
-// notification when a member requests a membership discount. The message
-// contains an Approve button that any leader in the channel can click to
-// approve the request.
+// LeadershipChannelID is the ID of the Discord channel where a notification is
+// posted when a member requests a membership discount. The message is sent via
+// the Discord bot REST API (authenticated with the configured bot token) so it
+// can carry an Approve button that any leader in the channel can click.
 //
 // ApplicationPublicKey is the hex-encoded Ed25519 public key shown on the
 // Discord application's "General Information" page. Discord signs every
@@ -19,19 +19,20 @@ import (
 //
 // To wire this up in Discord:
 //
-//  1. Create a webhook on the leadership channel (Channel Settings →
-//     Integrations → Webhooks → New Webhook), copy its URL into
-//     LeadershipChannelWebhookURL.
-//  2. In the Discord Developer Portal, open your application and copy the
+//  1. Create a bot for your application, give it permission to post in the
+//     leadership channel, and copy its Bot Token into the Discord bot config.
+//  2. Enable Developer Mode in Discord, right-click the leadership channel,
+//     choose "Copy Channel ID", and paste it into LeadershipChannelID.
+//  3. In the Discord Developer Portal, open your application and copy the
 //     "Public Key" from General Information into ApplicationPublicKey.
-//  3. Set "Interactions Endpoint URL" to
+//  4. Set "Interactions Endpoint URL" to
 //     https://<your-conway-host>/discord/interactions. Discord will PING the
 //     URL and refuse to save unless Conway responds correctly, so make sure
 //     Enabled=true and the public key is correct first.
 type Config struct {
-	Enabled                     bool   `json:"enabled" config:"label=Enabled,help=When on, a member requesting a discount posts a Discord message with an Approve button. Inbound interactions are still verified regardless."`
-	LeadershipChannelWebhookURL string `json:"leadership_channel_webhook_url" config:"label=Leadership Channel Webhook URL,secret,help=Create a webhook on the leadership channel (Channel Settings → Integrations → Webhooks → New Webhook) and paste its URL here. Discount requests are posted here for approval."`
-	ApplicationPublicKey        string `json:"application_public_key" config:"label=Application Public Key,help=Hex-encoded Ed25519 public key from your Discord application's General Information page. Used to verify inbound button interactions."`
+	Enabled              bool   `json:"enabled" config:"label=Enabled,help=When on, a member requesting a discount posts a Discord message with an Approve button. Inbound interactions are still verified regardless."`
+	LeadershipChannelID  string `json:"leadership_channel_id" config:"label=Leadership Channel ID,help=Right-click the leadership channel in Discord (Developer Mode on) and choose Copy Channel ID. Discount requests are posted here by the bot."`
+	ApplicationPublicKey string `json:"application_public_key" config:"label=Application Public Key,help=Hex-encoded Ed25519 public key from your Discord application's General Information page. Used to verify inbound button interactions."`
 }
 
 // Validate ensures the public key is a valid Ed25519 key when set. Other

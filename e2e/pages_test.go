@@ -980,8 +980,8 @@ func (p *AdminDiscordConfigPage) CheckApprovalBotEnabled() {
 	require.NoError(p.t, err)
 }
 
-func (p *AdminDiscordConfigPage) FillApprovalBotWebhookURL(value string) {
-	err := p.page.Locator("#leadership_channel_webhook_url").Fill(value)
+func (p *AdminDiscordConfigPage) FillLeadershipChannelID(value string) {
+	err := p.page.Locator("#leadership_channel_id").Fill(value)
 	require.NoError(p.t, err)
 }
 
@@ -990,11 +990,11 @@ func (p *AdminDiscordConfigPage) FillApplicationPublicKey(value string) {
 	require.NoError(p.t, err)
 }
 
-func (p *AdminDiscordConfigPage) ExpectHasLeadershipWebhook() {
-	locator := p.page.Locator("#leadership_channel_webhook_url")
-	placeholder, err := locator.GetAttribute("placeholder")
+func (p *AdminDiscordConfigPage) ExpectLeadershipChannelID(value string) {
+	locator := p.page.Locator("#leadership_channel_id")
+	actual, err := locator.InputValue()
 	require.NoError(p.t, err)
-	require.Contains(p.t, placeholder, "secret is set")
+	require.Equal(p.t, value, actual)
 }
 
 func (p *AdminDiscordConfigPage) ExpectApplicationPublicKey(value string) {

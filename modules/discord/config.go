@@ -22,9 +22,9 @@ type Config struct {
 	SyncIntervalHours int `json:"sync_interval_hours" config:"label=Full Reconciliation Interval (hours),section=sync,default=24,min=1,max=168,help=How often to fully reconcile all Discord role assignments. Default: 24 hours."`
 
 	// Discount Approval Bot
-	ApprovalBotEnabled          bool   `json:"approval_bot_enabled" config:"label=Enabled,section=approvalbot,help=When on, a member requesting a discount posts a Discord message with an Approve button. Inbound interactions are still verified regardless."`
-	LeadershipChannelWebhookURL string `json:"leadership_channel_webhook_url" config:"label=Leadership Channel Webhook URL,secret,section=approvalbot,help=Create a webhook on the leadership channel (Channel Settings → Integrations → Webhooks → New Webhook) and paste its URL here. Discount requests are posted here for approval."`
-	ApplicationPublicKey        string `json:"application_public_key" config:"label=Application Public Key,section=approvalbot,help=Hex-encoded Ed25519 public key from your Discord application's General Information page. Used to verify inbound button interactions."`
+	ApprovalBotEnabled   bool   `json:"approval_bot_enabled" config:"label=Enabled,section=approvalbot,help=When on, a member requesting a discount posts a Discord message with an Approve button. Inbound interactions are still verified regardless."`
+	LeadershipChannelID  string `json:"leadership_channel_id" config:"label=Leadership Channel ID,section=approvalbot,help=Right-click the leadership channel in Discord (Developer Mode on) and choose Copy Channel ID. Discount requests are posted here by the bot. Requires the Bot Token above."`
+	ApplicationPublicKey string `json:"application_public_key" config:"label=Application Public Key,section=approvalbot,help=Hex-encoded Ed25519 public key from your Discord application's General Information page. Used to verify inbound button interactions."`
 }
 
 // Validate validates the Discord configuration.

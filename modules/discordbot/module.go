@@ -94,9 +94,9 @@ func (m *Module) loadConfig(ctx context.Context) (*Config, error) {
 		return nil, err
 	}
 	return &Config{
-		Enabled:                     dc.ApprovalBotEnabled,
-		LeadershipChannelWebhookURL: dc.LeadershipChannelWebhookURL,
-		ApplicationPublicKey:        dc.ApplicationPublicKey,
+		Enabled:              dc.ApprovalBotEnabled,
+		LeadershipChannelID:  dc.LeadershipChannelID,
+		ApplicationPublicKey: dc.ApplicationPublicKey,
 	}, nil
 }
 
@@ -155,7 +155,7 @@ func (m *Module) ProcessItem(ctx context.Context, item *requestItem) error {
 	if err != nil {
 		return err
 	}
-	if !cfg.Enabled || cfg.LeadershipChannelWebhookURL == "" {
+	if !cfg.Enabled || cfg.LeadershipChannelID == "" {
 		slog.Debug("discord bot not configured; skipping discount-request notification",
 			"memberID", item.MemberID)
 		return nil
@@ -164,7 +164,7 @@ func (m *Module) ProcessItem(ctx context.Context, item *requestItem) error {
 	if err != nil {
 		return err
 	}
-	return m.webhooks.QueueMessage(ctx, cfg.LeadershipChannelWebhookURL, payload)
+	return m.webhooks.QueueChannelMessage(ctx, cfg.LeadershipChannelID, payload)
 }
 
 // UpdateItem deletes the queue row on success or after a permanent error.

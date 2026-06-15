@@ -1,18 +1,22 @@
 # discordwebhook
 
-Persistent, rate-limited delivery queue for Discord webhook messages.
+Persistent, rate-limited delivery queue for Discord messages, delivered either
+to an incoming webhook URL or to a channel via the bot REST API.
 
 ## Functionality
 
 - `QueueMessage(ctx, webhookURL, payload)` enqueues a raw JSON payload for delivery to a Discord webhook URL.
+- `QueueChannelMessage(ctx, channelID, payload)` enqueues a raw JSON payload for delivery to a channel via the bot REST API (`POST /channels/{id}/messages`, authenticated with the configured bot token). Use this when the payload includes **interactive components** (buttons / select menus): plain incoming webhooks silently drop the `components` field, so only channel delivery renders buttons.
 - `QueueTemplateMessage(ctx, webhookURL, tmpl, replacements)` substitutes `{key}` placeholders in `tmpl` from `replacements`, wraps the result as a Discord webhook JSON payload (`content` + `username`), and enqueues it.
 - `RenderMessage` exposes the template rendering used by `QueueTemplateMessage`.
-- `NewHTTPSender()` returns the production `Sender` (POSTs JSON to the webhook URL with a 10s timeout). Passing `nil` to `New` installs a noop sender that prints payloads to stdout (useful for dev).
+- `NewHTTPSender(botToken)` returns the production `Sender`. It POSTs JSON with a 10s timeout: to the webhook URL for webhook rows, or to `https://discord.com/api/v10/channels/{id}/messages` with an `Authorization: Bot <token>` header for channel rows. `botToken` is a `TokenProvider` resolved per send so the latest configured token is used. Passing `nil` to `New` installs a noop sender that prints payloads to stdout (useful for dev).
 - The `MessageQueuer` interface is what other modules should depend on.
+
+Any module (or SQL trigger) can deliver a message simply by inserting a row into `discord_webhook_queue`: set `channel_id` for bot-API/channel delivery, or `webhook_url` for legacy webhook delivery. Exactly one target is used per row (channel takes precedence when set).
 
 ## Behavioral details
 
-- Backed by a SQLite table `discord_webhook_queue` created via migration on `New`. Also writes audit rows to a shared `discord_events` table (must exist; not created here).
+- Backed by a SQLite table `discord_webhook_queue` created via migration on `New`; the `channel_id` column is added best-effort via `ALTER TABLE` on `New`. Also writes audit rows to a shared `discord_events` table (must exist; not created here).
 - `AttachWorkers` registers two background workers:
   - Hourly cleanup deleting any queue rows older than 1 hour (`created` age > 3600s), regardless of delivery status.
   - 1Hz workqueue poller, rate-limited to 5 sends/sec globally (`maxRPS = 5`).

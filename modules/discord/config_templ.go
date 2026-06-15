@@ -65,7 +65,7 @@ func oauthSectionDescription(selfURL string) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 13, Col: 254}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `modules/discord/config.templ`, Line: 13, Col: 254}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -129,14 +129,14 @@ func approvalBotSectionDescription(selfURL string) templ.Component {
 			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "The discount approval bot posts a message with an <strong>Approve</strong> button to the leadership channel whenever a member requests a membership discount. To wire it up:<ol class=\"mb-0 mt-2\"><li>Create a webhook on the leadership channel (Channel Settings → Integrations → Webhooks → New Webhook) and paste its URL into <strong>Leadership Channel Webhook URL</strong>.</li><li>In the <a href=\"https://discord.com/developers/applications\" target=\"_blank\" rel=\"noopener\">Discord Developer Portal</a>, open your application and copy the <strong>Public Key</strong> from General Information into <strong>Application Public Key</strong>.</li><li>Set the application's <strong>Interactions Endpoint URL</strong> to <code>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "The discount approval bot posts a message with an <strong>Approve</strong> button to the leadership channel whenever a member requests a membership discount. The message is sent through the bot using the <strong>Bot Token</strong> configured above, which is what lets Discord render the interactive button. To wire it up:<ol class=\"mb-0 mt-2\"><li>Make sure the <strong>Bot Token</strong> (Bot Configuration section) is set and the bot has permission to post in the leadership channel.</li><li>Enable Developer Mode in Discord, right-click the leadership channel, choose <strong>Copy Channel ID</strong>, and paste it into <strong>Leadership Channel ID</strong>.</li><li>In the <a href=\"https://discord.com/developers/applications\" target=\"_blank\" rel=\"noopener\">Discord Developer Portal</a>, open your application and copy the <strong>Public Key</strong> from General Information into <strong>Application Public Key</strong>.</li><li>Set the application's <strong>Interactions Endpoint URL</strong> to <code>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(selfURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `config.templ`, Line: 25, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `modules/discord/config.templ`, Line: 26, Col: 89}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {

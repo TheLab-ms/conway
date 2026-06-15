@@ -5,7 +5,7 @@ Notifies leadership when a member requests a membership discount and lets any au
 ## Functionality
 
 - AFTER UPDATE OF `discount_status` trigger on `members` enqueues a member ID into `discordbot_discount_request_queue` whenever `discount_status` transitions into `'requested'`. Nothing is enqueued on signup, on unrelated updates, or on the `requested`→`approved` transition.
-- A 15s polling worker drains the queue, builds a rich Discord payload (an embed describing the request plus a single **Approve** button), and forwards it via the `discordwebhook` module's `MessageQueuer` for rate-limited delivery.
+- A 15s polling worker drains the queue, builds a rich Discord payload (an embed describing the request plus a single **Approve** button), and forwards it via the `discordwebhook` module's `MessageQueuer.QueueChannelMessage` for rate-limited delivery. Delivery goes through the **bot REST API** (not an incoming webhook) because Discord only renders interactive components on messages posted by an application/bot.
 - `POST /discord/interactions` receives Discord's signed callbacks. The handler verifies the Ed25519 signature, then atomically runs `UPDATE members SET discount_status='approved' WHERE id=? AND discount_status='requested'`, logs a `DiscountApprovedViaDiscord` audit event, and replies with `UPDATE_MESSAGE` (empty `components`) recording who approved and removing the button. If the request is no longer pending (the member withdrew it, or another leader already approved), it instead shows a "Discount request closed" message and changes nothing.
 - No Conway authentication is required: the route is unauthenticated and identity is established purely by Discord's request signature against the configured `ApplicationPublicKey`.
 
@@ -21,15 +21,16 @@ Notifies leadership when a member requests a membership discount and lets any au
 
 ## Setup
 
-1. Create a Discord application at <https://discord.com/developers/applications>.
-2. Copy the application's **Public Key** (hex) into the Conway admin UI under **Integrations → Discord → Discount Approval Bot → Application Public Key**.
-3. In the leadership channel, create a webhook and copy its URL into **Leadership Channel Webhook URL** (stored as a secret).
-4. In the Discord application's **General Information** page, set **Interactions Endpoint URL** to `https://<your-conway-host>/discord/interactions`. Discord will immediately probe the endpoint with a signed PING; saving succeeds only if signature verification passes.
-5. Toggle **Enabled** on.
+1. Create a Discord application at <https://discord.com/developers/applications>, add a **Bot** to it, and copy the **Bot Token** into the Conway admin UI under **Integrations → Discord → Bot Configuration → Bot Token**.
+2. Invite the bot to your server and give it permission to post in the leadership channel (the bot must be able to send messages there).
+3. Copy the application's **Public Key** (hex) into **Integrations → Discord → Discount Approval Bot → Application Public Key**.
+4. Enable Developer Mode in Discord, right-click the leadership channel, choose **Copy Channel ID**, and paste it into **Leadership Channel ID**.
+5. In the Discord application's **General Information** page, set **Interactions Endpoint URL** to `https://<your-conway-host>/discord/interactions`. Discord will immediately probe the endpoint with a signed PING; saving succeeds only if signature verification passes.
+6. Toggle **Enabled** on.
 
 ## Behavioral details
 
-- The Discord application's bot account does not need to be invited to the server; webhook delivery posts the message, and interaction callbacks are routed by Discord's infrastructure based on the application's configured endpoint URL.
+- Unlike incoming-webhook delivery, the Approve button requires that the message be posted **by the bot**: the bot account must be in the server and able to post in the leadership channel. The notification is sent via `POST /channels/{LeadershipChannelID}/messages` authenticated with the configured **Bot Token**. Interaction callbacks are routed by Discord's infrastructure based on the application's configured endpoint URL.
 - Inbound interactions must be acknowledged within 3 seconds, so the entire happy path (signature verify, DB lookup, UPDATE, response build) runs inline on the request goroutine.
 - Approval is atomic via the `WHERE ... AND discount_status='requested'` clause, so two leaders clicking Approve at once cannot double-approve; the loser sees "Discount request closed".
 - **Family** requests can be approved from Discord like any other tier, but the root-account linkage must still be completed in the admin panel; the request and approval messages call this out.
