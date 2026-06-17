@@ -213,10 +213,12 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 							<input type="checkbox" class="form-check-input" id="bill_annually" name="bill_annually" checked?={ member.BillAnnually }/>
 							<label class="form-check-label" for="bill_annually" style="margin-left: 5px;">Bill Annually</label>
 						</div>
-						<div class="form-floating mb-2">
-							<input type="text" class="form-control" id="heard_about" name="heard_about" value={ member.HeardAbout } placeholder="How they heard about us"/>
-							<label for="heard_about">Heard About Makerspace</label>
-						</div>
+						if member.HeardAbout != "" {
+							<div class="form-floating mb-2">
+								<input type="text" class="form-control" id="heard_about" name="heard_about" value={ member.HeardAbout } placeholder="How they heard about us"/>
+								<label for="heard_about">Heard About Makerspace</label>
+							</div>
+						}
 						<div class="form-floating mb-2">
 							<textarea class="form-control" id="admin_notes" name="admin_notes" style="height: 100px">{ member.AdminNotes }</textarea>
 							<label for="admin_notes" class="form-label">Admin Notes</label>

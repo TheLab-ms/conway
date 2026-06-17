@@ -136,11 +136,8 @@ templ renderSignupConfirmPage(email string, confirmToken string, callbackURI str
 			<div class="card p-4" style="max-width: 450px;">
 				<div>
 					<h1 class="h5 mb-3 text-center">Create a New Account?</h1>
-					<p class="text-muted mb-3">
-						We don't have an account for <strong>{ email }</strong>.
-					</p>
 					<p class="text-muted mb-4">
-						If you already have an account, you may have signed up with a different email address. Would you like to create a new account with this email?
+						No account was found for <strong>{ email }</strong>. Create one now?
 					</p>
 					if errorMessage != "" {
 						<div class="alert alert-danger" role="alert">{ errorMessage }</div>
