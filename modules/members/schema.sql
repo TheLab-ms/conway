@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS members (
     /* Metadata */
     name TEXT NOT NULL DEFAULT '',
     name_override TEXT,
+    heard_about TEXT NOT NULL DEFAULT '',
     admin_notes TEXT NOT NULL DEFAULT '',
     identifier TEXT GENERATED ALWAYS AS (CASE WHEN (name IS NOT NULL AND name != '') THEN name ELSE email END) VIRTUAL,
 
@@ -164,4 +165,3 @@ WHEN NEW.discord_user_id IS NOT NULL AND (
 BEGIN
     UPDATE members SET discord_last_synced = NULL WHERE id = NEW.id;
 END;
-

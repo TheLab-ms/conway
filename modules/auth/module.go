@@ -45,6 +45,10 @@ type TurnstileOptions struct {
 	Secret  string
 }
 
+type referralSource struct {
+	Label string `json:"label"`
+}
+
 type Module struct {
 	db          *sql.DB
 	self        *url.URL
@@ -208,8 +212,33 @@ func (s *Module) renderSignupConfirmation(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	referralSources := s.loadReferralSources(r.Context())
 	w.Header().Set("Content-Type", "text/html")
-	renderSignupConfirmPage(email, confirmToken, callbackURI).Render(r.Context(), w)
+	renderSignupConfirmPage(email, confirmToken, callbackURI, referralSources, "", "").Render(r.Context(), w)
+}
+
+func (s *Module) loadReferralSources(ctx context.Context) []string {
+	var raw string
+	if err := s.db.QueryRowContext(ctx, "SELECT referral_sources_json FROM members_config ORDER BY version DESC LIMIT 1").Scan(&raw); err != nil {
+		return nil
+	}
+
+	var sources []referralSource
+	if err := json.Unmarshal([]byte(raw), &sources); err != nil {
+		return nil
+	}
+
+	labels := make([]string, 0, len(sources))
+	seen := map[string]bool{}
+	for _, source := range sources {
+		label := strings.TrimSpace(source.Label)
+		if label == "" || seen[label] {
+			continue
+		}
+		labels = append(labels, label)
+		seen[label] = true
+	}
+	return labels
 }
 
 // handleConfirmSignup handles the signup confirmation form submission.
@@ -218,6 +247,7 @@ func (s *Module) renderSignupConfirmation(w http.ResponseWriter, r *http.Request
 func (s *Module) handleConfirmSignup(w http.ResponseWriter, r *http.Request) {
 	confirmToken := r.FormValue("confirm_token")
 	callbackURI := r.FormValue("callback_uri")
+	heardAbout := strings.TrimSpace(r.FormValue("heard_about"))
 
 	claims, err := s.tokens.Verify(confirmToken)
 	if err != nil || len(claims.Audience) == 0 || claims.Audience[0] != "signup-confirm" {
@@ -227,12 +257,25 @@ func (s *Module) handleConfirmSignup(w http.ResponseWriter, r *http.Request) {
 
 	email := claims.Subject
 	provider := claims.Issuer
+	referralSources := s.loadReferralSources(r.Context())
+	if len(referralSources) > 0 && !containsReferralSource(referralSources, heardAbout) {
+		w.Header().Set("Content-Type", "text/html")
+		renderSignupConfirmPage(email, confirmToken, callbackURI, referralSources, heardAbout, "Please choose where you heard about us.").Render(r.Context(), w)
+		return
+	}
 
 	// Create the member
 	memberID, err := memberdb.FindOrCreateByEmail(r.Context(), s.db, email)
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return
+	}
+	if heardAbout != "" {
+		_, err = s.db.ExecContext(r.Context(), "UPDATE members SET heard_about = ? WHERE id = ? AND heard_about = ''", heardAbout, memberID)
+		if err != nil {
+			engine.SystemError(w, err.Error())
+			return
+		}
 	}
 
 	// Complete the login flow based on the provider
@@ -257,6 +300,15 @@ func (s *Module) handleConfirmSignup(w http.ResponseWriter, r *http.Request) {
 
 	// Email login: send a login code
 	s.sendLoginCode(w, r, memberID, email, callbackURI)
+}
+
+func containsReferralSource(sources []string, value string) bool {
+	for _, source := range sources {
+		if source == value {
+			return true
+		}
+	}
+	return false
 }
 
 // RenderSignupConfirmation renders the signup confirmation page.

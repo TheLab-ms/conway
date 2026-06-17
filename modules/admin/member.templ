@@ -22,6 +22,7 @@ type member struct {
 	Confirmed       bool
 	Created         engine.LocalTime
 	AdminNotes      string
+	HeardAbout      string
 	Leadership      bool
 	NonBillable     bool
 	FobID           *int64
@@ -48,11 +49,11 @@ type memberEvent struct {
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
 	mem := member{}
 	err := db.QueryRowContext(ctx, `
-		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, m.leadership, m.non_billable, m.stripe_customer_id, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, m.discount_status, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
+		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, COALESCE(m.heard_about, ''), m.leadership, m.non_billable, m.stripe_customer_id, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, m.discount_status, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, id).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.Leadership, &mem.NonBillable, &mem.StripeCustomerID, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.DiscountStatus, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.HeardAbout, &mem.Leadership, &mem.NonBillable, &mem.StripeCustomerID, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.DiscountStatus, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -103,8 +104,8 @@ func queryMemberEvents(ctx context.Context, db *sql.DB, memberID int64, limit, o
 var _ = handlePostForm(formHandler{
 	Path: "/admin/members/{id}/updates/basics",
 	Handler: &engine.FormHandler{
-		Fields: []string{"name", "email", "confirmed", "fob_id", "admin_notes", "bill_annually", "discord_user_id"},
-		Query: `UPDATE members SET name_override = (CASE WHEN :name = name OR :name = '' THEN NULL ELSE :name END), email = :email, admin_notes = :admin_notes,
+		Fields: []string{"name", "email", "confirmed", "fob_id", "admin_notes", "heard_about", "bill_annually", "discord_user_id"},
+		Query: `UPDATE members SET name_override = (CASE WHEN :name = name OR :name = '' THEN NULL ELSE :name END), email = :email, admin_notes = :admin_notes, heard_about = :heard_about,
 			discord_user_id = (CASE WHEN :discord_user_id != '' THEN :discord_user_id ELSE NULL END),
 			confirmed = (CASE WHEN :confirmed = 'on' THEN 1 ELSE 0 END),
 			bill_annually = (CASE WHEN :bill_annually = 'on' THEN 1 ELSE 0 END),
@@ -211,6 +212,10 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 						<div class="input-group mb-2">
 							<input type="checkbox" class="form-check-input" id="bill_annually" name="bill_annually" checked?={ member.BillAnnually }/>
 							<label class="form-check-label" for="bill_annually" style="margin-left: 5px;">Bill Annually</label>
+						</div>
+						<div class="form-floating mb-2">
+							<input type="text" class="form-control" id="heard_about" name="heard_about" value={ member.HeardAbout } placeholder="How they heard about us"/>
+							<label for="heard_about">Heard About Makerspace</label>
 						</div>
 						<div class="form-floating mb-2">
 							<textarea class="form-control" id="admin_notes" name="admin_notes" style="height: 100px">{ member.AdminNotes }</textarea>

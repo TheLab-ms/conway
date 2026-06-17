@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ type Module struct {
 func New(db *sql.DB) *Module {
 	engine.MustMigrate(db, migration)
 	migrateMembers(db)
+	seedReferralSources(db)
 	return &Module{db: db}
 }
 
@@ -36,6 +38,30 @@ func New(db *sql.DB) *Module {
 // raised when the column already exists.
 func migrateMembers(db *sql.DB) {
 	db.Exec(`ALTER TABLE members ADD COLUMN discount_status TEXT CHECK (discount_status IN ('requested', 'approved'))`)
+	db.Exec(`ALTER TABLE members ADD COLUMN heard_about TEXT NOT NULL DEFAULT ''`)
+	engine.MustMigrate(db, `
+CREATE TABLE IF NOT EXISTS members_config (
+    version INTEGER PRIMARY KEY AUTOINCREMENT,
+    created INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    referral_sources_json TEXT NOT NULL DEFAULT '[]'
+) STRICT;
+`)
+}
+
+func seedReferralSources(db *sql.DB) {
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM members_config").Scan(&count); err != nil {
+		slog.Error("failed to check members config", "error", err)
+		return
+	}
+	if count > 0 {
+		return
+	}
+
+	const defaults = `[{"label":"Friend or member"},{"label":"Social media"},{"label":"Google or web search"},{"label":"Event or open house"},{"label":"Sign or walk-in"},{"label":"Other"}]`
+	if _, err := db.Exec("INSERT INTO members_config (referral_sources_json) VALUES (?)", defaults); err != nil {
+		slog.Error("failed to seed referral sources", "error", err)
+	}
 }
 
 func (m *Module) AttachRoutes(router *engine.Router) {
