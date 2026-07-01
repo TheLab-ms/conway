@@ -327,6 +327,29 @@ func TestDiscountCancelation(t *testing.T) {
 	assert.Nil(t, requestID)
 }
 
+func TestMigrateMembersAddsDiscountRequestIDBeforeDependentObjects(t *testing.T) {
+	db := NewTestDB(t)
+
+	_, err := db.Exec(`DROP TRIGGER no_discount_after_cancelation`)
+	require.NoError(t, err)
+	_, err = db.Exec(`DROP INDEX members_discount_request_id_idx`)
+	require.NoError(t, err)
+	_, err = db.Exec(`ALTER TABLE members DROP COLUMN discount_request_id`)
+	require.NoError(t, err)
+
+	migrateMembers(db)
+
+	_, err = db.Exec(`INSERT INTO members (id, email, confirmed, discount_type, discount_status, discount_request_id, stripe_subscription_state) VALUES (1, 'foo@bar.com', TRUE, 'anything', 'approved', 'lathe-solder-circuit', 'active')`)
+	require.NoError(t, err)
+	_, err = db.Exec(`UPDATE members SET stripe_subscription_state = NULL`)
+	require.NoError(t, err)
+
+	var requestID *string
+	err = db.QueryRow(`SELECT discount_request_id FROM members`).Scan(&requestID)
+	require.NoError(t, err)
+	assert.Nil(t, requestID)
+}
+
 func eventsToStrings(t *testing.T, db *sql.DB) []string {
 	results, err := db.Query("SELECT event, details FROM member_events")
 	require.NoError(t, err)
