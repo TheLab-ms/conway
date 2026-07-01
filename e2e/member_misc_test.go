@@ -126,6 +126,7 @@ func TestSignupConfirm_EmailFlow(t *testing.T) {
 	// Step 2: POST /login/confirm-signup with the token.
 	form2 := url.Values{}
 	form2.Set("confirm_token", confirmToken)
+	form2.Set("heard_about", "Friend or member")
 	req2, err := http.NewRequest(http.MethodPost, env.baseURL+"/login/confirm-signup",
 		strings.NewReader(form2.Encode()))
 	require.NoError(t, err)

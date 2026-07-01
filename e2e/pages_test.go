@@ -51,8 +51,15 @@ func (p *LoginPage) ExpectSentPage() {
 func (p *LoginPage) ConfirmSignup() {
 	// Wait for the confirmation page to appear
 	expect(p.t).Locator(p.page.GetByText("Create a New Account?")).ToBeVisible()
+	heardAbout := p.page.Locator("#heard_about")
+	count, err := heardAbout.Count()
+	require.NoError(p.t, err)
+	if count > 0 {
+		_, err = heardAbout.SelectOption(playwright.SelectOptionValues{Values: &[]string{"Friend or member"}})
+		require.NoError(p.t, err)
+	}
 	// Click the confirm button
-	err := p.page.Locator("button[type='submit']").Click()
+	err = p.page.Locator("button[type='submit']").Click()
 	require.NoError(p.t, err)
 }
 
