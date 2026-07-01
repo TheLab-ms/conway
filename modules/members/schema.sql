@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS members (
     /* Payment and Discounts */
     discount_type TEXT,
     discount_status TEXT CHECK (discount_status IN ('requested', 'approved')),
+    discount_request_id TEXT,
     bill_annually INTEGER NOT NULL DEFAULT false,
     root_family_member INTEGER REFERENCES members(id) ON DELETE SET NULL CHECK (root_family_member != id),
     root_family_member_active INTEGER,
@@ -67,6 +68,8 @@ CREATE TABLE IF NOT EXISTS members (
 ) STRICT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS members_email_idx ON members (email);
+
+CREATE UNIQUE INDEX IF NOT EXISTS members_discount_request_id_idx ON members (discount_request_id) WHERE discount_request_id IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS members_fob_idx ON members (fob_id);
 
@@ -116,7 +119,7 @@ CREATE INDEX IF NOT EXISTS fob_swipes_fob_id_idx ON fob_swipes (fob_id);
 
 CREATE TRIGGER IF NOT EXISTS no_discount_after_cancelation AFTER UPDATE ON members WHEN OLD.payment_status IS NOT NULL AND NEW.payment_status IS NULL
 BEGIN
-UPDATE members SET discount_type = NULL, discount_status = NULL WHERE id = NEW.id;
+UPDATE members SET discount_type = NULL, discount_status = NULL, discount_request_id = NULL WHERE id = NEW.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS fob_swipe_to_member AFTER INSERT ON fob_swipes

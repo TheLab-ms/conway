@@ -300,7 +300,7 @@ func TestFobSwipes(t *testing.T) {
 func TestDiscountCancelation(t *testing.T) {
 	db := NewTestDB(t)
 
-	_, err := db.Exec("INSERT INTO members (id, email, confirmed, discount_type, discount_status, stripe_subscription_state) VALUES (1, 'foo@bar.com', TRUE, 'anything', 'approved', 'active')")
+	_, err := db.Exec("INSERT INTO members (id, email, confirmed, discount_type, discount_status, discount_request_id, stripe_subscription_state) VALUES (1, 'foo@bar.com', TRUE, 'anything', 'approved', 'lathe-solder-circuit', 'active')")
 	require.NoError(t, err)
 
 	// Unrelated write to prove that the discount wasn't incorrectly removed
@@ -309,19 +309,22 @@ func TestDiscountCancelation(t *testing.T) {
 
 	var discount *string
 	var status *string
-	err = db.QueryRow("SELECT discount_type, discount_status FROM members").Scan(&discount, &status)
+	var requestID *string
+	err = db.QueryRow("SELECT discount_type, discount_status, discount_request_id FROM members").Scan(&discount, &status, &requestID)
 	require.NoError(t, err)
 	assert.Equal(t, "anything", *discount)
 	assert.Equal(t, "approved", *status)
+	assert.Equal(t, "lathe-solder-circuit", *requestID)
 
 	// Cancel, prove that both discount_type and discount_status were removed
 	_, err = db.Exec("UPDATE members SET stripe_subscription_state = NULL")
 	require.NoError(t, err)
 
-	err = db.QueryRow("SELECT discount_type, discount_status FROM members").Scan(&discount, &status)
+	err = db.QueryRow("SELECT discount_type, discount_status, discount_request_id FROM members").Scan(&discount, &status, &requestID)
 	require.NoError(t, err)
 	assert.Nil(t, discount)
 	assert.Nil(t, status)
+	assert.Nil(t, requestID)
 }
 
 func eventsToStrings(t *testing.T, db *sql.DB) []string {

@@ -23,7 +23,7 @@ const maxBodyBytes = 64 * 1024
 // care about. See
 // https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-object
 type interactionRequest struct {
-	Type   int             `json:"type"`
+	Type   int              `json:"type"`
 	Data   *interactionData `json:"data,omitempty"`
 	Member *guildMember     `json:"member,omitempty"`
 	User   *discordUser     `json:"user,omitempty"`
@@ -45,7 +45,7 @@ type discordUser struct {
 
 // interactionResponse is the JSON we write back.
 type interactionResponse struct {
-	Type int                  `json:"type"`
+	Type int                      `json:"type"`
 	Data *interactionResponseData `json:"data,omitempty"`
 }
 
@@ -134,9 +134,10 @@ func (m *Module) handleComponent(ctx context.Context, w http.ResponseWriter, req
 	var email string
 	var discountType *string
 	var discountStatus *string
+	var discountRequestID *string
 	err = m.db.QueryRowContext(ctx,
-		"SELECT email, discount_type, discount_status FROM members WHERE id = ?", memberID).
-		Scan(&email, &discountType, &discountStatus)
+		"SELECT email, discount_type, discount_status, discount_request_id FROM members WHERE id = ?", memberID).
+		Scan(&email, &discountType, &discountStatus, &discountRequestID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeEphemeral(w, "That member no longer exists.")
 		return
@@ -175,7 +176,7 @@ func (m *Module) handleComponent(ctx context.Context, w http.ResponseWriter, req
 			Data: &interactionResponseData{
 				Embeds: []embed{{
 					Title:       "Discount request closed",
-					Description: fmt.Sprintf("**%s**\n\nThis request is no longer pending (already approved or withdrawn).", email),
+					Description: discountClosedDescription(email, discountRequestID),
 					Color:       0x99AAB5, // Discord greyple.
 				}},
 				Components: []actionRow{}, // explicit empty = removes the button
@@ -196,6 +197,9 @@ func (m *Module) handleComponent(ctx context.Context, w http.ResponseWriter, req
 		by = fmt.Sprintf("<@%s>", discordUserID)
 	}
 	desc := fmt.Sprintf("**%s**\n\n**%s** discount approved by %s.", email, label, by)
+	if discountRequestID != nil && *discountRequestID != "" {
+		desc += fmt.Sprintf("\n\nRequest ID: `%s`", *discountRequestID)
+	}
 	if discountType != nil && *discountType == familyDiscountType {
 		desc += "\n\n_Remember to link the root family account in the admin panel._"
 	}
@@ -213,6 +217,14 @@ func (m *Module) handleComponent(ctx context.Context, w http.ResponseWriter, req
 			Components: []actionRow{}, // explicit empty = removes the button
 		},
 	})
+}
+
+func discountClosedDescription(email string, requestID *string) string {
+	desc := fmt.Sprintf("**%s**\n\nThis request is no longer pending (already approved or withdrawn).", email)
+	if requestID != nil && *requestID != "" {
+		desc += fmt.Sprintf("\n\nRequest ID: `%s`", *requestID)
+	}
+	return desc
 }
 
 func writeJSON(w http.ResponseWriter, resp interactionResponse) {

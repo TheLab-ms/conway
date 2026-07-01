@@ -3,11 +3,15 @@ package members
 //go:generate go run github.com/a-h/templ/cmd/templ generate
 
 import (
+	"crypto/rand"
 	"database/sql"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"math/big"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +42,13 @@ func New(db *sql.DB) *Module {
 // raised when the column already exists.
 func migrateMembers(db *sql.DB) {
 	db.Exec(`ALTER TABLE members ADD COLUMN discount_status TEXT CHECK (discount_status IN ('requested', 'approved'))`)
+	db.Exec(`ALTER TABLE members ADD COLUMN discount_request_id TEXT`)
+	db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS members_discount_request_id_idx ON members (discount_request_id) WHERE discount_request_id IS NOT NULL`)
+	db.Exec(`DROP TRIGGER IF EXISTS no_discount_after_cancelation`)
+	db.Exec(`CREATE TRIGGER no_discount_after_cancelation AFTER UPDATE ON members WHEN OLD.payment_status IS NOT NULL AND NEW.payment_status IS NULL
+BEGIN
+UPDATE members SET discount_type = NULL, discount_status = NULL, discount_request_id = NULL WHERE id = NEW.id;
+END`)
 	db.Exec(`ALTER TABLE members ADD COLUMN heard_about TEXT NOT NULL DEFAULT ''`)
 	engine.MustMigrate(db, `
 CREATE TABLE IF NOT EXISTS members_config (
@@ -83,14 +94,15 @@ func (m *Module) renderMemberView(w http.ResponseWriter, r *http.Request) {
 	mem := member{}
 	var discountType *string
 	var discountStatus *string
+	var discountRequestID *string
 	err := m.db.QueryRowContext(r.Context(), `
 		SELECT id, email, access_status, discord_user_id IS NOT NULL,
 			waiver IS NOT NULL, payment_status IS NOT NULL, fob_id IS NOT NULL AND fob_id != 0,
-			discount_type, discount_status
+			discount_type, discount_status, discount_request_id
 		FROM members m WHERE m.id = $1`, authdUser).Scan(
 		&mem.ID, &mem.Email, &mem.AccessStatus, &mem.DiscordLinked,
 		&mem.WaiverSigned, &mem.PaymentActive, &mem.HasKeyFob,
-		&discountType, &discountStatus)
+		&discountType, &discountStatus, &discountRequestID)
 	if err != nil {
 		engine.SystemError(w, err.Error())
 		return
@@ -107,6 +119,9 @@ func (m *Module) renderMemberView(w http.ResponseWriter, r *http.Request) {
 	}
 	if discountStatus != nil && *discountStatus == "requested" {
 		mem.DiscountPending = true
+		if discountRequestID != nil {
+			mem.DiscountRequestID = *discountRequestID
+		}
 	} else if discountType != nil {
 		mem.DiscountActive = true
 	}
@@ -143,15 +158,30 @@ func (m *Module) handleDiscountRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := m.db.ExecContext(r.Context(),
-		`UPDATE members SET discount_type = ?, discount_status = 'requested' WHERE id = ?`,
-		chosen, memberID)
-	if err != nil {
-		engine.SystemError(w, err.Error())
-		return
+	var err error
+	for range 5 {
+		requestID, genErr := generateDiscountRequestID()
+		if genErr != nil {
+			engine.SystemError(w, genErr.Error())
+			return
+		}
+
+		_, err = m.db.ExecContext(r.Context(),
+			`UPDATE members SET discount_type = ?, discount_status = 'requested', discount_request_id = ? WHERE id = ?`,
+			chosen, requestID, memberID)
+		if err == nil {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		if !strings.Contains(err.Error(), "discount_request_id") {
+			break
+		}
 	}
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	if err == nil {
+		err = fmt.Errorf("generating unique discount request id")
+	}
+	engine.SystemError(w, err.Error())
 }
 
 // handleDiscountRemove clears a member's discount entirely, regardless of
@@ -161,7 +191,7 @@ func (m *Module) handleDiscountRemove(w http.ResponseWriter, r *http.Request) {
 	memberID := auth.GetUserMeta(r.Context()).ID
 
 	_, err := m.db.ExecContext(r.Context(),
-		`UPDATE members SET discount_type = NULL, discount_status = NULL WHERE id = ?`,
+		`UPDATE members SET discount_type = NULL, discount_status = NULL, discount_request_id = NULL WHERE id = ?`,
 		memberID)
 	if err != nil {
 		engine.SystemError(w, err.Error())
@@ -169,6 +199,33 @@ func (m *Module) handleDiscountRemove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func generateDiscountRequestID() (string, error) {
+	words := make([]string, 3)
+	used := map[string]bool{}
+	for i := range words {
+		for {
+			n, err := rand.Int(rand.Reader, big.NewInt(int64(len(discountRequestWords))))
+			if err != nil {
+				return "", fmt.Errorf("generating discount request id: %w", err)
+			}
+			word := discountRequestWords[n.Int64()]
+			if !used[word] {
+				words[i] = word
+				used[word] = true
+				break
+			}
+		}
+	}
+	return strings.Join(words, "-"), nil
+}
+
+var discountRequestWords = []string{
+	"anvil", "apron", "bandsaw", "bit", "bolt", "caliper", "chisel", "circuit",
+	"clamp", "copper", "drill", "filament", "forge", "gear", "jig", "laser",
+	"lathe", "level", "mallet", "mill", "plane", "pliers", "router", "sander",
+	"saw", "solder", "spark", "spindle", "square", "vise", "welder", "wrench",
 }
 
 func NewTestDB(t *testing.T) *sql.DB {

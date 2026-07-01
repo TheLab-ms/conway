@@ -33,6 +33,7 @@ type member struct {
 	PaypalPrice     *float64
 	DiscountType    *string
 	DiscountStatus  *string
+	DiscountRequestID *string
 	RootFamilyEmail *string
 	BillAnnually    bool
 	FobLastSeen     *engine.LocalTime
@@ -49,11 +50,11 @@ type memberEvent struct {
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
 	mem := member{}
 	err := db.QueryRowContext(ctx, `
-		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, COALESCE(m.heard_about, ''), m.leadership, m.non_billable, m.stripe_customer_id, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, m.discount_status, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
+		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, COALESCE(m.heard_about, ''), m.leadership, m.non_billable, m.stripe_customer_id, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, m.discount_status, m.discount_request_id, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, id).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.HeardAbout, &mem.Leadership, &mem.NonBillable, &mem.StripeCustomerID, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.DiscountStatus, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.HeardAbout, &mem.Leadership, &mem.NonBillable, &mem.StripeCustomerID, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.DiscountStatus, &mem.DiscountRequestID, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -132,6 +133,7 @@ var _ = handlePostForm(formHandler{
 		Query: `UPDATE members SET
 			discount_type = (CASE WHEN :discount = '' THEN NULL ELSE :discount END),
 			discount_status = NULL,
+			discount_request_id = NULL,
 			root_family_member = (SELECT id FROM members WHERE email = :family_email AND root_family_member IS NULL)
 			WHERE id = :route_id`,
 	},
@@ -240,6 +242,9 @@ templ renderSingleMember(tabs []*navbarTab, member *member, events []*memberEven
 								<strong>Discount requested:</strong> { memberdb.DiscountLabel(derefStr(member.DiscountType)) }
 								<span class="text-muted">— awaiting approval</span>
 							</div>
+							if member.DiscountRequestID != nil && *member.DiscountRequestID != "" {
+								<p class="mb-2 small">Request ID: <strong id="discount-request-id">{ *member.DiscountRequestID }</strong></p>
+							}
 							<form method="post" action={ templ.URL(fmt.Sprintf("/admin/members/%d/updates/discount-approve", member.ID)) }>
 								if derefStr(member.DiscountType) == "family" {
 									<div class="mb-2">

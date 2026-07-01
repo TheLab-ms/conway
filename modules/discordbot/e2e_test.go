@@ -47,8 +47,8 @@ func insertMemberRaw(t *testing.T, db *sql.DB, email string) int64 {
 func requestDiscount(t *testing.T, db *sql.DB, memberID int64, discountType string) {
 	t.Helper()
 	_, err := db.Exec(
-		"UPDATE members SET discount_type = ?, discount_status = 'requested' WHERE id = ?",
-		discountType, memberID)
+		"UPDATE members SET discount_type = ?, discount_status = 'requested', discount_request_id = ? WHERE id = ?",
+		discountType, fmt.Sprintf("lathe-solder-%d", memberID), memberID)
 	require.NoError(t, err)
 }
 
@@ -139,12 +139,14 @@ func TestE2E_FullPipeline_EnabledDeliversWebhook(t *testing.T) {
 	require.Equal(t, id, item.MemberID)
 	require.Equal(t, "applicant@example.com", item.Email)
 	require.Equal(t, "student", item.DiscountType)
+	require.Equal(t, fmt.Sprintf("lathe-solder-%d", id), item.DiscountRequestID)
 
 	require.NoError(t, m.ProcessItem(ctx, item))
 
 	require.Len(t, fq.msgs, 1)
 	require.Equal(t, channelID, fq.msgs[0].channelID)
 	require.Contains(t, fq.msgs[0].payload, fmt.Sprintf("%s%d", approveCustomIDPrefix, id))
+	require.Contains(t, fq.msgs[0].payload, fmt.Sprintf("lathe-solder-%d", id))
 
 	require.NoError(t, m.UpdateItem(ctx, item, true))
 	require.Equal(t, 0, queueCount(t, m.db))

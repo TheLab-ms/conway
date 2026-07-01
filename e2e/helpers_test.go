@@ -123,24 +123,25 @@ func generateLoginToken(t *testing.T, env *TestEnv, memberID int64) string {
 type MemberOption func(*memberConfig)
 
 type memberConfig struct {
-	email            string
-	name             string
-	nameOverride     string
-	bio              string
-	profilePicture   []byte
-	confirmed        bool
-	leadership       bool
-	nonBillable      bool
-	hasWaiver        bool
-	fobID            int64
-	fobLastSeen      int64
-	stripeSubState   string
-	stripeCustomerID string
-	discountType     string
-	discountStatus   string
-	discordUserID    string
-	discordUsername  string
-	discordAvatar    []byte
+	email             string
+	name              string
+	nameOverride      string
+	bio               string
+	profilePicture    []byte
+	confirmed         bool
+	leadership        bool
+	nonBillable       bool
+	hasWaiver         bool
+	fobID             int64
+	fobLastSeen       int64
+	stripeSubState    string
+	stripeCustomerID  string
+	discountType      string
+	discountStatus    string
+	discountRequestID string
+	discordUserID     string
+	discordUsername   string
+	discordAvatar     []byte
 }
 
 // WithConfirmed marks the member as email-confirmed.
@@ -190,6 +191,11 @@ func WithDiscount(discountType string) MemberOption {
 // ("requested" or "approved"). Empty leaves it NULL (status-less / admin-set).
 func WithDiscountStatus(status string) MemberOption {
 	return func(c *memberConfig) { c.discountStatus = status }
+}
+
+// WithDiscountRequestID sets the human-verifiable pending discount request ID.
+func WithDiscountRequestID(requestID string) MemberOption {
+	return func(c *memberConfig) { c.discountRequestID = requestID }
 }
 
 // WithDiscord sets the member's Discord user ID.
@@ -255,8 +261,8 @@ func seedMember(t *testing.T, env *TestEnv, email string, opts ...MemberOption) 
 
 	// Insert member
 	result, err := env.db.Exec(`
-		INSERT INTO members (email, name, name_override, bio, profile_picture, confirmed, leadership, non_billable, fob_id, fob_last_seen, stripe_subscription_state, stripe_customer_id, discount_type, discount_status, discord_user_id, discord_username, discord_avatar)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO members (email, name, name_override, bio, profile_picture, confirmed, leadership, non_billable, fob_id, fob_last_seen, stripe_subscription_state, stripe_customer_id, discount_type, discount_status, discount_request_id, discord_user_id, discord_username, discord_avatar)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cfg.email,
 		cfg.name, // Empty string is fine, column has NOT NULL DEFAULT ''
 		sql.NullString{String: cfg.nameOverride, Valid: cfg.nameOverride != ""},
@@ -269,6 +275,7 @@ func seedMember(t *testing.T, env *TestEnv, email string, opts ...MemberOption) 
 		sql.NullString{String: cfg.stripeCustomerID, Valid: cfg.stripeCustomerID != ""},
 		sql.NullString{String: cfg.discountType, Valid: cfg.discountType != ""},
 		sql.NullString{String: cfg.discountStatus, Valid: cfg.discountStatus != ""},
+		sql.NullString{String: cfg.discountRequestID, Valid: cfg.discountRequestID != ""},
 		sql.NullString{String: cfg.discordUserID, Valid: cfg.discordUserID != ""},
 		sql.NullString{String: cfg.discordUsername, Valid: cfg.discordUsername != ""},
 		cfg.discordAvatar,

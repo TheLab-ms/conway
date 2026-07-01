@@ -26,6 +26,7 @@ type member struct {
 	DiscountLabel   string // human label for DiscountType
 	DiscountPending bool   // a request is awaiting leadership approval
 	DiscountActive  bool   // a usable discount is set (approved or admin-set)
+	DiscountRequestID string // human-verifiable request ID for pending discounts
 }
 
 templ renderMember(member *member) {
@@ -139,9 +140,15 @@ templ renderPaymentStep(member *member) {
 templ renderDiscountPending(member *member) {
 	<div class="alert alert-info py-2 px-3 mb-0" id="discount-pending">
 		<div class="mb-1"><strong>{ member.DiscountLabel } discount requested</strong></div>
+		if member.DiscountRequestID != "" {
+			<p class="mb-2 small">Request ID: <strong id="discount-request-id">{ member.DiscountRequestID }</strong></p>
+		}
 		<p class="mb-2 small">Waiting for leadership to approve. Payment setup is paused so you don't pay full price by mistake.</p>
 		@renderDiscountRemove("Cancel request")
 	</div>
+	<script>
+		setTimeout(() => window.location.reload(), 10000)
+	</script>
 }
 
 // renderDiscountApproved shows the approved discount and re-enables the

@@ -13,15 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// getDiscount returns the member's discount_type, discount_status, and
-// root_family_member columns (any of which may be NULL).
-func getDiscount(t *testing.T, env *TestEnv, memberID int64) (discountType, status *string, root *int64) {
+// getDiscount returns discount columns for a member (any may be NULL).
+func getDiscount(t *testing.T, env *TestEnv, memberID int64) (discountType, status, requestID *string, root *int64) {
 	t.Helper()
-	var dt, st sql.NullString
+	var dt, st, rid sql.NullString
 	var rt sql.NullInt64
 	err := env.db.QueryRow(
-		`SELECT discount_type, discount_status, root_family_member FROM members WHERE id = ?`,
-		memberID).Scan(&dt, &st, &rt)
+		`SELECT discount_type, discount_status, discount_request_id, root_family_member FROM members WHERE id = ?`,
+		memberID).Scan(&dt, &st, &rid, &rt)
 	require.NoError(t, err)
 	if dt.Valid {
 		discountType = &dt.String
@@ -29,10 +28,13 @@ func getDiscount(t *testing.T, env *TestEnv, memberID int64) (discountType, stat
 	if st.Valid {
 		status = &st.String
 	}
+	if rid.Valid {
+		requestID = &rid.String
+	}
 	if rt.Valid {
 		root = &rt.Int64
 	}
-	return discountType, status, root
+	return discountType, status, requestID, root
 }
 
 // requestQueueCount returns how many rows are queued in the discordbot
@@ -90,13 +92,25 @@ func TestDiscountWorkflow_RequestHidesPayButton(t *testing.T) {
 	expect(t).Locator(page.Locator("a:has-text('Set Up Payment')")).ToBeHidden()
 
 	// Persistence + enqueue.
-	dt, st, _ := getDiscount(t, env, memberID)
+	dt, st, requestID, _ := getDiscount(t, env, memberID)
 	require.NotNil(t, dt)
 	assert.Equal(t, "student", *dt)
 	require.NotNil(t, st)
 	assert.Equal(t, "requested", *st)
+	require.NotNil(t, requestID)
+	assertValidDiscountRequestID(t, *requestID)
+	expect(t).Locator(page.Locator("#discount-request-id")).ToHaveText(*requestID)
 	assert.Equal(t, 1, requestQueueCount(t, env, memberID),
 		"requesting a discount should enqueue exactly one leadership notification")
+}
+
+func assertValidDiscountRequestID(t *testing.T, requestID string) {
+	t.Helper()
+	parts := strings.Split(requestID, "-")
+	require.Len(t, parts, 3)
+	for _, part := range parts {
+		assert.NotEmpty(t, part)
+	}
 }
 
 // TestDiscountWorkflow_NoEnqueueOnSignupOrStatusChange verifies leadership is
@@ -138,7 +152,7 @@ func TestDiscountWorkflow_AdminApprove(t *testing.T) {
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
 
-	_, st, _ := getDiscount(t, env, memberID)
+	_, st, _, _ := getDiscount(t, env, memberID)
 	require.NotNil(t, st)
 	assert.Equal(t, "approved", *st)
 
@@ -164,9 +178,10 @@ func TestDiscountWorkflow_RemovePending(t *testing.T) {
 	require.NoError(t, page.Locator("button:has-text('Cancel request')").Click())
 
 	expect(t).Locator(page.Locator("a:has-text('Set Up Payment')")).ToBeVisible()
-	dt, st, _ := getDiscount(t, env, memberID)
+	dt, st, requestID, _ := getDiscount(t, env, memberID)
 	assert.Nil(t, dt, "discount_type should be cleared")
 	assert.Nil(t, st, "discount_status should be cleared")
+	assert.Nil(t, requestID, "discount_request_id should be cleared")
 }
 
 // TestDiscountWorkflow_RemoveApproved verifies the same removal semantics apply
@@ -185,9 +200,10 @@ func TestDiscountWorkflow_RemoveApproved(t *testing.T) {
 	require.NoError(t, page.Locator("button:has-text('Remove discount')").Click())
 
 	expect(t).Locator(page.Locator("#discount-approved")).ToBeHidden()
-	dt, st, _ := getDiscount(t, env, memberID)
+	dt, st, requestID, _ := getDiscount(t, env, memberID)
 	assert.Nil(t, dt, "discount_type should be cleared")
 	assert.Nil(t, st, "discount_status should be cleared")
+	assert.Nil(t, requestID, "discount_request_id should be cleared")
 }
 
 // TestDiscountWorkflow_FamilyLinkage verifies that approving a family discount
@@ -204,11 +220,26 @@ func TestDiscountWorkflow_FamilyLinkage(t *testing.T) {
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
 
-	_, st, root := getDiscount(t, env, memberID)
+	_, st, _, root := getDiscount(t, env, memberID)
 	require.NotNil(t, st)
 	assert.Equal(t, "approved", *st)
 	require.NotNil(t, root, "approving a family discount should link the root family member")
 	assert.Equal(t, rootID, *root)
+}
+
+func TestDiscountWorkflow_AdminShowsRequestID(t *testing.T) {
+	t.Parallel()
+	env := NewTestEnv(t)
+	memberID := seedMember(t, env, "discount-admin-id@example.com",
+		WithConfirmed(), WithWaiver(), WithDiscount("student"), WithDiscountStatus("requested"), WithDiscountRequestID("lathe-solder-circuit"))
+	adminID := seedMember(t, env, "discount-admin-viewer@example.com", WithConfirmed(), WithLeadership())
+	page := newPage(t)
+	loginPageAs(t, env, page, adminID)
+
+	_, err := page.Goto(env.baseURL + "/admin/members/" + strconv.FormatInt(memberID, 10))
+	require.NoError(t, err)
+	expect(t).Locator(page.Locator("#discount-request-pending")).ToBeVisible()
+	expect(t).Locator(page.Locator("#discount-request-id")).ToHaveText("lathe-solder-circuit")
 }
 
 // TestDiscountWorkflow_CheckoutNotBlockedWhilePending confirms the decision to

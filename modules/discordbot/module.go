@@ -117,9 +117,10 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 // requestItem is one row from discordbot_discount_request_queue joined with
 // member info needed to render the notification.
 type requestItem struct {
-	MemberID     int64
-	Email        string
-	DiscountType string
+	MemberID          int64
+	Email             string
+	DiscountType      string
+	DiscountRequestID string
 }
 
 func (s *requestItem) String() string {
@@ -130,17 +131,21 @@ func (s *requestItem) String() string {
 func (m *Module) GetItem(ctx context.Context) (*requestItem, error) {
 	var item requestItem
 	var discountType *string
+	var discountRequestID *string
 	err := m.db.QueryRowContext(ctx, `
-		SELECT q.member_id, m.email, m.discount_type
+		SELECT q.member_id, m.email, m.discount_type, m.discount_request_id
 		FROM discordbot_discount_request_queue q
 		JOIN members m ON m.id = q.member_id
 		ORDER BY q.created ASC
-		LIMIT 1`).Scan(&item.MemberID, &item.Email, &discountType)
+		LIMIT 1`).Scan(&item.MemberID, &item.Email, &discountType, &discountRequestID)
 	if err != nil {
 		return nil, err
 	}
 	if discountType != nil {
 		item.DiscountType = *discountType
+	}
+	if discountRequestID != nil {
+		item.DiscountRequestID = *discountRequestID
 	}
 	return &item, nil
 }
@@ -160,7 +165,7 @@ func (m *Module) ProcessItem(ctx context.Context, item *requestItem) error {
 			"memberID", item.MemberID)
 		return nil
 	}
-	payload, err := buildRequestPayload(item.MemberID, item.Email, item.DiscountType)
+	payload, err := buildRequestPayload(item.MemberID, item.Email, item.DiscountType, item.DiscountRequestID)
 	if err != nil {
 		return err
 	}

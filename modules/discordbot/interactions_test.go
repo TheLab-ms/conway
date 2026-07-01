@@ -98,7 +98,7 @@ func insertRequestedMember(t *testing.T, m *Module, email, discountType string) 
 	t.Helper()
 	id := insertMember(t, m, email)
 	_, err := m.db.Exec(
-		"UPDATE members SET discount_type=?, discount_status='requested' WHERE id=?",
+		"UPDATE members SET discount_type=?, discount_status='requested', discount_request_id='lathe-solder-circuit' WHERE id=?",
 		discountType, id)
 	require.NoError(t, err)
 	return id
@@ -182,6 +182,7 @@ func TestHandleInteraction_ApproveSetsApproved(t *testing.T) {
 	require.Equal(t, "Discount approved", resp.Data.Embeds[0].Title)
 	require.Contains(t, resp.Data.Embeds[0].Description, "Student")
 	require.Contains(t, resp.Data.Embeds[0].Description, "<@discord-uid-1>")
+	require.Contains(t, resp.Data.Embeds[0].Description, "lathe-solder-circuit")
 
 	status := discountStatus(t, m, memberID)
 	require.NotNil(t, status)

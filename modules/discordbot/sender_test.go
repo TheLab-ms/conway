@@ -10,7 +10,7 @@ import (
 
 func TestBuildRequestPayload_Shape(t *testing.T) {
 	t.Parallel()
-	raw, err := buildRequestPayload(42, "new@example.com", "student")
+	raw, err := buildRequestPayload(42, "new@example.com", "student", "lathe-solder-circuit")
 	require.NoError(t, err)
 
 	var payload webhookPayload
@@ -21,6 +21,7 @@ func TestBuildRequestPayload_Shape(t *testing.T) {
 	require.Equal(t, "Discount requested", payload.Embeds[0].Title)
 	require.Contains(t, payload.Embeds[0].Description, "new@example.com")
 	require.Contains(t, payload.Embeds[0].Description, "Student")
+	require.Contains(t, payload.Embeds[0].Description, "lathe-solder-circuit")
 	require.NotZero(t, payload.Embeds[0].Color)
 
 	require.Len(t, payload.Components, 1, "exactly one action row")
@@ -37,7 +38,7 @@ func TestBuildRequestPayload_Shape(t *testing.T) {
 
 func TestBuildRequestPayload_FamilyMentionsLinkage(t *testing.T) {
 	t.Parallel()
-	raw, err := buildRequestPayload(7, "fam@example.com", "family")
+	raw, err := buildRequestPayload(7, "fam@example.com", "family", "")
 	require.NoError(t, err)
 
 	var payload webhookPayload
@@ -48,7 +49,7 @@ func TestBuildRequestPayload_FamilyMentionsLinkage(t *testing.T) {
 
 func TestBuildRequestPayload_NonFamilyOmitsLinkageNote(t *testing.T) {
 	t.Parallel()
-	raw, err := buildRequestPayload(8, "x@y.z", "military")
+	raw, err := buildRequestPayload(8, "x@y.z", "military", "")
 	require.NoError(t, err)
 
 	var payload webhookPayload

@@ -22,30 +22,31 @@ import (
 const timeFormat = "Mon, Jan 2 2006"
 
 type member struct {
-	ID               int64
-	AccessStatus     string
-	Name             string
-	NameOverride     *string
-	Email            string
-	Confirmed        bool
-	Created          engine.LocalTime
-	AdminNotes       string
-	HeardAbout       string
-	Leadership       bool
-	NonBillable      bool
-	FobID            *int64
-	StripeCustomerID *string
-	StripeSubID      *string
-	StripeStatus     *string
-	PaypalSubID      *string
-	PaypalPrice      *float64
-	DiscountType     *string
-	DiscountStatus   *string
-	RootFamilyEmail  *string
-	BillAnnually     bool
-	FobLastSeen      *engine.LocalTime
-	DiscordUserID    string
-	DiscordUsername  string
+	ID                int64
+	AccessStatus      string
+	Name              string
+	NameOverride      *string
+	Email             string
+	Confirmed         bool
+	Created           engine.LocalTime
+	AdminNotes        string
+	HeardAbout        string
+	Leadership        bool
+	NonBillable       bool
+	FobID             *int64
+	StripeCustomerID  *string
+	StripeSubID       *string
+	StripeStatus      *string
+	PaypalSubID       *string
+	PaypalPrice       *float64
+	DiscountType      *string
+	DiscountStatus    *string
+	DiscountRequestID *string
+	RootFamilyEmail   *string
+	BillAnnually      bool
+	FobLastSeen       *engine.LocalTime
+	DiscordUserID     string
+	DiscordUsername   string
 }
 
 type memberEvent struct {
@@ -57,11 +58,11 @@ type memberEvent struct {
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
 	mem := member{}
 	err := db.QueryRowContext(ctx, `
-		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, COALESCE(m.heard_about, ''), m.leadership, m.non_billable, m.stripe_customer_id, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, m.discount_status, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
+		SELECT m.id, m.access_status, m.name, m.name_override, m.email, m.confirmed, m.created, COALESCE(m.fob_id, 0), m.admin_notes, COALESCE(m.heard_about, ''), m.leadership, m.non_billable, m.stripe_customer_id, m.stripe_subscription_id, m.stripe_subscription_state, m.paypal_subscription_id, m.paypal_price, m.discount_type, m.discount_status, m.discount_request_id, COALESCE(rfm.email, ''), m.bill_annually, m.fob_last_seen, COALESCE(m.discord_user_id, ''), COALESCE(m.discord_username, '')
 		FROM members m
 		LEFT JOIN members rfm ON m.root_family_member = rfm.id
 		WHERE m.id = $1`, id).
-		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.HeardAbout, &mem.Leadership, &mem.NonBillable, &mem.StripeCustomerID, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.DiscountStatus, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
+		Scan(&mem.ID, &mem.AccessStatus, &mem.Name, &mem.NameOverride, &mem.Email, &mem.Confirmed, &mem.Created, &mem.FobID, &mem.AdminNotes, &mem.HeardAbout, &mem.Leadership, &mem.NonBillable, &mem.StripeCustomerID, &mem.StripeSubID, &mem.StripeStatus, &mem.PaypalSubID, &mem.PaypalPrice, &mem.DiscountType, &mem.DiscountStatus, &mem.DiscountRequestID, &mem.RootFamilyEmail, &mem.BillAnnually, &mem.FobLastSeen, &mem.DiscordUserID, &mem.DiscordUsername)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -140,6 +141,7 @@ var _ = handlePostForm(formHandler{
 		Query: `UPDATE members SET
 			discount_type = (CASE WHEN :discount = '' THEN NULL ELSE :discount END),
 			discount_status = NULL,
+			discount_request_id = NULL,
 			root_family_member = (SELECT id FROM members WHERE email = :family_email AND root_family_member IS NULL)
 			WHERE id = :route_id`,
 	},
@@ -215,7 +217,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(member.Created.Time.Format(timeFormat))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 174, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 176, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -233,7 +235,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(formatLastFobSwipe(member.FobLastSeen.Time))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 176, Col: 106}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 178, Col: 106}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -251,7 +253,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 			var templ_7745c5c3_Var5 templ.SafeURL
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/logincode", member.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 178, Col: 120}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 180, Col: 120}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -269,7 +271,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(member.AccessStatus)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 180, Col: 67}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 182, Col: 67}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -287,7 +289,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 			var templ_7745c5c3_Var7 templ.SafeURL
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/updates/basics", member.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 182, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 184, Col: 103}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -305,7 +307,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(*member.NameOverride)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 186, Col: 98}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 188, Col: 98}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -318,7 +320,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(member.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 186, Col: 126}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 188, Col: 126}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -336,7 +338,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(member.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 188, Col: 95}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 190, Col: 95}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -354,7 +356,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(member.Email)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 193, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 195, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -377,7 +379,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(*member.FobID, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 203, Col: 119}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 205, Col: 119}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -395,7 +397,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(member.DiscordUsername)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 206, Col: 87}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 208, Col: 87}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -408,7 +410,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(member.DiscordUserID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 207, Col: 80}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 209, Col: 80}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -426,7 +428,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(member.DiscordUserID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 209, Col: 120}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 211, Col: 120}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -459,7 +461,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(member.HeardAbout)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 218, Col: 109}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 220, Col: 109}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -477,7 +479,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(member.AdminNotes)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 223, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 225, Col: 115}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -490,7 +492,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 			var templ_7745c5c3_Var18 templ.SafeURL
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/delete", member.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 229, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 231, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -508,311 +510,334 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(memberdb.DiscountLabel(derefStr(member.DiscountType)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 240, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 242, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, " <span class=\"text-muted\">— awaiting approval</span></div><form method=\"post\" action=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, " <span class=\"text-muted\">— awaiting approval</span></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var20 templ.SafeURL
-				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/updates/discount-approve", member.ID)))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 243, Col: 115}
+				if member.DiscountRequestID != nil && *member.DiscountRequestID != "" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<p class=\"mb-2 small\">Request ID: <strong id=\"discount-request-id\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var20 string
+					templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(*member.DiscountRequestID)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 246, Col: 102}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</strong></p>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<form method=\"post\" action=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\">")
+				var templ_7745c5c3_Var21 templ.SafeURL
+				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/updates/discount-approve", member.ID)))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 248, Col: 115}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if derefStr(member.DiscountType) == "family" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<div class=\"mb-2\"><label for=\"approve_family_email\" class=\"form-label\">Root Family Account Email Address</label> <input type=\"email\" class=\"form-control\" id=\"approve_family_email\" name=\"family_email\" placeholder=\"root@example.com\" required><div class=\"form-text\">Family discounts must be linked to a root account at approval time.</div></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<div class=\"mb-2\"><label for=\"approve_family_email\" class=\"form-label\">Root Family Account Email Address</label> <input type=\"email\" class=\"form-control\" id=\"approve_family_email\" name=\"family_email\" placeholder=\"root@example.com\" required><div class=\"form-text\">Family discounts must be linked to a root account at approval time.</div></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<button type=\"submit\" class=\"btn btn-success\">Approve discount</button></form><p class=\"card-subtitle mt-2 mb-0 text-muted small\">Leadership cannot deny a request; the member may remove it themselves at any time.</p></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<button type=\"submit\" class=\"btn btn-success\">Approve discount</button></form><p class=\"card-subtitle mt-2 mb-0 text-muted small\">Leadership cannot deny a request; the member may remove it themselves at any time.</p></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<form method=\"post\" action=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<form method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var21 templ.SafeURL
-			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/updates/discounts", member.ID)))
+			var templ_7745c5c3_Var22 templ.SafeURL
+			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/updates/discounts", member.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 258, Col: 106}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 263, Col: 106}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\"><script>\n\t\t\t\t\t\t\tdocument.addEventListener('DOMContentLoaded', (event) => {\n\t\t\t\t\t\t\t\tconst handler = () => {\n\t\t\t\t\t\t\t\t\tlet selector = document.getElementById('discount')\n\t\t\t\t\t\t\t\t\tlet field = document.getElementById('family-email-field')\n\t\t\t\t\t\t\t\t\tif (selector.value === 'family') {\n\t\t\t\t\t\t\t\t\t\tfield.style.display = 'block'\n\t\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\t\tfield.style.display = 'none'\n\t\t\t\t\t\t\t\t\t\tdocument.getElementById('family_email').value = ''\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t\tdocument.getElementById('discount').addEventListener('change', event => {\n\t\t\t\t\t\t\t\t\thandler()\n\t\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t\thandler()\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t</script><label for=\"discount\" class=\"form-label\">Discount Type</label> <select class=\"form-select\" id=\"discount\" name=\"discount\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\"><script>\n\t\t\t\t\t\t\tdocument.addEventListener('DOMContentLoaded', (event) => {\n\t\t\t\t\t\t\t\tconst handler = () => {\n\t\t\t\t\t\t\t\t\tlet selector = document.getElementById('discount')\n\t\t\t\t\t\t\t\t\tlet field = document.getElementById('family-email-field')\n\t\t\t\t\t\t\t\t\tif (selector.value === 'family') {\n\t\t\t\t\t\t\t\t\t\tfield.style.display = 'block'\n\t\t\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t\t\tfield.style.display = 'none'\n\t\t\t\t\t\t\t\t\t\tdocument.getElementById('family_email').value = ''\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\n\t\t\t\t\t\t\t\tdocument.getElementById('discount').addEventListener('change', event => {\n\t\t\t\t\t\t\t\t\thandler()\n\t\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t\thandler()\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t</script><label for=\"discount\" class=\"form-label\">Discount Type</label> <select class=\"form-select\" id=\"discount\" name=\"discount\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, opt := range memberdb.DiscountTypes {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<option value=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var22 string
-				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(opt.Value)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 281, Col: 33}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				if discountSelected(member.DiscountType, opt.Value) {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, " selected")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, ">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<option value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var23 string
-				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(opt.Label)
+				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(opt.Value)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 281, Col: 110}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 286, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</option>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if discountSelected(member.DiscountType, opt.Value) {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, " selected")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, ">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var24 string
+				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(opt.Label)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 286, Col: 110}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</option>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</select><div class=\"mb-2 mt-2\" id=\"family-email-field\" style=\"display:none;\"><label for=\"family_email\" class=\"form-label\">Root Family Account Email Address</label> <input type=\"email\" class=\"form-control\" id=\"family_email\" name=\"family_email\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</select><div class=\"mb-2 mt-2\" id=\"family-email-field\" style=\"display:none;\"><label for=\"family_email\" class=\"form-label\">Root Family Account Email Address</label> <input type=\"email\" class=\"form-control\" id=\"family_email\" name=\"family_email\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var24 string
-			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(*member.RootFamilyEmail)
+			var templ_7745c5c3_Var25 string
+			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(*member.RootFamilyEmail)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 286, Col: 117}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 291, Col: 117}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"></div><p class=\"card-subtitle mt-2 text-muted\">The discounted rate is only applied during Stripe checkout. Applying a new discount will not modify existing memberships until the member re-subscribes.</p><button type=\"submit\" class=\"btn btn-primary mt-2\">Save</button></form></div></div><div class=\"card mt-3\"><div class=\"card-body\"><h2 class=\"card-title h5\">Payment ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\"></div><p class=\"card-subtitle mt-2 text-muted\">The discounted rate is only applied during Stripe checkout. Applying a new discount will not modify existing memberships until the member re-subscribes.</p><button type=\"submit\" class=\"btn btn-primary mt-2\">Save</button></form></div></div><div class=\"card mt-3\"><div class=\"card-body\"><h2 class=\"card-title h5\">Payment ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if (member.PaypalSubID == nil || *member.PaypalSubID == "") && (member.StripeStatus == nil || (*member.StripeStatus != "active" && *member.StripeStatus != "trialing")) {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<span class=\"badge text-bg-danger\">!</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<span class=\"badge text-bg-danger\">!</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</h2><p class=\"card-subtitle mb-2 text-muted\">Subscription status: <b>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</h2><p class=\"card-subtitle mb-2 text-muted\">Subscription status: <b>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if member.PaypalSubID != nil && *member.PaypalSubID != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "PayPal active")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "PayPal active")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else if member.StripeStatus == nil || *member.StripeStatus == "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "unknown")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "unknown")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				var templ_7745c5c3_Var25 string
-				templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(*member.StripeStatus)
+				var templ_7745c5c3_Var26 string
+				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(*member.StripeStatus)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 311, Col: 30}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</b></p>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if member.StripeSubID == nil || *member.StripeSubID == "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<a href=\"#\" class=\"btn btn-secondary disabled\" aria-disabled=\"true\">View subscription in Stripe</a> ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<a href=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var26 templ.SafeURL
-				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("https://dashboard.stripe.com/subscriptions/" + *member.StripeSubID))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 318, Col: 94}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 316, Col: 30}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\" target=\"_blank\" class=\"btn btn-primary\">View subscription in Stripe</a> ")
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</b></p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if member.StripeSubID == nil || *member.StripeSubID == "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "<a href=\"#\" class=\"btn btn-secondary disabled\" aria-disabled=\"true\">View subscription in Stripe</a> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-			}
-			if member.StripeCustomerID != nil && *member.StripeCustomerID != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "<a href=\"")
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var27 templ.SafeURL
-				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("https://dashboard.stripe.com/customers/" + *member.StripeCustomerID))
+				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("https://dashboard.stripe.com/subscriptions/" + *member.StripeSubID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 321, Col: 94}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 323, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "\" target=\"_blank\" class=\"btn btn-outline-primary ms-2\">View customer in Stripe</a>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "\" target=\"_blank\" class=\"btn btn-primary\">View subscription in Stripe</a> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<form method=\"post\" action=\"")
+			}
+			if member.StripeCustomerID != nil && *member.StripeCustomerID != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var28 templ.SafeURL
-				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/stripe-customer", member.ID)))
+				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("https://dashboard.stripe.com/customers/" + *member.StripeCustomerID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 323, Col: 104}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 326, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "\" class=\"d-inline\"><button type=\"submit\" class=\"btn btn-outline-success ms-2\">Create Stripe Customer</button></form>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "\" target=\"_blank\" class=\"btn btn-outline-primary ms-2\">View customer in Stripe</a>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "<form method=\"post\" action=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var29 templ.SafeURL
+				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/stripe-customer", member.ID)))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 328, Col: 104}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\" class=\"d-inline\"><button type=\"submit\" class=\"btn btn-outline-success ms-2\">Create Stripe Customer</button></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<div class=\"mt-3\"><a class=\"text-muted small\" data-bs-toggle=\"collapse\" href=\"#stripe-override\" role=\"button\" aria-expanded=\"false\" aria-controls=\"stripe-override\">Edit Stripe IDs manually...</a><div class=\"collapse\" id=\"stripe-override\"><div class=\"border rounded p-3 mt-2\"><p class=\"text-warning small mb-3\">These values are normally managed by Stripe webhooks. Only edit them if you know what you are doing.</p><form method=\"post\" action=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "<div class=\"mt-3\"><a class=\"text-muted small\" data-bs-toggle=\"collapse\" href=\"#stripe-override\" role=\"button\" aria-expanded=\"false\" aria-controls=\"stripe-override\">Edit Stripe IDs manually...</a><div class=\"collapse\" id=\"stripe-override\"><div class=\"border rounded p-3 mt-2\"><p class=\"text-warning small mb-3\">These values are normally managed by Stripe webhooks. Only edit them if you know what you are doing.</p><form method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var29 templ.SafeURL
-			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/updates/stripe", member.ID)))
+			var templ_7745c5c3_Var30 templ.SafeURL
+			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/updates/stripe", member.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 334, Col: 105}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "\" id=\"stripe-override-form\"><script>\n\t\t\t\t\t\t\t\t\tdocument.addEventListener('DOMContentLoaded', () => {\n\t\t\t\t\t\t\t\t\t\tconst form = document.getElementById('stripe-override-form')\n\t\t\t\t\t\t\t\t\t\tform.addEventListener('submit', (e) => {\n\t\t\t\t\t\t\t\t\t\t\tconst custInput = document.getElementById('stripe_customer_id')\n\t\t\t\t\t\t\t\t\t\t\tconst subInput = document.getElementById('stripe_subscription_id')\n\t\t\t\t\t\t\t\t\t\t\tcustInput.value = custInput.value.trim()\n\t\t\t\t\t\t\t\t\t\t\tsubInput.value = subInput.value.trim()\n\t\t\t\t\t\t\t\t\t\t\tconst clearing = []\n\t\t\t\t\t\t\t\t\t\t\tif (custInput.dataset.original && !custInput.value) clearing.push('Customer ID')\n\t\t\t\t\t\t\t\t\t\t\tif (subInput.dataset.original && !subInput.value) clearing.push('Subscription ID')\n\t\t\t\t\t\t\t\t\t\t\tif (clearing.length > 0 && !confirm('This will clear the Stripe ' + clearing.join(' and ') + '. Are you sure?')) {\n\t\t\t\t\t\t\t\t\t\t\t\te.preventDefault()\n\t\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t\t</script><div class=\"input-group mb-2\"><label for=\"stripe_customer_id\" class=\"input-group-text\">Customer ID</label> <input type=\"text\" class=\"form-control\" id=\"stripe_customer_id\" name=\"stripe_customer_id\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var30 string
-			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(strPtrVal(member.StripeCustomerID))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 354, Col: 141}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 339, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\" placeholder=\"cus_...\" data-original=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\" id=\"stripe-override-form\"><script>\n\t\t\t\t\t\t\t\t\tdocument.addEventListener('DOMContentLoaded', () => {\n\t\t\t\t\t\t\t\t\t\tconst form = document.getElementById('stripe-override-form')\n\t\t\t\t\t\t\t\t\t\tform.addEventListener('submit', (e) => {\n\t\t\t\t\t\t\t\t\t\t\tconst custInput = document.getElementById('stripe_customer_id')\n\t\t\t\t\t\t\t\t\t\t\tconst subInput = document.getElementById('stripe_subscription_id')\n\t\t\t\t\t\t\t\t\t\t\tcustInput.value = custInput.value.trim()\n\t\t\t\t\t\t\t\t\t\t\tsubInput.value = subInput.value.trim()\n\t\t\t\t\t\t\t\t\t\t\tconst clearing = []\n\t\t\t\t\t\t\t\t\t\t\tif (custInput.dataset.original && !custInput.value) clearing.push('Customer ID')\n\t\t\t\t\t\t\t\t\t\t\tif (subInput.dataset.original && !subInput.value) clearing.push('Subscription ID')\n\t\t\t\t\t\t\t\t\t\t\tif (clearing.length > 0 && !confirm('This will clear the Stripe ' + clearing.join(' and ') + '. Are you sure?')) {\n\t\t\t\t\t\t\t\t\t\t\t\te.preventDefault()\n\t\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t\t</script><div class=\"input-group mb-2\"><label for=\"stripe_customer_id\" class=\"input-group-text\">Customer ID</label> <input type=\"text\" class=\"form-control\" id=\"stripe_customer_id\" name=\"stripe_customer_id\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(strPtrVal(member.StripeCustomerID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 354, Col: 216}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 359, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "\"></div><div class=\"input-group mb-2\"><label for=\"stripe_subscription_id\" class=\"input-group-text\">Subscription ID</label> <input type=\"text\" class=\"form-control\" id=\"stripe_subscription_id\" name=\"stripe_subscription_id\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\" placeholder=\"cus_...\" data-original=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var32 string
-			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(strPtrVal(member.StripeSubID))
+			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(strPtrVal(member.StripeCustomerID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 358, Col: 144}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 359, Col: 216}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\" placeholder=\"sub_...\" data-original=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\"></div><div class=\"input-group mb-2\"><label for=\"stripe_subscription_id\" class=\"input-group-text\">Subscription ID</label> <input type=\"text\" class=\"form-control\" id=\"stripe_subscription_id\" name=\"stripe_subscription_id\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(strPtrVal(member.StripeSubID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 358, Col: 214}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 363, Col: 144}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\"></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form></div></div></div></div></div><div class=\"card mt-3\"><div class=\"card-body\"><h2 class=\"card-title h5 mb-2\">Designations</h2><form method=\"post\" action=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\" placeholder=\"sub_...\" data-original=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var34 templ.SafeURL
-			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/updates/designations", member.ID)))
+			var templ_7745c5c3_Var34 string
+			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(strPtrVal(member.StripeSubID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 370, Col: 109}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 363, Col: 214}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\"><div class=\"form-check\"><input type=\"checkbox\" class=\"form-check-input\" id=\"leadership\" name=\"leadership\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\"></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form></div></div></div></div></div><div class=\"card mt-3\"><div class=\"card-body\"><h2 class=\"card-title h5 mb-2\">Designations</h2><form method=\"post\" action=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var35 templ.SafeURL
+			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(fmt.Sprintf("/admin/members/%d/updates/designations", member.ID)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 375, Col: 109}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\"><div class=\"form-check\"><input type=\"checkbox\" class=\"form-check-input\" id=\"leadership\" name=\"leadership\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if member.Leadership {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, " checked")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, " checked")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "> <label class=\"form-check-label\" for=\"leadership\">Leadership <i>(Conway admin access)</i></label></div><div class=\"form-check\"><input type=\"checkbox\" class=\"form-check-input\" id=\"non-billable\" name=\"non_billable\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "> <label class=\"form-check-label\" for=\"leadership\">Leadership <i>(Conway admin access)</i></label></div><div class=\"form-check\"><input type=\"checkbox\" class=\"form-check-input\" id=\"non-billable\" name=\"non_billable\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if member.NonBillable {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, " checked")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, " checked")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "> <label class=\"form-check-label\" for=\"non-billable\">Non-billable <i>(landlord fobs, lifetime members, etc.)</i></label></div><button type=\"submit\" class=\"btn btn-primary mt-2\">Save</button></form></div></div><div class=\"card mt-3\"><div class=\"card-body\"><h2 class=\"card-title h5 mb-2\">Events</h2><table class=\"table table-hover\"><thead><tr><th scope=\"col\">Time</th><th scope=\"col\">Event</th><th scope=\"col\">Details</th></tr></thead> <tbody id=\"member-events-body\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "> <label class=\"form-check-label\" for=\"non-billable\">Non-billable <i>(landlord fobs, lifetime members, etc.)</i></label></div><button type=\"submit\" class=\"btn btn-primary mt-2\">Save</button></form></div></div><div class=\"card mt-3\"><div class=\"card-body\"><h2 class=\"card-title h5 mb-2\">Events</h2><table class=\"table table-hover\"><thead><tr><th scope=\"col\">Time</th><th scope=\"col\">Event</th><th scope=\"col\">Details</th></tr></thead> <tbody id=\"member-events-body\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -820,7 +845,7 @@ func renderSingleMember(tabs []*navbarTab, member *member, events []*memberEvent
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "</tbody></table></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</tbody></table></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -891,71 +916,71 @@ func renderMemberEventRows(events []*memberEvent, memberID int64, page int, hasM
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var35 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var35 == nil {
-			templ_7745c5c3_Var35 = templ.NopComponent
+		templ_7745c5c3_Var36 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var36 == nil {
+			templ_7745c5c3_Var36 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		for _, event := range events {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<tr><td>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var36 string
-			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(engine.FormatTimeAgo(event.Created, 7*24*time.Hour, "Jan 2, 2006 3:04 PM"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 448, Col: 83}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "</td><td><strong>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<tr><td>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var37 string
-			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(event.Event)
+			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(engine.FormatTimeAgo(event.Created, 7*24*time.Hour, "Jan 2, 2006 3:04 PM"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 449, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 453, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</strong></td><td>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "</td><td><strong>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var38 string
-			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
+			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(event.Event)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 450, Col: 22}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 454, Col: 28}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "</td></tr>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		if hasMore {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<tr hx-get=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</strong></td><td>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var39 string
-			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/admin/members/%d/events?page=%d", memberID, page+1))
+			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(event.Details)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 454, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 455, Col: 22}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "\" hx-trigger=\"revealed\" hx-swap=\"outerHTML\" hx-target=\"this\"><td colspan=\"3\" class=\"text-center text-muted py-3\"><span class=\"spinner-border spinner-border-sm me-2\" role=\"status\"></span> Loading...</td></tr>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "</td></tr>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if hasMore {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<tr hx-get=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var40 string
+			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/admin/members/%d/events?page=%d", memberID, page+1))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `member.templ`, Line: 459, Col: 80}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\" hx-trigger=\"revealed\" hx-swap=\"outerHTML\" hx-target=\"this\"><td colspan=\"3\" class=\"text-center text-muted py-3\"><span class=\"spinner-border spinner-border-sm me-2\" role=\"status\"></span> Loading...</td></tr>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

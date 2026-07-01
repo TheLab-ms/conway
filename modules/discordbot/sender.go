@@ -28,10 +28,13 @@ const familyDiscountType = "family"
 // describing the request and a single Approve button. There is intentionally
 // no deny/cancel control: leadership can only approve, and members remove
 // their own requests.
-func buildRequestPayload(memberID int64, email, discountType string) (string, error) {
+func buildRequestPayload(memberID int64, email, discountType, requestID string) (string, error) {
 	label := memberdb.DiscountLabel(discountType)
 
 	desc := fmt.Sprintf("**%s** requested the **%s** discount.\nClick **Approve** to apply it.", email, label)
+	if requestID != "" {
+		desc += fmt.Sprintf("\n\nRequest ID: `%s`", requestID)
+	}
 	if discountType == familyDiscountType {
 		desc += "\n\n_Family discounts must also be linked to a root account in the admin panel._"
 	}
