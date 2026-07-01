@@ -263,6 +263,9 @@ templ renderMemberBallotWithError(e *election, current map[int64]bool, errorMess
 					if errorMessage != "" {
 						<div class="alert alert-danger" role="alert">{ errorMessage }</div>
 					}
+					if e.Status == statusDraft {
+						<div class="alert alert-info">This is the right election link, but voting has not started yet. Please check back after voting opens.</div>
+					}
 					if e.Status == statusClosed {
 						<div class="alert alert-secondary">This election is closed. Your submitted vote is shown below if you voted.</div>
 					}
@@ -290,6 +293,8 @@ templ renderMemberBallotWithError(e *election, current map[int64]bool, errorMess
 								<span class="text-secondary small">You cannot change your vote after submitting.</span>
 							} else if len(current) > 0 {
 								<button type="button" class="btn btn-secondary btn-lg" disabled>Vote submitted</button>
+							} else if e.Status == statusDraft {
+								<button type="button" class="btn btn-secondary btn-lg" disabled>Voting not started</button>
 							} else {
 								<button type="button" class="btn btn-secondary btn-lg" disabled>Voting closed</button>
 							}

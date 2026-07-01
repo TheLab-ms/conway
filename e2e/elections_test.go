@@ -48,7 +48,9 @@ func TestElections_AdminSettingsWorkflowAndMemberVoting(t *testing.T) {
 	loginPageAs(t, env, memberPage, memberID)
 	resp, err := memberPage.Goto(shareURL)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusNotFound, resp.Status())
+	require.Equal(t, http.StatusOK, resp.Status())
+	expect(t).Locator(memberPage.GetByText("This is the right election link, but voting has not started yet")).ToBeVisible()
+	expect(t).Locator(memberPage.Locator("button:has-text('Voting not started')")).ToBeVisible()
 
 	_, err = adminPage.Goto(env.baseURL + "/admin/config/elections/" + electionID)
 	require.NoError(t, err)

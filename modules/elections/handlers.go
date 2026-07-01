@@ -186,7 +186,7 @@ func (m *Module) handleMemberBallot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e, err := m.getElection(r.Context(), r.PathValue("id"))
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && e.Status == statusDraft) {
+	if errors.Is(err, sql.ErrNoRows) {
 		engine.ClientError(w, "Not Found", "Election not found", http.StatusNotFound)
 		return
 	}
