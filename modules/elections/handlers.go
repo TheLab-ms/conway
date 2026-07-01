@@ -16,6 +16,7 @@ import (
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/google/uuid"
+	"modernc.org/sqlite"
 )
 
 func (m *Module) handleAdminList(w http.ResponseWriter, r *http.Request) {
@@ -28,7 +29,7 @@ func (m *Module) handleAdminList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleAdminNew(w http.ResponseWriter, r *http.Request) {
-	e := &election{Status: statusDraft, MaxChoices: 1, Options: []*option{{Position: 1}, {Position: 2}}}
+	e := &election{Status: statusDraft, Questions: []*question{{Position: 1, MaxChoices: 1, Options: []*option{{Position: 1}, {Position: 2}}}}}
 	m.renderEdit(w, r, editView{Election: e, Action: "/admin/config/elections/new"})
 }
 
@@ -90,6 +91,23 @@ func (m *Module) handleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, adminElectionPath(id), http.StatusSeeOther)
 }
 
+func (m *Module) handleAdminDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	res, err := m.db.ExecContext(r.Context(), "DELETE FROM elections WHERE id = $1", id)
+	if engine.HandleError(w, err) {
+		return
+	}
+	n, err := res.RowsAffected()
+	if engine.HandleError(w, err) {
+		return
+	}
+	if n == 0 {
+		engine.ClientError(w, "Not Found", "Election not found", http.StatusNotFound)
+		return
+	}
+	http.Redirect(w, r, "/admin/config/elections", http.StatusSeeOther)
+}
+
 func (m *Module) handleAdminOpen(w http.ResponseWriter, r *http.Request) {
 	m.setElectionStatus(w, r, statusOpen)
 }
@@ -108,12 +126,24 @@ func (m *Module) setElectionStatus(w http.ResponseWriter, r *http.Request, statu
 	if engine.HandleError(w, err) {
 		return
 	}
-	if status == statusOpen && len(e.Options) < 2 {
-		engine.ClientError(w, "Needs Options", "Add at least two ballot options before opening.", http.StatusBadRequest)
+	if status == statusOpen && len(e.Questions) == 0 {
+		engine.ClientError(w, "Needs Questions", "Add at least one ballot question before opening.", http.StatusBadRequest)
 		return
+	}
+	if status == statusOpen {
+		for _, q := range e.Questions {
+			if len(q.Options) < 2 {
+				engine.ClientError(w, "Needs Options", "Add at least two ballot options to every question before opening.", http.StatusBadRequest)
+				return
+			}
+		}
 	}
 	if status == statusOpen && e.Status == statusClosed {
 		engine.ClientError(w, "Election Closed", "Closed elections cannot be reopened.", http.StatusBadRequest)
+		return
+	}
+	if status == statusClosed && e.Status == statusDraft {
+		engine.ClientError(w, "Election Draft", "Draft elections cannot be closed.", http.StatusBadRequest)
 		return
 	}
 	_, err = m.db.ExecContext(r.Context(), "UPDATE elections SET status = $1, updated = strftime('%s', 'now') WHERE id = $2", status, id)
@@ -189,6 +219,16 @@ func (m *Module) handleMemberVote(w http.ResponseWriter, r *http.Request) {
 		engine.ClientError(w, "Voting Closed", "This election is not accepting votes.", http.StatusBadRequest)
 		return
 	}
+	current, err := m.currentSelections(r.Context(), e.ID, meta.ID)
+	if engine.HandleError(w, err) {
+		return
+	}
+	if len(current) > 0 {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusBadRequest)
+		renderMemberBallotWithError(e, current, "Your vote has already been submitted and cannot be changed.").Render(r.Context(), w)
+		return
+	}
 	selected, err := parseSelections(r, e)
 	if err != nil {
 		current := map[int64]bool{}
@@ -201,6 +241,16 @@ func (m *Module) handleMemberVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := m.recordVote(r.Context(), e, meta.ID, selected); err != nil {
+		if isDuplicateVote(err) {
+			current, currentErr := m.currentSelections(r.Context(), e.ID, meta.ID)
+			if engine.HandleError(w, currentErr) {
+				return
+			}
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusBadRequest)
+			renderMemberBallotWithError(e, current, "Your vote has already been submitted and cannot be changed.").Render(r.Context(), w)
+			return
+		}
 		engine.SystemError(w, err.Error())
 		return
 	}
@@ -217,36 +267,70 @@ func parseElectionForm(r *http.Request) (*election, error) {
 	e := &election{
 		Title:       strings.TrimSpace(r.FormValue("title")),
 		Description: strings.TrimSpace(r.FormValue("description")),
-		Question:    strings.TrimSpace(r.FormValue("question")),
 		Status:      statusDraft,
-		MaxChoices:  1,
 	}
-	if max := strings.TrimSpace(r.FormValue("max_choices")); max != "" {
-		n, err := strconv.Atoi(max)
-		if err != nil || n < 1 {
-			return e, fmt.Errorf("Max choices must be a positive number.")
+	questionIndexes := r.Form["question_index"]
+	questionTexts := r.Form["question_text"]
+	questionMaxes := r.Form["question_max_choices"]
+	for i, rawIndex := range questionIndexes {
+		text := ""
+		if i < len(questionTexts) {
+			text = questionTexts[i]
 		}
-		e.MaxChoices = n
+		q := &question{Position: len(e.Questions) + 1, Text: strings.TrimSpace(text), MaxChoices: 1}
+		if i < len(questionMaxes) {
+			max := strings.TrimSpace(questionMaxes[i])
+			if max != "" {
+				n, err := strconv.Atoi(max)
+				if err != nil || n < 1 {
+					return e, fmt.Errorf("Max choices must be a positive number.")
+				}
+				q.MaxChoices = n
+			}
+		}
+		for _, label := range r.Form["option_label_"+rawIndex] {
+			label = strings.TrimSpace(label)
+			if label == "" {
+				continue
+			}
+			q.Options = append(q.Options, &option{Position: len(q.Options) + 1, Label: label})
+		}
+		e.Questions = append(e.Questions, q)
 	}
-	labels := r.Form["option_label"]
-	for _, label := range labels {
-		label = strings.TrimSpace(label)
-		if label == "" {
-			continue
+	if len(e.Questions) == 0 && strings.TrimSpace(r.FormValue("question")) != "" {
+		q := &question{Position: 1, Text: strings.TrimSpace(r.FormValue("question")), MaxChoices: 1}
+		if max := strings.TrimSpace(r.FormValue("max_choices")); max != "" {
+			n, err := strconv.Atoi(max)
+			if err != nil || n < 1 {
+				return e, fmt.Errorf("Max choices must be a positive number.")
+			}
+			q.MaxChoices = n
 		}
-		e.Options = append(e.Options, &option{Position: len(e.Options) + 1, Label: label})
+		for _, label := range r.Form["option_label"] {
+			label = strings.TrimSpace(label)
+			if label == "" {
+				continue
+			}
+			q.Options = append(q.Options, &option{Position: len(q.Options) + 1, Label: label})
+		}
+		e.Questions = append(e.Questions, q)
 	}
 	if e.Title == "" {
 		return e, fmt.Errorf("Title is required.")
 	}
-	if e.Question == "" {
-		return e, fmt.Errorf("Question is required.")
+	if len(e.Questions) == 0 {
+		return e, fmt.Errorf("Add at least one ballot question.")
 	}
-	if len(e.Options) < 2 {
-		return e, fmt.Errorf("Add at least two ballot options.")
-	}
-	if e.MaxChoices > len(e.Options) {
-		return e, fmt.Errorf("Max choices cannot be greater than the number of options.")
+	for _, q := range e.Questions {
+		if q.Text == "" {
+			return e, fmt.Errorf("Question is required.")
+		}
+		if len(q.Options) < 2 {
+			return e, fmt.Errorf("Add at least two ballot options to every question.")
+		}
+		if q.MaxChoices > len(q.Options) {
+			return e, fmt.Errorf("Max choices cannot be greater than the number of options.")
+		}
 	}
 	return e, nil
 }
@@ -266,7 +350,7 @@ func (m *Module) shareURL(id string) string {
 
 func (m *Module) listElections(ctx context.Context) ([]*election, error) {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT e.id, e.created, e.updated, e.created_by, e.title, e.description, e.question, e.status, e.max_choices,
+		SELECT e.id, e.created, e.updated, e.created_by, e.title, e.description, e.status,
 			COUNT(DISTINCT v.member_id), COUNT(DISTINCT l.id)
 		FROM elections e
 		LEFT JOIN election_votes v ON v.election_id = e.id
@@ -290,7 +374,7 @@ func (m *Module) listElections(ctx context.Context) ([]*election, error) {
 
 func (m *Module) getElection(ctx context.Context, id string) (*election, error) {
 	e, err := scanElection(m.db.QueryRowContext(ctx, `
-		SELECT e.id, e.created, e.updated, e.created_by, e.title, e.description, e.question, e.status, e.max_choices,
+		SELECT e.id, e.created, e.updated, e.created_by, e.title, e.description, e.status,
 			COUNT(DISTINCT v.member_id), COUNT(DISTINCT l.id)
 		FROM elections e
 		LEFT JOIN election_votes v ON v.election_id = e.id
@@ -300,15 +384,42 @@ func (m *Module) getElection(ctx context.Context, id string) (*election, error) 
 	if err != nil {
 		return nil, err
 	}
-	e.Options, err = m.getOptions(ctx, id)
+	e.Questions, err = m.getQuestions(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	return e, nil
 }
 
-func (m *Module) getOptions(ctx context.Context, electionID string) ([]*option, error) {
-	rows, err := m.db.QueryContext(ctx, "SELECT id, position, label FROM election_options WHERE election_id = $1 ORDER BY position", electionID)
+func (m *Module) getQuestions(ctx context.Context, electionID string) ([]*question, error) {
+	rows, err := m.db.QueryContext(ctx, "SELECT id, position, question, max_choices FROM election_questions WHERE election_id = $1 ORDER BY position", electionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*question
+	for rows.Next() {
+		q, err := scanQuestion(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, q)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, q := range out {
+		options, err := m.getOptions(ctx, q.ID)
+		if err != nil {
+			return nil, err
+		}
+		q.Options = options
+	}
+	return out, nil
+}
+
+func (m *Module) getOptions(ctx context.Context, questionID int64) ([]*option, error) {
+	rows, err := m.db.QueryContext(ctx, "SELECT id, question_id, position, label FROM election_options WHERE question_id = $1 ORDER BY position", questionID)
 	if err != nil {
 		return nil, err
 	}
@@ -331,11 +442,11 @@ func (m *Module) insertElection(ctx context.Context, e *election) error {
 	}
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `INSERT INTO elections (id, created_by, title, description, question, status, max_choices)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`, e.ID, e.CreatedBy, e.Title, e.Description, e.Question, e.Status, e.MaxChoices)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`, e.ID, e.CreatedBy, e.Title, e.Description, firstQuestionText(e), e.Status, firstMaxChoices(e))
 	if err != nil {
 		return err
 	}
-	if err := replaceOptions(ctx, tx, e); err != nil {
+	if err := replaceQuestions(ctx, tx, e); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -348,7 +459,7 @@ func (m *Module) updateElection(ctx context.Context, e *election) error {
 	}
 	defer tx.Rollback()
 	res, err := tx.ExecContext(ctx, `UPDATE elections SET title = $1, description = $2, question = $3,
-		max_choices = $4, updated = strftime('%s', 'now') WHERE id = $5 AND status = 'draft'`, e.Title, e.Description, e.Question, e.MaxChoices, e.ID)
+		max_choices = $4, updated = strftime('%s', 'now') WHERE id = $5 AND status = 'draft'`, e.Title, e.Description, firstQuestionText(e), firstMaxChoices(e), e.ID)
 	if err != nil {
 		return err
 	}
@@ -359,51 +470,83 @@ func (m *Module) updateElection(ctx context.Context, e *election) error {
 	if n == 0 {
 		return fmt.Errorf("election is not editable")
 	}
-	if err := replaceOptions(ctx, tx, e); err != nil {
+	if err := replaceQuestions(ctx, tx, e); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func replaceOptions(ctx context.Context, tx *sql.Tx, e *election) error {
-	if _, err := tx.ExecContext(ctx, "DELETE FROM election_options WHERE election_id = $1", e.ID); err != nil {
+func replaceQuestions(ctx context.Context, tx *sql.Tx, e *election) error {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM election_questions WHERE election_id = $1", e.ID); err != nil {
 		return err
 	}
-	for i, opt := range e.Options {
-		_, err := tx.ExecContext(ctx, "INSERT INTO election_options (election_id, position, label) VALUES ($1, $2, $3)", e.ID, i+1, opt.Label)
+	for i, q := range e.Questions {
+		res, err := tx.ExecContext(ctx, "INSERT INTO election_questions (election_id, position, question, max_choices) VALUES ($1, $2, $3, $4)", e.ID, i+1, q.Text, q.MaxChoices)
 		if err != nil {
 			return err
+		}
+		questionID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		for j, opt := range q.Options {
+			_, err := tx.ExecContext(ctx, "INSERT INTO election_options (election_id, question_id, position, label) VALUES ($1, $2, $3, $4)", e.ID, questionID, j+1, opt.Label)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
+func firstQuestionText(e *election) string {
+	if len(e.Questions) == 0 {
+		return ""
+	}
+	return e.Questions[0].Text
+}
+
+func firstMaxChoices(e *election) int {
+	if len(e.Questions) == 0 {
+		return 1
+	}
+	return e.Questions[0].MaxChoices
+}
+
 func parseSelections(r *http.Request, e *election) ([]int64, error) {
 	_ = r.ParseForm()
-	allowed := map[int64]bool{}
-	for _, opt := range e.Options {
-		allowed[opt.ID] = true
-	}
 	seen := map[int64]bool{}
 	var selected []int64
-	for _, raw := range r.Form["option"] {
-		id, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || !allowed[id] {
-			return selected, fmt.Errorf("Choose a valid ballot option.")
+	for _, q := range e.Questions {
+		allowed := map[int64]bool{}
+		for _, opt := range q.Options {
+			allowed[opt.ID] = true
 		}
-		if !seen[id] {
-			selected = append(selected, id)
-			seen[id] = true
+		var questionSelected []int64
+		for _, raw := range r.Form[questionFieldName(q)] {
+			id, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil || !allowed[id] {
+				return selected, fmt.Errorf("Choose a valid ballot option.")
+			}
+			if !seen[id] {
+				questionSelected = append(questionSelected, id)
+				selected = append(selected, id)
+				seen[id] = true
+			}
+		}
+		if len(questionSelected) == 0 {
+			return selected, fmt.Errorf("Choose at least one option for every question.")
+		}
+		if len(questionSelected) > q.MaxChoices {
+			return selected, fmt.Errorf("Choose no more than %d options for %q.", q.MaxChoices, q.Text)
 		}
 	}
 	sort.Slice(selected, func(i, j int) bool { return selected[i] < selected[j] })
-	if len(selected) == 0 {
-		return selected, fmt.Errorf("Choose at least one option.")
-	}
-	if len(selected) > e.MaxChoices {
-		return selected, fmt.Errorf("Choose no more than %d options.", e.MaxChoices)
-	}
 	return selected, nil
+}
+
+func questionFieldName(q *question) string {
+	return "question_" + strconv.FormatInt(q.ID, 10)
 }
 
 func (m *Module) currentSelections(ctx context.Context, electionID string, memberID int64) (map[int64]bool, error) {
@@ -437,9 +580,7 @@ func (m *Module) recordVote(ctx context.Context, e *election, memberID int64, se
 	}
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `INSERT INTO election_votes (election_id, member_id, ballot_json, ballot_hash)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT(election_id, member_id) DO UPDATE SET
-			updated = strftime('%s', 'now'), ballot_json = excluded.ballot_json, ballot_hash = excluded.ballot_hash`, e.ID, memberID, ballotJSON, ballotHash)
+		VALUES ($1, $2, $3, $4)`, e.ID, memberID, ballotJSON, ballotHash)
 	if err != nil {
 		return err
 	}
@@ -456,6 +597,11 @@ func (m *Module) recordVote(ctx context.Context, e *election, memberID int64, se
 		return err
 	}
 	return tx.Commit()
+}
+
+func isDuplicateVote(err error) bool {
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && (sqliteErr.Code() == 1555 || sqliteErr.Code() == 2067)
 }
 
 func encodeBallot(electionID string, memberID int64, selected []int64) (string, string, error) {
@@ -490,7 +636,7 @@ func hashParts(parts ...string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func (m *Module) results(ctx context.Context, id string) (*election, []*resultRow, int, error) {
+func (m *Module) results(ctx context.Context, id string) (*election, []*questionResults, int, error) {
 	e, err := m.getElection(ctx, id)
 	if err != nil {
 		return nil, nil, 0, err
@@ -519,13 +665,17 @@ func (m *Module) results(ctx context.Context, id string) (*election, []*resultRo
 	if err := rows.Err(); err != nil {
 		return nil, nil, 0, err
 	}
-	out := make([]*resultRow, 0, len(e.Options))
-	for _, opt := range e.Options {
-		pct := 0
-		if total > 0 {
-			pct = int(float64(counts[opt.ID]) / float64(total) * 100)
+	out := make([]*questionResults, 0, len(e.Questions))
+	for _, q := range e.Questions {
+		qr := &questionResults{Question: q}
+		for _, opt := range q.Options {
+			pct := 0
+			if total > 0 {
+				pct = int(float64(counts[opt.ID]) / float64(total) * 100)
+			}
+			qr.Rows = append(qr.Rows, &resultRow{Option: opt, Count: counts[opt.ID], Pct: pct})
 		}
-		out = append(out, &resultRow{Option: opt, Count: counts[opt.ID], Pct: pct})
+		out = append(out, qr)
 	}
 	return e, out, total, nil
 }
@@ -536,8 +686,10 @@ func (m *Module) voteLog(ctx context.Context, id string) (*election, []*voteLogE
 		return nil, nil, err
 	}
 	labels := map[int64]string{}
-	for _, opt := range e.Options {
-		labels[opt.ID] = opt.Label
+	for _, q := range e.Questions {
+		for _, opt := range q.Options {
+			labels[opt.ID] = q.Text + ": " + opt.Label
+		}
 	}
 	rows, err := m.db.QueryContext(ctx, `SELECT l.id, l.created, l.member_id, m.email, l.ballot_json, l.ballot_hash, l.previous_hash, l.log_hash
 		FROM election_vote_log l

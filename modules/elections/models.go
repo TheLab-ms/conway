@@ -19,24 +19,36 @@ type election struct {
 	CreatedBy   int64
 	Title       string
 	Description string
-	Question    string
 	Status      string
-	MaxChoices  int
-	Options     []*option
+	Questions   []*question
 	VoteCount   int
 	LogCount    int
 }
 
+type question struct {
+	ID         int64
+	Position   int
+	Text       string
+	MaxChoices int
+	Options    []*option
+}
+
 type option struct {
-	ID       int64  `json:"id"`
-	Position int    `json:"position"`
-	Label    string `json:"label"`
+	ID         int64  `json:"id"`
+	QuestionID int64  `json:"question_id"`
+	Position   int    `json:"position"`
+	Label      string `json:"label"`
 }
 
 type resultRow struct {
 	Option *option
 	Count  int
 	Pct    int
+}
+
+type questionResults struct {
+	Question *question
+	Rows     []*resultRow
 }
 
 type voteLogEntry struct {
@@ -105,7 +117,7 @@ type scanner interface{ Scan(...any) error }
 func scanElection(s scanner) (*election, error) {
 	e := &election{}
 	var created, updated int64
-	if err := s.Scan(&e.ID, &created, &updated, &e.CreatedBy, &e.Title, &e.Description, &e.Question, &e.Status, &e.MaxChoices, &e.VoteCount, &e.LogCount); err != nil {
+	if err := s.Scan(&e.ID, &created, &updated, &e.CreatedBy, &e.Title, &e.Description, &e.Status, &e.VoteCount, &e.LogCount); err != nil {
 		return nil, err
 	}
 	e.Created = fromUnix(created)
@@ -113,9 +125,17 @@ func scanElection(s scanner) (*election, error) {
 	return e, nil
 }
 
+func scanQuestion(rows *sql.Rows) (*question, error) {
+	q := &question{}
+	if err := rows.Scan(&q.ID, &q.Position, &q.Text, &q.MaxChoices); err != nil {
+		return nil, err
+	}
+	return q, nil
+}
+
 func scanOption(rows *sql.Rows) (*option, error) {
 	o := &option{}
-	if err := rows.Scan(&o.ID, &o.Position, &o.Label); err != nil {
+	if err := rows.Scan(&o.ID, &o.QuestionID, &o.Position, &o.Label); err != nil {
 		return nil, err
 	}
 	return o, nil
