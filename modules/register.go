@@ -14,6 +14,7 @@ import (
 	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/discordbot"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
+	"github.com/TheLab-ms/conway/modules/elections"
 	"github.com/TheLab-ms/conway/modules/email"
 	"github.com/TheLab-ms/conway/modules/fobapi"
 	"github.com/TheLab-ms/conway/modules/google"
@@ -167,6 +168,11 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	twilioMod := twilio.New(opts.Database, opts.Self, engine.NewEventLogger(opts.Database, "twilio"))
 	a.Add(twilioMod)
 	twilioMod.SetConfigLoader(a.ConfigStore())
+
+	// Elections module: invite-only UUID election links for active members.
+	// Registered before admin so it appears in the settings/config registry.
+	electionsMod := elections.New(opts.Database, opts.Self)
+	a.Add(electionsMod)
 
 	// Admin module added last so it can access the fully-populated config registry
 	adminMod := admin.New(opts.Database, opts.Self, opts.AuthIssuer, engine.NewEventLogger(opts.Database, "admin"))

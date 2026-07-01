@@ -1,0 +1,389 @@
+package elections
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/TheLab-ms/conway/modules/bootstrap"
+)
+
+templ renderElectionsSettingsIntro() {
+	<p class="mb-0">
+		Elections live inside admin settings so they stay out of the main operations navbar.
+		Each ballot gets a private UUID URL; authenticated active members can vote only when the election is open.
+	</p>
+}
+
+templ renderElectionsSettingsError(message string) {
+	<div class="alert alert-danger" role="alert">Unable to load elections: { message }</div>
+}
+
+templ renderElectionsSettingsPanel(elections []*election) {
+	<div class="card mb-4 border-0 shadow-sm">
+		<div class="card-header bg-transparent border-secondary-subtle d-flex flex-wrap align-items-center gap-2">
+			<div>
+				<h2 class="h5 mb-0">Election Management</h2>
+				<div class="small text-secondary">Draft ballots, open private links, and audit vote logs.</div>
+			</div>
+			<a href="/admin/config/elections/new" class="btn btn-success btn-sm ms-auto">New election</a>
+		</div>
+		<div class="card-body">
+			@renderElectionCards(elections)
+		</div>
+	</div>
+}
+
+templ renderAdminElectionList(elections []*election) {
+	@bootstrap.View() {
+		<div class="container my-5">
+			<div class="d-flex flex-wrap align-items-center gap-3 mb-4">
+				<div>
+					<h1 class="mb-1">Elections</h1>
+					<p class="text-secondary mb-0">Settings-only election management for private member ballots.</p>
+				</div>
+				<a href="/admin/config/elections/new" class="btn btn-success ms-auto">New election</a>
+			</div>
+			@renderElectionCards(elections)
+		</div>
+	}
+}
+
+templ renderElectionCards(elections []*election) {
+			if len(elections) == 0 {
+				<div class="card border-0 shadow-sm">
+					<div class="card-body text-center py-5">
+						<div class="display-6 mb-2">No elections yet</div>
+						<p class="text-secondary mb-4">Draft an election, open it when ready, then send members the private voting link.</p>
+						<a href="/admin/config/elections/new" class="btn btn-success">Create the first election</a>
+					</div>
+				</div>
+			} else {
+				<div class="row g-3">
+					for _, e := range elections {
+						<div class="col-md-6 col-xl-4">
+							<a href={ templ.URL(adminElectionPath(e.ID)) } class="card h-100 text-decoration-none border-0 shadow-sm election-card">
+								<div class="card-body">
+									<div class="d-flex align-items-start gap-2 mb-3">
+										<span class={ "badge text-bg-" + statusBadge(e.Status) }>{ statusLabel(e.Status) }</span>
+										<code class="small text-secondary ms-auto">{ shortHash(e.ID) }</code>
+									</div>
+									<h2 class="h5 text-light mb-2">{ e.Title }</h2>
+									<p class="text-secondary mb-3" style="min-height: 3rem;">{ e.Question }</p>
+									<div class="d-flex text-secondary small gap-3">
+										<span>{ strconv.Itoa(e.VoteCount) } current votes</span>
+										<span>{ strconv.Itoa(e.LogCount) } log entries</span>
+									</div>
+								</div>
+								<div class="card-footer bg-transparent border-secondary-subtle text-secondary small">
+									Created { relTime(e.Created) }
+								</div>
+							</a>
+						</div>
+					}
+				</div>
+			}
+}
+
+templ renderAdminElectionEdit(v editView) {
+	@bootstrap.View() {
+		<div class="container my-5" style="max-width: 1120px;">
+			<div class="mb-3">
+				<a href="/admin/config/elections" class="text-secondary text-decoration-none">&larr; Back to election settings</a>
+			</div>
+			<div class="d-flex flex-wrap align-items-start gap-3 mb-4">
+				<div>
+					if v.Election.ID == "" {
+						<h1 class="mb-1">New election</h1>
+						<p class="text-secondary mb-0">Build the ballot as a draft. It will not be visible to members until opened.</p>
+					} else {
+						<div class="d-flex align-items-center gap-2 mb-2">
+							<h1 class="mb-0">{ v.Election.Title }</h1>
+							<span class={ "badge text-bg-" + statusBadge(v.Election.Status) }>{ statusLabel(v.Election.Status) }</span>
+						</div>
+						<p class="text-secondary mb-0">Private election ID <code>{ v.Election.ID }</code></p>
+					}
+				</div>
+				if v.Election.ID != "" {
+					<div class="ms-auto d-flex flex-wrap gap-2">
+						<a href={ templ.URL(adminElectionPath(v.Election.ID) + "/results") } class="btn btn-outline-primary">Results</a>
+						<a href={ templ.URL(adminElectionPath(v.Election.ID) + "/votes") } class="btn btn-outline-secondary">Vote log</a>
+						if v.Election.Status == statusDraft {
+							<form method="post" action={ templ.URL(adminElectionPath(v.Election.ID) + "/open") } class="d-inline">
+								<button type="submit" class="btn btn-success">Open voting</button>
+							</form>
+						}
+						if v.Election.Status == statusOpen {
+							<form method="post" action={ templ.URL(adminElectionPath(v.Election.ID) + "/close") } class="d-inline" onsubmit="return confirm('Close voting for this election?');">
+								<button type="submit" class="btn btn-warning">Close voting</button>
+							</form>
+						}
+					</div>
+				}
+			</div>
+
+			if v.ErrorMessage != "" {
+				<div class="alert alert-danger" role="alert">{ v.ErrorMessage }</div>
+			}
+
+			<div class="row g-4">
+				<div class="col-lg-8">
+					<form method="post" action={ templ.URL(v.Action) }>
+						<div class="card border-0 shadow-sm mb-4">
+							<div class="card-header bg-transparent border-secondary-subtle">
+								<strong>Ballot details</strong>
+							</div>
+							<div class="card-body">
+								<div class="mb-3">
+									<label for="title" class="form-label">Title</label>
+									<input id="title" name="title" type="text" class="form-control form-control-lg" value={ v.Election.Title } maxlength="200" required disabled?={ v.Election.Status != statusDraft }/>
+								</div>
+								<div class="mb-3">
+									<label for="question" class="form-label">Question</label>
+									<input id="question" name="question" type="text" class="form-control" value={ v.Election.Question } maxlength="300" placeholder="Who should represent members on the board?" required disabled?={ v.Election.Status != statusDraft }/>
+								</div>
+								<div class="mb-3">
+									<label for="description" class="form-label">Description</label>
+									<textarea id="description" name="description" class="form-control" rows="4" maxlength="2000" placeholder="Optional context shown above the ballot." disabled?={ v.Election.Status != statusDraft }>{ v.Election.Description }</textarea>
+								</div>
+								<div class="row g-3 align-items-end">
+									<div class="col-sm-5">
+										<label for="max_choices" class="form-label">Max choices per voter</label>
+										<input id="max_choices" name="max_choices" type="number" min="1" class="form-control" value={ strconv.Itoa(v.Election.MaxChoices) } required disabled?={ v.Election.Status != statusDraft }/>
+									</div>
+									<div class="col-sm-7 text-secondary small">
+										Use 1 for a single-choice race, or a higher number for approval-style voting.
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card border-0 shadow-sm mb-4">
+							<div class="card-header bg-transparent border-secondary-subtle d-flex align-items-center">
+								<div>
+									<strong>Options</strong>
+									<div class="small text-secondary">Keep labels concise. Options lock when voting opens.</div>
+								</div>
+								if v.Election.Status == statusDraft {
+					<button type="button" class="btn btn-sm btn-outline-success ms-auto" onclick={ addElectionOption() }>Add option</button>
+								}
+							</div>
+							<div class="card-body" id="options-list">
+								for _, opt := range v.Election.Options {
+									<div class="input-group mb-2">
+										<span class="input-group-text">Option</span>
+										<input type="text" name="option_label" class="form-control" value={ opt.Label } maxlength="200" required disabled?={ v.Election.Status != statusDraft }/>
+										if v.Election.Status == statusDraft {
+											<button type="button" class="btn btn-outline-danger" onclick="this.closest('.input-group').remove()">Remove</button>
+										}
+									</div>
+								}
+							</div>
+						</div>
+
+						if v.Election.Status == statusDraft {
+							<div class="d-flex gap-2">
+								<button type="submit" class="btn btn-primary btn-lg">Save draft</button>
+								<a href="/admin/config/elections" class="btn btn-outline-secondary btn-lg">Cancel</a>
+							</div>
+						} else {
+							<div class="alert alert-secondary">This election is locked because voting has opened.</div>
+						}
+					</form>
+				</div>
+
+				<div class="col-lg-4">
+					<div class="card border-0 shadow-sm mb-4">
+						<div class="card-body">
+							<h2 class="h5">Workflow</h2>
+							<ol class="list-group list-group-numbered list-group-flush">
+								<li class="list-group-item bg-transparent px-0">Draft and verify the ballot.</li>
+								<li class="list-group-item bg-transparent px-0">Open voting to activate the private link.</li>
+								<li class="list-group-item bg-transparent px-0">Send the link to authenticated active members.</li>
+								<li class="list-group-item bg-transparent px-0">Close voting and review results.</li>
+							</ol>
+						</div>
+					</div>
+					if v.ShareURL != "" {
+						<div class="card border-0 shadow-sm">
+							<div class="card-body">
+								<h2 class="h5">Private voting link</h2>
+								<p class="text-secondary small">This link is not listed anywhere for members. It starts working after the election is opened.</p>
+								<div class="input-group">
+									<input id="share-url" type="text" class="form-control font-monospace" value={ v.ShareURL } readonly/>
+					<button id="copy-link-btn" type="button" class="btn btn-outline-primary" onclick={ copyElectionLink() }>Copy</button>
+								</div>
+								<a href={ templ.URL("/elections/" + v.Election.ID) } class="btn btn-sm btn-outline-secondary mt-3">Preview voter page</a>
+							</div>
+						</div>
+					}
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ renderMemberBallot(e *election, current map[int64]bool) {
+	@renderMemberBallotWithError(e, current, "")
+}
+
+templ renderMemberBallotWithError(e *election, current map[int64]bool, errorMessage string) {
+	@bootstrap.View() {
+		<div class="container my-5" style="max-width: 820px;">
+			<div class="card border-0 shadow-lg overflow-hidden">
+				<div class="card-header bg-success text-dark p-4">
+					<div class="d-flex align-items-center gap-2 mb-2">
+						<span class="badge text-bg-dark">Member election</span>
+						<span class={ "badge text-bg-" + statusBadge(e.Status) }>{ statusLabel(e.Status) }</span>
+					</div>
+					<h1 class="mb-0 text-dark">{ e.Title }</h1>
+				</div>
+				<div class="card-body p-4 p-md-5">
+					<h2 class="h4 mb-3">{ e.Question }</h2>
+					if e.Description != "" {
+						<p class="text-secondary" style="white-space: pre-wrap;">{ e.Description }</p>
+					}
+					if errorMessage != "" {
+						<div class="alert alert-danger" role="alert">{ errorMessage }</div>
+					}
+					if e.Status == statusClosed {
+						<div class="alert alert-secondary">This election is closed. Your submitted vote is shown below if you voted.</div>
+					}
+					if e.Status == statusOpen && len(current) > 0 {
+						<div class="alert alert-success">Your vote is recorded. Submit again before voting closes to replace it.</div>
+					}
+					<form method="post" action={ templ.URL("/elections/" + e.ID + "/vote") }>
+						<div class="list-group mb-4">
+							for _, opt := range e.Options {
+								<label class="list-group-item list-group-item-action d-flex align-items-center gap-3 py-3" style="cursor: pointer;">
+									<input class="form-check-input mt-0" type={ inputType(e) } name="option" value={ strconv.FormatInt(opt.ID, 10) } checked?={ current[opt.ID] } disabled?={ e.Status != statusOpen }/>
+									<span class="fs-5">{ opt.Label }</span>
+								</label>
+							}
+						</div>
+						<div class="d-flex flex-wrap align-items-center gap-3">
+							if e.Status == statusOpen {
+								<button type="submit" class="btn btn-success btn-lg px-4">Submit vote</button>
+								<span class="text-secondary small">Choose up to { strconv.Itoa(e.MaxChoices) } { choiceNoun(e.MaxChoices) }.</span>
+							} else {
+								<button type="button" class="btn btn-secondary btn-lg" disabled>Voting closed</button>
+							}
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ renderAdminElectionResults(e *election, rows []*resultRow, total int) {
+	@bootstrap.View() {
+		<div class="container my-5" style="max-width: 960px;">
+			<div class="mb-3"><a href={ templ.URL(adminElectionPath(e.ID)) } class="text-secondary text-decoration-none">&larr; Back to election</a></div>
+			<div class="d-flex align-items-center mb-4">
+				<div>
+					<h1 class="mb-1">Results</h1>
+					<p class="text-secondary mb-0">{ e.Title } · { strconv.Itoa(total) } voters</p>
+				</div>
+				<span class={ "badge text-bg-" + statusBadge(e.Status) + " ms-auto" }>{ statusLabel(e.Status) }</span>
+			</div>
+			<div class="card border-0 shadow-sm">
+				<div class="card-body p-4">
+					for _, row := range rows {
+						<div class="mb-4">
+							<div class="d-flex justify-content-between mb-2">
+								<strong>{ row.Option.Label }</strong>
+								<span>{ strconv.Itoa(row.Count) } votes</span>
+							</div>
+							<div class="progress" style="height: 1rem;">
+								<div class="progress-bar bg-success" role="progressbar" style={ fmt.Sprintf("width: %d%%", row.Pct) } aria-valuenow={ strconv.Itoa(row.Pct) } aria-valuemin="0" aria-valuemax="100"></div>
+							</div>
+						</div>
+					}
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ renderAdminElectionVotes(e *election, entries []*voteLogEntry) {
+	@bootstrap.View() {
+		<div class="container my-5">
+			<div class="mb-3"><a href={ templ.URL(adminElectionPath(e.ID)) } class="text-secondary text-decoration-none">&larr; Back to election</a></div>
+			<div class="d-flex flex-wrap align-items-center gap-3 mb-4">
+				<div>
+					<h1 class="mb-1">Vote log</h1>
+					<p class="text-secondary mb-0">Append-only log for { e.Title }. The hash chain makes edits detectable.</p>
+				</div>
+				<a href={ templ.URL(adminElectionPath(e.ID) + "/results") } class="btn btn-outline-primary ms-auto">Results</a>
+			</div>
+			<div class="card border-0 shadow-sm">
+				if len(entries) == 0 {
+					<div class="card-body text-center text-secondary py-5">No votes recorded yet.</div>
+				} else {
+					<div class="table-responsive">
+						<table class="table table-hover align-middle mb-0">
+							<thead>
+								<tr>
+									<th>When</th>
+									<th>Member</th>
+									<th>Selection</th>
+									<th>Ballot hash</th>
+									<th>Log hash</th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, entry := range entries {
+									<tr>
+										<td class="text-secondary small">{ relTime(entry.Created) }</td>
+										<td><a href={ templ.URL("/admin/members/" + strconv.FormatInt(entry.MemberID, 10)) }>{ entry.MemberEmail }</a></td>
+										<td>{ entry.Selections }</td>
+										<td><code class="small">{ shortHash(entry.BallotHash) }</code></td>
+										<td><code class="small">{ shortHash(entry.LogHash) }</code></td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+func shortHash(s string) string {
+	if len(s) <= 12 {
+		return s
+	}
+	return s[:12]
+}
+
+func inputType(e *election) string {
+	if e.MaxChoices == 1 {
+		return "radio"
+	}
+	return "checkbox"
+}
+
+func choiceNoun(n int) string {
+	if n == 1 {
+		return "choice"
+	}
+	return "choices"
+}
+
+script copyElectionLink() {
+	navigator.clipboard.writeText(document.getElementById('share-url').value).then(() => {
+		const b = document.getElementById('copy-link-btn');
+		b.textContent = 'Copied';
+		setTimeout(() => b.textContent = 'Copy', 1400);
+	});
+}
+
+script addElectionOption() {
+	const list = document.getElementById('options-list');
+	const row = document.createElement('div');
+	row.className = 'input-group mb-2';
+	row.innerHTML = '<span class="input-group-text">Option</span><input type="text" name="option_label" class="form-control" maxlength="200" placeholder="New option" required><button type="button" class="btn btn-outline-danger" onclick="this.closest(\'.input-group\').remove()">Remove</button>';
+	list.appendChild(row);
+	row.querySelector('input').focus();
+}
