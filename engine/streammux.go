@@ -69,6 +69,11 @@ func (s *StreamMux) Unsubscribe(ch chan []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// If the channel is no longer tracked it was already closed and
+	// removed by broadcast's deferred cleanup or by Stop().
+	if _, ok := s.clients[ch]; !ok {
+		return
+	}
 	delete(s.clients, ch)
 	close(ch)
 
