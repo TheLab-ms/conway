@@ -149,6 +149,27 @@ func (m *Module) handleTableColumns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate table name against actual tables to prevent SQL injection
+	// via PRAGMA table_info.
+	tables, err := engine.AvailableTables(m.db)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return
+	}
+	valid := false
+	for _, t := range tables {
+		if t == table {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return
+	}
+
 	cols, err := tableColumnsInfo(m.db, table)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
