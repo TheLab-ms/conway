@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/TheLab-ms/conway/engine"
@@ -67,6 +68,7 @@ func (p PrinterStatus) OwnerDiscordHandle() string {
 }
 
 type Module struct {
+	mu           sync.RWMutex
 	db           *sql.DB
 	eventLogger  *engine.EventLogger
 	configLoader *config.Loader[Config]
@@ -140,7 +142,10 @@ func (m *Module) loadPrinterStates(ctx context.Context) ([]PrinterStatus, error)
 	if m.db == nil {
 		return nil, nil
 	}
-	ttlSeconds := int64(m.pollInterval.Seconds()) * 3
+	m.mu.RLock()
+	pollInterval := m.pollInterval
+	m.mu.RUnlock()
+	ttlSeconds := int64(pollInterval.Seconds()) * 3
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT serial_number, printer_name, gcode_file, subtask_name, gcode_state,
 		       error_code, remaining_print_time, print_percent_done, job_finished_timestamp, stop_requested
@@ -191,7 +196,11 @@ func (m *Module) stopPrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("stop requested", "serial", serial, "printer", m.serialToName[serial])
+	m.mu.RLock()
+	printerName := m.serialToName[serial]
+	m.mu.RUnlock()
+
+	slog.Info("stop requested", "serial", serial, "printer", printerName)
 
 	// Redirect back to machines page
 	http.Redirect(w, r, "/machines", http.StatusSeeOther)
@@ -210,7 +219,9 @@ func (m *Module) renderView(w http.ResponseWriter, r *http.Request) {
 func (m *Module) serveMJPEGStream(w http.ResponseWriter, r *http.Request) {
 	serial := r.PathValue("serial")
 
+	m.mu.RLock()
 	mux, ok := m.streams[serial]
+	m.mu.RUnlock()
 	if !ok {
 		engine.ClientError(w, "Not Found", "Printer not found", http.StatusNotFound)
 		return
@@ -361,6 +372,9 @@ func (m *Module) reloadConfig(ctx context.Context) {
 		return
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.configVersion = version
 
 	// Apply poll interval
@@ -413,11 +427,15 @@ func (m *Module) reloadConfig(ctx context.Context) {
 
 // GetConfiguredPrinterCount returns the number of configured printers.
 func (m *Module) GetConfiguredPrinterCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return len(m.configs)
 }
 
 // SetTestStream injects a stream multiplexer for the given serial. TEST-ONLY hook;
 // production code populates this map from the bambu config.
 func (m *Module) SetTestStream(serial string, source func(ctx context.Context) (io.ReadCloser, error)) {
+	m.mu.Lock()
 	m.streams[serial] = engine.NewStreamMux(source)
+	m.mu.Unlock()
 }
