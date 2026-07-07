@@ -38,25 +38,52 @@ func NewStreamMux(source func(ctx context.Context) (io.ReadCloser, error)) *Stre
 // If the source fails to start, returns nil.
 func (s *StreamMux) Subscribe() chan []byte {
 	s.mu.Lock()
+
+	// Fast path: source is already running.
+	if s.running {
+		ch := make(chan []byte, 30)
+		s.clients[ch] = struct{}{}
+		s.mu.Unlock()
+		return ch
+	}
+
+	// Prepare to start the source. Set s.cancel before releasing the
+	// lock so that Stop() can cancel the context while source() runs.
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	myGen := s.gen + 1
+	s.mu.Unlock()
+
+	reader, err := s.source(ctx)
+	if err != nil {
+		slog.Error("streammux: failed to start source", "error", err)
+		cancel()
+		return nil
+	}
+
+	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Start source if this is the first client
-	if !s.running {
-		ctx, cancel := context.WithCancel(context.Background())
-		s.cancel = cancel
-		s.gen++
-		myGen := s.gen
-
-		reader, err := s.source(ctx)
-		if err != nil {
-			slog.Error("streammux: failed to start source", "error", err)
-			cancel()
-			return nil
-		}
-
-		s.running = true
-		go s.broadcast(ctx, reader, myGen)
+	// Stop() was called while source() was running — our cancel was
+	// cleared, so abort.
+	if s.cancel == nil {
+		cancel()
+		reader.Close()
+		return nil
 	}
+
+	// Another Subscribe() already started its own broadcast — use it.
+	if s.running {
+		cancel()
+		reader.Close()
+		ch := make(chan []byte, 30)
+		s.clients[ch] = struct{}{}
+		return ch
+	}
+
+	s.gen = myGen
+	s.running = true
+	go s.broadcast(ctx, reader, myGen)
 
 	ch := make(chan []byte, 30)
 	s.clients[ch] = struct{}{}
