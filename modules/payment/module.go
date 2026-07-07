@@ -129,7 +129,12 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	sc := stripeClient(cfg.apiKey)
 
 	// Get the latest state of the customer and subscription Stripe API objects
-	subID := event.Data.Object["id"].(string)
+	subID, ok := event.Data.Object["id"].(string)
+	if !ok {
+		m.eventLogger.LogEvent(r.Context(), 0, "WebhookError", "", "", false, "missing or invalid subscription id in webhook event")
+		engine.SystemError(w, "invalid webhook payload")
+		return
+	}
 	sub, err := sc.Subscriptions.Get(subID, &stripe.SubscriptionParams{})
 	if err != nil {
 		m.eventLogger.LogEvent(r.Context(), 0, "APIError", "", "", false, "subscription.Get: "+err.Error())
