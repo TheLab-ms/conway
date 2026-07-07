@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -32,6 +33,9 @@ read:
 	keyPEM, err := os.ReadFile(file)
 	if err == nil {
 		block, _ := pem.Decode(keyPEM)
+		if block == nil {
+			panic(fmt.Errorf("no PEM block found in key file %s", file))
+		}
 		t.Key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 		if err != nil {
 			panic(err)
