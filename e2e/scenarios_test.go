@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -732,6 +733,40 @@ func TestJourney_AdminManagesMember(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(99999), fobID)
 	assert.Equal(t, "Updated by admin in E2E test", notes)
+}
+
+// TestJourney_AdminFobConflict verifies that an admin cannot assign a fob_id
+// that is already owned by another member. The form should show a friendly
+// error instead of a raw database error.
+func TestJourney_AdminFobConflict(t *testing.T) {
+	t.Parallel()
+	env, _, page := setupAdminTest(t)
+
+	const fobID int64 = 77777
+	seedMember(t, env, "fob-conflict-owner@example.com", WithConfirmed(), WithFobID(fobID))
+	targetID := seedMember(t, env, "fob-conflict-target@example.com", WithConfirmed())
+
+	// Navigate to the target member's detail page
+	_, err := page.Goto(env.baseURL + "/admin/members/" + strconv.FormatInt(targetID, 10))
+	require.NoError(t, err)
+
+	detail := NewAdminMemberDetailPage(t, page, env.baseURL)
+	detail.FillFobID(strconv.FormatInt(fobID, 10))
+	detail.SubmitBasicsForm()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// The page should show the conflict error, not a raw 500
+	body, err := page.Content()
+	require.NoError(t, err)
+	assert.Contains(t, strings.ToLower(body), "already assigned",
+		"admin should see a friendly conflict error, not a raw database error")
+
+	// The target member's fob_id should NOT have been changed
+	var stored sql.NullInt64
+	require.NoError(t, env.db.QueryRow("SELECT fob_id FROM members WHERE id = ?", targetID).Scan(&stored))
+	assert.False(t, stored.Valid, "target member fob_id must remain unset after conflict")
 }
 
 // TestJourney_MultipleMembers tests admin managing multiple members in sequence

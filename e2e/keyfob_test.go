@@ -252,3 +252,33 @@ func TestKeyfob_KioskPage(t *testing.T) {
 		t.Fatalf("unexpected status %d for /kiosk: %s", resp.StatusCode, bodyStr)
 	}
 }
+
+// TestKeyfob_BindFobAlreadyAssigned verifies that binding a fob that is
+// already assigned to another member returns a friendly 409 error.
+func TestKeyfob_BindFobAlreadyAssigned(t *testing.T) {
+	t.Parallel()
+	env := NewTestEnv(t)
+
+	const fobID int64 = 55555
+	seedMember(t, env, "fob-owner@example.com", WithConfirmed(), WithFobID(fobID))
+
+	memberID := seedMember(t, env, "fob-conflict@example.com", WithConfirmed())
+	tok := signFobToken(t, env, strconv.FormatInt(fobID, 10), time.Now().Add(time.Minute))
+	authTok := generateAuthToken(t, env, memberID)
+
+	req, err := http.NewRequest("GET", bindURL(env, tok), nil)
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: "token", Value: authTok})
+
+	resp, err := noRedirectClient().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, strings.ToLower(string(body)), "already assigned")
+
+	var stored sql.NullInt64
+	require.NoError(t, env.db.QueryRow("SELECT fob_id FROM members WHERE id = ?", memberID).Scan(&stored))
+	assert.False(t, stored.Valid, "fob_id must remain unset when fob is already claimed")
+}

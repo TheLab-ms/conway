@@ -127,6 +127,17 @@ func (m *Module) handleBindKeyfob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var existingOwner int64
+	err = m.db.QueryRowContext(r.Context(), `SELECT id FROM members WHERE fob_id = $1 AND id != $2`, fobID, user.ID).Scan(&existingOwner)
+	if err == nil {
+		engine.ClientError(w, "Keyfob Already Assigned", "This keyfob is already assigned to another member. Please see an admin to have it reassigned.", 409)
+		return
+	}
+	if err != sql.ErrNoRows {
+		engine.SystemError(w, err.Error())
+		return
+	}
+
 	_, err = m.db.ExecContext(r.Context(), `UPDATE members SET fob_id = $1 WHERE id = $2 AND (fob_id IS NULL OR fob_id != $1)`, fobID, user.ID)
 	if err != nil {
 		engine.SystemError(w, err.Error())

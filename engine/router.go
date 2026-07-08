@@ -6,6 +6,7 @@ import (
 	"embed"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -127,6 +128,10 @@ func (f *FormHandler) Handler(db *sql.DB) http.HandlerFunc {
 
 		_, err := db.ExecContext(r.Context(), f.Query, args...)
 		if err != nil {
+			if strings.Contains(err.Error(), "UNIQUE constraint failed: members.fob_id") {
+				ClientError(w, "Keyfob Already Assigned", "This keyfob is already assigned to another member. Please remove it from the other member first.", 409)
+				return
+			}
 			SystemError(w, err.Error())
 			return
 		}
