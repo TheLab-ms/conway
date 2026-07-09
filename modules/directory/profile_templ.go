@@ -277,7 +277,17 @@ func renderProfile(profile *ProfileData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, " onchange=\"updatePreviewHidden(this.checked)\"> <label class=\"form-check-label\" for=\"directory_hidden\">Hide me from the member directory</label></div><p class=\"text-muted small mt-2 mb-0\">When enabled, your profile won't appear in the member directory shown to other members. Your account, key fob access, and Discord membership are unaffected.</p></div></div><div class=\"d-flex gap-2\"><button type=\"submit\" class=\"btn btn-primary\">Save Changes</button> <a href=\"/directory\" class=\"btn btn-outline-secondary\">Cancel</a></div></form></div><script>\n\t\t\tfunction updatePreviewPronouns(value) {\n\t\t\t\tconst preview = document.getElementById('preview-pronouns');\n\t\t\t\tpreview.textContent = value.trim();\n\t\t\t}\n\t\t\tfunction updatePreviewBio(value) {\n\t\t\t\tconst preview = document.getElementById('preview-bio');\n\t\t\t\tpreview.textContent = value.trim();\n\t\t\t}\n\t\t\tfunction updatePreviewHidden(checked) {\n\t\t\t\tconst card = document.getElementById('preview-card');\n\t\t\t\tconst badge = document.getElementById('preview-hidden-badge');\n\t\t\t\tif (checked) {\n\t\t\t\t\tcard.style.opacity = '0.45';\n\t\t\t\t\tbadge.style.display = '';\n\t\t\t\t} else {\n\t\t\t\t\tcard.style.opacity = '1';\n\t\t\t\t\tbadge.style.display = 'none';\n\t\t\t\t}\n\t\t\t}\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, " onchange=\"updatePreviewHidden(this.checked)\"> <label class=\"form-check-label\" for=\"directory_hidden\">Hide me from the member directory</label></div><p class=\"text-muted small mt-2 mb-0\">When enabled, your profile won't appear in the member directory shown to other members. Your account, key fob access, and Discord membership are unaffected.</p></div></div><div class=\"card mb-4\"><div class=\"card-header\"><strong>Discord Notifications</strong></div><div class=\"card-body\"><div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" role=\"switch\" id=\"discord_checkin_notify\" name=\"discord_checkin_notify\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if profile.DiscordCheckinNotify {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, " checked")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "> <label class=\"form-check-label\" for=\"discord_checkin_notify\">Post to Discord when I badge in</label></div><p class=\"text-muted small mt-2 mb-0\">When enabled, a message is posted to a Discord channel each time you badge into the makerspace. To avoid spam, only one notification is sent per 4 hours.</p></div></div><div class=\"d-flex gap-2\"><button type=\"submit\" class=\"btn btn-primary\">Save Changes</button> <a href=\"/directory\" class=\"btn btn-outline-secondary\">Cancel</a></div></form></div><script>\n\t\t\tfunction updatePreviewPronouns(value) {\n\t\t\t\tconst preview = document.getElementById('preview-pronouns');\n\t\t\t\tpreview.textContent = value.trim();\n\t\t\t}\n\t\t\tfunction updatePreviewBio(value) {\n\t\t\t\tconst preview = document.getElementById('preview-bio');\n\t\t\t\tpreview.textContent = value.trim();\n\t\t\t}\n\t\t\tfunction updatePreviewHidden(checked) {\n\t\t\t\tconst card = document.getElementById('preview-card');\n\t\t\t\tconst badge = document.getElementById('preview-hidden-badge');\n\t\t\t\tif (checked) {\n\t\t\t\t\tcard.style.opacity = '0.45';\n\t\t\t\t\tbadge.style.display = '';\n\t\t\t\t} else {\n\t\t\t\t\tcard.style.opacity = '1';\n\t\t\t\t\tbadge.style.display = 'none';\n\t\t\t\t}\n\t\t\t}\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -335,7 +345,7 @@ func previewPlaceholderAvatar() templ.Component {
 			templ_7745c5c3_Var14 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<div class=\"rounded-circle d-flex align-items-center justify-content-center\" style=\"width: 96px; height: 96px; background-color: #2a2a2a;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"48\" height=\"48\" fill=\"#666666\" viewBox=\"0 0 16 16\"><path d=\"M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z\"></path></svg></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div class=\"rounded-circle d-flex align-items-center justify-content-center\" style=\"width: 96px; height: 96px; background-color: #2a2a2a;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"48\" height=\"48\" fill=\"#666666\" viewBox=\"0 0 16 16\"><path d=\"M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z\"></path></svg></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

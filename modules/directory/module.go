@@ -31,16 +31,17 @@ type DirectoryMember struct {
 
 // ProfileData represents the current user's profile for editing.
 type ProfileData struct {
-	ID                int64
-	Name              string  // Original name from signup
-	NameOverride      *string // Custom display name
-	Pronouns          string
-	Bio               string
-	HasProfilePicture bool
-	HasDiscordAvatar  bool
-	DiscordUsername   string
-	Leadership        bool
-	DirectoryHidden   bool // If true, hide this member from the directory listing
+	ID                  int64
+	Name                string  // Original name from signup
+	NameOverride        *string // Custom display name
+	Pronouns            string
+	Bio                 string
+	HasProfilePicture   bool
+	HasDiscordAvatar    bool
+	DiscordUsername     string
+	Leadership          bool
+	DirectoryHidden     bool // If true, hide this member from the directory listing
+	DiscordCheckinNotify bool // If true, post a Discord message when this member badges in
 }
 
 type Module struct {
@@ -56,6 +57,8 @@ func New(db *sql.DB) *Module {
 	db.Exec(`ALTER TABLE members ADD COLUMN pronouns TEXT`)
 	// Add directory_hidden flag (opt-out of member directory) if it doesn't exist
 	db.Exec(`ALTER TABLE members ADD COLUMN directory_hidden INTEGER DEFAULT 0`)
+	// Add discord_checkin_notify flag (opt-in to badge-in Discord notifications)
+	db.Exec(`ALTER TABLE members ADD COLUMN discord_checkin_notify INTEGER DEFAULT 0`)
 	return &Module{db: db}
 }
 
@@ -286,7 +289,8 @@ func (m *Module) queryProfile(ctx context.Context, userID int64) (*ProfileData, 
 			discord_avatar IS NOT NULL AND LENGTH(discord_avatar) > 0 as has_discord_avatar,
 			COALESCE(discord_username, '') as discord_username,
 			leadership,
-			COALESCE(directory_hidden, 0) as directory_hidden
+			COALESCE(directory_hidden, 0) as directory_hidden,
+			COALESCE(discord_checkin_notify, 0) as discord_checkin_notify
 		FROM members
 		WHERE id = ?`,
 		userID).Scan(
@@ -300,6 +304,7 @@ func (m *Module) queryProfile(ctx context.Context, userID int64) (*ProfileData, 
 		&profile.DiscordUsername,
 		&profile.Leadership,
 		&profile.DirectoryHidden,
+		&profile.DiscordCheckinNotify,
 	)
 	return profile, err
 }
@@ -315,6 +320,7 @@ func (m *Module) handleEditProfile(w http.ResponseWriter, r *http.Request) {
 	pronouns := strings.TrimSpace(r.FormValue("pronouns"))
 	bio := strings.TrimSpace(r.FormValue("bio"))
 	directoryHidden := r.FormValue("directory_hidden") == "on"
+	discordCheckinNotify := r.FormValue("discord_checkin_notify") == "on"
 
 	// Validate pronouns length
 	if len(pronouns) > 50 {
@@ -333,9 +339,10 @@ func (m *Module) handleEditProfile(w http.ResponseWriter, r *http.Request) {
 		UPDATE members SET
 			pronouns = CASE WHEN $1 = '' THEN NULL ELSE $1 END,
 			bio = CASE WHEN $2 = '' THEN NULL ELSE $2 END,
-			directory_hidden = $3
-		WHERE id = $4`,
-		pronouns, bio, directoryHidden, userID)
+			directory_hidden = $3,
+			discord_checkin_notify = $4
+		WHERE id = $5`,
+		pronouns, bio, directoryHidden, discordCheckinNotify, userID)
 
 	if engine.HandleError(w, err) {
 		return

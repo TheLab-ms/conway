@@ -10,6 +10,7 @@ import (
 	"github.com/TheLab-ms/conway/engine/config"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
+	"github.com/TheLab-ms/conway/modules/badgenotify"
 	"github.com/TheLab-ms/conway/modules/directory"
 	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/discordbot"
@@ -129,6 +130,12 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	discordBotMod := discordbot.New(opts.Database, engine.NewEventLogger(opts.Database, "discordbot"), discordWebhookMod)
 	discordBotMod.SetConfigLoader(a.ConfigStore())
 	a.Add(discordBotMod)
+
+	// Badge-in notification bot: posts a Discord message when an opted-in
+	// member badges into the makerspace, rate-limited to once per 4 hours.
+	badgeNotifyMod := badgenotify.New(opts.Database, discordWebhookMod)
+	badgeNotifyMod.SetConfigLoader(a.ConfigStore())
+	a.Add(badgeNotifyMod)
 
 	machinesMod := machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu"))
 
