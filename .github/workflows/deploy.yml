@@ -1,0 +1,54 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Generate templ files
+        run: go generate ./modules/...
+
+      - name: Build binary
+        run: make build
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          
+          # Verify server fingerprint if secret is set
+          if [ -n "${{ secrets.DEPLOY_HOST_KEY }}" ]; then
+            ssh-keyscan -H foobar.thelab.ms >> ~/.ssh/known_hosts 2>/dev/null
+            ssh-keygen -lf ~/.ssh/known_hosts | grep -q "${{ secrets.DEPLOY_HOST_KEY }}" || \
+              (echo "Server fingerprint verification failed!" && exit 1)
+          else
+            ssh-keyscan -H foobar.thelab.ms >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+          ansible-galaxy collection install containers.podman
+
+      - name: Deploy with Ansible
+        run: |
+          cd ansible
+          ansible-playbook -i ansible-inventory playbooks/conway.yaml \
+            --private-key=~/.ssh/deploy_key
