@@ -1,11 +1,14 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Tests", "Stripe E2E Tests"]
+    types: [completed]
     branches: [main]
 
 jobs:
   deploy:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment: Prod
 
