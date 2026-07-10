@@ -118,7 +118,7 @@ jobs:
           fi
 
       - name: Backup database
-        run: ssh -i ~/.ssh/deploy_key foobar.thelab.ms "cp /opt/conway/conway.sqlite3 /opt/conway/conway.sqlite3.bak"
+        run: ssh -i ~/.ssh/deploy_key cto@foobar.thelab.ms "cp /opt/conway/conway.sqlite3 /opt/conway/conway.sqlite3.bak"
 
       - name: Install Ansible
         run: |
