@@ -4,6 +4,13 @@
 - name: foobar.thelab.ms
   hosts: foobar.thelab.ms
   tasks:
+    - name: Backup database
+      ansible.builtin.copy:
+        src: /opt/conway/conway.sqlite3
+        dest: /opt/conway/conway.sqlite3.bak
+        remote_src: true
+        force: false
+
     - name: Install packages
       package:
         name: ["podman"]

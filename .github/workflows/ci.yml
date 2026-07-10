@@ -117,9 +117,6 @@ jobs:
             ssh-keyscan -H foobar.thelab.ms >> ~/.ssh/known_hosts 2>/dev/null
           fi
 
-      - name: Backup database
-        run: ssh -i ~/.ssh/deploy_key cto@foobar.thelab.ms "cp /opt/conway/conway.sqlite3 /opt/conway/conway.sqlite3.bak"
-
       - name: Install Ansible
         run: |
           sudo apt-get update
