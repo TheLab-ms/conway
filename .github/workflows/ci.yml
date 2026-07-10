@@ -117,11 +117,21 @@ jobs:
             ssh-keyscan -H foobar.thelab.ms >> ~/.ssh/known_hosts 2>/dev/null
           fi
 
+      - name: Cache Ansible
+        id: cache-ansible
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: ansible-v1-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
       - name: Install Ansible
+        if: steps.cache-ansible.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible
+          pip3 install --user ansible-core
           ansible-galaxy collection install containers.podman
+
+      - name: Add Ansible to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Deploy with Ansible
         run: |
