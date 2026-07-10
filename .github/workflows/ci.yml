@@ -28,7 +28,7 @@ jobs:
       run: go generate ./modules/...
 
     - name: Run tests
-      run: go test ./... -v -skip TestStripe_
+      run: go test $(go list ./... | grep -v /e2e) -v
 
   stripe-e2e:
     runs-on: ubuntu-latest
@@ -41,11 +41,29 @@ jobs:
       with:
         go-version-file: 'go.mod'
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
     - name: Download dependencies
       run: go mod download
 
     - name: Generate templ files
       run: go generate ./modules/...
+
+    - name: Install Playwright driver via npm
+      run: |
+        npm install playwright-core@1.60.0
+        PW_DIR="$PWD/pw-driver"
+        mkdir -p "$PW_DIR/package"
+        cp -r node_modules/playwright-core/* "$PW_DIR/package/"
+        ln -s "$(which node)" "$PW_DIR/node"
+
+    - name: Install Chromium
+      run: node pw-driver/package/cli.js install chromium
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/pw-browsers
 
     - name: Install Stripe CLI
       run: |
@@ -59,6 +77,8 @@ jobs:
       env:
         STRIPE_TEST_KEY: ${{ secrets.CONWAY_STRIPE_KEY }}
         STRIPE_TEST_WEBHOOK_KEY: ${{ secrets.CONWAY_STRIPE_WEBHOOK_KEY }}
+        PLAYWRIGHT_DRIVER_PATH: ${{ github.workspace }}/pw-driver
+        PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/pw-browsers
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
