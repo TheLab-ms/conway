@@ -25,6 +25,10 @@ type Config struct {
 	ApprovalBotEnabled   bool   `json:"approval_bot_enabled" config:"label=Enabled,section=approvalbot,help=When on, a member requesting a discount posts a Discord message with an Approve button. Inbound interactions are still verified regardless."`
 	LeadershipChannelID  string `json:"leadership_channel_id" config:"label=Leadership Channel ID,section=approvalbot,help=Right-click the leadership channel in Discord (Developer Mode on) and choose Copy Channel ID. Discount requests are posted here by the bot. Requires the Bot Token above."`
 	ApplicationPublicKey string `json:"application_public_key" config:"label=Application Public Key,section=approvalbot,help=Hex-encoded Ed25519 public key from your Discord application's General Information page. Used to verify inbound button interactions."`
+
+	// Badge-In Notifications
+	BadgeNotifyEnabled   bool   `json:"badge_notify_enabled" config:"label=Enabled,section=badgenotify,help=When on, opted-in members trigger a Discord message when they badge into the makerspace."`
+	BadgeNotifyChannelID string `json:"badge_notify_channel_id" config:"label=Channel ID,section=badgenotify,help=Right-click a Discord channel (Developer Mode on) and choose Copy Channel ID. Badge-in notifications are posted here by the bot."`
 }
 
 // Validate validates the Discord configuration.
@@ -43,6 +47,9 @@ func (c *Config) Validate() error {
 		if len(key) != 32 {
 			return fmt.Errorf("application public key must decode to 32 bytes (got %d)", len(key))
 		}
+	}
+	if c.BadgeNotifyEnabled && c.BadgeNotifyChannelID == "" {
+		return fmt.Errorf("channel ID is required when badge-in notifications are enabled")
 	}
 	return nil
 }
@@ -73,6 +80,11 @@ func (m *Module) ConfigSpec() config.Spec {
 				Name:        "approvalbot",
 				Title:       "Discount Approval Bot",
 				Description: approvalBotSectionDescription(m.self.String()),
+			},
+			{
+				Name:        "badgenotify",
+				Title:       "Badge-In Notifications",
+				Description: badgeNotifySectionDescription(),
 			},
 		},
 		Order:    10,

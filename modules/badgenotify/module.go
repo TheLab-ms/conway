@@ -9,11 +9,9 @@
 //   - A polling worker drains the queue: for each member it checks whether
 //     the last notification was less than 4 hours ago. If not, it builds a
 //     Discord embed and forwards it to discordwebhook for delivery.
-//   - The config (stored in badgenotify_config) controls whether the feature
+//   - The config (stored in discord_config) controls whether the feature
 //     is enabled and which channel receives the messages.
 package badgenotify
-
-//go:generate go run github.com/a-h/templ/cmd/templ generate
 
 import (
 	"context"
@@ -25,6 +23,7 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/config"
+	"github.com/TheLab-ms/conway/modules/discord"
 	"github.com/TheLab-ms/conway/modules/discordwebhook"
 )
 
@@ -54,7 +53,7 @@ const (
 type Module struct {
 	db           *sql.DB
 	webhooks     discordwebhook.MessageQueuer
-	configLoader *config.Loader[Config]
+	configLoader *config.Loader[discord.Config]
 }
 
 // New creates the module and runs migrations.
@@ -63,9 +62,10 @@ func New(db *sql.DB, webhooks discordwebhook.MessageQueuer) *Module {
 	return &Module{db: db, webhooks: webhooks}
 }
 
-// SetConfigLoader binds the config store. Must be called before workers start.
+// SetConfigLoader binds the config store to the discord module's config.
+// Badge-in settings are stored on the shared Discord config page.
 func (m *Module) SetConfigLoader(store *config.Store) {
-	m.configLoader = config.NewLoader[Config](store, "badgenotify")
+	m.configLoader = config.NewLoader[discord.Config](store, "discord")
 }
 
 func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
@@ -144,7 +144,14 @@ func (m *Module) loadConfig(ctx context.Context) (*Config, error) {
 	if m.configLoader == nil {
 		return &Config{}, nil
 	}
-	return m.configLoader.Load(ctx)
+	dc, err := m.configLoader.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Config{
+		Enabled:   dc.BadgeNotifyEnabled,
+		ChannelID: dc.BadgeNotifyChannelID,
+	}, nil
 }
 
 // buildPayload returns the JSON body for a badge-in Discord notification.

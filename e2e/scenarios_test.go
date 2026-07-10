@@ -2810,6 +2810,65 @@ func TestAdmin_DiscordApprovalBotConfig(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode, "old discordbot config route should be gone")
 }
 
+// TestAdmin_DiscordBadgeNotifyConfig verifies that badge-in notification
+// settings now live on the Discord config page, save correctly, validate
+// that channel ID is required when enabled, and that the old standalone
+// badge-notify config page no longer exists.
+func TestAdmin_DiscordBadgeNotifyConfig(t *testing.T) {
+	t.Parallel()
+	env, adminID, page := setupAdminTest(t)
+
+	configPage := NewAdminDiscordConfigPage(t, page, env.baseURL)
+	configPage.Navigate()
+
+	err := page.WaitForLoadState()
+	require.NoError(t, err)
+
+	// The badge-in section should be visible on the Discord config page.
+	expect(t).Locator(page.GetByText("Badge-In Notifications")).ToBeVisible()
+
+	// Enable badge-in notifications and set a channel ID.
+	configPage.CheckBadgeNotifyEnabled()
+	configPage.FillBadgeNotifyChannelID("111222333444555666")
+	configPage.Submit()
+
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectSaveSuccessMessage()
+
+	// Verify the values landed in discord_config.
+	var enabled int
+	var channelID string
+	err = env.db.QueryRow(`SELECT badge_notify_enabled, badge_notify_channel_id FROM discord_config ORDER BY version DESC LIMIT 1`).
+		Scan(&enabled, &channelID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, enabled)
+	assert.Equal(t, "111222333444555666", channelID)
+
+	// Reload: values round-trip correctly.
+	configPage.Navigate()
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+
+	configPage.ExpectBadgeNotifyEnabled(true)
+	configPage.ExpectBadgeNotifyChannelID("111222333444555666")
+
+	// Validation: channel ID is required when enabled.
+	configPage.FillBadgeNotifyChannelID("")
+	configPage.Submit()
+	err = page.WaitForLoadState()
+	require.NoError(t, err)
+	configPage.ExpectValidationError()
+
+	// The old standalone badge-notify config page no longer exists.
+	req := authedRequest(t, env, adminID, http.MethodGet, "/admin/config/badgenotify", nil)
+	resp, err := noRedirectClient().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, "old badgenotify config route should be gone")
+}
+
 // TestJourney_DiscordConfigEnablesLoginButton verifies the scenario: admin
 // configures Discord OAuth2 credentials, then "Login with Discord" button
 // appears on the login page.

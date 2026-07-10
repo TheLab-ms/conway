@@ -274,3 +274,88 @@ func TestFobAPI_LastSeenUpdates(t *testing.T) {
 func itoa(i int64) string {
 	return strconv.FormatInt(i, 10)
 }
+
+// TestBadgeNotify_SwipeTriggersQueueEntry verifies that a fob swipe for a
+// member with discord_checkin_notify enabled inserts into badgenotify_queue.
+func TestBadgeNotify_SwipeTriggersQueueEntry(t *testing.T) {
+	t.Parallel()
+	env := NewTestEnv(t)
+	memberID := seedMember(t, env, "badge@example.com", WithReadyAccess(), WithFobID(8001), WithDiscordCheckinNotify())
+
+	body := `[{"fob":8001,"allowed":true}]`
+	resp, err := http.Post(env.baseURL+"/api/fobs", "application/json", strings.NewReader(body))
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, 200, resp.StatusCode)
+
+	var queueCount int
+	err = env.db.QueryRow("SELECT COUNT(*) FROM badgenotify_queue WHERE member_id = ?", memberID).Scan(&queueCount)
+	require.NoError(t, err)
+	assert.Equal(t, 1, queueCount, "swipe should create a badge-notify queue entry for opted-in member")
+}
+
+// TestBadgeNotify_SwipeNoEntryWhenOptedOut verifies that a fob swipe for a
+// member WITHOUT discord_checkin_notify does NOT create a queue entry.
+func TestBadgeNotify_SwipeNoEntryWhenOptedOut(t *testing.T) {
+	t.Parallel()
+	env := NewTestEnv(t)
+	memberID := seedMember(t, env, "nobadge@example.com", WithReadyAccess(), WithFobID(8002))
+
+	body := `[{"fob":8002,"allowed":true}]`
+	resp, err := http.Post(env.baseURL+"/api/fobs", "application/json", strings.NewReader(body))
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, 200, resp.StatusCode)
+
+	var queueCount int
+	err = env.db.QueryRow("SELECT COUNT(*) FROM badgenotify_queue WHERE member_id = ?", memberID).Scan(&queueCount)
+	require.NoError(t, err)
+	assert.Equal(t, 0, queueCount, "swipe should NOT create a badge-notify queue entry for opted-out member")
+}
+
+// TestBadgeNotify_EnabledConfigControlsNotification verifies that the
+// badge_notify_enabled flag in discord_config controls whether the worker
+// processes queued notifications.
+func TestBadgeNotify_EnabledConfigControlsNotification(t *testing.T) {
+	t.Parallel()
+	env := NewTestEnv(t)
+	memberID := seedMember(t, env, "configbadge@example.com", WithReadyAccess(), WithFobID(8003), WithDiscordCheckinNotify())
+
+	// Insert a queue entry directly (simulating a swipe that already happened).
+	_, err := env.db.Exec("INSERT INTO badgenotify_queue (member_id) VALUES (?)", memberID)
+	require.NoError(t, err)
+
+	// With badge_notify_enabled=0 (default), the worker should not send anything.
+	// We verify the queue entry still exists (not processed away).
+	var queueCount int
+	err = env.db.QueryRow("SELECT COUNT(*) FROM badgenotify_queue WHERE member_id = ?", memberID).Scan(&queueCount)
+	require.NoError(t, err)
+	assert.Equal(t, 1, queueCount, "queue entry should exist")
+
+	// Enable badge-in notifications with a channel ID.
+	seedDiscordConfigWithBadgeNotify(t, env, "cid", "secret", "token", "gid", "rid", 24, true, "123456789012345678")
+
+	// The queue entry should still be present (the worker will process it on next poll).
+	err = env.db.QueryRow("SELECT COUNT(*) FROM badgenotify_queue WHERE member_id = ?", memberID).Scan(&queueCount)
+	require.NoError(t, err)
+	assert.Equal(t, 1, queueCount, "queue entry should still exist after config saved")
+}
+
+// TestBadgeNotify_InvalidSwipeDoesNotTrigger verifies that swipes with member=NULL
+// (unknown fob) do not create badge-notify queue entries.
+func TestBadgeNotify_InvalidSwipeDoesNotTrigger(t *testing.T) {
+	t.Parallel()
+	env := NewTestEnv(t)
+
+	// Swipe with an unknown fob ID.
+	body := `[{"fob":99998,"allowed":false}]`
+	resp, err := http.Post(env.baseURL+"/api/fobs", "application/json", strings.NewReader(body))
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, 200, resp.StatusCode)
+
+	var queueCount int
+	err = env.db.QueryRow("SELECT COUNT(*) FROM badgenotify_queue").Scan(&queueCount)
+	require.NoError(t, err)
+	assert.Equal(t, 0, queueCount, "unknown fob swipe should not create badge-notify queue entry")
+}

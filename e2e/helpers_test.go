@@ -142,6 +142,7 @@ type memberConfig struct {
 	discordUserID     string
 	discordUsername   string
 	discordAvatar     []byte
+	discordCheckinNotify bool
 }
 
 // WithConfirmed marks the member as email-confirmed.
@@ -218,6 +219,11 @@ func WithDiscordAvatar(avatar []byte) MemberOption {
 	return func(c *memberConfig) { c.discordAvatar = avatar }
 }
 
+// WithDiscordCheckinNotify enables badge-in Discord notifications for the member.
+func WithDiscordCheckinNotify() MemberOption {
+	return func(c *memberConfig) { c.discordCheckinNotify = true }
+}
+
 // WithBio sets the member's bio text.
 func WithBio(bio string) MemberOption {
 	return func(c *memberConfig) { c.bio = bio }
@@ -261,8 +267,8 @@ func seedMember(t *testing.T, env *TestEnv, email string, opts ...MemberOption) 
 
 	// Insert member
 	result, err := env.db.Exec(`
-		INSERT INTO members (email, name, name_override, bio, profile_picture, confirmed, leadership, non_billable, fob_id, fob_last_seen, stripe_subscription_state, stripe_customer_id, discount_type, discount_status, discount_request_id, discord_user_id, discord_username, discord_avatar)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO members (email, name, name_override, bio, profile_picture, confirmed, leadership, non_billable, fob_id, fob_last_seen, stripe_subscription_state, stripe_customer_id, discount_type, discount_status, discount_request_id, discord_user_id, discord_username, discord_avatar, discord_checkin_notify)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cfg.email,
 		cfg.name, // Empty string is fine, column has NOT NULL DEFAULT ''
 		sql.NullString{String: cfg.nameOverride, Valid: cfg.nameOverride != ""},
@@ -279,6 +285,7 @@ func seedMember(t *testing.T, env *TestEnv, email string, opts ...MemberOption) 
 		sql.NullString{String: cfg.discordUserID, Valid: cfg.discordUserID != ""},
 		sql.NullString{String: cfg.discordUsername, Valid: cfg.discordUsername != ""},
 		cfg.discordAvatar,
+		cfg.discordCheckinNotify,
 	)
 	require.NoError(t, err, "could not insert member")
 
@@ -709,6 +716,18 @@ func seedDiscordConfig(t *testing.T, env *TestEnv, clientID, clientSecret, botTo
 	_, err := env.db.Exec(`INSERT INTO discord_config (client_id, client_secret, bot_token, guild_id, role_id, sync_interval_hours) VALUES (?, ?, ?, ?, ?, ?)`,
 		clientID, clientSecret, botToken, guildID, roleID, syncIntervalHours)
 	require.NoError(t, err, "could not insert discord config")
+}
+
+// seedDiscordConfigWithBadgeNotify inserts Discord configuration with badge-in notification settings.
+func seedDiscordConfigWithBadgeNotify(t *testing.T, env *TestEnv, clientID, clientSecret, botToken, guildID, roleID string, syncIntervalHours int, badgeNotifyEnabled bool, badgeNotifyChannelID string) {
+	t.Helper()
+	var enabled int
+	if badgeNotifyEnabled {
+		enabled = 1
+	}
+	_, err := env.db.Exec(`INSERT INTO discord_config (client_id, client_secret, bot_token, guild_id, role_id, sync_interval_hours, badge_notify_enabled, badge_notify_channel_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		clientID, clientSecret, botToken, guildID, roleID, syncIntervalHours, enabled, badgeNotifyChannelID)
+	require.NoError(t, err, "could not insert discord config with badge notify")
 }
 
 // seedStripeConfigWithDonations inserts Stripe configuration with donation items into the database.

@@ -110,6 +110,10 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine
 	db.Exec("ALTER TABLE discord_config ADD COLUMN leadership_channel_id TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE discord_config ADD COLUMN application_public_key TEXT NOT NULL DEFAULT ''")
 
+	// Badge-in notification config (merged from the former standalone badgenotify config page).
+	db.Exec("ALTER TABLE discord_config ADD COLUMN badge_notify_enabled INTEGER NOT NULL DEFAULT 0")
+	db.Exec("ALTER TABLE discord_config ADD COLUMN badge_notify_channel_id TEXT NOT NULL DEFAULT ''")
+
 	// Migrate legacy trigger_event-based webhooks that used the old member_events trigger.
 	// These become SQL triggers on the member_events table with INSERT operation.
 	migrateLegacyWebhooks(db)

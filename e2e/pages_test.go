@@ -1040,6 +1040,34 @@ func (p *AdminDiscordConfigPage) ExpectHasBotToken() {
 	require.Contains(p.t, placeholder, "secret is set")
 }
 
+func (p *AdminDiscordConfigPage) CheckBadgeNotifyEnabled() {
+	err := p.page.Locator("#badge_notify_enabled").Check()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) UncheckBadgeNotifyEnabled() {
+	err := p.page.Locator("#badge_notify_enabled").Uncheck()
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) FillBadgeNotifyChannelID(value string) {
+	err := p.page.Locator("#badge_notify_channel_id").Fill(value)
+	require.NoError(p.t, err)
+}
+
+func (p *AdminDiscordConfigPage) ExpectBadgeNotifyChannelID(value string) {
+	locator := p.page.Locator("#badge_notify_channel_id")
+	actual, err := locator.InputValue()
+	require.NoError(p.t, err)
+	require.Equal(p.t, value, actual)
+}
+
+func (p *AdminDiscordConfigPage) ExpectBadgeNotifyEnabled(checked bool) {
+	actual, err := p.page.Locator("#badge_notify_enabled").IsChecked()
+	require.NoError(p.t, err)
+	require.Equal(p.t, checked, actual)
+}
+
 // AdminGoogleConfigPage represents the admin Google configuration page.
 type AdminGoogleConfigPage struct {
 	page    playwright.Page
