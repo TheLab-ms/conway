@@ -1,0 +1,81 @@
+# Conway deployment playbook
+# Provisions a server to run the Conway service
+
+- name: foobar.thelab.ms
+  hosts: foobar.thelab.ms
+  tasks:
+    - name: Install packages
+      package:
+        name: ["podman"]
+        state: present
+
+    - name: Create Podman network
+      containers.podman.podman_network:
+        name: thelab-overlay
+        ip_range: 10.201.1.0/24
+        subnet: 10.201.1.0/24
+        gateway: 10.201.1.1
+
+    - name: Copy Conway binary
+      notify: ["Restart Conway"]
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../conway"
+        dest: /usr/bin/conway
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create Conway directory
+      ansible.builtin.file:
+        path: /opt/conway
+        state: directory
+
+    - name: Create the Conway container unit
+      notify: ["Restart Conway"]
+      containers.podman.podman_container:
+        name: conway
+        image: ghcr.io/thelab-ms/infra/ubuntu:f9a343a
+        state: quadlet
+        workdir: /opt/conway
+        net: thelab-overlay
+        command:
+          - /usr/bin/conway
+        env_file: /etc/default/conway # contains secrets
+        env:
+          SELF_URL: "https://members.thelab.ms"
+          GOOGLE_APPLICATION_CREDENTIALS: /opt/conway/google.json # populate with service account creds from gcloud api console
+          CONWAY_EMAIL_FROM: "noreply-logins@thelab.ms"
+          CONWAY_EMAIL_SENDER_NAME: "TheLab Makerspace"
+          CONWAY_SPACE_HOST: "space.thelab.ms"
+        volumes:
+          - /usr/bin/conway:/usr/bin/conway
+          - /opt/conway:/opt/conway
+          - /etc/ssl:/etc/ssl
+          - /usr/share/zoneinfo:/usr/share/zoneinfo
+        publish:
+          - "8080:8080"
+        healthcheck: /usr/bin/conway healthcheck
+        healthcheck_timeout: 4s
+        healthcheck_interval: 10s
+        healthcheck_failure_action: restart
+        quadlet_options:
+          - |
+            [Service]
+            Restart=always
+            RestartSec=2
+          - |
+            [Install]
+            WantedBy=default.target
+
+    - name: Start Conway
+      ansible.builtin.systemd:
+        name: conway
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Restart Conway
+      ansible.builtin.service:
+        name: conway
+        state: restarted

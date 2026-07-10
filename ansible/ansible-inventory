@@ -1,0 +1,2 @@
+[conway]
+foobar.thelab.ms ansible_user=cto ansible_become=true
