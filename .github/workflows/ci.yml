@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Generate templ files
+      run: go generate ./modules/...
+
+    - name: Run tests
+      run: go test ./... -v -skip TestStripe_
+
+  stripe-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Generate templ files
+      run: go generate ./modules/...
+
+    - name: Install Stripe CLI
+      run: |
+        curl -s https://packages.stripe.dev/api/security/keypair/stripe-cli-gpg/public | gpg --dearmor | sudo tee /usr/share/keyrings/stripe.gpg > /dev/null
+        echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.dev/stripe-cli-debian-local stable main" | sudo tee /etc/apt/sources.list.d/stripe.list
+        sudo apt-get update
+        sudo apt-get install -y stripe
+
+    - name: Run Stripe E2E tests
+      run: go test ./e2e/... -v -run TestStripe_
+      env:
+        STRIPE_TEST_KEY: ${{ secrets.CONWAY_STRIPE_KEY }}
+        STRIPE_TEST_WEBHOOK_KEY: ${{ secrets.CONWAY_STRIPE_WEBHOOK_KEY }}
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [test, stripe-e2e]
+    runs-on: ubuntu-latest
+    environment: Prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Generate templ files
+        run: go generate ./modules/...
+
+      - name: Build binary
+        run: make build
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          if [ -n "${{ secrets.DEPLOY_HOST_KEY }}" ]; then
+            ssh-keyscan -H foobar.thelab.ms >> ~/.ssh/known_hosts 2>/dev/null
+            ssh-keygen -lf ~/.ssh/known_hosts | grep -q "${{ secrets.DEPLOY_HOST_KEY }}" || \
+              (echo "Server fingerprint verification failed!" && exit 1)
+          else
+            ssh-keyscan -H foobar.thelab.ms >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+      - name: Backup database
+        run: ssh -i ~/.ssh/deploy_key foobar.thelab.ms "cp /opt/conway/conway.sqlite3 /opt/conway/conway.sqlite3.bak"
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+          ansible-galaxy collection install containers.podman
+
+      - name: Deploy with Ansible
+        run: |
+          cd ansible
+          ansible-playbook -i ansible-inventory playbooks/conway.yaml \
+            --private-key=~/.ssh/deploy_key
