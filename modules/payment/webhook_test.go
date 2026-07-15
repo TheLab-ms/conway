@@ -51,6 +51,16 @@ func subState(t *testing.T, db *sql.DB, email string) (custID, subID, state, nam
 	return c.String, s.String, st.String, n.String
 }
 
+func subDetailState(t *testing.T, db *sql.DB, email string) (cancelReason, lastPayErr string) {
+	t.Helper()
+	var cr, lpe sql.NullString
+	err := db.QueryRow(
+		`SELECT stripe_cancellation_reason, stripe_last_payment_error
+		   FROM members WHERE email = ?`, email).Scan(&cr, &lpe)
+	require.NoError(t, err)
+	return cr.String, lpe.String
+}
+
 // TestApplySubscriptionUpdate_BugRegression is the headline regression test.
 // Reproduces the reported bug:
 //
@@ -71,7 +81,7 @@ func TestApplySubscriptionUpdate_BugRegression(t *testing.T) {
 	seedTestMember(t, m.db, "user@example.com", "cus_1", "sub_A", "active")
 
 	// 2. New subscription B comes in active. Should take over.
-	applied, err := m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_B", "active", "User")
+	applied, err := m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_B", "active", "User", "", "")
 	require.NoError(t, err)
 	assert.True(t, applied, "new active subscription should take over the canceling one")
 
@@ -80,7 +90,7 @@ func TestApplySubscriptionUpdate_BugRegression(t *testing.T) {
 	assert.Equal(t, "active", state)
 
 	// 3. Stale delete for A arrives later. Must NOT clobber B.
-	applied, err = m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_A", "canceled", "User")
+	applied, err = m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_A", "canceled", "User", "cancellation_requested", "")
 	require.NoError(t, err)
 	assert.False(t, applied, "stale cancel event for replaced subscription must be ignored")
 
@@ -202,7 +212,7 @@ func TestApplySubscriptionUpdate_Scenarios(t *testing.T) {
 			}
 
 			applied, err := m.applySubscriptionUpdate(context.Background(),
-				eventEmail, tc.event.custID, tc.event.subID, tc.event.status, tc.event.name)
+				eventEmail, tc.event.custID, tc.event.subID, tc.event.status, tc.event.name, "", "")
 			require.NoError(t, err)
 			assert.Equal(t, tc.want.applied, applied, "applied")
 
@@ -226,7 +236,7 @@ func TestApplySubscriptionUpdate_NamePreservedWhenIgnored(t *testing.T) {
 	require.NoError(t, err)
 
 	// Stale event for old sub_A with a stale name must not overwrite.
-	applied, err := m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_A", "canceled", "Stale Old Name")
+	applied, err := m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_A", "canceled", "Stale Old Name", "", "")
 	require.NoError(t, err)
 	assert.False(t, applied)
 
@@ -239,7 +249,7 @@ func TestApplySubscriptionUpdate_NamePreservedWhenIgnored(t *testing.T) {
 func TestApplySubscriptionUpdate_UnknownEmailIsNoop(t *testing.T) {
 	m := newTestModule(t)
 	applied, err := m.applySubscriptionUpdate(context.Background(),
-		"nobody@example.com", "cus_x", "sub_x", "active", "Nobody")
+		"nobody@example.com", "cus_x", "sub_x", "active", "Nobody", "", "")
 	require.NoError(t, err)
 	assert.False(t, applied)
 }
@@ -270,17 +280,48 @@ func TestApplySubscriptionUpdate_AccessStatusTransition(t *testing.T) {
 	mustAccess("Ready")
 
 	// New active sub B takes over.
-	_, err = m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_B", "active", "User")
+	_, err = m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_B", "active", "User", "", "")
 	require.NoError(t, err)
 	mustAccess("Ready")
 
 	// Stale delete for A arrives. Member must remain Ready.
-	_, err = m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_A", "canceled", "User")
+	_, err = m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_A", "canceled", "User", "cancellation_requested", "")
 	require.NoError(t, err)
 	mustAccess("Ready")
 
 	// Sanity: a delete for the *current* B does deactivate.
-	_, err = m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_B", "canceled", "User")
+	_, err = m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_B", "canceled", "User", "payment_failed", "Your card was declined.")
 	require.NoError(t, err)
 	mustAccess("PaymentInactive")
+}
+
+func TestApplySubscriptionUpdate_FailureDetailsStored(t *testing.T) {
+	m := newTestModule(t)
+	ctx := context.Background()
+
+	seedTestMember(t, m.db, "user@example.com", "cus_1", "sub_A", "active")
+
+	// Transition to past_due with a payment error.
+	_, err := m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_A", "past_due", "User", "", "Your card was declined.")
+	require.NoError(t, err)
+
+	cancelReason, lastPayErr := subDetailState(t, m.db, "user@example.com")
+	assert.Equal(t, "", cancelReason)
+	assert.Equal(t, "Your card was declined.", lastPayErr)
+
+	// Transition to canceled with cancellation reason.
+	_, err = m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_A", "canceled", "User", "payment_failed", "Your card was declined.")
+	require.NoError(t, err)
+
+	cancelReason, lastPayErr = subDetailState(t, m.db, "user@example.com")
+	assert.Equal(t, "payment_failed", cancelReason)
+	assert.Equal(t, "Your card was declined.", lastPayErr)
+
+	// New active subscription should clear the failure details.
+	_, err = m.applySubscriptionUpdate(ctx, "user@example.com", "cus_1", "sub_B", "active", "User", "", "")
+	require.NoError(t, err)
+
+	cancelReason, lastPayErr = subDetailState(t, m.db, "user@example.com")
+	assert.Equal(t, "", cancelReason)
+	assert.Equal(t, "", lastPayErr)
 }

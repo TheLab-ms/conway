@@ -21,6 +21,9 @@ CREATE TABLE members (
     fob_id INTEGER,
     fob_last_seen INTEGER,
     discord_user_id TEXT,
+    stripe_subscription_state TEXT,
+    stripe_cancellation_reason TEXT,
+    stripe_last_payment_error TEXT,
     access_status TEXT NOT NULL GENERATED ALWAYS AS ( CASE
             WHEN (confirmed IS NOT TRUE) THEN 'UnconfirmedEmail'
             WHEN (fob_id IS NULL OR fob_id = 0) THEN 'MissingKeyFob'
@@ -194,7 +197,85 @@ func TestDenialReason(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.status, func(t *testing.T) {
-			reason, fix := denialReason(tc.status)
+			reason, fix := denialReason(tc.status, "", "", "")
+			assert.Contains(t, reason, tc.expectReason)
+			assert.Contains(t, fix, tc.expectFix)
+		})
+	}
+}
+
+func TestDenialReason_PaymentDetails(t *testing.T) {
+	testCases := []struct {
+		name           string
+		subState       string
+		cancelReason   string
+		lastPayErr     string
+		expectReason   string
+		expectFix      string
+	}{
+		{
+			name:         "past_due with error message",
+			subState:     "past_due",
+			lastPayErr:   "Your card was declined.",
+			expectReason: "last payment failed: Your card was declined.",
+			expectFix:    "update your payment method",
+		},
+		{
+			name:         "past_due without error message",
+			subState:     "past_due",
+			expectReason: "last payment failed",
+			expectFix:    "update your payment method",
+		},
+		{
+			name:         "canceled at user request",
+			subState:     "canceled",
+			cancelReason: "cancellation_requested",
+			expectReason: "canceled at your request",
+			expectFix:    "renew your membership",
+		},
+		{
+			name:         "canceled due to payment failure",
+			subState:     "canceled",
+			cancelReason: "payment_failed",
+			expectReason: "canceled due to failed payments",
+			expectFix:    "update your payment method and renew",
+		},
+		{
+			name:         "canceled due to payment dispute",
+			subState:     "canceled",
+			cancelReason: "payment_disputed",
+			expectReason: "canceled due to a payment dispute",
+			expectFix:    "resolve this and renew",
+		},
+		{
+			name:         "canceled with no reason",
+			subState:     "canceled",
+			expectReason: "no longer active",
+			expectFix:    "renew your membership",
+		},
+		{
+			name:         "incomplete_expired",
+			subState:     "incomplete_expired",
+			expectReason: "setup was never completed",
+			expectFix:    "complete the signup process",
+		},
+		{
+			name:         "empty state falls back to generic",
+			subState:     "",
+			expectReason: "membership payment is not active",
+			expectFix:    "update your payment method",
+		},
+		{
+			name:         "unknown state falls back to generic",
+			subState:     "unpaid",
+			expectReason: "membership payment is not active",
+			expectFix:    "update your payment method",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			reason, fix := denialReason("PaymentInactive", tc.subState, tc.cancelReason, tc.lastPayErr)
 			assert.Contains(t, reason, tc.expectReason)
 			assert.Contains(t, fix, tc.expectFix)
 		})
@@ -202,13 +283,21 @@ func TestDenialReason(t *testing.T) {
 }
 
 func TestBuildDMPayload(t *testing.T) {
-	payload, err := buildDMPayload("UnconfirmedEmail", "John")
+	payload, err := buildDMPayload("UnconfirmedEmail", "John", "", "", "")
 	require.NoError(t, err)
 
 	assert.Contains(t, payload, "Hi John")
 	assert.Contains(t, payload, "denied access")
 	assert.Contains(t, payload, "email address has not been confirmed")
 	assert.Contains(t, payload, "confirmation email")
+}
+
+func TestBuildDMPayload_PaymentDetails(t *testing.T) {
+	payload, err := buildDMPayload("PaymentInactive", "Jane", "past_due", "", "Your card was expired.")
+	require.NoError(t, err)
+
+	assert.Contains(t, payload, "Hi Jane")
+	assert.Contains(t, payload, "Your last payment failed: Your card was expired.")
 }
 
 func TestTriggerOnDeniedSwipe(t *testing.T) {

@@ -80,10 +80,13 @@ func (m *Module) AttachWorkers(mgr *engine.ProcMgr) {
 
 // queueItem is one row from accessdenied_queue joined with member info.
 type queueItem struct {
-	MemberID      int64
-	DiscordUserID string
-	AccessStatus  string
-	DisplayName   string
+	MemberID                 int64
+	DiscordUserID            string
+	AccessStatus             string
+	DisplayName              string
+	StripeSubscriptionState  string
+	StripeCancellationReason string
+	StripeLastPaymentError   string
 }
 
 func (s *queueItem) String() string {
@@ -94,11 +97,15 @@ func (s *queueItem) String() string {
 func (m *Module) GetItem(ctx context.Context) (*queueItem, error) {
 	var item queueItem
 	err := m.db.QueryRowContext(ctx, `
-		SELECT q.member_id, m.discord_user_id, m.access_status, COALESCE(m.name_override, m.name, m.email)
+		SELECT q.member_id, m.discord_user_id, m.access_status, COALESCE(m.name_override, m.name, m.email),
+		       COALESCE(m.stripe_subscription_state, ''),
+		       COALESCE(m.stripe_cancellation_reason, ''),
+		       COALESCE(m.stripe_last_payment_error, '')
 		FROM accessdenied_queue q
 		JOIN members m ON m.id = q.member_id
 		ORDER BY q.created ASC
-		LIMIT 1`).Scan(&item.MemberID, &item.DiscordUserID, &item.AccessStatus, &item.DisplayName)
+		LIMIT 1`).Scan(&item.MemberID, &item.DiscordUserID, &item.AccessStatus, &item.DisplayName,
+		&item.StripeSubscriptionState, &item.StripeCancellationReason, &item.StripeLastPaymentError)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +145,7 @@ func (m *Module) ProcessItem(ctx context.Context, item *queueItem) error {
 		return nil
 	}
 
-	payload, err := buildDMPayload(item.AccessStatus, item.DisplayName)
+	payload, err := buildDMPayload(item.AccessStatus, item.DisplayName, item.StripeSubscriptionState, item.StripeCancellationReason, item.StripeLastPaymentError)
 	if err != nil {
 		return err
 	}
@@ -257,8 +264,8 @@ func (m *Module) createDMChannel(ctx context.Context, botToken, recipientUserID 
 }
 
 // buildDMPayload returns the JSON body for an access-denied Discord DM.
-func buildDMPayload(accessStatus, displayName string) (string, error) {
-	reason, fix := denialReason(accessStatus)
+func buildDMPayload(accessStatus, displayName, stripeSubState, stripeCancelReason, stripeLastPaymentError string) (string, error) {
+	reason, fix := denialReason(accessStatus, stripeSubState, stripeCancelReason, stripeLastPaymentError)
 	content := fmt.Sprintf("Hi %s,\n\nYour fob was denied access at the makerspace.\n\n**Reason:** %s\n\n**How to fix:** %s\n\nIf you need help, please contact leadership on Discord or in person at the space.",
 		displayName, reason, fix)
 
@@ -273,8 +280,8 @@ func buildDMPayload(accessStatus, displayName string) (string, error) {
 }
 
 // denialReason returns a human-readable reason and fix instructions
-// based on the member's access_status.
-func denialReason(accessStatus string) (reason, fix string) {
+// based on the member's access_status and Stripe subscription details.
+func denialReason(accessStatus, stripeSubState, stripeCancelReason, stripeLastPaymentError string) (reason, fix string) {
 	switch accessStatus {
 	case "UnconfirmedEmail":
 		return "Your email address has not been confirmed.",
@@ -283,8 +290,7 @@ func denialReason(accessStatus string) (reason, fix string) {
 		return "You haven't signed the makerspace waiver.",
 			"Sign the waiver at the kiosk when you visit the space, or ask leadership for help."
 	case "PaymentInactive":
-		return "Your membership payment is not active.",
-			"Log in to your account to update your payment method, or contact leadership for assistance."
+		return paymentDenialReason(stripeSubState, stripeCancelReason, stripeLastPaymentError)
 	case "MissingKeyFob":
 		return "Your key fob is not registered to your account.",
 			"Register your fob at the kiosk when you visit the space, or ask leadership to register it for you."
@@ -294,6 +300,41 @@ func denialReason(accessStatus string) (reason, fix string) {
 	default:
 		return "Access is currently unavailable.",
 			"Please contact leadership for assistance."
+	}
+}
+
+// paymentDenialReason returns a specific reason and fix for payment-related
+// access denials, using Stripe subscription details when available.
+func paymentDenialReason(stripeSubState, stripeCancelReason, stripeLastPaymentError string) (reason, fix string) {
+	switch stripeSubState {
+	case "past_due":
+		if stripeLastPaymentError != "" {
+			return fmt.Sprintf("Your last payment failed: %s", stripeLastPaymentError),
+				"Log in to your account to update your payment method, then contact leadership if access is not restored."
+		}
+		return "Your last payment failed.",
+			"Log in to your account to update your payment method, then contact leadership if access is not restored."
+	case "canceled":
+		switch stripeCancelReason {
+		case "cancellation_requested":
+			return "Your membership was canceled at your request.",
+				"Log in to your account to renew your membership."
+		case "payment_failed":
+			return "Your membership was canceled due to failed payments.",
+				"Log in to your account to update your payment method and renew your membership."
+		case "payment_disputed":
+			return "Your membership was canceled due to a payment dispute.",
+				"Contact leadership to resolve this and renew your membership."
+		default:
+			return "Your membership is no longer active.",
+				"Log in to your account to renew your membership, or contact leadership for assistance."
+		}
+	case "incomplete_expired":
+		return "Your membership setup was never completed.",
+			"Log in to your account to complete the signup process."
+	default:
+		return "Your membership payment is not active.",
+			"Log in to your account to update your payment method, or contact leadership for assistance."
 	}
 }
 

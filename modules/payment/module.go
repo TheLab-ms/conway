@@ -45,6 +45,11 @@ const migrationDonationItems = `
 ALTER TABLE stripe_config ADD COLUMN donation_items_json TEXT NOT NULL DEFAULT '[]';
 `
 
+const migrationStripeDetails = `
+ALTER TABLE members ADD COLUMN stripe_cancellation_reason TEXT;
+ALTER TABLE members ADD COLUMN stripe_last_payment_error TEXT;
+`
+
 // stripeConfig holds Stripe-related configuration.
 type stripeConfig struct {
 	apiKey        string
@@ -62,6 +67,8 @@ func New(db *sql.DB, self *url.URL, eventLogger *engine.EventLogger) *Module {
 	engine.MustMigrate(db, migration)
 	// Add donation_items_json column if it doesn't exist (for existing databases)
 	db.Exec(migrationDonationItems)
+	// Add Stripe failure detail columns if they don't exist (for existing databases)
+	db.Exec(migrationStripeDetails)
 	return &Module{db: db, self: self, eventLogger: eventLogger}
 }
 
@@ -152,8 +159,17 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	var memberID int64
 	m.db.QueryRowContext(r.Context(), "SELECT id FROM members WHERE email = ?", strings.ToLower(cust.Email)).Scan(&memberID)
 
+	// Extract cancellation reason and last payment error from the subscription
+	var cancellationReason, lastPaymentError string
+	if sub.CancellationDetails != nil {
+		cancellationReason = string(sub.CancellationDetails.Reason)
+	}
+	if sub.LatestInvoice != nil && sub.LatestInvoice.PaymentIntent != nil && sub.LatestInvoice.PaymentIntent.LastPaymentError != nil {
+		lastPaymentError = sub.LatestInvoice.PaymentIntent.LastPaymentError.Msg
+	}
+
 	// Apply the update, filtering out stale events for old/replaced subscriptions.
-	applied, err := m.applySubscriptionUpdate(r.Context(), cust.Email, cust.ID, sub.ID, string(sub.Status), cust.Name)
+	applied, err := m.applySubscriptionUpdate(r.Context(), cust.Email, cust.ID, sub.ID, string(sub.Status), cust.Name, cancellationReason, lastPaymentError)
 	if err != nil {
 		m.eventLogger.LogEvent(r.Context(), memberID, "WebhookError", cust.ID, "", false, "db update: "+err.Error())
 		engine.SystemError(w, err.Error())
@@ -198,12 +214,20 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 //
 // Returns true if a row was written, false if the event was filtered out or
 // no member matched the email.
-func (m *Module) applySubscriptionUpdate(ctx context.Context, email, custID, subID, status, name string) (bool, error) {
+func (m *Module) applySubscriptionUpdate(ctx context.Context, email, custID, subID, status, name, cancellationReason, lastPaymentError string) (bool, error) {
+	// Clear failure details when the subscription is healthy again.
+	if status == "active" || status == "trialing" {
+		cancellationReason = ""
+		lastPaymentError = ""
+	}
+
 	res, err := m.db.ExecContext(ctx, `
 		UPDATE members
 		   SET stripe_customer_id = ?,
 		       stripe_subscription_id = ?,
 		       stripe_subscription_state = ?,
+		       stripe_cancellation_reason = ?,
+		       stripe_last_payment_error = ?,
 		       name = ?
 		 WHERE email = ?
 		   AND (
@@ -211,7 +235,7 @@ func (m *Module) applySubscriptionUpdate(ctx context.Context, email, custID, sub
 		      OR stripe_subscription_id = ?
 		      OR ? IN ('active', 'trialing')
 		   )`,
-		custID, subID, status, name, strings.ToLower(email), subID, status)
+		custID, subID, status, cancellationReason, lastPaymentError, name, strings.ToLower(email), subID, status)
 	if err != nil {
 		return false, err
 	}

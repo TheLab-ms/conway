@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS members (
     stripe_customer_id TEXT,
     stripe_subscription_id TEXT,
     stripe_subscription_state TEXT,
+    stripe_cancellation_reason TEXT,
+    stripe_last_payment_error TEXT,
     paypal_subscription_id TEXT,
     paypal_price REAL,
 
