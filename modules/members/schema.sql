@@ -110,7 +110,8 @@ CREATE TABLE IF NOT EXISTS fob_swipes (
     uid TEXT PRIMARY KEY,
     timestamp INTEGER NOT NULL,
     fob_id INTEGER NOT NULL,
-	member INTEGER
+	member INTEGER,
+	allowed INTEGER NOT NULL DEFAULT 1
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS fob_swipes_fob_id_idx ON fob_swipes (fob_id);

@@ -29,6 +29,9 @@ type Config struct {
 	// Badge-In Notifications
 	BadgeNotifyEnabled   bool   `json:"badge_notify_enabled" config:"label=Enabled,section=badgenotify,help=When on, opted-in members trigger a Discord message when they badge into the makerspace."`
 	BadgeNotifyChannelID string `json:"badge_notify_channel_id" config:"label=Channel ID,section=badgenotify,help=Right-click a Discord channel (Developer Mode on) and choose Copy Channel ID. Badge-in notifications are posted here by the bot."`
+
+	// Access Denied Notifications
+	AccessDeniedEnabled bool `json:"access_denied_enabled" config:"label=Enabled,section=accessdenied,help=When on, members who are denied access receive a Discord DM explaining why and how to fix it."`
 }
 
 // Validate validates the Discord configuration.
@@ -85,6 +88,11 @@ func (m *Module) ConfigSpec() config.Spec {
 				Name:        "badgenotify",
 				Title:       "Badge-In Notifications",
 				Description: badgeNotifySectionDescription(),
+			},
+			{
+				Name:        "accessdenied",
+				Title:       "Access Denied Notifications",
+				Description: accessDeniedSectionDescription(),
 			},
 		},
 		Order:    10,

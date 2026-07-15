@@ -46,8 +46,9 @@ type Module struct {
 func New(db *sql.DB, self *url.URL, signer *engine.Ed25519Signer) *Module {
 	engine.MustMigrate(db, migration)
 
-	// Add fob_client column to fob_swipes (idempotent - ignore error if exists)
+	// Add columns to fob_swipes (idempotent - ignore error if exists)
 	db.Exec("ALTER TABLE fob_swipes ADD COLUMN fob_client INTEGER REFERENCES fob_clients(id)")
+	db.Exec("ALTER TABLE fob_swipes ADD COLUMN allowed INTEGER NOT NULL DEFAULT 1")
 
 	return &Module{db: db, self: self, signer: signer}
 }
@@ -104,10 +105,10 @@ func (m *Module) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, event := range events {
 		_, err := m.db.ExecContext(r.Context(),
-			`INSERT INTO fob_swipes (uid, timestamp, fob_id, member, fob_client)
-			 VALUES ($1, strftime('%s', 'now'), $2, (SELECT id FROM members WHERE fob_id = $2), $3)
+			`INSERT INTO fob_swipes (uid, timestamp, fob_id, member, fob_client, allowed)
+			 VALUES ($1, strftime('%s', 'now'), $2, (SELECT id FROM members WHERE fob_id = $2), $3, $4)
 			 ON CONFLICT DO NOTHING`,
-			uuid.NewString(), event.FobID, clientID)
+			uuid.NewString(), event.FobID, clientID, event.Allowed)
 		if err != nil {
 			engine.SystemError(w, err.Error())
 			return

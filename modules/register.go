@@ -8,6 +8,7 @@ import (
 
 	"github.com/TheLab-ms/conway/engine"
 	"github.com/TheLab-ms/conway/engine/config"
+	"github.com/TheLab-ms/conway/modules/accessdenied"
 	"github.com/TheLab-ms/conway/modules/admin"
 	"github.com/TheLab-ms/conway/modules/auth"
 	"github.com/TheLab-ms/conway/modules/badgenotify"
@@ -136,6 +137,12 @@ func Register(a *engine.App, opts Options) *auth.Module {
 	badgeNotifyMod := badgenotify.New(opts.Database, discordWebhookMod)
 	badgeNotifyMod.SetConfigLoader(a.ConfigStore())
 	a.Add(badgeNotifyMod)
+
+	// Access-denied notification bot: sends a Discord DM when a member
+	// is denied access at the door, explaining why and how to fix it.
+	accessDeniedMod := accessdenied.New(opts.Database)
+	accessDeniedMod.SetConfigLoader(a.ConfigStore())
+	a.Add(accessDeniedMod)
 
 	machinesMod := machines.New(opts.Database, engine.NewEventLogger(opts.Database, "bambu"))
 

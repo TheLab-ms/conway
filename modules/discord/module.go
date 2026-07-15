@@ -114,6 +114,9 @@ func New(db *sql.DB, self *url.URL, iss *engine.TokenIssuer, eventLogger *engine
 	db.Exec("ALTER TABLE discord_config ADD COLUMN badge_notify_enabled INTEGER NOT NULL DEFAULT 0")
 	db.Exec("ALTER TABLE discord_config ADD COLUMN badge_notify_channel_id TEXT NOT NULL DEFAULT ''")
 
+	// Access-denied notification config.
+	db.Exec("ALTER TABLE discord_config ADD COLUMN access_denied_enabled INTEGER NOT NULL DEFAULT 0")
+
 	// Migrate legacy trigger_event-based webhooks that used the old member_events trigger.
 	// These become SQL triggers on the member_events table with INSERT operation.
 	migrateLegacyWebhooks(db)
