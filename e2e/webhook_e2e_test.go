@@ -196,6 +196,108 @@ func TestStripeWebhook_StaleEvent(t *testing.T) {
 	assert.Equal(t, "active", state, "stale event must not clobber active state")
 }
 
+// buildCheckoutSessionEvent builds a JSON payload resembling a Stripe
+// checkout.session.completed event for a one-time payment (donation).
+func buildCheckoutSessionEvent(sessionID, customerID, mode, paymentStatus string, amountTotal int64, currency string) []byte {
+	body := map[string]any{
+		"id":      "evt_test_" + fmt.Sprint(time.Now().UnixNano()),
+		"object":  "event",
+		"api_version": "2024-04-10",
+		"created": time.Now().Unix(),
+		"type":    "checkout.session.completed",
+		"data": map[string]any{
+			"object": map[string]any{
+				"id":             sessionID,
+				"object":         "checkout.session",
+				"mode":           mode,
+				"customer":       customerID,
+				"payment_status": paymentStatus,
+				"amount_total":   amountTotal,
+				"currency":       currency,
+			},
+		},
+	}
+	b, _ := json.Marshal(body)
+	return b
+}
+
+// TestStripeWebhook_DonationCompleted verifies that a checkout.session.completed
+// event for a one-time payment is processed and logged. Unlike subscription
+// events, this path does NOT call the Stripe API — it only reads the event
+// payload and queries the local DB — so it runs without real credentials.
+func TestStripeWebhook_DonationCompleted(t *testing.T) {
+	t.Parallel()
+	env := NewTestEnv(t)
+	seedStripeConfig(t, env, "sk_test_dummy", testStripeWebhookSecret)
+	memberID := seedMember(t, env, "donation@example.com", WithStripeCustomerID("cus_donate_123"))
+
+	payload := buildCheckoutSessionEvent("cs_donation_abc", "cus_donate_123", "payment", "paid", 5000, "usd")
+	resp := signedStripePost(t, env, payload, testStripeWebhookSecret)
+	defer resp.Body.Close()
+	assert.Equal(t, 204, resp.StatusCode, "handler should accept the donation webhook")
+
+	// Verify the donation event was logged in module_events.
+	var eventType, details string
+	err := env.db.QueryRow(
+		`SELECT event_type, details FROM module_events
+		 WHERE member = ? AND event_type = 'DonationCompleted'
+		 ORDER BY id DESC LIMIT 1`, memberID,
+	).Scan(&eventType, &details)
+	require.NoError(t, err, "DonationCompleted event should be logged")
+	assert.Equal(t, "DonationCompleted", eventType)
+	assert.Contains(t, details, "cs_donation_abc", "event details should contain session ID")
+	assert.Contains(t, details, "amount=5000", "event details should contain amount")
+	assert.Contains(t, details, "currency=usd", "event details should contain currency")
+}
+
+// TestStripeWebhook_DonationCompletedUnknownCustomer verifies that a
+// checkout.session.completed for an unrecognized Stripe customer ID does not
+// crash the handler and logs an error.
+func TestStripeWebhook_DonationCompletedUnknownCustomer(t *testing.T) {
+	t.Parallel()
+	env := NewTestEnv(t)
+	seedStripeConfig(t, env, "sk_test_dummy", testStripeWebhookSecret)
+
+	payload := buildCheckoutSessionEvent("cs_unknown_xyz", "cus_nobody", "payment", "paid", 1000, "usd")
+	resp := signedStripePost(t, env, payload, testStripeWebhookSecret)
+	defer resp.Body.Close()
+	assert.Equal(t, 204, resp.StatusCode, "handler should not error for unknown customer")
+
+	// Verify a WebhookError was logged.
+	var details string
+	err := env.db.QueryRow(
+		`SELECT details FROM module_events
+		 WHERE event_type = 'WebhookError'
+		 ORDER BY id DESC LIMIT 1`,
+	).Scan(&details)
+	require.NoError(t, err, "WebhookError should be logged for unknown customer")
+	assert.Contains(t, details, "member lookup", "error should mention member lookup")
+}
+
+// TestStripeWebhook_DonationCompletedNonPaymentMode verifies that
+// checkout.session.completed events with mode != "payment" (e.g. subscription
+// checkouts) are silently ignored.
+func TestStripeWebhook_DonationCompletedNonPaymentMode(t *testing.T) {
+	t.Parallel()
+	env := NewTestEnv(t)
+	seedStripeConfig(t, env, "sk_test_dummy", testStripeWebhookSecret)
+	memberID := seedMember(t, env, "submode@example.com", WithStripeCustomerID("cus_submode_456"))
+
+	payload := buildCheckoutSessionEvent("cs_sub_xyz", "cus_submode_456", "subscription", "paid", 1000, "usd")
+	resp := signedStripePost(t, env, payload, testStripeWebhookSecret)
+	defer resp.Body.Close()
+	assert.Equal(t, 204, resp.StatusCode)
+
+	// No DonationCompleted event should be logged.
+	var count int
+	err := env.db.QueryRow(
+		`SELECT COUNT(*) FROM module_events
+		 WHERE member = ? AND event_type = 'DonationCompleted'`, memberID,
+	).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count, "non-payment checkout session should not log donation")
+}
+
 // ----------------------------------------------------------------------------
 // Discord webhook delivery tests
 // ----------------------------------------------------------------------------

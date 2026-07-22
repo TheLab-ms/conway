@@ -126,8 +126,17 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	case "customer.subscription.deleted":
 	case "customer.subscription.updated":
 	case "customer.subscription.created":
+	case "checkout.session.completed":
 	default:
 		slog.Debug("unhandled stripe webhook event", "type", event.Type)
+		w.WriteHeader(204)
+		return
+	}
+
+	// Handle one-time payment completions (donations) separately from
+	// subscription events. These don't require fetching subscription data.
+	if event.Type == "checkout.session.completed" {
+		m.handleCheckoutSessionCompleted(r.Context(), event, cfg)
 		w.WriteHeader(204)
 		return
 	}
@@ -186,6 +195,48 @@ func (m *Module) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	m.eventLogger.LogEvent(r.Context(), memberID, "WebhookReceived", cust.ID, "", true, fmt.Sprintf("event=%s status=%s", event.Type, sub.Status))
 	slog.Info("updated member's stripe subscription metadata", "member", cust.Email, "status", sub.Status)
 	w.WriteHeader(204)
+}
+
+// handleCheckoutSessionCompleted processes a checkout.session.completed webhook
+// for one-time payments (donations). It looks up the member by Stripe customer
+// ID and logs the payment event.
+func (m *Module) handleCheckoutSessionCompleted(ctx context.Context, event stripe.Event, cfg *stripeConfig) {
+	session, ok := event.Data.Object["id"].(string)
+	if !ok {
+		m.eventLogger.LogEvent(ctx, 0, "WebhookError", "", "", false, "missing checkout session id")
+		return
+	}
+
+	mode, _ := event.Data.Object["mode"].(string)
+	if mode != "payment" {
+		slog.Debug("ignoring non-payment checkout session", "mode", mode, "session", session)
+		return
+	}
+
+	custID, _ := event.Data.Object["customer"].(string)
+	if custID == "" {
+		m.eventLogger.LogEvent(ctx, 0, "WebhookError", "", "", false, "missing customer in checkout session "+session)
+		return
+	}
+
+	// Look up member by Stripe customer ID
+	var memberID int64
+	var email string
+	err := m.db.QueryRowContext(ctx,
+		"SELECT id, email FROM members WHERE stripe_customer_id = ?", custID).Scan(&memberID, &email)
+	if err != nil {
+		m.eventLogger.LogEvent(ctx, 0, "WebhookError", custID, "", false, "member lookup for checkout session "+session+": "+err.Error())
+		return
+	}
+
+	// Extract payment details from the session
+	amountTotal, _ := event.Data.Object["amount_total"].(float64)
+	currency, _ := event.Data.Object["currency"].(string)
+	paymentStatus, _ := event.Data.Object["payment_status"].(string)
+
+	m.eventLogger.LogEvent(ctx, memberID, "DonationCompleted", custID, "", true,
+		fmt.Sprintf("session=%s amount=%v currency=%s payment_status=%s", session, amountTotal, currency, paymentStatus))
+	slog.Info("recorded one-time donation", "member", email, "session", session, "amount", amountTotal, "currency", currency)
 }
 
 // applySubscriptionUpdate writes the latest subscription state to the matching
