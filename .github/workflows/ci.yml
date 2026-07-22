@@ -126,9 +126,10 @@ jobs:
 
       - name: Install Ansible
         if: steps.cache-ansible.outputs.cache-hit != 'true'
-        run: |
-          pip3 install --user ansible-core
-          ansible-galaxy collection install containers.podman
+        run: pip3 install --user ansible-core
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install containers.podman
 
       - name: Add Ansible to PATH
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
