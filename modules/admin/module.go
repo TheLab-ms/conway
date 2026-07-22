@@ -363,12 +363,27 @@ func (m *Module) exportCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Exclude columns that contain large binary data.
+	excludedColumns := map[string]bool{
+		"discord_avatar":  true,
+		"profile_picture": true,
+	}
+
+	keepIdx := []int{}
+	keepCols := []string{}
+	for i, c := range cols {
+		if !excludedColumns[c] {
+			keepIdx = append(keepIdx, i)
+			keepCols = append(keepCols, c)
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/csv")
 	cw := csv.NewWriter(w)
 	defer cw.Flush()
 
 	// Write header
-	cw.Write(cols)
+	cw.Write(keepCols)
 
 	for rows.Next() {
 		vals := make([]any, len(cols))
@@ -379,9 +394,10 @@ func (m *Module) exportCSV(w http.ResponseWriter, r *http.Request) {
 		if engine.HandleError(w, rows.Scan(ptrs...)) {
 			return
 		}
-		// Convert vals to strings
-		strVals := make([]string, len(vals))
-		for i, v := range vals {
+		// Convert vals to strings, skipping excluded columns.
+		strVals := make([]string, len(keepIdx))
+		for i, idx := range keepIdx {
+			v := vals[idx]
 			if v == nil {
 				strVals[i] = ""
 			} else {
