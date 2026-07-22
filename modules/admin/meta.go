@@ -143,37 +143,40 @@ var listViews = []listView{
 			r.ParseForm()
 			filters := r.Form["event_type"]
 
-			baseQuery := `SELECT timestamp, event_type, member_id, member_name, details FROM (
-				SELECT
-					f.timestamp AS timestamp,
-					'Fob Swipe' AS event_type,
-					f.member AS member_id,
-					COALESCE(m.name_override, m.identifier, 'Unknown') AS member_name,
-					CAST(f.fob_id AS TEXT) || COALESCE(' (' || NULLIF(fc.door_name, '') || ')', '') AS details
-				FROM fob_swipes f
-				LEFT JOIN members m ON f.member = m.id
-				LEFT JOIN fob_clients fc ON f.fob_client = fc.id
+		baseQuery := `SELECT timestamp, event_type, member_id, member_name, details, allowed FROM (
+			SELECT
+				f.timestamp AS timestamp,
+				'Fob Swipe' AS event_type,
+				f.member AS member_id,
+				COALESCE(m.name_override, m.identifier, 'Unknown') AS member_name,
+				CAST(f.fob_id AS TEXT) || COALESCE(' (' || NULLIF(fc.door_name, '') || ')', '') AS details,
+				f.allowed AS allowed
+			FROM fob_swipes f
+			LEFT JOIN members m ON f.member = m.id
+			LEFT JOIN fob_clients fc ON f.fob_client = fc.id
 
 				UNION ALL
 
-				SELECT
-					e.created AS timestamp,
-					e.event AS event_type,
-					e.member AS member_id,
-					COALESCE(m.name_override, m.identifier, 'Unknown') AS member_name,
-					e.details AS details
-				FROM member_events e
-				LEFT JOIN members m ON e.member = m.id
+			SELECT
+				e.created AS timestamp,
+				e.event AS event_type,
+				e.member AS member_id,
+				COALESCE(m.name_override, m.identifier, 'Unknown') AS member_name,
+				e.details AS details,
+				NULL AS allowed
+			FROM member_events e
+			LEFT JOIN members m ON e.member = m.id
 
 				UNION ALL
 
-				SELECT
-					w.created AS timestamp,
-					'Waiver' AS event_type,
-					NULL AS member_id,
-					w.name AS member_name,
-					w.email AS details
-				FROM waivers w
+			SELECT
+				w.created AS timestamp,
+				'Waiver' AS event_type,
+				NULL AS member_id,
+				w.name AS member_name,
+				w.email AS details,
+				NULL AS allowed
+			FROM waivers w
 				WHERE w.name != ''
 			) AS unified_events`
 
@@ -219,7 +222,8 @@ var listViews = []listView{
 				var memberID *int64
 				var memberName string
 				var details string
-				err := results.Scan(&timestamp, &eventType, &memberID, &memberName, &details)
+				var allowed *int
+				err := results.Scan(&timestamp, &eventType, &memberID, &memberName, &details, &allowed)
 				if err != nil {
 					return nil, err
 				}
@@ -227,7 +231,11 @@ var listViews = []listView{
 				badgeType := "secondary"
 				switch eventType {
 				case "Fob Swipe":
-					badgeType = "info"
+					if allowed != nil && *allowed == 0 {
+						badgeType = "danger"
+					} else {
+						badgeType = "success"
+					}
 				case "Waiver":
 					badgeType = "success"
 				}

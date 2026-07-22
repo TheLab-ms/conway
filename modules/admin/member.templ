@@ -45,6 +45,7 @@ type memberEvent struct {
 	Created time.Time
 	Event   string
 	Details string
+	Allowed *bool
 }
 
 func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*memberEvent, error) {
@@ -69,15 +70,16 @@ func querySingleMember(ctx context.Context, db *sql.DB, id string) (*member, []*
 
 func queryMemberEvents(ctx context.Context, db *sql.DB, memberID int64, limit, offset int) ([]*memberEvent, error) {
 	results, err := db.QueryContext(ctx, `
-		SELECT timestamp, event, details FROM (
-			SELECT created AS timestamp, event, details
+		SELECT timestamp, event, details, allowed FROM (
+			SELECT created AS timestamp, event, details, NULL AS allowed
 			FROM member_events
 			WHERE member = $1
 
 			UNION ALL
 
 			SELECT f.timestamp, 'Fob Swipe' AS event,
-				CAST(f.fob_id AS TEXT) || COALESCE(' (' || NULLIF(fc.door_name, '') || ')', '') AS details
+				CAST(f.fob_id AS TEXT) || COALESCE(' (' || NULLIF(fc.door_name, '') || ')', '') AS details,
+				f.allowed AS allowed
 			FROM fob_swipes f
 			LEFT JOIN fob_clients fc ON f.fob_client = fc.id
 			WHERE f.member = $1
@@ -93,7 +95,7 @@ func queryMemberEvents(ctx context.Context, db *sql.DB, memberID int64, limit, o
 	for results.Next() {
 		var created int64
 		event := &memberEvent{}
-		if results.Scan(&created, &event.Event, &event.Details) == nil {
+		if results.Scan(&created, &event.Event, &event.Details, &event.Allowed) == nil {
 			event.Created = time.Unix(created, 0)
 			events = append(events, event)
 		}
@@ -451,7 +453,15 @@ templ renderMemberEventRows(events []*memberEvent, memberID int64, page int, has
 	for _, event := range events {
 		<tr>
 			<td>{ engine.FormatTimeAgo(event.Created, 7*24*time.Hour, "Jan 2, 2006 3:04 PM") }</td>
-			<td><strong>{ event.Event }</strong></td>
+			<td>
+				if event.Event == "Fob Swipe" && event.Allowed != nil && !*event.Allowed {
+					<span class="badge text-bg-danger">{ event.Event }</span>
+				} else if event.Event == "Fob Swipe" {
+					<span class="badge text-bg-success">{ event.Event }</span>
+				} else {
+					<strong>{ event.Event }</strong>
+				}
+			</td>
 			<td>{ event.Details }</td>
 		</tr>
 	}
