@@ -46,7 +46,7 @@ async function discordJSON(url: string, init: RequestInit): Promise<Record<strin
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
-        const response = await fetch(url, { ...init, redirect: 'error', signal: controller.signal });
+        const response = await fetch(url, { ...init, redirect: 'manual', signal: controller.signal });
         if (!response.ok || !response.headers.get('Content-Type')?.toLowerCase().startsWith('application/json') || Number(response.headers.get('Content-Length')) > 65536) {
             await response.body?.cancel();
             throw new Error('Invalid Discord response');
@@ -78,7 +78,9 @@ async function discordJSON(url: string, init: RequestInit): Promise<Record<strin
         const data: unknown = JSON.parse(new TextDecoder().decode(bytes));
         if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid Discord JSON');
         return data as Record<string, unknown>;
-    } catch {
+    } catch (e) {
+        // Never expose provider responses, authorization codes, or access tokens.
+        console.error('discord oauth error', e);
         throw new HttpError(502, 'Discord sign-in could not be completed. Please start again.');
     } finally {
         clearTimeout(timer);
