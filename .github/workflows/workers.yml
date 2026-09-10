@@ -1,0 +1,56 @@
+name: Workers Membership Core
+
+on:
+  push:
+    branches: [main]
+    paths: ['workers/**', 'conwayedge/**', '.github/workflows/workers.yml']
+  pull_request:
+    paths: ['workers/**', 'conwayedge/**', '.github/workflows/workers.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workers:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+          cache-dependency-path: workers/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:integrations
+      - run: node --test src/auth.test.mjs
+      - run: npm run test:browser
+        env:
+          CHROME: /usr/bin/google-chrome
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - run: python3 scripts/rehearse_local_d1.py --node "$(command -v node)"
+      - run: npx wrangler deploy --dry-run
+
+  edge:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: conwayedge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: conwayedge/go.mod
+          cache-dependency-path: conwayedge/go.sum
+      - run: go test -race ./...
+      - run: go vet ./...

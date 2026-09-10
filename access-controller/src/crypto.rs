@@ -58,6 +58,8 @@ pub const RECORD_VERSION: u32 = 3;
 pub const DOMAIN_FOBS: [u8; 4] = *b"FOB1";
 /// Domain tag for the network settings store (4 bytes).
 pub const DOMAIN_SETTINGS: [u8; 4] = *b"CFG1";
+/// Domain tag for the persisted Conway fob cache store (4 bytes).
+pub const DOMAIN_FOBS_CACHE: [u8; 4] = *b"FCH1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CryptoError {

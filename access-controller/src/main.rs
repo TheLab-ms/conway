@@ -11,8 +11,9 @@
 
 use esp_bootloader_esp_idf::esp_app_desc;
 esp_app_desc!();
-
 mod dhcp_server;
+
+mod cache_store;
 mod device_key;
 mod dns_server;
 mod fob_store;
@@ -306,8 +307,18 @@ async fn main(spawner: embassy_executor::Spawner) {
         loaded.conway_port,
     );
 
-    // Initialize shared state (fobs and etag start empty, populated by sync)
-    let fobs = FOBS.init(Mutex::new(heapless::Vec::new()));
+    // Load persisted last-good synced fob cache from flash. This is what
+    // keeps Conway-authorized fobs working across a reboot during a WiFi
+    // outage. Loaded before FOBS.init so access_task can begin with a warm
+    // cache. Empty on first boot / after factory reset / when unprovisioned.
+    let cached_fobs = cache_store::load();
+    log::info!(
+        "storage: loaded {} synced fobs from flash cache (last-good)",
+        cached_fobs.len()
+    );
+
+    // Initialize shared state (etag and last_swipe start empty)
+    let fobs = FOBS.init(Mutex::new(cached_fobs));
     let etag = ETAG.init(Mutex::new(HString::new()));
     let last_swipe = LAST_SWIPE.init(Mutex::new(None));
 
@@ -319,8 +330,6 @@ async fn main(spawner: embassy_executor::Spawner) {
         local_fobs_loaded.len()
     );
     let local_fobs = LOCAL_FOBS.init(Mutex::new(local_fobs_loaded));
-
-    log::info!("storage: fob cache initialized (empty, will sync from server)");
 
     // Leak the radio controller to get 'static lifetime before creating WiFi.
     let esp_radio_ctrl: &'static _ = Box::leak(Box::new(esp_radio_ctrl));
@@ -980,6 +989,9 @@ async fn status_and_config_task(
                         }
                         if let Err(e) = fob_store::erase() {
                             log::error!("config: fob_store::erase failed: {}", e);
+                        }
+                        if let Err(e) = cache_store::erase() {
+                            log::error!("config: cache_store::erase failed: {}", e);
                         }
                         if let Err(e) = swipe_log::erase() {
                             log::error!("config: swipe_log::erase failed: {}", e);

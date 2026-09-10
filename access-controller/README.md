@@ -85,7 +85,17 @@ In standalone mode:
 
 Local fobs work the same way in either mode: a local hit grants unconditionally. A local miss falls through to the remote cache (if Conway is configured); local cannot *revoke* a remote grant.
 
-> **Upgrading from an older build:** reflash once over USB with `cargo run --release` so espflash writes the new partition table (adds the `fobs` data partition and `ota_0`/`ota_1`/`otadata` for OTA). All subsequent updates can use OTA.
+### Conway cache persistence across outages
+
+The last-good Conway-authorized fob list is **persisted to flash** (`cache` data partition) on every cache change, and reloaded at boot. If the device reboots during a WiFi outage — power blip, watchdog reset, or an OTA apply while the network is down — it boots with the previously-known-good list instead of an empty one, so Conway-authorized fobs keep working until a fresh sync succeeds rather than all being denied.
+
+Notes:
+
+- The cache only reflects what the server successfully returned after signature verification; during an outage it stays stale and is never *extended*. A fob added to Conway during the outage still only authorizes once a sync succeeds (governed by the 10 s recheck window).
+- Writes happen only when the synced list actually changes (not on every 10 s tick), limiting flash wear; a failed write (e.g. an unprovisioned device) is logged and the in-RAM list stays authoritative.
+- Factory reset (CONFIG hold ≥ 5 s) wipes the cached list along with WiFi credentials and local fobs.
+
+> **Upgrading from an older build:** reflash once over USB with `cargo run --release` so espflash writes the new partition table (adds the `cache` data partition on top of the existing `fobs`/`ota_0`/`ota_1`/`otadata` layout). All subsequent updates can use OTA. Until the partition table is refreshed the persisted cache has no flash region; the device still works exactly as before (cache lives in RAM), it simply won't survive a reboot.
 
 ## OTA (over-the-air) firmware updates
 
@@ -125,7 +135,7 @@ Because endpoints are unauthenticated, the `/config` form **never echoes the sto
 
 ### At-rest encryption
 
-Both persistent partitions (`nvs` = WiFi/Conway config, `fobs` = local fob list) are encrypted with ChaCha20-Poly1305 using per-device keys derived (HKDF-SHA256) from a 32-byte root in eFuse BLOCK3. This defends against `espflash read-flash` of a stolen unit — a flash dump yields only ciphertext.
+Three persistent partitions (`nvs` = WiFi/Conway config, `fobs` = local fob list, `cache` = last-good Conway-synced fob list) are encrypted with ChaCha20-Poly1305 using per-device keys derived (HKDF-SHA256) from a 32-byte root in eFuse BLOCK3. This defends against `espflash read-flash` of a stolen unit — a flash dump yields only ciphertext.
 
 Each device must be provisioned **exactly once** with `tools/provision-device-key.sh` (see `tools/README.md` and `HARDWARE.md`). Until provisioned, the firmware logs a loud warning and refuses to persist new state; loads return empty (settings then fall back to `option_env!` defaults from `network.env`).
 

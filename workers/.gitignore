@@ -1,0 +1,8 @@
+node_modules
+.wrangler/
+.dev.vars
+dist/
+coverage/
+migration-output/
+__pycache__/
+*.pyc

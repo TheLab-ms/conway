@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "conway",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true, "not_found_handling": "single-page-application" },
+  "d1_databases": [{ "binding": "DB", "database_name": "conway", "database_id": "REPLACE_WITH_D1_DATABASE_ID", "migrations_dir": "migrations" }],
+  "durable_objects": { "bindings": [{ "name": "COORDINATOR", "class_name": "MembershipCoordinator" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MembershipCoordinator"] }],
+  "queues": { "producers": [{ "binding": "JOBS", "queue": "conway-jobs" }], "consumers": [{ "queue": "conway-jobs", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 3 }] },
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": { "SITE_URL": "http://localhost:8787", "AUTOMATION_ENABLED": "false", "KIOSK_IPS": "", "EDGE_URL": "" },
+  "observability": { "enabled": true }
+}

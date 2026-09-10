@@ -1,5 +1,5 @@
 //! Per-device root key + HKDF-derived per-partition sub-keys for at-rest
-//! encryption of the `nvs` (settings) and `fobs` partitions.
+//! encryption of the `nvs` (settings), `fobs`, and `cache` partitions.
 //!
 //! ## Threat model
 //!
@@ -48,8 +48,9 @@
 //! coding scheme); see `tools/README.md`.
 //!
 //! If a burn is ever refused or fails verification, [`state()`] returns
-//! [`KeyState::Unprovisioned`] and both stores degrade safely: loads return
-//! empty, saves return an error that is surfaced in the HTTP UI and logs.
+//! [`KeyState::Unprovisioned`] and all three stores degrade safely: loads
+//! return empty, saves return an error that is surfaced in the HTTP UI
+//! and logs.
 //!
 //! ### Threat note on self-generated entropy
 //!
@@ -68,13 +69,14 @@
 //! ```text
 //! K_fobs     = HKDF-SHA256(ikm = BLOCK3, salt = mac6, info = "conway/fobs/v1")
 //! K_settings = HKDF-SHA256(ikm = BLOCK3, salt = mac6, info = "conway/settings/v1")
+//! K_cache    = HKDF-SHA256(ikm = BLOCK3, salt = mac6, info = "conway/cache/v1")
 //! ```
 //!
-//! Sub-keys are cached at boot in a pair of `static mut [u8; 32]` arrays
+//! Sub-keys are cached at boot in a set of `static mut [u8; 32]` arrays
 //! guarded by an `AtomicU8` state flag with Release/Acquire ordering.
 //! [`init`] is a single-shot called pre-task-spawn during boot: it writes
 //! the bytes, then publishes `ST_READY` with a Release store; accessor
-//! functions ([`fobs_key`], [`settings_key`]) load the state with Acquire
+//! functions ([`fobs_key`], [`settings_key`], [`cache_key`]) load the state with Acquire
 //! and only dereference the statics once they observe `ST_READY`. Once
 //! published the bytes are immutable for the lifetime of the process.
 //! This is logically equivalent to a write-once cell but avoids pulling
@@ -126,9 +128,11 @@ static STATE: AtomicU8 = AtomicU8::new(ST_UNINIT);
 // observes the data.
 static mut K_FOBS: Key = [0u8; 32];
 static mut K_SETTINGS: Key = [0u8; 32];
+static mut K_CACHE: Key = [0u8; 32];
 
 const INFO_FOBS: &[u8] = b"conway/fobs/v1";
 const INFO_SETTINGS: &[u8] = b"conway/settings/v1";
+const INFO_CACHE: &[u8] = b"conway/cache/v1";
 
 /// HKDF salt — the WiFi STA MAC (6 bytes). Public, not a secret; serves
 /// only as domain separation between physically distinct devices that
@@ -422,6 +426,7 @@ pub fn init() {
 
     let mut k_fobs = Zeroizing::new([0u8; 32]);
     let mut k_settings = Zeroizing::new([0u8; 32]);
+    let mut k_cache = Zeroizing::new([0u8; 32]);
 
     // HKDF expand of length 32 bytes for SHA-256 only fails if `okm.len()`
     // exceeds 255 * HashLen = 8160 bytes — impossible at 32 bytes, so
@@ -429,6 +434,7 @@ pub fn init() {
     hk.expand(INFO_FOBS, &mut *k_fobs).expect("hkdf expand fobs");
     hk.expand(INFO_SETTINGS, &mut *k_settings)
         .expect("hkdf expand settings");
+    hk.expand(INFO_CACHE, &mut *k_cache).expect("hkdf expand cache");
 
     // Publish keys, then state. The Release on STATE pairs with Acquire
     // in the accessors; readers either see Uninit/Unprovisioned (and
@@ -440,11 +446,12 @@ pub fn init() {
     unsafe {
         K_FOBS = *k_fobs;
         K_SETTINGS = *k_settings;
+        K_CACHE = *k_cache;
     }
     STATE.store(ST_READY, Ordering::Release);
 
     log::info!("device_key: per-device key provisioned, sub-keys derived");
-    // ikm / k_fobs / k_settings stack copies drop here -> Zeroizing wipes.
+    // ikm / k_fobs / k_settings / k_cache stack copies drop here -> Zeroizing wipes.
 }
 
 /// Current provisioning state.
@@ -481,4 +488,13 @@ pub fn settings_key() -> Option<&'static Key> {
     }
     // SAFETY: see fobs_key.
     Some(unsafe { &K_SETTINGS })
+}
+
+/// Sub-key for the `cache` (persisted Conway fob cache) partition.
+pub fn cache_key() -> Option<&'static Key> {
+    if STATE.load(Ordering::Acquire) != ST_READY {
+        return None;
+    }
+    // SAFETY: see fobs_key.
+    Some(unsafe { &K_CACHE })
 }

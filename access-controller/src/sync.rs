@@ -6,6 +6,14 @@
 //!
 //! Each request can include fob swipe events to be stored.
 //! A bounded set of events are held in-memory.
+//!
+//! The in-memory cache is also persisted to the `cache` flash partition
+//! ([`crate::cache_store`]) whenever the synced list changes, so a reboot
+//! during a WiFi outage boots with the last-good Conway-authorized list
+//! instead of an empty one. Saving happens after the response has been
+//! signature-verified, and only on an actual change (not per 10 s tick)
+//! to limit flash wear. A failed save (e.g. unprovisioned device) is
+//! logged and the sync still completes — RAM stays authoritative.
 
 use core::fmt::Write as FmtWrite;
 use embassy_net::tcp::TcpSocket;
@@ -257,12 +265,24 @@ pub async fn sync_with_conway(
 
             log::info!("sync: received {} fobs", new_fobs.len());
 
-            // Update shared fob list
-            {
+            // Update shared fob list. Persist to flash only when the list
+            // actually changed (RAM is derived from the same source at
+            // boot, so RAM vs. flash disagree only if a prior save failed).
+            // Hold the lock just for the RAM swap; the flash write happens
+            // after release so `access_task` is never stalled mid-auth.
+            // Saving is fine on failure — see the module docs.
+            let changed = {
                 let mut guard = fobs.lock().await;
+                let changed = guard.as_slice() != new_fobs.as_slice();
                 guard.clear();
                 for &f in new_fobs.iter() {
                     let _ = guard.push(f);
+                }
+                changed
+            };
+            if changed {
+                if let Err(e) = crate::cache_store::save(new_fobs.as_slice()) {
+                    log::error!("sync: failed to persist synced fob cache: {}", e);
                 }
             }
 

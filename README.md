@@ -2,6 +2,16 @@
 
 The makerspace management software used by TheLab.ms in Richardson, TX.
 
+## Cloudflare Workers
+
+The membership-core reimplementation lives in [`workers/`](workers/README.md):
+TypeScript, D1, Queues, Durable Objects, and a zero-build native web-components
+frontend. It uses Discord-only authentication and has no member images or email
+delivery. See the [migration runbook](workers/MIGRATION.md) before moving existing
+data, and [`conwayedge/`](conwayedge/README.md) for the LAN/controller companion.
+The Go application and its deployment instructions below remain intact for the
+existing deployment and controlled migration rollback.
+
 
 ## What does it do?
 
@@ -23,4 +33,3 @@ Run `make seed` to insert a leadership account for `dev@localhost`.
 ### Deployment
 
 See: https://github.com/TheLab-ms/infra
-
