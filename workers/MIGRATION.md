@@ -59,19 +59,19 @@ The exporter consumes that backup read-only; it does not archive another copy.
 
 ## Preserved Data
 
-| Source | Target and behavior |
-| --- | --- |
-| `members` | All contract writable fields and original IDs/creation times, names/overrides, notes/referral source, confirmation, waiver pointer, fobs/last seen, leadership, billing/discount/family/PayPal/Stripe state, Discord linkage, and profile/privacy/notification fields |
-| Target `members.version` | Initialized explicitly to `1` and verified for every imported member. The legacy source normally has no revision column; its absence is not a blocker. |
-| Directory additive columns | `bio`/`pronouns` NULL or absent become `''`; nullable/absent privacy and notification flags become `0`. Every normalization is recorded. No other missing required member column is guessed. |
-| `waivers` | Every signature, including pre-signup signatures, original ID/version/time/name/email and exact existing member links. No email-based relinking or newest-waiver substitution during import. |
-| `waiver_content` | Every version becomes `waiver_versions`, retaining content and created time verbatim. `agreements` is the ordered JSON list extracted with the legacy `modules/waiver/markdown.go` checkbox rules. Latest version becomes `settings.waiver_version`. |
-| `member_events` | Original IDs, times, member, event and details; `actor` retained if present, otherwise NULL. The target has no `important` flag: this requires explicit archive-only review, not silent loss. |
-| `fob_swipes` | Original UID/time/fob/member/allowed. Existing `controller` retained if present; otherwise `fob_client` becomes `legacy-fob-client:<id>`, or `''` without a client. Client references are checked. Client IP/door-name configuration remains in source. Historical member attribution is not rewritten based on current fob ownership. |
-| `sqlite_sequence` | Member, waiver and event high-water marks retained so deleted historical IDs are not reused. |
-| `members_config` | Latest version's `referral_sources_json` labels become `referral_sources`. |
-| `stripe_config` | Latest `donation_items_json` maps `name` to `label` and retains `price_id`. API/signing keys are never settings. |
-| `discord_config` | Latest guild/role/leadership/badge channel IDs and badge/access-denied enable flags map to contract settings. |
+| Source                     | Target and behavior                                                                                                                                                                                                                                                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `members`                  | All contract writable fields and original IDs/creation times, names/overrides, notes/referral source, confirmation, waiver pointer, fobs/last seen, leadership, billing/discount/family/PayPal/Stripe state, Discord linkage, and profile/privacy/notification fields                                                                  |
+| Target `members.version`   | Initialized explicitly to `1` and verified for every imported member. The legacy source normally has no revision column; its absence is not a blocker.                                                                                                                                                                                 |
+| Directory additive columns | `bio`/`pronouns` NULL or absent become `''`; nullable/absent privacy and notification flags become `0`. Every normalization is recorded. No other missing required member column is guessed.                                                                                                                                           |
+| `waivers`                  | Every signature, including pre-signup signatures, original ID/version/time/name/email and exact existing member links. No email-based relinking or newest-waiver substitution during import.                                                                                                                                           |
+| `waiver_content`           | Every version becomes `waiver_versions`, retaining content and created time verbatim. `agreements` is the ordered JSON list extracted with the legacy `modules/waiver/markdown.go` checkbox rules. Latest version becomes `settings.waiver_version`.                                                                                   |
+| `member_events`            | Original IDs, times, member, event and details; `actor` retained if present, otherwise NULL. The target has no `important` flag: this requires explicit archive-only review, not silent loss.                                                                                                                                          |
+| `fob_swipes`               | Original UID/time/fob/member/allowed. Existing `controller` retained if present; otherwise `fob_client` becomes `legacy-fob-client:<id>`, or `''` without a client. Client references are checked. Client IP/door-name configuration remains in source. Historical member attribution is not rewritten based on current fob ownership. |
+| `sqlite_sequence`          | Member, waiver and event high-water marks retained so deleted historical IDs are not reused.                                                                                                                                                                                                                                           |
+| `members_config`           | Latest version's `referral_sources_json` labels become `referral_sources`.                                                                                                                                                                                                                                                             |
+| `stripe_config`            | Latest `donation_items_json` maps `name` to `label` and retains `price_id`. API/signing keys are never settings.                                                                                                                                                                                                                       |
+| `discord_config`           | Latest guild/role/leadership/badge channel IDs and badge/access-denied enable flags map to contract settings.                                                                                                                                                                                                                          |
 
 The source layout is intentionally discovered with `table_xinfo`: the base member
 SQL is not the whole schema. Relevant additive migrations live in members,
@@ -202,13 +202,8 @@ ticket. Starting from `review-template.json`, add only reviewed IDs to
 
 ```json
 {
-  "source_sha256": "the exact hash from report.json",
-  "approvals": [
-    "trigger:members_family_relationship_update",
-    "column:member_events.important",
-    "archive:outbound_mail",
-    "rule:triggers:7"
-  ]
+    "source_sha256": "the exact hash from report.json",
+    "approvals": ["trigger:members_family_relationship_update", "column:member_events.important", "archive:outbound_mail", "rule:triggers:7"]
 }
 ```
 

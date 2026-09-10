@@ -1,23 +1,28 @@
 {
-  "name": "conway-workers",
-  "private": true,
-  "type": "module",
-  "engines": { "node": ">=22.12.0" },
-  "scripts": {
-    "dev": "wrangler dev",
-    "typecheck": "tsc --noEmit && tsc -p test/tsconfig.json && tsc -p test/tsconfig.config.json",
-    "test": "vitest run",
-    "test:integrations": "node --test src/integrations.test.mjs",
-    "test:browser": "node browser-tests/run.mjs",
-    "db:local": "wrangler d1 migrations apply conway --local",
-    "deploy": "wrangler deploy"
-  },
-  "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.22.0",
-    "@cloudflare/workers-types": "5.20260908.1",
-    "@types/node": "^22.0.0",
-    "typescript": "~5.9.2",
-    "vitest": "~4.1.0",
-    "wrangler": "4.124.0"
-  }
+    "name": "conway-workers",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": ">=22.12.0"
+    },
+    "scripts": {
+        "dev": "wrangler dev",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "typecheck": "tsc --noEmit && tsc -p test/tsconfig.json && tsc -p test/tsconfig.config.json",
+        "test": "vitest run",
+        "test:integrations": "node --test src/integrations.test.mjs",
+        "test:browser": "node browser-tests/run.mjs",
+        "db:local": "wrangler d1 migrations apply conway --local",
+        "deploy": "wrangler deploy"
+    },
+    "devDependencies": {
+        "@cloudflare/vitest-pool-workers": "0.22.0",
+        "@cloudflare/workers-types": "5.20260908.1",
+        "@types/node": "^22.0.0",
+        "prettier": "^3.9.6",
+        "typescript": "~5.9.2",
+        "vitest": "~4.1.0",
+        "wrangler": "^4.130.0"
+    }
 }

@@ -57,20 +57,20 @@ Never claim an existing account from an email address or a Discord display name.
 `wrangler.jsonc` defines the application bindings and safe inactive defaults.
 Secrets belong in Wrangler secrets, not D1 settings, frontend files or git.
 
-| Name | Purpose |
-| --- | --- |
-| `DB` | Dedicated D1 database; replace the database ID placeholder |
-| `COORDINATOR` | `MembershipCoordinator` Durable Object binding; preserve its storage across upgrades |
-| `JOBS` | `conway-jobs` Queue, producer and consumer |
-| `SITE_URL` | Exact canonical origin, no trailing slash; used for OAuth, CSRF and return links |
-| `AUTOMATION_ENABLED` | String `true` enables background provider delivery and edge sync; default `false` |
-| `KIOSK_IPS` | Comma-separated exact public makerspace egress IPs, including IPv6 if used; empty denies enrollment |
-| `EDGE_URL` | HTTPS tunnel origin for the edge; empty disables edge synchronization |
-| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord OAuth application credentials |
-| `DISCORD_PUBLIC_KEY` | Hex application key for interaction signature verification |
-| `DISCORD_BOT_TOKEN` | Bot credential for roles and messages |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Matching account/mode API and endpoint signing secrets |
-| `EDGE_TOKEN` | Bearer token matching the edge tunnel configuration |
+| Name                                         | Purpose                                                                                             |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `DB`                                         | Dedicated D1 database; replace the database ID placeholder                                          |
+| `COORDINATOR`                                | `MembershipCoordinator` Durable Object binding; preserve its storage across upgrades                |
+| `JOBS`                                       | `conway-jobs` Queue, producer and consumer                                                          |
+| `SITE_URL`                                   | Exact canonical origin, no trailing slash; used for OAuth, CSRF and return links                    |
+| `AUTOMATION_ENABLED`                         | String `true` enables background provider delivery and edge sync; default `false`                   |
+| `KIOSK_IPS`                                  | Comma-separated exact public makerspace egress IPs, including IPv6 if used; empty denies enrollment |
+| `EDGE_URL`                                   | HTTPS tunnel origin for the edge; empty disables edge synchronization                               |
+| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord OAuth application credentials                                                               |
+| `DISCORD_PUBLIC_KEY`                         | Hex application key for interaction signature verification                                          |
+| `DISCORD_BOT_TOKEN`                          | Bot credential for roles and messages                                                               |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Matching account/mode API and endpoint signing secrets                                              |
+| `EDGE_TOKEN`                                 | Bearer token matching the edge tunnel configuration                                                 |
 
 Leadership settings contain only nonsecrets: site/referral labels, membership
 price IDs, donation allowlist, discount-to-coupon mappings, Discord guild/role/
