@@ -12,6 +12,13 @@ export interface Env {
     DISCORD_CLIENT_SECRET: string;
     DISCORD_BOT_TOKEN: string;
     DISCORD_PUBLIC_KEY: string;
+    DISCORD_GUILD_ID: string;
+    DISCORD_ROLE_ID: string;
+    DISCORD_LEADERSHIP_CHANNEL_ID: string;
+    DISCORD_CHECKIN_CHANNEL_ID: string;
+    DISCORD_SIGNUP_NOTIFY_ENABLED: string;
+    DISCORD_CHECKIN_NOTIFY_ENABLED: string;
+    DISCORD_ACCESS_DENIED_ENABLED: string;
     STRIPE_SECRET_KEY: string;
     STRIPE_WEBHOOK_SECRET: string;
 }
@@ -23,7 +30,6 @@ export interface Member {
     confirmed: number;
     name: string;
     name_override: string | null;
-    heard_about: string;
     admin_notes: string;
     identifier: string;
     payment_status: string | null;
@@ -50,27 +56,14 @@ export interface Member {
     discord_username: string | null;
     discord_email: string | null;
     discord_last_synced: number | null;
-    pronouns: string;
-    bio: string;
-    directory_hidden: number;
     discord_checkin_notify: number;
 }
 export interface Settings {
     version: number;
     site_name: string;
-    referral_sources: string[];
     discounts: { id: string; label: string; coupon_id: string }[];
-    donations: { price_id: string; label: string }[];
     monthly_price_id: string;
     yearly_price_id: string;
-    discord_guild_id: string;
-    discord_role_id: string;
-    discord_leadership_channel_id: string;
-    discord_badge_channel_id: string;
-    signup_notify_enabled: boolean;
-    badge_notify_enabled: boolean;
-    access_denied_enabled: boolean;
-    notification_templates: { signup: string; discount: string; badge: string; denied: string };
     waiver_version: number;
 }
 export interface Session {
@@ -78,5 +71,4 @@ export interface Session {
     member: number | null;
     csrf_token: string;
     expires: number;
-    signup: string | null;
 }

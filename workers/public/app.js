@@ -72,7 +72,6 @@ class ConwayApp extends HTMLElement {
         const navigation = current
             ? [
                   ['Dashboard', '/dashboard'],
-                  ['Directory', '/directory'],
                   ['Billing', '/billing'],
               ]
             : [];
@@ -91,7 +90,7 @@ class ConwayApp extends HTMLElement {
                 ),
             ),
         );
-        if (current || state.session.signup)
+        if (current)
             nav.append(
                 button('Sign out', async (event) => {
                     const control = event.currentTarget;
@@ -143,16 +142,12 @@ class ConwayApp extends HTMLElement {
             history.replaceState({}, '', '/dashboard');
             path = '/dashboard';
         }
-        if (path === '/' && state.session.signup) {
-            history.replaceState({}, '', '/signup');
-            path = '/signup';
-        }
         this.shell(path, message);
         const host = this.content;
         host.setAttribute('aria-busy', 'true');
         try {
             let view;
-            const publicPaths = ['/', '/signup', '/kiosk', '/fobs/bind'];
+            const publicPaths = ['/', '/kiosk', '/fobs/bind'];
             if (!state.session.member && !publicPaths.includes(path)) {
                 const target = safeReturn(path + location.search);
                 view = el(
@@ -162,9 +157,7 @@ class ConwayApp extends HTMLElement {
                     panel(
                         'Members only',
                         el('p', {}, 'You will return to this page after signing in.'),
-                        state.session.signup
-                            ? link('Finish signup', '/signup?return_to=' + encodeURIComponent(target), 'button')
-                            : link('Continue with Discord', '/login/discord?return_to=' + encodeURIComponent(target), 'button'),
+                        link('Continue with Discord', '/login/discord?return_to=' + encodeURIComponent(target), 'button'),
                     ),
                 );
             } else if (path.startsWith('/admin') && !state.session.member?.leadership) {
@@ -175,18 +168,10 @@ class ConwayApp extends HTMLElement {
                     link('Back to dashboard', '/dashboard', 'button secondary'),
                 );
             } else if (path === '/') view = member.welcome();
-            else if (path === '/signup') {
-                if (state.session.member) {
-                    this.navigate(safeReturn(new URLSearchParams(location.search).get('return_to')), '', true);
-                    return;
-                }
-                view = member.signup(this);
-            } else if (path === '/dashboard') view = await member.dashboard(this, signal);
+            else if (path === '/dashboard') view = await member.dashboard(this, signal);
             else if (path === '/profile') view = await member.profile(this, signal);
-            else if (path === '/directory') view = await member.directory(this, signal);
             else if (path === '/waiver') view = await member.waiver(this, signal);
             else if (path === '/billing' || path === '/discounts') view = await member.billing(this, signal);
-            else if (path === '/donations') view = member.donations();
             else if (path === '/admin/members') view = await admin.members(this, signal);
             else if (/^\/admin\/members\/(new|\d+)$/.test(path)) view = await admin.memberEditor(this, path.split('/').pop(), signal);
             else if (path === '/admin/config') view = await admin.configEditor(this, signal);

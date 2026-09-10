@@ -26,19 +26,10 @@ const config = {
     site_name: 'Lab',
     monthly_price_id: 'price_month',
     yearly_price_id: 'price_year',
-    donations: [{ price_id: 'price_donation', label: 'Donation' }],
     discounts: [
         { id: 'student', label: 'Student', coupon_id: 'coupon_student' },
         { id: 'family', label: 'Family', coupon_id: 'coupon_family' },
     ],
-    discord_guild_id: '111',
-    discord_role_id: '222',
-    discord_leadership_channel_id: '333',
-    discord_badge_channel_id: '444',
-    signup_notify_enabled: true,
-    badge_notify_enabled: true,
-    access_denied_enabled: true,
-    notification_templates: {},
 };
 const member = (extra = {}) => ({
     id: 1,
@@ -159,6 +150,13 @@ function harness({
         STRIPE_SECRET_KEY: 'sk_test',
         STRIPE_WEBHOOK_SECRET: 'whsec_test',
         DISCORD_BOT_TOKEN: 'bot_token',
+        DISCORD_GUILD_ID: '111',
+        DISCORD_ROLE_ID: '222',
+        DISCORD_LEADERSHIP_CHANNEL_ID: '333',
+        DISCORD_CHECKIN_CHANNEL_ID: '444',
+        DISCORD_SIGNUP_NOTIFY_ENABLED: 'true',
+        DISCORD_CHECKIN_NOTIFY_ENABLED: 'true',
+        DISCORD_ACCESS_DENIED_ENABLED: 'true',
         EDGE_URL: 'https://edge.example.com',
         EDGE_TOKEN: 'edge_token',
         JOBS: { send: async () => {} },
@@ -521,33 +519,66 @@ test('Stripe reconciliation uses live subscription state instead of stale webhoo
     assert.equal(write.values[1], 'active');
     assert.ok(h.db.calls.every((call) => !/WHERE email/.test(call.sql)));
 });
-test('donations deduplicate by session rather than webhook event ID', async () => {
-    const event = {
-        id: 'evt_donation',
-        type: 'checkout.session.completed',
-        data: { object: { id: 'cs_donation', customer: 'cus_member' } },
-    };
-    const h = harness({
-        db: jobDB({ kind: 'stripe_event', payload: '{"event_id":"evt_donation"}' }, member(), (statement) => {
-            if (statement.sql.startsWith('SELECT payload, processed')) return { payload: JSON.stringify(event), processed: null };
-            if (statement.sql === 'SELECT * FROM members WHERE stripe_customer_id = ?') return member();
-        }),
-        fetch: async () =>
-            response({
-                id: 'cs_donation',
-                customer: 'cus_member',
-                mode: 'payment',
-                amount_total: 2500,
-                currency: 'usd',
-                payment_status: 'paid',
-                created: time,
-            }),
-    });
-    await h.internal('/job', { id: 1 });
-    const write = h.db.calls.find((call) => call.sql.startsWith('INSERT INTO donations'));
-    assert.equal(write.values[0], 'cs_donation');
-    assert.match(write.sql, /ON CONFLICT\(id\) DO UPDATE/);
-    assert.match(write.sql, /donations.status != 'paid'/);
+test('removed donation endpoint is not routed and has no billing effects', async () => {
+    const h = harness();
+    for (const method of ['GET', 'POST']) {
+        const request = new Request('https://members.example.com/api/billing/donation', {
+            method,
+            ...(method === 'POST' ? { body: JSON.stringify({ price_id: 'price_removed' }) } : {}),
+        });
+        assert.equal(await h.api.integrationRoute(request, h.env), null);
+    }
+    assert.equal(h.db.calls.length, 0);
+    assert.equal(h.storage.size, 0);
+});
+test('payment-mode checkout events complete without customer lookup, provider calls, or billing writes', async () => {
+    for (const type of ['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed']) {
+        for (const customer of ['cus_member', 'cus_unmapped', null]) {
+            const event = { id: 'evt_payment', type, data: { object: { id: 'cs_payment', mode: 'payment', customer } } };
+            const h = harness({
+                db: jobDB({ kind: 'stripe_event', payload: '{"event_id":"evt_payment"}' }, member(), (statement) => {
+                    if (statement.sql.startsWith('SELECT payload, processed')) return { payload: JSON.stringify(event), processed: null };
+                }),
+            });
+            assert.equal((await h.api.integrationRoute(await signedStripe(event), h.env)).status, 200);
+            await h.internal('/job', { id: 1 });
+            assert.ok(h.db.calls.some((call) => call.sql.startsWith('UPDATE stripe_events SET processed')));
+            assert.ok(h.db.calls.some((call) => call.sql.startsWith("UPDATE jobs SET status = 'completed'")));
+            assert.ok(h.db.calls.every((call) => !/\b(?:members|member_events|donations)\b/.test(call.sql)));
+        }
+    }
+});
+test('subscription checkout events reconcile live membership and verify the checkout customer', async () => {
+    for (const type of ['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed']) {
+        for (const customer of ['cus_member', 'cus_wrong']) {
+            const event = { id: 'evt_checkout', type, data: { object: { id: 'cs_checkout', mode: 'subscription', customer: 'cus_member' } } };
+            const requests = [];
+            const h = harness({
+                db: jobDB({ kind: 'stripe_event', payload: '{"event_id":"evt_checkout"}' }, member(), (statement) => {
+                    if (statement.sql.startsWith('SELECT payload, processed')) return { payload: JSON.stringify(event), processed: null };
+                    if (statement.sql === 'SELECT * FROM members WHERE stripe_customer_id = ?') return member();
+                }),
+                fetch: async (url) => {
+                    requests.push(url);
+                    if (url.endsWith('/checkout/sessions/cs_checkout')) return response({ id: 'cs_checkout', customer, mode: 'subscription' });
+                    assert.ok(url.includes('/subscriptions?'));
+                    return response({ data: [{ id: 'sub_live', customer, status: 'active', metadata: { conway_member_id: '1' } }], has_more: false });
+                },
+            });
+            await h.internal('/job', { id: 1 });
+            const write = h.db.calls.find((call) => call.sql.startsWith('UPDATE members SET stripe_subscription_id'));
+            if (customer === 'cus_member') {
+                assert.equal(write.values[0], 'sub_live');
+                assert.equal(write.values[1], 'active');
+                assert.ok(h.db.calls.some((call) => call.sql.startsWith('UPDATE stripe_events SET processed')));
+                assert.ok(h.db.calls.some((call) => call.sql.startsWith("UPDATE jobs SET status = 'completed'")));
+            } else {
+                assert.equal(write, undefined);
+                assert.equal(requests.length, 1);
+                assert.equal(h.db.calls.find((call) => call.sql.startsWith('UPDATE jobs SET status = ?')).values[0], 'dead');
+            }
+        }
+    }
 });
 test('manual checkout operates while automation disabled; only approved/admin discounts apply', async () => {
     for (const status of ['requested', 'approved', null]) {
@@ -567,7 +598,10 @@ test('manual checkout operates while automation disabled; only approved/admin di
                 });
             },
         });
-        assert.equal((await h.internal('/checkout', { member_id: 1, donation: false, annual: true, price_id: '' })).status, 200);
+        assert.equal((await h.internal('/checkout', { member_id: 1, annual: true })).status, 200);
+        assert.equal(forms[0].get('mode'), 'subscription');
+        assert.equal(forms[0].has('submit_type'), false);
+        assert.ok([...forms[0].keys()].every((key) => !key.startsWith('payment_intent_data')));
         assert.equal(forms[0].get('line_items[0][price]'), 'price_year');
         assert.equal(forms[0].get('discounts[0][coupon]'), status === 'requested' ? null : 'coupon_student');
         assert.equal(forms[0].get('subscription_data[metadata][conway_member_id]'), '1');
@@ -597,7 +631,7 @@ test('different concurrent checkout keys share one customer and one open session
             });
         },
     });
-    const input = { member_id: 1, donation: false, annual: false, price_id: '' };
+    const input = { member_id: 1, annual: false };
     const results = await Promise.all(['request-a', 'request-b'].map((request_key) => h.internal('/checkout', { ...input, request_key })));
     assert.ok(results.every((result) => result.status === 200));
     assert.equal(customers, 1);
@@ -619,10 +653,11 @@ test('ambiguous customer creation retries with the same persisted Stripe idempot
                 if (keys.length === 1) throw new Error('connection lost after accepted write');
                 return response({ id: 'cus_created' });
             }
-            return response({ id: 'cs_donate', url: 'https://checkout.stripe.com/donation' });
+            if (url.includes('/subscriptions?')) return response({ data: [], has_more: false });
+            return response({ id: 'cs_checkout', url: 'https://checkout.stripe.com/membership' });
         },
     });
-    const input = { member_id: 1, donation: true, annual: false, price_id: 'price_donation' };
+    const input = { member_id: 1, annual: false };
     assert.equal((await h.internal('/checkout', input)).status, 502);
     assert.equal((await h.internal('/checkout', input)).status, 200);
     assert.equal(keys.length, 2);
@@ -644,7 +679,7 @@ test('existing subscriptions use billing portal instead of creating a second sub
             return response({ url: 'https://billing.stripe.com/portal' });
         },
     });
-    assert.equal((await h.internal('/checkout', { member_id: 1, donation: false, annual: false, price_id: '' })).status, 200);
+    assert.equal((await h.internal('/checkout', { member_id: 1, annual: false })).status, 200);
     assert.equal(calls.length, 2);
 });
 
@@ -679,9 +714,7 @@ test('family approval SQL requires linked active primary and family checkout fai
             (
                 await blocked.internal('/checkout', {
                     member_id: 1,
-                    donation: false,
                     annual: false,
-                    price_id: '',
                 })
             ).status,
             409,
@@ -700,15 +733,16 @@ test('definitive Stripe validation rejection clears slot while ambiguous failure
         const keys = [];
         const h = harness({
             db: database((statement) => (statement.sql === 'SELECT * FROM members WHERE id = ?' ? member() : undefined)),
-            fetch: async (_url, init) => {
+            fetch: async (url, init) => {
+                if (url.includes('/subscriptions?')) return response({ data: [], has_more: false });
                 keys.push(init.headers['Idempotency-Key']);
                 if (!attempt++) return response(data, status);
                 return response({ id: 'cs_retry', url: 'https://checkout.stripe.com/retry' });
             },
         });
-        const input = { member_id: 1, donation: true, annual: false, price_id: 'price_donation' };
+        const input = { member_id: 1, annual: false };
         assert.equal((await h.internal('/checkout', input)).status, 502);
-        assert.equal(h.storage.has('checkout:1:donation'), !clears);
+        assert.equal(h.storage.has('checkout:1:membership'), !clears);
         assert.equal((await h.internal('/checkout', input)).status, 200);
         assert.equal(keys[0] === keys[1], !clears);
     }
@@ -806,7 +840,7 @@ test('post-network CAS conflict fails without claiming success and leaves checko
     assert.equal((await h.api.mutateMember(h.env, 1, { discount_type: null }, 9, 1)).status, 409);
     assert.match(h.batches[0][0].sql, /EXISTS.*actor.leadership = 1/);
     assert.match(h.batches[0][1].sql, /changes\(\) = 1/);
-    assert.equal((await h.internal('/checkout', { member_id: 1, donation: false, annual: false, price_id: '' })).status, 409);
+    assert.equal((await h.internal('/checkout', { member_id: 1, annual: false })).status, 409);
 });
 
 test('revocation expires stored and paginated live sessions before member CAS', async () => {
@@ -907,9 +941,7 @@ test('safe physical deletion audits atomically and cached checkout cannot resurr
         (
             await h.internal('/checkout', {
                 member_id: 1,
-                donation: false,
                 annual: false,
-                price_id: '',
                 request_key: key,
             })
         ).status,
@@ -936,9 +968,7 @@ test('checkout waits for revocation and cannot recreate a discounted session con
     while (!entered) await new Promise((resolve) => setTimeout(resolve, 1));
     const checkout = h.internal('/checkout', {
         member_id: 1,
-        donation: false,
         annual: false,
-        price_id: '',
     });
     release();
     assert.equal((await mutation).status, 200);
@@ -949,15 +979,13 @@ test('revoked cached request key cannot return or recreate its old discounted ch
     const h = mutationHarness({ who: member({ discount_type: 'student' }) });
     const input = {
         member_id: 1,
-        donation: false,
         annual: false,
-        price_id: '',
         request_key: 'request-old',
     };
     const digest = async (value) => Buffer.from(await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(value))).toString('hex');
     const slot = `request:1:membership:${await digest(input.request_key)}`;
     h.storage.set(slot, {
-        fingerprint: await digest(JSON.stringify({ donation: false, annual: false, price_id: '' })),
+        fingerprint: await digest(JSON.stringify({ annual: false })),
         url: 'https://checkout.stripe.com/old',
         epoch: 0,
     });
@@ -1030,7 +1058,7 @@ test('linked active family primary permits family coupon, inactive primary never
             return response({ id: 'cs_family', url: 'https://checkout.stripe.com/family' });
         },
     });
-    assert.equal((await h.internal('/checkout', { member_id: 1, donation: false, annual: false, price_id: '' })).status, 200);
+    assert.equal((await h.internal('/checkout', { member_id: 1, annual: false })).status, 200);
     assert.equal(coupon, 'coupon_family');
 });
 
@@ -1061,19 +1089,7 @@ test('definitively rejected delete clears marker after safe revocation and permi
     assert.equal((await h.api.mutateMember(h.env, 1, null, 9, 1)).status, 409);
     assert.equal(h.storage.has('mutation-pending:1'), false);
     assert.equal(h.batches.length, 0);
-    for (const donation of [false, true]) {
-        assert.equal(
-            (
-                await h.internal('/checkout', {
-                    member_id: 1,
-                    donation,
-                    annual: false,
-                    price_id: donation ? 'price_donation' : '',
-                })
-            ).status,
-            200,
-        );
-    }
+    assert.equal((await h.internal('/checkout', { member_id: 1, annual: false })).status, 200);
 });
 
 test('delete with unresolved subscription lookup retains pending marker', async () => {
@@ -1107,9 +1123,7 @@ test('inactive family primary does not prevent existing subscriber opening billi
     });
     const result = await h.internal('/checkout', {
         member_id: 1,
-        donation: false,
         annual: false,
-        price_id: '',
     });
     assert.equal(result.status, 200);
     assert.deepEqual(await result.json(), { url: 'https://billing.stripe.com/cancel' });

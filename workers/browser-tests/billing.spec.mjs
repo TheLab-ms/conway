@@ -13,10 +13,12 @@ const test = base.extend({
 
 test.beforeEach(async ({ page }) => {
     // Only the hosted external destination is browser-stubbed, never /api/*.
-    await page.route(/^https:\/\/(checkout|billing)\.stripe\.com\//, (route) => route.fulfill({
-        contentType: 'text/html',
-        body: '<!doctype html><html lang="en"><head><title>Hosted Stripe test page</title></head><body><h1>Hosted Stripe test page</h1></body></html>',
-    }));
+    await page.route(/^https:\/\/(checkout|billing)\.stripe\.com\//, (route) =>
+        route.fulfill({
+            contentType: 'text/html',
+            body: '<!doctype html><html lang="en"><head><title>Hosted Stripe test page</title></head><body><h1>Hosted Stripe test page</h1></body></html>',
+        }),
+    );
 });
 
 async function checkout(page, frequency = 'monthly') {
@@ -28,7 +30,10 @@ async function checkout(page, frequency = 'monthly') {
     return new URL(page.url());
 }
 
-for (const [frequency, price, annual] of [['monthly', 'price_month', 0], ['annual', 'price_year', 1]]) {
+for (const [frequency, price, annual] of [
+    ['monthly', 'price_month', 0],
+    ['annual', 'price_year', 1],
+]) {
     test(`${frequency} membership uses real checkout and persists billing identity`, async ({ page, billingMember }) => {
         const url = await checkout(page, frequency);
         expect(url.hostname).toBe('checkout.stripe.com');
@@ -45,7 +50,9 @@ for (const [frequency, price, annual] of [['monthly', 'price_month', 0], ['annua
         });
         expect(url.searchParams.has('discounts[0][coupon]')).toBe(false);
         expect(sql('SELECT stripe_customer_id,bill_annually,payment_status FROM members WHERE id=?', billingMember)[0]).toEqual({
-            stripe_customer_id: `cus_member_${billingMember}`, bill_annually: annual, payment_status: null,
+            stripe_customer_id: `cus_member_${billingMember}`,
+            bill_annually: annual,
+            payment_status: null,
         });
     });
 }
@@ -66,7 +73,12 @@ test('approved student coupon is submitted to Stripe', async ({ page, billingMem
 });
 
 test('active subscriber opens the real billing portal flow', async ({ page, billingMember }) => {
-    sql("UPDATE members SET stripe_customer_id=?,stripe_subscription_id=?,stripe_subscription_state='active' WHERE id=?", `cus_active_${billingMember}`, `sub_${billingMember}`, billingMember);
+    sql(
+        "UPDATE members SET stripe_customer_id=?,stripe_subscription_id=?,stripe_subscription_state='active' WHERE id=?",
+        `cus_active_${billingMember}`,
+        `sub_${billingMember}`,
+        billingMember,
+    );
     const url = await checkout(page);
     expect(url.hostname).toBe('billing.stripe.com');
     expect(Object.fromEntries(url.searchParams)).toEqual({ customer: `cus_active_${billingMember}`, return_url: 'http://127.0.0.1:8799' });
@@ -75,32 +87,23 @@ test('active subscriber opens the real billing portal flow', async ({ page, bill
 
 for (const tracked of [true, false]) {
     test(`${tracked ? 'tracked' : 'newly discovered'} subscriber can open the portal without configured prices or coupon`, async ({ page, billingMember }) => {
-        sql("UPDATE members SET stripe_customer_id=?,stripe_subscription_id=?,stripe_subscription_state=?,discount_type='student',discount_status='approved' WHERE id=?",
-            `cus_active_${billingMember}`, tracked ? `sub_${billingMember}` : null, tracked ? 'active' : null, billingMember);
+        sql(
+            "UPDATE members SET stripe_customer_id=?,stripe_subscription_id=?,stripe_subscription_state=?,discount_type='student',discount_status='approved' WHERE id=?",
+            `cus_active_${billingMember}`,
+            tracked ? `sub_${billingMember}` : null,
+            tracked ? 'active' : null,
+            billingMember,
+        );
         sql("UPDATE settings SET data=json_set(data,'$.monthly_price_id','','$.yearly_price_id','','$.discounts',json('[]')) WHERE id=1");
         const url = await checkout(page);
         expect(url.hostname).toBe('billing.stripe.com');
         expect(Object.fromEntries(url.searchParams)).toEqual({ customer: `cus_active_${billingMember}`, return_url: 'http://127.0.0.1:8799' });
-        expect(sql('SELECT stripe_subscription_id,payment_status FROM members WHERE id=?', billingMember)[0]).toEqual({ stripe_subscription_id: `sub_${billingMember}`, payment_status: 'ActiveStripe' });
+        expect(sql('SELECT stripe_subscription_id,payment_status FROM members WHERE id=?', billingMember)[0]).toEqual({
+            stripe_subscription_id: `sub_${billingMember}`,
+            payment_status: 'ActiveStripe',
+        });
     });
 }
-
-test('donation uses payment mode without membership discount or activation', async ({ page, billingMember }) => {
-    sql("UPDATE members SET discount_type='student',discount_status='approved' WHERE id=?", billingMember);
-    await page.goto('/donations');
-    await page.getByLabel('Donation amount').selectOption('price_donate');
-    await page.getByRole('button', { name: 'Continue to donation' }).click();
-    await expect(page).toHaveURL(/^https:\/\/checkout\.stripe\.com\//);
-    expect(Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject({
-        mode: 'payment', submit_type: 'donate',
-        'line_items[0][price]': 'price_donate',
-        'payment_intent_data[setup_future_usage]': 'on_session',
-        'payment_intent_data[metadata][conway_member_id]': String(billingMember),
-    });
-    expect(new URL(page.url()).searchParams.has('discounts[0][coupon]')).toBe(false);
-    expect(sql('SELECT payment_status FROM members WHERE id=?', billingMember)[0].payment_status).toBeNull();
-    expect(sql('SELECT * FROM donations')).toEqual([]);
-});
 
 test('missing membership price fails closed with an actionable error', async ({ page, billingMember }) => {
     sql("UPDATE settings SET data=json_set(data,'$.monthly_price_id','') WHERE id=1");
@@ -145,7 +148,10 @@ for (const [configuration, update] of [
             await expect(page).toHaveURL(/\/billing$/);
             await expect(page.getByLabel('Billing frequency')).toHaveValue(frequency);
             expect(sql('SELECT discount_type,discount_status,bill_annually,payment_status FROM members WHERE id=?', billingMember)[0]).toEqual({
-                discount_type: 'student', discount_status: 'approved', bill_annually: 0, payment_status: null,
+                discount_type: 'student',
+                discount_status: 'approved',
+                bill_annually: 0,
+                payment_status: null,
             });
         });
     }
@@ -177,7 +183,10 @@ test('unrelated leadership edits preserve an unchanged obsolete discount', async
     expect((await response).status()).toBe(200);
     await expect(page.locator('.global-notice')).toHaveText('Member saved.');
     expect(sql('SELECT admin_notes,discount_type,discount_status,discount_request_id FROM members WHERE id=?', billingMember)[0]).toEqual({
-        admin_notes: 'Updated without changing billing', discount_type: 'obsolete', discount_status: 'approved', discount_request_id: 'original-request',
+        admin_notes: 'Updated without changing billing',
+        discount_type: 'obsolete',
+        discount_status: 'approved',
+        discount_request_id: 'original-request',
     });
     await page.reload();
     await page.getByText('Profile & discount fields', { exact: true }).click();
@@ -196,11 +205,8 @@ test('provider errors preserve the selection and allow retry', async ({ page, bi
     expect(sql('SELECT payment_status FROM members WHERE id=?', billingMember)[0].payment_status).toBeNull();
 });
 
-test('no donation or discount options leaves no misleading forms', async ({ page, billingMember }) => {
-    sql("UPDATE settings SET data=json_set(data,'$.donations',json('[]'),'$.discounts',json('[]')) WHERE id=1");
-    await page.goto('/donations');
-    await expect(page.getByText('No donation options are configured yet.', { exact: false })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Continue to donation' })).toHaveCount(0);
+test('no discount options leaves no misleading forms', async ({ page, billingMember }) => {
+    sql("UPDATE settings SET data=json_set(data,'$.discounts',json('[]')) WHERE id=1");
     await page.goto('/billing');
     await expect(page.getByText('There are no discounts available to request at the moment.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Request discount' })).toHaveCount(0);

@@ -40,11 +40,9 @@ function editable(input: Input, admin: boolean): Record<string, string | number 
     const fields: Record<string, string | number | null> = {};
     const strings: Record<string, number> = {
         name: 200,
-        pronouns: 100,
-        bio: 4000,
-        ...(admin ? { email: 254, heard_about: 300, admin_notes: 10000 } : {}),
+        ...(admin ? { email: 254, admin_notes: 10000 } : {}),
     };
-    const flags = ['directory_hidden', 'discord_checkin_notify', ...(admin ? ['leadership', 'non_billable', 'confirmed', 'bill_annually'] : [])];
+    const flags = ['discord_checkin_notify', ...(admin ? ['leadership', 'non_billable', 'confirmed', 'bill_annually'] : [])];
     for (const [key, value] of Object.entries(input)) {
         if (key in strings) fields[key] = text(value, key, strings[key], key !== 'email');
         else if (flags.includes(key)) fields[key] = flag(value, key);
@@ -77,29 +75,14 @@ async function validateDiscount(env: Env, fields: Record<string, string | number
 
 function validateSettings(input: Input, previous: Settings): Settings {
     const result = { ...previous };
-    const strings = [
-        'site_name',
-        'monthly_price_id',
-        'yearly_price_id',
-        'discord_guild_id',
-        'discord_role_id',
-        'discord_leadership_channel_id',
-        'discord_badge_channel_id',
-    ] as const;
-    const booleans = ['signup_notify_enabled', 'badge_notify_enabled', 'access_denied_enabled'] as const;
-    const allowed = new Set<string>([...strings, ...booleans, 'referral_sources', 'discounts', 'donations', 'notification_templates', 'version']);
+    const strings = ['site_name', 'monthly_price_id', 'yearly_price_id'] as const;
+    const allowed = new Set<string>([...strings, 'discounts', 'version']);
     for (const key of Object.keys(input)) if (!allowed.has(key)) throw new HttpError(400, `Unknown setting: ${key}`);
     for (const key of strings)
         if (key in input) {
             result[key] = text(input[key], key, 200, key !== 'site_name');
-            if (key.startsWith('discord_') && result[key] && !/^\d{5,25}$/.test(result[key])) throw new HttpError(400, `Invalid ${key}`);
             if (key.endsWith('price_id') && result[key] && !/^price_[A-Za-z0-9_]+$/.test(result[key])) throw new HttpError(400, `Invalid ${key}`);
         }
-    for (const key of booleans) if (key in input) result[key] = Boolean(flag(input[key], key));
-    if ('referral_sources' in input) {
-        if (!Array.isArray(input.referral_sources) || input.referral_sources.length > 50) throw new HttpError(400, 'Invalid referral sources');
-        result.referral_sources = input.referral_sources.map((v) => text(v, 'referral source', 200, false));
-    }
     if ('discounts' in input) {
         if (!Array.isArray(input.discounts) || input.discounts.length > 50) throw new HttpError(400, 'Invalid discounts');
         result.discounts = input.discounts.map((v: Input) => {
@@ -111,26 +94,6 @@ function validateSettings(input: Input, previous: Settings): Settings {
             return { id, label, coupon_id };
         });
         if (new Set(result.discounts.map((v) => v.id)).size !== result.discounts.length) throw new HttpError(400, 'Duplicate discounts');
-    }
-    if ('donations' in input) {
-        if (!Array.isArray(input.donations) || input.donations.length > 50) throw new HttpError(400, 'Invalid donations');
-        result.donations = input.donations.map((v: Input) => {
-            if (!v || typeof v !== 'object') throw new HttpError(400, 'Invalid donation');
-            const price_id = text(v.price_id, 'price ID', 100, false),
-                label = text(v.label, 'donation label', 200, false);
-            if (!/^price_[A-Za-z0-9_]+$/.test(price_id)) throw new HttpError(400, 'Invalid donation price ID');
-            return { price_id, label };
-        });
-        if (new Set(result.donations.map((v) => v.price_id)).size !== result.donations.length) throw new HttpError(400, 'Duplicate donation prices');
-    }
-    if ('notification_templates' in input) {
-        const templates = input.notification_templates as Input;
-        if (!templates || typeof templates !== 'object' || Array.isArray(templates)) throw new HttpError(400, 'Invalid templates');
-        result.notification_templates = { ...previous.notification_templates };
-        for (const key of Object.keys(templates)) {
-            if (!['signup', 'discount', 'badge', 'denied'].includes(key)) throw new HttpError(400, 'Unknown template');
-            result.notification_templates[key as keyof Settings['notification_templates']] = text(templates[key], 'template', 2000);
-        }
     }
     return result;
 }
@@ -146,9 +109,7 @@ export async function coreRoute(request: Request, env: Env): Promise<Response | 
             .first<{ version: number; content: string; agreements: string }>();
         return json({
             site_name: cfg.site_name,
-            referral_sources: cfg.referral_sources,
             discounts: cfg.discounts.map(({ id, label }) => ({ id, label })),
-            donations: cfg.donations,
             waiver: waiver ? { ...waiver, agreements: JSON.parse(waiver.agreements) } : null,
             stripe_enabled: Boolean(env.STRIPE_SECRET_KEY),
         });
@@ -180,17 +141,9 @@ export async function coreRoute(request: Request, env: Env): Promise<Response | 
         throw new HttpError(404, 'Not found');
     }
     if (path.startsWith('/api/admin/')) return adminRoute(request, env);
-    if (!['/api/member', '/api/profile', '/api/directory', '/api/waiver', '/api/discount', '/api/fobs/bind'].includes(path)) return null;
+    if (!['/api/member', '/api/profile', '/api/waiver', '/api/discount', '/api/fobs/bind'].includes(path)) return null;
     const member = await requireMember(request, env);
     if (path === '/api/member' && method === 'GET') return json(memberView(member));
-    if (path === '/api/directory' && method === 'GET') {
-        const rows = await env.DB.prepare(
-            `SELECT id,name,pronouns,bio,leadership,discord_username FROM members WHERE access_status='Ready' AND directory_hidden=0 AND name!='' ORDER BY id=? DESC,name COLLATE NOCASE,id`,
-        )
-            .bind(member.id)
-            .all();
-        return json({ members: rows.results });
-    }
     if (path === '/api/profile' && method === 'PATCH') {
         const fields = editable(await body<Input>(request), false),
             keys = Object.keys(fields);

@@ -74,7 +74,7 @@ describe('D1-backed session, authorization, and CSRF', () => {
         expect(row?.token_hash).not.toBe(headers.Cookie.split('=')[1]);
     });
 
-    it('accepts same-origin CSRF for an authenticated or signup-only session', async () => {
+    it('accepts same-origin CSRF for an authenticated session', async () => {
         for (const id of [null, (await member()).id]) {
             const headers = await login(id);
             await expect(csrf(new Request(env.SITE_URL, { method: 'POST', headers }), env)).resolves.toBeUndefined();

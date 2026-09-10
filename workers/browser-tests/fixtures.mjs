@@ -32,7 +32,10 @@ function database() {
 export function sql(query, ...params) {
     const db = database();
     try {
-        return db.prepare(query).all(...params).map((row) => ({ ...row }));
+        return db
+            .prepare(query)
+            .all(...params)
+            .map((row) => ({ ...row }));
     } finally {
         db.close();
     }
@@ -42,7 +45,11 @@ function reset() {
     const db = database();
     try {
         db.exec('PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; UPDATE runtime_control SET automation_enabled=0 WHERE id=1;');
-        const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT IN ('d1_migrations','runtime_control','settings')").all();
+        const tables = db
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT IN ('d1_migrations','runtime_control','settings')",
+            )
+            .all();
         for (const { name } of tables) db.exec(`DELETE FROM "${name.replaceAll('"', '""')}"`);
         db.exec('DELETE FROM sqlite_sequence;');
         db.prepare('INSERT INTO waiver_versions(version,content,agreements) VALUES(1,?,?)').run(
@@ -53,23 +60,18 @@ function reset() {
         member.run(1, 'alex@example.test', 'Alex Maker', '123456789012345678', 'alex', 1, 1, 101);
         member.run(2, 'sam@example.test', 'Sam Member', '223456789012345678', 'sam', 0, 0, null);
         member.run(3, 'robin@example.test', 'Robin Leader', '323456789012345678', 'robin', 1, 1, 103);
-        db.prepare('UPDATE settings SET version=1,data=? WHERE id=1').run(JSON.stringify({
-            site_name: 'Conway',
-            referral_sources: ['Friend or member', 'Social media', 'Web search', 'Open house', 'Other'],
-            discounts: [{ id: 'student', label: 'Student', coupon_id: 'coupon_student' }, { id: 'family', label: 'Family', coupon_id: 'coupon_family' }],
-            donations: [{ price_id: 'price_donate', label: '$25 donation' }],
-            monthly_price_id: 'price_month',
-            yearly_price_id: 'price_year',
-            discord_guild_id: '',
-            discord_role_id: '',
-            discord_leadership_channel_id: '',
-            discord_badge_channel_id: '',
-            signup_notify_enabled: false,
-            badge_notify_enabled: false,
-            access_denied_enabled: false,
-            notification_templates: { signup: 'New member: {name}', discount: 'Discount request: {name} ({discount_type})', badge: '{name} checked in', denied: 'Access denied: {access_status}. Visit {site_url}' },
-            waiver_version: 1,
-        }));
+        db.prepare('UPDATE settings SET version=1,data=? WHERE id=1').run(
+            JSON.stringify({
+                site_name: 'Conway',
+                discounts: [
+                    { id: 'student', label: 'Student', coupon_id: 'coupon_student' },
+                    { id: 'family', label: 'Family', coupon_id: 'coupon_family' },
+                ],
+                monthly_price_id: 'price_month',
+                yearly_price_id: 'price_year',
+                waiver_version: 1,
+            }),
+        );
         db.exec('UPDATE runtime_control SET automation_enabled=1 WHERE id=1; COMMIT; PRAGMA foreign_keys=ON;');
         expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     } catch (error) {
@@ -81,24 +83,30 @@ function reset() {
 }
 
 export const test = base.extend({
-    _database: [async ({}, use) => {
-        reset();
-        await use();
-    }, { auto: true }],
-    _browserErrors: [async ({ context, _database }, use, testInfo) => {
-        const errors = [];
-        const watch = (page) => {
-            page.on('pageerror', (error) => errors.push(error.stack || error.message));
-            page.on('console', (message) => {
-                if (/content.security.policy|\bCSP\b|violates.*directive|refused to (?:execute|load|apply|connect|frame)/i.test(message.text())) errors.push(message.text());
-            });
-        };
-        context.pages().forEach(watch);
-        context.on('page', watch);
-        await use();
-        if (errors.length) await testInfo.attach('browser-errors', { body: errors.join('\n'), contentType: 'text/plain' });
-        expect(errors, 'No uncaught browser exceptions or CSP/security errors').toEqual([]);
-    }, { auto: true }],
+    _database: [
+        async ({}, use) => {
+            reset();
+            await use();
+        },
+        { auto: true },
+    ],
+    _browserErrors: [
+        async ({ context, _database }, use, testInfo) => {
+            const errors = [];
+            const watch = (page) => {
+                page.on('pageerror', (error) => errors.push(error.stack || error.message));
+                page.on('console', (message) => {
+                    if (/content.security.policy|\bCSP\b|violates.*directive|refused to (?:execute|load|apply|connect|frame)/i.test(message.text())) errors.push(message.text());
+                });
+            };
+            context.pages().forEach(watch);
+            context.on('page', watch);
+            await use();
+            if (errors.length) await testInfo.attach('browser-errors', { body: errors.join('\n'), contentType: 'text/plain' });
+            expect(errors, 'No uncaught browser exceptions or CSP/security errors').toEqual([]);
+        },
+        { auto: true },
+    ],
     login: async ({ page, context, _database }, use) => {
         await use(async (memberId = 1) => {
             const token = randomBytes(32).toString('hex');

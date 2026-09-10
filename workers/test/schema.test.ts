@@ -193,7 +193,7 @@ describe('transactional trigger outbox', () => {
             { kind: 'signup', payload: JSON.stringify({ member_id: row.id }) },
             { kind: 'discord_sync', payload: JSON.stringify({ member_id: row.id }) },
         ]);
-        await env.DB.prepare("UPDATE members SET bio='Profile only' WHERE id=?").bind(row.id).run();
+        await env.DB.prepare("UPDATE members SET name_override='Profile only' WHERE id=?").bind(row.id).run();
         expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM jobs').first('n')).toBe(2);
         await env.DB.prepare("UPDATE members SET confirmed=1,stripe_subscription_state='active' WHERE id=?").bind(row.id).run();
         expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM jobs').first('n')).toBe(3);

@@ -13,15 +13,22 @@ test('member CRUD persists nullable fields and both checkbox values', async ({ p
     await login();
     await page.getByRole('link', { name: 'Leadership', exact: true }).click();
     await page.getByRole('link', { name: 'Add member', exact: true }).click();
-    const values = { name: 'Casey Maker', email: 'casey@example.test', name_override: 'Casey C', discord_user_id: '423456789012345678', fob_id: '404', root_family_member: '1', heard_about: 'Open house', admin_notes: 'Tour complete' };
+    const values = {
+        name: 'Casey Maker',
+        email: 'casey@example.test',
+        name_override: 'Casey C',
+        discord_user_id: '423456789012345678',
+        fob_id: '404',
+        root_family_member: '1',
+        admin_notes: 'Tour complete',
+    };
     for (const [name, value] of Object.entries(values)) await field(page, name).fill(value);
     for (const name of ['confirmed', 'leadership', 'non_billable', 'bill_annually']) await field(page, name).check();
     await submit(page, 'Create member', 'POST', 201);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Casey C');
     const { id } = sql('SELECT id FROM members WHERE email=?', values.email)[0];
     await page.getByText('Profile & discount fields', { exact: true }).click();
-    for (const [name, value] of Object.entries({ pronouns: 'they/them', bio: 'Builds useful things' })) await field(page, name).fill(value);
-    for (const name of ['directory_hidden', 'discord_checkin_notify']) await field(page, name).check();
+    for (const name of ['discord_checkin_notify']) await field(page, name).check();
     await field(page, 'discount_type').selectOption('student');
     await field(page, 'discount_status').selectOption('approved');
     await submit(page, 'Save member', 'PATCH');
@@ -29,9 +36,13 @@ test('member CRUD persists nullable fields and both checkbox values', async ({ p
     await page.reload();
     await page.getByText('Profile & discount fields', { exact: true }).click();
     for (const [name, value] of Object.entries(values)) await expect(field(page, name)).toHaveValue(value);
-    const flags = ['confirmed', 'leadership', 'non_billable', 'bill_annually', 'directory_hidden', 'discord_checkin_notify'];
+    const flags = ['confirmed', 'leadership', 'non_billable', 'bill_annually', 'discord_checkin_notify'];
     for (const name of flags) await expect(field(page, name)).toBeChecked();
-    expect(sql('SELECT * FROM members WHERE id=?', id)[0]).toMatchObject({ pronouns: 'they/them', bio: 'Builds useful things', discount_type: 'student', discount_status: 'approved', ...Object.fromEntries(flags.map((name) => [name, 1])) });
+    expect(sql('SELECT * FROM members WHERE id=?', id)[0]).toMatchObject({
+        discount_type: 'student',
+        discount_status: 'approved',
+        ...Object.fromEntries(flags.map((name) => [name, 1])),
+    });
     const nullable = ['name_override', 'discord_user_id', 'fob_id', 'root_family_member', 'discount_type', 'discount_status'];
     for (const name of nullable) {
         if (name.startsWith('discount_')) await field(page, name).selectOption('');
@@ -40,7 +51,10 @@ test('member CRUD persists nullable fields and both checkbox values', async ({ p
     for (const name of flags) await field(page, name).uncheck();
     await submit(page, 'Save member', 'PATCH');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Casey Maker');
-    expect(sql('SELECT * FROM members WHERE id=?', id)[0]).toMatchObject({ ...Object.fromEntries(nullable.map((name) => [name, null])), ...Object.fromEntries(flags.map((name) => [name, 0])) });
+    expect(sql('SELECT * FROM members WHERE id=?', id)[0]).toMatchObject({
+        ...Object.fromEntries(nullable.map((name) => [name, null])),
+        ...Object.fromEntries(flags.map((name) => [name, 0])),
+    });
     await page.reload();
     await page.getByText('Profile & discount fields', { exact: true }).click();
     for (const name of nullable) await expect(field(page, name)).toHaveValue('');
@@ -61,7 +75,11 @@ test('duplicate email, Discord identity, and fob are rejected without overwritin
     await expect(page.getByRole('alert')).toContainText('Conflicting member identity');
     expect(sql('SELECT count(*) AS n FROM members')[0].n).toBe(3);
     const before = sql('SELECT * FROM members WHERE id=2')[0];
-    for (const [name, value] of [['email', 'alex@example.test'], ['discord_user_id', '123456789012345678'], ['fob_id', '101']]) {
+    for (const [name, value] of [
+        ['email', 'alex@example.test'],
+        ['discord_user_id', '123456789012345678'],
+        ['fob_id', '101'],
+    ]) {
         await page.goto('/admin/members/2');
         await field(page, name).fill(value);
         await submit(page, 'Save member', 'PATCH', 409);
@@ -71,21 +89,22 @@ test('duplicate email, Discord identity, and fob are rejected without overwritin
     }
 });
 
-for (const method of ['PATCH', 'DELETE']) test(`stale ${method} preserves a concurrent member edit`, async ({ page, login }) => {
-    await login();
-    await page.goto('/admin/members/2');
-    await field(page, 'admin_notes').fill('Unsaved local draft');
-    sql("UPDATE members SET name='Sam Updated',admin_notes='Other leader edit' WHERE id=2");
-    const current = sql('SELECT * FROM members WHERE id=2')[0];
-    if (method === 'DELETE') await field(page, 'confirmation').fill('2');
-    await submit(page, method === 'PATCH' ? 'Save member' : 'Delete member permanently', method, 409);
-    await expect(page.getByRole('alert')).toContainText(/changed; reload and retry/);
-    await expect(field(page, 'admin_notes')).toHaveValue('Unsaved local draft');
-    expect(sql('SELECT * FROM members WHERE id=2')[0]).toEqual(current);
-    expect(sql("SELECT id FROM member_events WHERE event IN ('AdminMemberUpdated','MemberDeleted')")).toEqual([]);
-    await page.reload();
-    await expect(field(page, 'admin_notes')).toHaveValue('Other leader edit');
-});
+for (const method of ['PATCH', 'DELETE'])
+    test(`stale ${method} preserves a concurrent member edit`, async ({ page, login }) => {
+        await login();
+        await page.goto('/admin/members/2');
+        await field(page, 'admin_notes').fill('Unsaved local draft');
+        sql("UPDATE members SET name='Sam Updated',admin_notes='Other leader edit' WHERE id=2");
+        const current = sql('SELECT * FROM members WHERE id=2')[0];
+        if (method === 'DELETE') await field(page, 'confirmation').fill('2');
+        await submit(page, method === 'PATCH' ? 'Save member' : 'Delete member permanently', method, 409);
+        await expect(page.getByRole('alert')).toContainText(/changed; reload and retry/);
+        await expect(field(page, 'admin_notes')).toHaveValue('Unsaved local draft');
+        expect(sql('SELECT * FROM members WHERE id=2')[0]).toEqual(current);
+        expect(sql("SELECT id FROM member_events WHERE event IN ('AdminMemberUpdated','MemberDeleted')")).toEqual([]);
+        await page.reload();
+        await expect(field(page, 'admin_notes')).toHaveValue('Other leader edit');
+    });
 
 test('last linked leader cannot be demoted, unlinked, or deleted', async ({ page, login }) => {
     sql('UPDATE members SET leadership=0 WHERE id=3');
@@ -138,10 +157,16 @@ test('member search, all six access statuses, and 50-row pagination', async ({ p
     const statuses = ['Ready', 'UnconfirmedEmail', 'MissingWaiver', 'PaymentInactive', 'MissingKeyFob', 'FamilyInactive'];
     for (let i = 0; i < 56; i++) {
         const status = statuses[i % 6];
-        sql('INSERT INTO members(email,name,confirmed,waiver,non_billable,fob_id,root_family_member) VALUES(?,?,?,?,?,?,?)',
-            `filter${i}@example.test`, `Filter ${String(i).padStart(2, '0')}`, status === 'UnconfirmedEmail' ? 0 : 1,
-            ['UnconfirmedEmail', 'MissingWaiver'].includes(status) ? null : 1, ['Ready', 'MissingKeyFob', 'FamilyInactive'].includes(status) ? 1 : 0,
-            status === 'MissingKeyFob' ? null : 1000 + i, status === 'FamilyInactive' ? 2 : null);
+        sql(
+            'INSERT INTO members(email,name,confirmed,waiver,non_billable,fob_id,root_family_member) VALUES(?,?,?,?,?,?,?)',
+            `filter${i}@example.test`,
+            `Filter ${String(i).padStart(2, '0')}`,
+            status === 'UnconfirmedEmail' ? 0 : 1,
+            ['UnconfirmedEmail', 'MissingWaiver'].includes(status) ? null : 1,
+            ['Ready', 'MissingKeyFob', 'FamilyInactive'].includes(status) ? 1 : 0,
+            status === 'MissingKeyFob' ? null : 1000 + i,
+            status === 'FamilyInactive' ? 2 : null,
+        );
     }
     await login();
     await page.goto('/admin/members');
@@ -196,36 +221,37 @@ test('CSV download includes all members, escapes quotes and neutralizes formulas
     expect(await download.failure()).toBeNull();
 });
 
-test('configuration persists prices, referrals, options, templates, IDs, and toggles', async ({ page, login }) => {
+test('configuration persists prices and discount options', async ({ page, login }) => {
     await login();
     await page.goto('/admin/config');
-    const values = { site_name: 'Maker Workshop', referral_sources: 'Library\nCommunity fair', monthly_price_id: 'price_new_month', yearly_price_id: 'price_new_year', discounts: 'student | Learner | coupon_new\nfamily | Household |', donations: 'price_gift | Tool fund', discord_guild_id: '12345', discord_role_id: '23456', discord_leadership_channel_id: '34567', discord_badge_channel_id: '45678' };
+    const values = {
+        site_name: 'Maker Workshop',
+        monthly_price_id: 'price_new_month',
+        yearly_price_id: 'price_new_year',
+        discounts: 'student | Learner | coupon_new\nfamily | Household |',
+    };
     for (const [name, value] of Object.entries(values)) await field(page, name).fill(value);
-    await page.getByText('Notification templates', { exact: true }).click();
-    const templates = { signup: 'Welcome {name}', discount: 'Review {discount_type}: {name}', badge: 'Hello {name}', denied: '{access_status}: {site_url}' };
-    for (const [name, value] of Object.entries(templates)) await field(page, `template_${name}`).fill(value);
-    const toggles = ['signup_notify_enabled', 'badge_notify_enabled', 'access_denied_enabled'];
-    for (const name of toggles) await field(page, name).check();
     await submit(page, 'Save configuration', 'PUT');
     await expect(page.locator('.global-notice')).toHaveText('Configuration saved.');
     await page.reload();
-    await page.getByText('Notification templates', { exact: true }).click();
     for (const [name, value] of Object.entries(values)) await expect(field(page, name)).toHaveValue(name === 'discounts' ? value + ' ' : value);
-    for (const [name, value] of Object.entries(templates)) await expect(field(page, `template_${name}`)).toHaveValue(value);
     const stored = JSON.parse(sql('SELECT data FROM settings')[0].data);
-    expect(stored).toMatchObject({ referral_sources: ['Library', 'Community fair'], discounts: [{ id: 'student', label: 'Learner', coupon_id: 'coupon_new' }, { id: 'family', label: 'Household', coupon_id: '' }], donations: [{ price_id: 'price_gift', label: 'Tool fund' }], notification_templates: templates });
-    for (const name of toggles) { expect(stored[name]).toBe(true); await expect(field(page, name)).toBeChecked(); await field(page, name).uncheck(); }
-    await submit(page, 'Save configuration', 'PUT');
-    await expect(page.locator('.global-notice')).toHaveText('Configuration saved.');
-    await page.reload();
-    for (const name of toggles) { await expect(field(page, name)).not.toBeChecked(); expect(JSON.parse(sql('SELECT data FROM settings')[0].data)[name]).toBe(false); }
+    expect(stored).toMatchObject({
+        discounts: [
+            { id: 'student', label: 'Learner', coupon_id: 'coupon_new' },
+            { id: 'family', label: 'Household', coupon_id: '' },
+        ],
+    });
+    expect(stored.site_name).toBe('Maker Workshop');
+    expect(stored.monthly_price_id).toBe('price_new_month');
+    expect(stored.yearly_price_id).toBe('price_new_year');
 });
 
 test('malformed option rows and invalid prices preserve configuration drafts', async ({ page, login }) => {
     await login();
     await page.goto('/admin/config');
     const before = sql('SELECT * FROM settings');
-    for (const [name, value, message] of [['discounts', 'student | Missing column', 'Discount options, line 1'], ['donations', 'price_gift | Fund | extra', 'Donation options, line 1']]) {
+    for (const [name, value, message] of [['discounts', 'student | Missing column', 'Discount options, line 1']]) {
         const original = await field(page, name).inputValue();
         await field(page, name).fill(value);
         await button(page, 'Save configuration').click();
@@ -240,7 +266,7 @@ test('malformed option rows and invalid prices preserve configuration drafts', a
     expect(sql('SELECT * FROM settings')).toEqual(before);
 });
 
-test('configuration 409 keeps draft; reload requires explicit confirmation', async ({ page, login }) => {
+test('configuration 409 keeps draft and shows conflict notice', async ({ page, login }) => {
     await login();
     await page.goto('/admin/config');
     await field(page, 'site_name').fill('My unsaved draft');
@@ -253,11 +279,8 @@ test('configuration 409 keeps draft; reload requires explicit confirmation', asy
     await expect(page.getByRole('alert')).toContainText('Your edits are still here.');
     await expect(field(page, 'site_name')).toHaveValue('My unsaved draft');
     expect(JSON.parse(sql('SELECT data FROM settings')[0].data).site_name).toBe('Other leader saved');
-    for (const accept of [false, true]) {
-        page.once('dialog', async (dialog) => { expect(dialog.message()).toBe('Discard unsaved edits and load the latest configuration?'); await (accept ? dialog.accept() : dialog.dismiss()); });
-        await button(page, 'Reload latest configuration').click();
-        await expect(field(page, 'site_name')).toHaveValue(accept ? 'Other leader saved' : 'My unsaved draft');
-    }
+    await page.reload();
+    await expect(field(page, 'site_name')).toHaveValue('Other leader saved');
     await field(page, 'site_name').fill('Merged configuration');
     await submit(page, 'Save configuration', 'PUT');
     await expect(page.locator('.global-notice')).toHaveText('Configuration saved.');
@@ -301,32 +324,50 @@ test('waiver publication validates consent and agreements and retains signed ver
     expect(JSON.parse(sql('SELECT data FROM settings')[0].data).waiver_version).toBe(2);
 });
 
-for (const kind of ['events', 'swipes']) test(`${kind} supports ordered 50-row pagination${kind === 'events' ? ' and member filtering' : ''}`, async ({ page, login }) => {
-    for (let i = 0; i < 53; i++) {
-        if (kind === 'events') sql('INSERT INTO member_events(member,actor,event,details) VALUES(2,1,?,?)', `Audit ${i}`, JSON.stringify({ sequence: i }));
-        else sql('INSERT INTO fob_swipes VALUES(?, ?, ?, ?, ?, ?)', `swipe-${i}`, 1700000000 + i, 2000 + i, i % 2 ? null : 2, i % 2, `Door ${i}`);
-    }
-    if (kind === 'events') sql("INSERT INTO member_events(member,event) VALUES(3,'Other member event')");
-    await login();
-    await page.goto(`/admin/${kind}`);
-    if (kind === 'events') { await field(page, 'member').fill('2'); await button(page, 'Apply filter').click(); }
-    await expect(rows(page)).toHaveCount(50);
-    await expect(rows(page).first()).toContainText(kind === 'events' ? 'Audit 52' : 'Door 52');
-    await expect(rows(page).last()).toContainText(kind === 'events' ? 'Audit 3' : 'Door 3');
-    if (kind === 'events') await expect(page.getByText('Other member event', { exact: true })).toHaveCount(0);
-    else { await expect(rows(page).first()).toContainText('Denied'); await expect(rows(page).nth(1)).toContainText('Allowed'); await expect(rows(page).nth(1)).toContainText('Unknown'); }
-    await button(page, 'Next').click();
-    await expect(rows(page)).toHaveCount(3);
-    await expect(page.locator('.pagination')).toContainText('51-53');
-    await expect(rows(page).last()).toContainText(kind === 'events' ? 'Audit 0' : 'Door 0');
-    if (kind === 'events') await expect(field(page, 'member')).toHaveValue('2');
-    await button(page, 'Previous').click();
-    await expect(rows(page)).toHaveCount(50);
-    await expect(button(page, 'Previous')).toBeDisabled();
-});
+for (const kind of ['events', 'swipes'])
+    test(`${kind} supports ordered 50-row pagination${kind === 'events' ? ' and member filtering' : ''}`, async ({ page, login }) => {
+        for (let i = 0; i < 53; i++) {
+            if (kind === 'events') sql('INSERT INTO member_events(member,actor,event,details) VALUES(2,1,?,?)', `Audit ${i}`, JSON.stringify({ sequence: i }));
+            else sql('INSERT INTO fob_swipes VALUES(?, ?, ?, ?, ?, ?)', `swipe-${i}`, 1700000000 + i, 2000 + i, i % 2 ? null : 2, i % 2, `Door ${i}`);
+        }
+        if (kind === 'events') sql("INSERT INTO member_events(member,event) VALUES(3,'Other member event')");
+        await login();
+        await page.goto(`/admin/${kind}`);
+        if (kind === 'events') {
+            await field(page, 'member').fill('2');
+            await button(page, 'Apply filter').click();
+        }
+        await expect(rows(page)).toHaveCount(50);
+        await expect(rows(page).first()).toContainText(kind === 'events' ? 'Audit 52' : 'Door 52');
+        await expect(rows(page).last()).toContainText(kind === 'events' ? 'Audit 3' : 'Door 3');
+        if (kind === 'events') await expect(page.getByText('Other member event', { exact: true })).toHaveCount(0);
+        else {
+            await expect(rows(page).first()).toContainText('Denied');
+            await expect(rows(page).nth(1)).toContainText('Allowed');
+            await expect(rows(page).nth(1)).toContainText('Unknown');
+        }
+        await button(page, 'Next').click();
+        await expect(rows(page)).toHaveCount(3);
+        await expect(page.locator('.pagination')).toContainText('51-53');
+        await expect(rows(page).last()).toContainText(kind === 'events' ? 'Audit 0' : 'Door 0');
+        if (kind === 'events') await expect(field(page, 'member')).toHaveValue('2');
+        await button(page, 'Previous').click();
+        await expect(rows(page)).toHaveCount(50);
+        await expect(button(page, 'Previous')).toBeDisabled();
+    });
 
 test('jobs display every state and retry only dead work with persisted reset fields', async ({ page, login }) => {
-    for (const status of ['dead', 'processing', 'pending', 'completed']) sql('INSERT INTO jobs(kind,payload,status,attempts,lease_until,last_error,completed) VALUES(?,?,?,?,?,?,?)', `test_${status}`, '{}', status, 5, 123, status === 'dead' ? 'Delivery failed' : '', status === 'completed' ? 100 : null);
+    for (const status of ['dead', 'processing', 'pending', 'completed'])
+        sql(
+            'INSERT INTO jobs(kind,payload,status,attempts,lease_until,last_error,completed) VALUES(?,?,?,?,?,?,?)',
+            `test_${status}`,
+            '{}',
+            status,
+            5,
+            123,
+            status === 'dead' ? 'Delivery failed' : '',
+            status === 'completed' ? 100 : null,
+        );
     await login();
     await page.goto('/admin/jobs');
     await expect(rows(page)).toHaveCount(4);
@@ -338,7 +379,13 @@ test('jobs display every state and retry only dead work with persisted reset fie
     await page.reload();
     await expect(rows(page).filter({ hasText: 'test_dead' })).toContainText('pending');
     await expect(button(page, 'Retry job')).toHaveCount(0);
-    expect(sql("SELECT status,attempts,lease_until,last_error,completed FROM jobs WHERE kind='test_dead'")[0]).toEqual({ status: 'pending', attempts: 0, lease_until: 0, last_error: '', completed: null });
+    expect(sql("SELECT status,attempts,lease_until,last_error,completed FROM jobs WHERE kind='test_dead'")[0]).toEqual({
+        status: 'pending',
+        attempts: 0,
+        lease_until: 0,
+        last_error: '',
+        completed: null,
+    });
     expect(sql("SELECT available_at FROM jobs WHERE kind='test_dead'")[0].available_at).toBeGreaterThan(Math.floor(Date.now() / 1000) - 60);
     expect(sql("SELECT actor FROM member_events WHERE event='JobRetryRequested'")).toEqual([{ actor: 1 }]);
 });

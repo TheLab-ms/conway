@@ -3,7 +3,7 @@ import { test, expect, sql } from './fixtures.mjs';
 async function discord(page, code) {
     // Playwright only routes the first request in an HTTP redirect chain.
     // Execute the real login handler, then stand in for Discord's consent redirect.
-    await page.route(/\/login\/discord(?:\?|$)/, async route => {
+    await page.route(/\/login\/discord(?:\?|$)/, async (route) => {
         const response = await route.fetch({ maxRedirects: 0 });
         expect(response.status()).toBe(302);
         const authorization = new URL(response.headers().location);
@@ -20,10 +20,10 @@ test('Discord login rotates the anonymous session, follows return path and signs
     await discord(page, 'existing');
     await page.goto('/profile');
     await expect(page.locator('main').getByRole('link', { name: 'Continue with Discord' })).toBeVisible();
-    const before = (await context.cookies()).find(cookie => cookie.name === 'conway_session').value;
+    const before = (await context.cookies()).find((cookie) => cookie.name === 'conway_session').value;
     await page.locator('main').getByRole('link', { name: 'Continue with Discord' }).click();
     await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
-    const after = (await context.cookies()).find(cookie => cookie.name === 'conway_session');
+    const after = (await context.cookies()).find((cookie) => cookie.name === 'conway_session');
     expect(after.value).not.toBe(before);
     expect(after.httpOnly).toBe(true);
     expect(after.sameSite).toBe('Lax');
@@ -35,24 +35,27 @@ test('Discord login rotates the anonymous session, follows return path and signs
     await expect(page.locator('main').getByRole('link', { name: 'Continue with Discord' })).toBeVisible();
 });
 
-test('Discord signup validates fields and preserves the server-owned enrollment return', async ({ page }) => {
+test('Discord login creates a new member directly and preserves return path', async ({ page }) => {
     await discord(page, 'new');
     const target = '/fobs/bind?token=' + 'a'.repeat(64);
     await page.goto(target);
     await page.locator('main').getByRole('link', { name: 'Continue with Discord' }).click();
-    await expect(page.getByRole('heading', { name: 'A little about you' })).toBeVisible();
-    await page.getByRole('button', { name: 'Create membership' }).click();
-    expect(sql("SELECT * FROM members WHERE email='new@example.test'")).toEqual([]);
-    await page.getByLabel('Full name').fill('New Maker');
-    await page.getByLabel('How did you hear').selectOption('Friend or member');
-    await page.getByRole('button', { name: 'Create membership' }).click();
     await expect(page).toHaveURL('http://127.0.0.1:8799' + target);
-    expect(sql("SELECT name,confirmed,heard_about,discord_user_id FROM members WHERE email='new@example.test'")[0]).toEqual({ name: 'New Maker', confirmed: 1, heard_about: 'Friend or member', discord_user_id: '423456789012345678' });
+    expect(sql("SELECT name,confirmed,discord_user_id FROM members WHERE email='new@example.test'")[0]).toEqual({
+        name: 'New Maker',
+        confirmed: 1,
+        discord_user_id: '423456789012345678',
+    });
     await page.reload();
     await expect(page.getByRole('button', { name: /Link.*fob/i })).toBeVisible();
 });
 
-for (const [code, error] of [['collision', /already associated/], ['unverified', /verify your email/i], ['failure', /could not be completed/], ['cancel', /not authorized/]]) {
+for (const [code, error] of [
+    ['collision', /already associated/],
+    ['unverified', /verify your email/i],
+    ['failure', /could not be completed/],
+    ['cancel', /not authorized/],
+]) {
     test(`Discord ${code} fails safely without creating a membership`, async ({ page }) => {
         await discord(page, code);
         await page.goto('/');

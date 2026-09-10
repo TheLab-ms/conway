@@ -19,7 +19,13 @@ globalThis.fetch = async (input, init) => {
     const form = new URLSearchParams(request.method === 'GET' ? url.search : await request.text());
     if (url.hostname === 'discord.com') {
         if (url.pathname === '/api/v10/oauth2/token' && request.method === 'POST') {
-            if (form.get('client_id') !== 'browser-test-client' || form.get('client_secret') !== 'browser-test-secret' || form.get('grant_type') !== 'authorization_code' || form.get('redirect_uri') !== `${origin}/login/discord/callback`) return invalid('Invalid OAuth token request');
+            if (
+                form.get('client_id') !== 'browser-test-client' ||
+                form.get('client_secret') !== 'browser-test-secret' ||
+                form.get('grant_type') !== 'authorization_code' ||
+                form.get('redirect_uri') !== `${origin}/login/discord/callback`
+            )
+                return invalid('Invalid OAuth token request');
             const code = form.get('code') || 'existing';
             if (code === 'failure') return json({ error: 'invalid_grant' }, 502);
             return json({ access_token: code, token_type: 'Bearer' });
@@ -54,14 +60,33 @@ globalThis.fetch = async (input, init) => {
         if (path === '/subscriptions' || path === '/checkout/sessions') {
             const limit = Number(form.get('limit') ?? '10');
             const status = form.get('status');
-            const statuses = path === '/subscriptions' ? ['all', 'active', 'canceled', 'incomplete', 'incomplete_expired', 'past_due', 'paused', 'trialing', 'unpaid'] : ['open', 'complete', 'expired'];
+            const statuses =
+                path === '/subscriptions'
+                    ? ['all', 'active', 'canceled', 'incomplete', 'incomplete_expired', 'past_due', 'paused', 'trialing', 'unpaid']
+                    : ['open', 'complete', 'expired'];
             if (!Number.isInteger(limit) || limit < 1 || limit > 100 || (status !== null && !statuses.includes(status))) return reject('Invalid Stripe list limit or status');
             if (form.has('starting_after') && form.has('ending_before')) return reject('Stripe list cursors are mutually exclusive');
             const memberId = customer.match(/^cus_active_(\d+)$/)?.[1];
-            let data = path === '/subscriptions'
-                ? (memberId ? [{ id: `sub_${memberId}`, customer, status: 'active', created: 1, metadata: { conway_member_id: memberId }, items: { data: [{ price: { id: 'price_month' } }] } }] : [])
-                : [...sessions.values()].reverse();
-            data = data.filter((item) => (!customer || item.customer === customer) && (status && status !== 'all' ? item.status === status : path !== '/subscriptions' || status === 'all' || item.status !== 'canceled'));
+            let data =
+                path === '/subscriptions'
+                    ? memberId
+                        ? [
+                              {
+                                  id: `sub_${memberId}`,
+                                  customer,
+                                  status: 'active',
+                                  created: 1,
+                                  metadata: { conway_member_id: memberId },
+                                  items: { data: [{ price: { id: 'price_month' } }] },
+                              },
+                          ]
+                        : []
+                    : [...sessions.values()].reverse();
+            data = data.filter(
+                (item) =>
+                    (!customer || item.customer === customer) &&
+                    (status && status !== 'all' ? item.status === status : path !== '/subscriptions' || status === 'all' || item.status !== 'canceled'),
+            );
             const cursor = form.get('starting_after') || form.get('ending_before');
             if (cursor) {
                 const index = data.findIndex((item) => item.id === cursor);
@@ -92,12 +117,21 @@ globalThis.fetch = async (input, init) => {
             if (form.get('return_url') !== origin) return reject('Invalid portal return URL');
         } else {
             const memberId = form.get('client_reference_id');
-            const donation = form.get('mode') === 'payment';
-            if (!['subscription', 'payment'].includes(form.get('mode') || '') || !memberId || form.get('metadata[conway_member_id]') !== memberId || form.get('line_items[0][quantity]') !== '1' || !['price_month', 'price_year', 'price_donate'].includes(form.get('line_items[0][price]') || '') || form.get('success_url') !== origin || form.get('cancel_url') !== origin) return reject('Invalid checkout parameters');
-            if (donation ? form.get('submit_type') !== 'donate' || form.get('payment_intent_data[setup_future_usage]') !== 'on_session' || form.get('payment_intent_data[metadata][conway_member_id]') !== memberId || form.has('discounts[0][coupon]') : form.get('subscription_data[metadata][conway_member_id]') !== memberId) return reject('Invalid checkout metadata');
+            if (
+                form.get('mode') !== 'subscription' ||
+                !memberId ||
+                form.get('metadata[conway_member_id]') !== memberId ||
+                form.get('subscription_data[metadata][conway_member_id]') !== memberId ||
+                form.get('line_items[0][quantity]') !== '1' ||
+                !['price_month', 'price_year'].includes(form.get('line_items[0][price]') || '') ||
+                form.get('success_url') !== origin ||
+                form.get('cancel_url') !== origin
+            )
+                return reject('Invalid checkout parameters');
             if (form.has('discounts[0][coupon]') && !['coupon_student', 'coupon_family'].includes(form.get('discounts[0][coupon]')!)) return reject('Unknown coupon', 404);
             // Test invariant: Conway must expire the old subscription checkout before replacing it.
-            if (!donation && [...sessions.values()].some((session) => session.customer === customer && session.mode === 'subscription' && session.status === 'open')) return reject('Previous subscription checkout is still open');
+            if ([...sessions.values()].some((session) => session.customer === customer && session.mode === 'subscription' && session.status === 'open'))
+                return reject('Previous subscription checkout is still open');
         }
         const id = `${portal ? 'bps' : 'cs'}_${crypto.randomUUID().replaceAll('-', '')}`;
         const hosted = new URL(portal ? `https://billing.stripe.com/p/session/${id}` : `https://checkout.stripe.com/c/pay/${id}`);

@@ -24,6 +24,8 @@ describe('default fetch router boundaries', () => {
         }
         const config = await (await api('/api/config')).json<Record<string, unknown>>();
         expect(config).not.toHaveProperty('notification_templates');
+        expect(config).not.toHaveProperty('referral_sources');
+        expect(config).not.toHaveProperty('donations');
         expect(config.discounts).toEqual([
             { id: 'student', label: 'Student' },
             { id: 'family', label: 'Family' },
@@ -34,7 +36,7 @@ describe('default fetch router boundaries', () => {
         expect(await asset.text()).toContain('<html');
     });
 
-    it.each(['/api/member', '/api/directory', '/api/admin/members', '/api/admin/config', '/api/admin/export'])('requires login for %s', async (path) => {
+    it.each(['/api/member', '/api/admin/members', '/api/admin/config', '/api/admin/export'])('requires login for %s', async (path) => {
         expect((await api(path)).status).toBe(401);
         expect((await api(path, 'GET', await login())).status).toBe(401);
     });
@@ -48,7 +50,6 @@ describe('default fetch router boundaries', () => {
 
     it.each([
         ['/api/profile', 'PATCH'],
-        ['/api/signup', 'POST'],
         ['/api/logout', 'POST'],
         ['/api/waiver', 'POST'],
         ['/api/discount', 'DELETE'],
@@ -85,29 +86,24 @@ describe('default fetch router boundaries', () => {
             body: '{"name":"No"}',
         });
         expect((await SELF.fetch(input)).status).toBe(415);
-        expect((await api('/api/profile', 'PATCH', headers, { bio: 'x'.repeat(128 * 1024) })).status).toBe(413);
+        expect((await api('/api/profile', 'PATCH', headers, { name: 'x'.repeat(128 * 1024) })).status).toBe(413);
         expect(await env.DB.prepare('SELECT name FROM members WHERE id=?').bind(row.id).first('name')).toBe('Original');
     });
 });
 
-describe('member profile and directory', () => {
+describe('member profile', () => {
     it('edits only the logged-in profile and hides admin notes from member/session responses', async () => {
         const row = await member({ name: 'Before', admin_notes: 'Leader-only' });
         const other = await member({ name: 'Other' });
         const headers = await login(row.id);
         const response = await api('/api/profile', 'PATCH', headers, {
             name: ' After ',
-            bio: ' Bio ',
-            pronouns: 'they/them',
-            directory_hidden: true,
             discord_checkin_notify: false,
         });
         expect(response.status).toBe(200);
         expect(await response.json()).toMatchObject({
             id: row.id,
             name: 'After',
-            bio: 'Bio',
-            directory_hidden: 1,
             discord_checkin_notify: 0,
         });
         expect(await (await api('/api/member', 'GET', headers)).json()).not.toHaveProperty('admin_notes');
@@ -124,29 +120,31 @@ describe('member profile and directory', () => {
         { fob_id: 1 },
         { id: 9 },
         {},
-        { directory_hidden: 'false' },
+        { discord_checkin_notify: 'false' },
     ])('rejects unauthorized/invalid profile fields %j atomically', async (data) => {
         const row = await member({ name: 'Original' });
         expect((await api('/api/profile', 'PATCH', await login(row.id), data)).status).toBe(400);
         expect(await env.DB.prepare('SELECT name FROM members WHERE id=?').bind(row.id).first('name')).toBe('Original');
     });
 
-    it('lists only visible Ready named members, puts self first, and never leaks private columns', async () => {
-        const self = await member({ name: 'Z Self', non_billable: 1, fob_id: 1 });
-        const visible = await member({
-            name: 'A Visible',
-            non_billable: 1,
-            fob_id: 2,
-            admin_notes: 'Secret',
-            discord_username: 'public-name',
-        });
-        await member({ name: 'Hidden', non_billable: 1, fob_id: 3, directory_hidden: 1 });
-        await member({ name: 'Inactive' });
-        await member({ name: '', non_billable: 1, fob_id: 4 });
-        const response = await api('/api/directory', 'GET', await login(self.id));
-        const data = await response.json<{ members: Record<string, unknown>[] }>();
-        expect(data.members.map((row) => row.id)).toEqual([self.id, visible.id]);
-        expect(Object.keys(data.members[0]).sort()).toEqual(['bio', 'discord_username', 'id', 'leadership', 'name', 'pronouns']);
+    it('does not expose the removed directory API to anonymous sessions, members, or leaders', async () => {
+        const { headers: admin } = await leader();
+        for (const headers of [{}, await login(), await login((await member()).id), admin]) {
+            for (const method of ['GET', 'HEAD', 'OPTIONS']) {
+                expect((await api('/api/directory', method, headers)).status).toBe(404);
+            }
+        }
+    });
+
+    it.each([{ pronouns: 'they/them' }, { bio: 'Introduction' }, { directory_hidden: true }])('rejects removed directory fields %j for members and leaders', async (fields) => {
+        const row = await member({ admin_notes: 'Original' });
+        const { headers: admin } = await leader();
+        expect((await api('/api/profile', 'PATCH', await login(row.id), fields)).status).toBe(400);
+        expect((await adminMutation(row.id, 'PATCH', admin, { admin_notes: 'Changed', ...fields })).status).toBe(400);
+        expect(await env.DB.prepare('SELECT admin_notes FROM members WHERE id=?').bind(row.id).first('admin_notes')).toBe('Original');
+        const count = await env.DB.prepare('SELECT count(*) FROM members').first('count(*)');
+        expect((await api('/api/admin/members', 'POST', admin, { email: 'new@example.test', ...fields })).status).toBe(400);
+        expect(await env.DB.prepare('SELECT count(*) FROM members').first('count(*)')).toBe(count);
     });
 });
 

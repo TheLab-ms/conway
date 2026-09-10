@@ -202,7 +202,7 @@ async function familyEligible(env: Env, member: Member): Promise<boolean> {
 
 export async function integrationRoute(request: Request, env: Env): Promise<Response | null> {
     const path = new URL(request.url).pathname;
-    if (!['/api/billing/checkout', '/api/billing/donation', '/webhooks/stripe', '/discord/interactions'].includes(path)) return null;
+    if (!['/api/billing/checkout', '/webhooks/stripe', '/discord/interactions'].includes(path)) return null;
     if (request.method !== 'POST') throw new HttpError(405, 'Method not allowed');
     if (path === '/webhooks/stripe') {
         const text = await rawBody(request, 1024 * 1024);
@@ -228,13 +228,12 @@ export async function integrationRoute(request: Request, env: Env): Promise<Resp
         const interaction = parseObject(text);
         if (interaction.type === 1) return json({ type: 1 });
         const reply = (content: string) => json({ type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
-        const cfg = await settings(env);
         if (
             interaction.type !== 3 ||
-            interaction.guild_id !== cfg.discord_guild_id ||
-            !cfg.discord_guild_id ||
-            interaction.channel_id !== cfg.discord_leadership_channel_id ||
-            !cfg.discord_leadership_channel_id
+            interaction.guild_id !== env.DISCORD_GUILD_ID ||
+            !env.DISCORD_GUILD_ID ||
+            interaction.channel_id !== env.DISCORD_LEADERSHIP_CHANNEL_ID ||
+            !env.DISCORD_LEADERSHIP_CHANNEL_ID
         ) {
             return reply('This approval is not available here.');
         }
@@ -271,15 +270,12 @@ export async function integrationRoute(request: Request, env: Env): Promise<Resp
     }
     const member = await requireMember(request, env);
     const input = await body<ObjectData>(request);
-    const donation = path.endsWith('/donation');
-    if (donation ? typeof input.price_id !== 'string' : typeof input.annual !== 'boolean') throw new HttpError(400, 'Invalid checkout selection');
+    if (typeof input.annual !== 'boolean') throw new HttpError(400, 'Invalid checkout selection');
     const suppliedKey = request.headers.get('Idempotency-Key');
     if (suppliedKey !== null && !/^[A-Za-z0-9_-]{8,128}$/.test(suppliedKey)) throw new HttpError(400, 'Invalid idempotency key');
     return coordinated(env, 'stripe', '/checkout', {
         member_id: member.id,
-        donation,
-        annual: input.annual ?? false,
-        price_id: input.price_id ?? '',
+        annual: input.annual,
         request_key: suppliedKey,
     });
 }
@@ -391,9 +387,9 @@ async function stripeEvent(env: Env, eventID: string): Promise<void> {
     const event = parseObject(stored.payload) as StripeEvent;
     const relevant =
         event.type.startsWith('customer.subscription.') ||
-        ['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed', 'invoice.paid', 'invoice.payment_failed'].includes(
-            event.type,
-        );
+        ['invoice.paid', 'invoice.payment_failed'].includes(event.type) ||
+        (event.data.object.mode === 'subscription' &&
+            ['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed'].includes(event.type));
     if (relevant) {
         const customerID = objectID(event.data.object.customer);
         if (!customerID) throw new DeliveryError('Stripe event has no customer ID', true);
@@ -404,23 +400,7 @@ async function stripeEvent(env: Env, eventID: string): Promise<void> {
                 if (!/^cs_[A-Za-z0-9_]+$/.test(sessionID)) throw new DeliveryError('Invalid Stripe checkout session ID', true);
                 const session = await stripe(env, `/checkout/sessions/${encodeURIComponent(sessionID)}`);
                 if (objectID(session.customer) !== customerID) throw new DeliveryError('Stripe checkout customer mismatch', true);
-                if (session.mode === 'payment') {
-                    if (
-                        !Number.isSafeInteger(session.amount_total) ||
-                        session.amount_total < 0 ||
-                        !/^[a-z]{3}$/.test(session.currency) ||
-                        typeof session.payment_status !== 'string'
-                    ) {
-                        throw new DeliveryError('Invalid Stripe donation details', true);
-                    }
-                    await env.DB.prepare(
-                        `INSERT INTO donations (id, member, amount, currency, status, created) VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET amount = excluded.amount, currency = excluded.currency, status = excluded.status
-            WHERE donations.member = excluded.member AND donations.status != 'paid'`,
-                    )
-                        .bind(sessionID, member.id, session.amount_total, session.currency, session.payment_status, Number(session.created) || now())
-                        .run();
-                } else if (session.mode === 'subscription') await reconcileStripe(env, member);
+                if (session.mode === 'subscription') await reconcileStripe(env, member);
             } else await reconcileStripe(env, member);
         } else {
             // Email is never an identity fallback. Unknown customers may belong to unrelated Stripe products.
@@ -459,7 +439,7 @@ async function discordJob(env: Env, job: Job, payload: ObjectData, state: Durabl
     const cfg = await settings(env);
     if (job.kind === 'discord_sync') {
         const previous = await state.storage.get<{ user: string; guild: string; role: string }>('discord-role');
-        if (previous && (previous.user !== member?.discord_user_id || previous.guild !== cfg.discord_guild_id || previous.role !== cfg.discord_role_id)) {
+        if (previous && (previous.user !== member?.discord_user_id || previous.guild !== env.DISCORD_GUILD_ID || previous.role !== env.DISCORD_ROLE_ID)) {
             await discord(
                 env,
                 `/guilds/${encodeURIComponent(previous.guild)}/members/${encodeURIComponent(previous.user)}/roles/${encodeURIComponent(previous.role)}`,
@@ -470,21 +450,19 @@ async function discordJob(env: Env, job: Job, payload: ObjectData, state: Durabl
             await state.storage.delete('discord-role');
         }
         if (!member?.discord_user_id) return;
-        if (!cfg.discord_guild_id || !cfg.discord_role_id) throw new DeliveryError('Discord role sync is not configured');
-        const path = `/guilds/${encodeURIComponent(cfg.discord_guild_id)}/members/${encodeURIComponent(member.discord_user_id)}`;
-        // Record the target before a role write so retries can clean up even if the identity changes after a crash.
+        if (!env.DISCORD_GUILD_ID || !env.DISCORD_ROLE_ID) throw new DeliveryError('Discord role sync is not configured');
+        const path = `/guilds/${encodeURIComponent(env.DISCORD_GUILD_ID)}/members/${encodeURIComponent(member.discord_user_id)}`;
         await state.storage.put('discord-role', {
             user: member.discord_user_id,
-            guild: cfg.discord_guild_id,
-            role: cfg.discord_role_id,
+            guild: env.DISCORD_GUILD_ID,
+            role: env.DISCORD_ROLE_ID,
         });
         const guildMember = await discord(env, path, 'GET', undefined, true);
         if (guildMember) {
             if (!Array.isArray(guildMember.roles)) throw new DeliveryError('Invalid Discord guild member response');
-            // Legacy roles follow billing, not fob/waiver readiness.
             const wanted = Boolean(member.payment_status);
-            if (guildMember.roles.includes(cfg.discord_role_id) !== wanted) {
-                await discord(env, `${path}/roles/${encodeURIComponent(cfg.discord_role_id)}`, wanted ? 'PUT' : 'DELETE');
+            if (guildMember.roles.includes(env.DISCORD_ROLE_ID) !== wanted) {
+                await discord(env, `${path}/roles/${encodeURIComponent(env.DISCORD_ROLE_ID)}`, wanted ? 'PUT' : 'DELETE');
             }
         }
         await env.DB.prepare(
@@ -503,10 +481,10 @@ async function discordJob(env: Env, job: Job, payload: ObjectData, state: Durabl
     }
     if (!member) return;
     if (!['signup', 'discount', 'badge', 'denied'].includes(job.kind)) throw new DeliveryError(`Unknown job kind: ${job.kind}`, true);
-    if (job.kind === 'signup' && !cfg.signup_notify_enabled) return;
+    if (job.kind === 'signup' && env.DISCORD_SIGNUP_NOTIFY_ENABLED !== 'true') return;
     if (job.kind === 'discount' && (typeof payload.request_id !== 'string' || member.discount_request_id !== payload.request_id || member.discount_status !== 'requested')) return;
-    if (job.kind === 'badge' && (!cfg.badge_notify_enabled || !member.discord_checkin_notify)) return;
-    if (job.kind === 'denied' && (!cfg.access_denied_enabled || !member.discord_user_id)) return;
+    if (job.kind === 'badge' && (env.DISCORD_CHECKIN_NOTIFY_ENABLED !== 'true' || !member.discord_checkin_notify)) return;
+    if (job.kind === 'denied' && (env.DISCORD_ACCESS_DENIED_ENABLED !== 'true' || !member.discord_user_id)) return;
     let interval = 0;
     if (job.kind === 'badge' || job.kind === 'denied') {
         if (typeof payload.swipe_id !== 'string') throw new DeliveryError('Missing swipe ID', true);
@@ -534,9 +512,9 @@ async function discordJob(env: Env, job: Job, payload: ObjectData, state: Durabl
         discount_type: member.discount_type || '',
         access_status: member.access_status,
     };
-    const template = cfg.notification_templates[job.kind as keyof Settings['notification_templates']] || defaults[job.kind];
+    const template = defaults[job.kind];
     const content = template.replace(/\{([a-z_]+)\}/g, (token, key: string) => variables[key] ?? token).slice(0, 2000);
-    let channel = job.kind === 'badge' ? cfg.discord_badge_channel_id : cfg.discord_leadership_channel_id;
+    let channel = job.kind === 'badge' ? env.DISCORD_CHECKIN_CHANNEL_ID : env.DISCORD_LEADERSHIP_CHANNEL_ID;
     if (job.kind === 'denied') {
         const dm = await discord(env, '/users/@me/channels', 'POST', {
             recipient_id: member.discord_user_id,
@@ -761,10 +739,9 @@ export class MembershipCoordinator {
 
     private async expireCheckouts(member: Member): Promise<void> {
         const sessions = new Map<string, ObjectData>();
-        const slots = [`checkout:${member.id}:membership`, `checkout:${member.id}:donation`];
-        for (const slot of slots) {
-            const operation = await this.state.storage.get<Mutation>(slot);
-            if (!operation || operation.path !== '/checkout/sessions') continue;
+        const slot = `checkout:${member.id}:membership`;
+        const operation = await this.state.storage.get<Mutation>(slot);
+        if (operation?.path === '/checkout/sessions') {
             // Resolve an ambiguous create using its original idempotency key, then revoke the resulting session.
             const result = operation.result || (await this.mutate(slot, operation.path, operation.form));
             if (!/^cs_[A-Za-z0-9_]+$/.test(result.id)) throw new DeliveryError('Invalid stored checkout session');
@@ -777,7 +754,10 @@ export class MembershipCoordinator {
             return;
         }
         const query = () => new URLSearchParams({ customer: member.stripe_customer_id!, status: 'open', limit: '100' });
-        for (const session of await stripeList(this.env, '/checkout/sessions', query())) sessions.set(session.id, session);
+        for (const session of await stripeList(this.env, '/checkout/sessions', query())) {
+            if (['payment', 'setup'].includes(session.mode)) continue;
+            sessions.set(session.id, session);
+        }
         for (const [id, session] of sessions) {
             if (objectID(session.customer) !== member.stripe_customer_id) throw new DeliveryError('Checkout customer mismatch');
             if (session.status === 'open') {
@@ -794,8 +774,10 @@ export class MembershipCoordinator {
                 }
             } else if (!['complete', 'expired'].includes(session.status)) throw new HttpError(409, 'Checkout state is uncertain');
         }
-        if ((await stripeList(this.env, '/checkout/sessions', query())).length) throw new HttpError(409, 'Open checkout sessions remain');
-        for (const slot of slots) await this.state.storage.delete(slot);
+        if ((await stripeList(this.env, '/checkout/sessions', query())).some((session) => !['payment', 'setup'].includes(session.mode))) {
+            throw new HttpError(409, 'Open checkout sessions remain');
+        }
+        await this.state.storage.delete(slot);
     }
 
     private async memberMutation(input: ObjectData, selfDiscount: boolean): Promise<Response> {
@@ -827,13 +809,10 @@ export class MembershipCoordinator {
             const strings: Record<string, number> = {
                 name: 200,
                 email: 254,
-                pronouns: 100,
-                bio: 4000,
-                heard_about: 300,
                 admin_notes: 10000,
             };
             const nullable = ['name_override', 'discord_user_id', 'discount_type', 'discount_status', 'discount_request_id'];
-            const flags = ['directory_hidden', 'discord_checkin_notify', 'leadership', 'non_billable', 'confirmed', 'bill_annually'];
+            const flags = ['discord_checkin_notify', 'leadership', 'non_billable', 'confirmed', 'bill_annually'];
             for (const [key, value] of Object.entries(fields)) {
                 if (Object.hasOwn(strings, key)) {
                     if (typeof value !== 'string' || value.length > strings[key]) throw new HttpError(400, `Invalid ${key}`);
@@ -960,15 +939,15 @@ export class MembershipCoordinator {
     }
 
     private async checkout(input: ObjectData): Promise<Response> {
-        if (!Number.isSafeInteger(input.member_id) || input.member_id < 1 || typeof input.donation !== 'boolean' || typeof input.annual !== 'boolean') {
+        if (!Number.isSafeInteger(input.member_id) || input.member_id < 1 || typeof input.annual !== 'boolean') {
             throw new HttpError(400, 'Invalid checkout request');
         }
         let member = await this.env.DB.prepare('SELECT * FROM members WHERE id = ?').bind(input.member_id).first<Member>();
         if (!member) throw new HttpError(404, 'Member not found');
         if (await this.state.storage.get<boolean>(`mutation-pending:${member.id}`)) throw new HttpError(409, 'Member billing change is pending; retry the member change first');
-        const requestSlot = input.request_key ? `request:${input.member_id}:${input.donation ? 'donation' : 'membership'}:${await hash(input.request_key)}` : '';
+        const requestSlot = input.request_key ? `request:${input.member_id}:membership:${await hash(input.request_key)}` : '';
         const epoch = (await this.state.storage.get<number>(`checkout-epoch:${member.id}`)) || 0;
-        const requestFingerprint = await hash(JSON.stringify({ donation: input.donation, annual: input.annual, price_id: input.price_id }));
+        const requestFingerprint = await hash(JSON.stringify({ annual: input.annual }));
         if (requestSlot) {
             const previous = await this.state.storage.get<{
                 fingerprint: string;
@@ -983,9 +962,9 @@ export class MembershipCoordinator {
         }
         if (!this.env.STRIPE_SECRET_KEY) throw new HttpError(503, 'Stripe is not configured');
         const cfg = await settings(this.env);
-        const price = input.donation ? cfg.donations.find((item) => item.price_id === input.price_id)?.price_id : input.annual ? cfg.yearly_price_id : cfg.monthly_price_id;
+        const price = input.annual ? cfg.yearly_price_id : cfg.monthly_price_id;
         // Existing customers must be reconciled before deciding whether they need a price or just the portal.
-        if (!price && (input.donation || !member.stripe_customer_id)) throw new HttpError(400, 'Selected Stripe price is not configured');
+        if (!price && !member.stripe_customer_id) throw new HttpError(400, 'Selected Stripe price is not configured');
         if (!member.stripe_customer_id) {
             const slot = `customer:${member.id}`;
             const prior = await this.state.storage.get<Mutation>(slot);
@@ -1005,30 +984,25 @@ export class MembershipCoordinator {
             member = (await this.env.DB.prepare('SELECT * FROM members WHERE id = ?').bind(member.id).first<Member>())!;
             if (member.stripe_customer_id !== customer.id) throw new HttpError(409, 'Billing identity changed; retry');
         }
-        if (!input.donation) {
-            // Also discover a just-completed checkout whose webhook has not arrived yet.
-            await reconcileStripe(this.env, member);
-            member = (await this.env.DB.prepare('SELECT * FROM members WHERE id = ?').bind(member.id).first<Member>())!;
-        }
-        const portal = !input.donation && member.stripe_subscription_state && !['canceled', 'incomplete_expired'].includes(member.stripe_subscription_state);
+        // Also discover a just-completed checkout whose webhook has not arrived yet.
+        await reconcileStripe(this.env, member);
+        member = (await this.env.DB.prepare('SELECT * FROM members WHERE id = ?').bind(member.id).first<Member>())!;
+        const portal = member.stripe_subscription_state && !['canceled', 'incomplete_expired'].includes(member.stripe_subscription_state);
         if (!portal && !price) throw new HttpError(400, 'Selected Stripe price is not configured');
-        if (!portal && !input.donation && member.discount_type === 'family' && member.discount_status !== 'requested' && !(await familyEligible(this.env, member))) {
+        if (!portal && member.discount_type === 'family' && member.discount_status !== 'requested' && !(await familyEligible(this.env, member))) {
             throw new HttpError(409, 'Family discount requires a linked active primary member');
         }
-        const coupon =
-            !input.donation && member.discount_type && member.discount_status !== 'requested' ? cfg.discounts.find((item) => item.id === member.discount_type)?.coupon_id : '';
-        if (!portal && !input.donation && member.discount_type && member.discount_status !== 'requested' && !coupon) {
+        const coupon = member.discount_type && member.discount_status !== 'requested' ? cfg.discounts.find((item) => item.id === member.discount_type)?.coupon_id : '';
+        if (!portal && member.discount_type && member.discount_status !== 'requested' && !coupon) {
             throw new HttpError(400, 'Your discount coupon is not configured. Contact leadership before starting checkout.');
         }
-        if (!input.donation) {
-            await this.env.DB.prepare('UPDATE members SET bill_annually = ? WHERE id = ? AND bill_annually != ?')
-                .bind(input.annual ? 1 : 0, member.id, input.annual ? 1 : 0)
-                .run();
-        }
+        await this.env.DB.prepare('UPDATE members SET bill_annually = ? WHERE id = ? AND bill_annually != ?')
+            .bind(input.annual ? 1 : 0, member.id, input.annual ? 1 : 0)
+            .run();
         const form: Record<string, string> = portal
             ? { customer: member.stripe_customer_id!, return_url: this.env.SITE_URL }
             : {
-                  mode: input.donation ? 'payment' : 'subscription',
+                  mode: 'subscription',
                   customer: member.stripe_customer_id!,
                   success_url: this.env.SITE_URL,
                   cancel_url: this.env.SITE_URL,
@@ -1036,17 +1010,11 @@ export class MembershipCoordinator {
                   'metadata[conway_member_id]': String(member.id),
                   'line_items[0][price]': price!,
                   'line_items[0][quantity]': '1',
-                  ...(input.donation
-                      ? {
-                            submit_type: 'donate',
-                            'payment_intent_data[setup_future_usage]': 'on_session',
-                            'payment_intent_data[metadata][conway_member_id]': String(member.id),
-                        }
-                      : { 'subscription_data[metadata][conway_member_id]': String(member.id) }),
+                  'subscription_data[metadata][conway_member_id]': String(member.id),
                   ...(coupon ? { 'discounts[0][coupon]': coupon } : {}),
               };
         const fingerprint = await hash(JSON.stringify(form));
-        const slot = `checkout:${member.id}:${input.donation ? 'donation' : 'membership'}`;
+        const slot = `checkout:${member.id}:membership`;
         const prior = await this.state.storage.get<Mutation>(slot);
         if (prior?.result) {
             if (portal) {
@@ -1070,7 +1038,7 @@ export class MembershipCoordinator {
                 } else if (session.status === 'complete' || session.status === 'expired') {
                     if (requestSlot && (await this.state.storage.get(requestSlot)))
                         throw new HttpError(409, 'This checkout request is already complete or expired; start a new request');
-                    if (!input.donation && session.status === 'complete' && objectID(session.subscription) !== member.stripe_subscription_id) {
+                    if (session.status === 'complete' && objectID(session.subscription) !== member.stripe_subscription_id) {
                         throw new HttpError(409, 'Your previous membership checkout is still being reconciled');
                     }
                     await this.state.storage.delete(slot);

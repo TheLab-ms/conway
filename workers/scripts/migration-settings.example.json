@@ -11,12 +11,5 @@
         { "id": "educator", "label": "Educator", "coupon_id": "" },
         { "id": "emeritus", "label": "Emeritus", "coupon_id": "" },
         { "id": "family", "label": "Family", "coupon_id": "" }
-    ],
-    "signup_notify_enabled": false,
-    "notification_templates": {
-        "signup": "New member: {name}",
-        "discount": "Discount request: {name} ({discount_type})",
-        "badge": "{name} checked in",
-        "denied": "Access denied: {access_status}. Visit {site_url}"
-    }
+    ]
 }

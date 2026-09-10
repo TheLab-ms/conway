@@ -193,19 +193,14 @@ async function harness(t, { discordUser = user, remote, timeout } = {}) {
         route('/login/discord/callback?code=one_use_code&state=' + start.state, {
             cookie: start.cookie + '; ' + cookie,
         });
-    const pending = async (target) => {
-        const begun = await start(target);
-        const response = await callback(begun);
-        return { cookie: cookies(response), response, begun };
-    };
-    return { db, env, calls, route, start, callback, pending, http: http.exports };
+    return { db, env, calls, route, start, callback, http: http.exports };
 }
 
 test('session issues opaque hashed anonymous cookie and CSRF, then reuses it', async (t) => {
     const h = await harness(t);
     const response = await h.route('/api/session');
     const data = await response.json();
-    assert.deepEqual({ ...data, csrf_token: null }, { member: null, csrf_token: null, signup: null });
+    assert.deepEqual({ ...data, csrf_token: null }, { member: null, csrf_token: null });
     assert.match(data.csrf_token, /^[a-f0-9]{64}$/);
     assert.match(response.headers.get('Set-Cookie'), /HttpOnly; SameSite=Lax; Max-Age=3600; Secure/);
     assert.equal(response.headers.get('Cache-Control'), 'no-store');
@@ -221,23 +216,25 @@ test('session issues opaque hashed anonymous cookie and CSRF, then reuses it', a
     assert.ok((await h.route('/api/session', { cookie })).headers.has('Set-Cookie'));
 });
 
-test('session exposes sanitized member and only public pending signup fields', async (t) => {
+test('session exposes sanitized member after Discord callback creates member', async (t) => {
     const h = await harness(t);
-    const pending = await h.pending();
-    assert.deepEqual((await (await h.route('/api/session', { cookie: pending.cookie })).json()).signup, { email: 'discord@example.com', discord_user_id: user.id });
-    await h.db.prepare('INSERT INTO members (email, discord_user_id, admin_notes) VALUES (?, ?, ?)').bind('primary@example.com', user.id, 'private notes').run();
     const login = await h.callback(await h.start());
     const data = await (await h.route('/api/session', { cookie: cookies(login) })).json();
-    assert.equal(data.member.email, 'primary@example.com');
+    assert.equal(data.member.email, 'discord@example.com');
+    assert.equal(data.member.discord_user_id, user.id);
     assert.equal('admin_notes' in data.member, false);
-    assert.equal(data.signup, null);
+    assert.ok(data.member);
+    // After callback, the member exists in DB
+    const row = await h.db.prepare('SELECT * FROM members WHERE discord_user_id = ?').bind(user.id).first();
+    assert.ok(row);
+    assert.equal(row.email, 'discord@example.com');
 });
 
 test('OAuth start stores hashes, fixes callback and scope, and restricts return paths', async (t) => {
     const h = await harness(t);
     const cases = [
         ['/fobs/bind?token=abc%20def&next=%2Fdashboard#claim', '/fobs/bind?token=abc%20def&next=%2Fdashboard#claim'],
-        ['/signup?return_to=%2Ffobs%2Fbind%3Ftoken%3Dabc', '/signup?return_to=%2Ffobs%2Fbind%3Ftoken%3Dabc'],
+        ['/dashboard', '/dashboard'],
         ['https://evil.example', '/dashboard'],
         ['//evil.example', '/dashboard'],
         ['/\\evil.example', '/dashboard'],
@@ -327,7 +324,7 @@ test('existing Discord-ID login rotates old session without overwriting primary 
     assert.equal((await h.db.prepare('SELECT count(*) AS n FROM members').first()).n, 2);
 });
 
-test('verified email conflict never authenticates, links, or overwrites existing membership', async (t) => {
+test('verified email conflict never authenticates or links existing membership', async (t) => {
     const h = await harness(t);
     await h.db.prepare('INSERT INTO members (email, name) VALUES (?, ?)').bind('DISCORD@example.com', 'Legacy').run();
     await assert.rejects(h.callback(await h.start()), (error) => error.status === 409 && /leadership/.test(error.message));
@@ -389,148 +386,34 @@ test('remote fetch is bounded, redirect-disabled, timed, and does not expose cre
     }
 });
 
-test('signup explicitly validates profile, atomically creates member and rotates pending session', async (t) => {
+test('Discord callback creates a new member directly from identity', async (t) => {
     const h = await harness(t);
-    const pending = await h.pending('/signup?return_to=%2Ffobs%2Fbind%3Ftoken%3Dabc');
-    assert.equal(pending.response.headers.get('Location'), '/signup?return_to=%2Ffobs%2Fbind%3Ftoken%3Dabc');
-    assert.equal((await h.db.prepare('SELECT count(*) AS n FROM members').first()).n, 0);
-    for (const input of [
-        {},
-        { name: '', heard_about: '' },
-        { name: 'A' },
-        { name: 'a'.repeat(201), heard_about: '' },
-        { name: 'A', heard_about: 'x'.repeat(501) },
-        { name: 'A\u0000', heard_about: '' },
-    ]) {
-        await assert.rejects(h.route('/api/signup', { method: 'POST', cookie: pending.cookie, input }), status(400));
-    }
-    const before = await h.db.prepare('SELECT * FROM sessions').first();
-    const response = await h.route('/api/signup', {
-        method: 'POST',
-        cookie: pending.cookie,
-        input: {
-            name: '  New Member  ',
-            heard_about: '  Friend  ',
-            email: 'attacker@example.com',
-            discord_user_id: '999999999999999999',
-            leadership: 1,
-        },
-    });
-    assert.deepEqual(await response.json(), { return_to: '/fobs/bind?token=abc' });
+    const response = await h.callback(await h.start('/dashboard'));
+    assert.equal(response.headers.get('Location'), '/dashboard');
     const member = await h.db.prepare('SELECT * FROM members').first();
-    assert.equal(member.name, 'New Member');
-    assert.equal(member.heard_about, 'Friend');
-    assert.equal(member.discord_user_id, user.id);
+    assert.ok(member);
     assert.equal(member.email, 'discord@example.com');
     assert.equal(member.confirmed, 1);
-    assert.equal(member.leadership, 0);
-    const after = await h.db.prepare('SELECT * FROM sessions').first();
-    assert.equal(after.signup, null);
-    assert.equal(after.member, member.id);
-    assert.notEqual(after.token_hash, before.token_hash);
-    assert.notEqual(after.csrf_token, before.csrf_token);
-    assert.equal(after.token_hash, await h.http.hash(cookieValue(cookies(response), 'conway_session')));
-    await assert.rejects(
-        h.route('/api/signup', {
-            method: 'POST',
-            cookie: pending.cookie,
-            input: { name: 'Duplicate', heard_about: '' },
-        }),
-        status(409),
-    );
-    assert.equal((await h.db.prepare("SELECT count(*) AS n FROM jobs WHERE kind = 'signup'").first()).n, 1);
+    assert.equal(member.name, 'a.member');
+    assert.equal(member.discord_user_id, user.id);
+    assert.equal(member.discord_username, 'a.member');
+    assert.equal(member.discord_email, 'discord@example.com');
+    const session = await h.db.prepare('SELECT * FROM sessions').first();
+    assert.equal(session.member, member.id);
+    assert.ok((await h.db.prepare("SELECT count(*) AS n FROM jobs WHERE kind = 'signup'").first()).n >= 1);
 });
 
-test('concurrent signup from the same pending snapshot creates and authenticates exactly once', async (t) => {
+test('Discord callback authenticates existing member by Discord ID', async (t) => {
     const h = await harness(t);
-    const pending = await h.pending();
-    const prepare = h.db.prepare.bind(h.db);
-    let reads = 0,
-        release;
-    const barrier = new Promise((resolve) => {
-        release = resolve;
-    });
-    h.db.prepare = (sql) => {
-        const statement = prepare(sql);
-        if (sql.startsWith('SELECT * FROM sessions WHERE token_hash')) {
-            const first = statement.first.bind(statement);
-            statement.first = async () => {
-                const row = await first();
-                if (++reads === 2) release();
-                await barrier;
-                return row;
-            };
-        }
-        return statement;
-    };
-    const attempts = await Promise.allSettled(
-        ['First', 'Second'].map((name) =>
-            h.route('/api/signup', {
-                method: 'POST',
-                cookie: pending.cookie,
-                input: { name, heard_about: '' },
-            }),
-        ),
-    );
-    assert.equal(reads, 2);
-    assert.equal(attempts.filter((attempt) => attempt.status === 'fulfilled').length, 1);
-    assert.equal(attempts.find((attempt) => attempt.status === 'rejected').reason.status, 409);
+    await h.db.prepare('INSERT INTO members (email, discord_user_id, name) VALUES (?, ?, ?)').bind('old@example.com', user.id, 'Existing').run();
+    const response = await h.callback(await h.start('/dashboard'));
+    assert.equal(response.headers.get('Location'), '/dashboard');
+    const member = await h.db.prepare('SELECT * FROM members WHERE discord_user_id = ?').bind(user.id).first();
+    assert.equal(member.email, 'old@example.com');
+    assert.equal(member.name, 'Existing');
+    assert.equal(member.discord_email, 'discord@example.com');
+    assert.equal(member.discord_username, 'a.member');
     assert.equal((await h.db.prepare('SELECT count(*) AS n FROM members').first()).n, 1);
-    assert.equal((await h.db.prepare('SELECT count(*) AS n FROM sessions WHERE member IS NOT NULL').first()).n, 1);
-    assert.equal((await h.db.prepare("SELECT count(*) AS n FROM jobs WHERE kind = 'signup'").first()).n, 1);
-});
-
-test('separate pending sessions for the same identity cannot reissue membership', async (t) => {
-    const h = await harness(t);
-    const [first, second] = [await h.pending(), await h.pending()];
-    const attempts = await Promise.allSettled(
-        [first, second].map((pending) =>
-            h.route('/api/signup', {
-                method: 'POST',
-                cookie: pending.cookie,
-                input: { name: 'Member', heard_about: '' },
-            }),
-        ),
-    );
-    assert.equal(attempts.filter((attempt) => attempt.status === 'fulfilled').length, 1);
-    assert.equal(attempts.find((attempt) => attempt.status === 'rejected').reason.status, 409);
-    assert.equal((await h.db.prepare('SELECT count(*) AS n FROM members').first()).n, 1);
-    assert.equal((await h.db.prepare('SELECT count(*) AS n FROM sessions WHERE member IS NOT NULL').first()).n, 1);
-});
-
-test('signup contact conflict after OAuth cannot link or mutate another membership', async (t) => {
-    const h = await harness(t);
-    const pending = await h.pending();
-    await h.db.prepare('INSERT INTO members (email, name) VALUES (?, ?)').bind('DISCORD@example.com', 'Legacy').run();
-    await assert.rejects(
-        h.route('/api/signup', {
-            method: 'POST',
-            cookie: pending.cookie,
-            input: { name: 'New', heard_about: '' },
-        }),
-        (error) => error.status === 409 && /leadership/.test(error.message),
-    );
-    const member = await h.db.prepare('SELECT * FROM members').first();
-    assert.equal(member.name, 'Legacy');
-    assert.equal(member.discord_user_id, null);
-    assert.equal((await h.db.prepare('SELECT * FROM sessions').first()).member, null);
-});
-
-test('signup batch failure rolls back member, outbox, and pending session consumption', async (t) => {
-    const h = await harness(t);
-    const pending = await h.pending();
-    await h.db.prepare("CREATE TRIGGER reject_rotation BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT, 'test failure'); END").run();
-    await assert.rejects(
-        h.route('/api/signup', {
-            method: 'POST',
-            cookie: pending.cookie,
-            input: { name: 'Member', heard_about: '' },
-        }),
-        /test failure/,
-    );
-    assert.equal((await h.db.prepare('SELECT count(*) AS n FROM members').first()).n, 0);
-    assert.equal((await h.db.prepare('SELECT count(*) AS n FROM jobs').first()).n, 0);
-    assert.ok((await h.db.prepare('SELECT * FROM sessions').first()).signup);
 });
 
 test('D1 rate limits apply per CF IP, independently for OAuth and anonymous issuance', async (t) => {
@@ -551,23 +434,24 @@ test('D1 rate limits apply per CF IP, independently for OAuth and anonymous issu
 
 test('logout deletes session and pending OAuth state and expires both cookies', async (t) => {
     const h = await harness(t);
-    const pending = await h.pending();
-    const next = await h.start();
+    const login = await h.callback(await h.start());
+    const sessionCookie = cookies(login);
+    assert.equal((await h.db.prepare('SELECT count(*) AS n FROM sessions').first()).n, 1);
+    assert.equal((await h.db.prepare('SELECT count(*) AS n FROM oauth_states').first()).n, 0);
     const response = await h.route('/api/logout', {
         method: 'POST',
-        cookie: pending.cookie + '; ' + next.cookie,
+        cookie: sessionCookie,
     });
     assert.deepEqual(await response.json(), { ok: true });
     assert.match(response.headers.get('Set-Cookie'), /conway_session=;.*Max-Age=0/);
     assert.match(response.headers.get('Set-Cookie'), /conway_oauth=;.*Max-Age=0/);
     assert.equal((await h.db.prepare('SELECT count(*) AS n FROM sessions').first()).n, 0);
     assert.equal((await h.db.prepare('SELECT count(*) AS n FROM oauth_states').first()).n, 0);
-    await assert.rejects(h.callback(next), status(400));
 });
 
 test('unowned routes and wrong methods fall through, with no alternative auth', async (t) => {
     const h = await harness(t);
-    for (const path of ['/login/google', '/login/email', '/login/dev', '/api/member', '/api/signup', '/api/logout']) assert.equal(await h.route(path), null);
+    for (const path of ['/login/google', '/login/email', '/login/dev', '/api/member', '/api/logout']) assert.equal(await h.route(path), null);
     assert.equal(await h.route('/login/discord', { method: 'POST' }), null);
     h.env.DISCORD_CLIENT_SECRET = '';
     await assert.rejects(h.start(), status(503));

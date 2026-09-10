@@ -7,7 +7,7 @@ CREATE INDEX waivers_email ON waivers(email);
 CREATE TABLE members (
  id INTEGER PRIMARY KEY AUTOINCREMENT, version INTEGER NOT NULL DEFAULT 1, created INTEGER NOT NULL DEFAULT(unixepoch()),
  email TEXT NOT NULL COLLATE NOCASE UNIQUE, confirmed INTEGER NOT NULL DEFAULT 0 CHECK(confirmed IN(0,1)),
- name TEXT NOT NULL DEFAULT '', name_override TEXT, heard_about TEXT NOT NULL DEFAULT '', admin_notes TEXT NOT NULL DEFAULT '',
+ name TEXT NOT NULL DEFAULT '', name_override TEXT, admin_notes TEXT NOT NULL DEFAULT '',
  identifier TEXT GENERATED ALWAYS AS(CASE WHEN name != '' THEN name ELSE email END) VIRTUAL,
  waiver INTEGER REFERENCES waivers(id), fob_id INTEGER UNIQUE CHECK(fob_id IS NULL OR fob_id BETWEEN 1 AND 4294967295), fob_last_seen INTEGER,
  leadership INTEGER NOT NULL DEFAULT 0 CHECK(leadership IN(0,1)), non_billable INTEGER NOT NULL DEFAULT 0 CHECK(non_billable IN(0,1)),
@@ -18,7 +18,6 @@ CREATE TABLE members (
  stripe_cancellation_reason TEXT, stripe_last_payment_error TEXT, paypal_subscription_id TEXT, paypal_price REAL,
  discord_user_id TEXT UNIQUE CHECK(discord_user_id IS NULL OR (length(discord_user_id) BETWEEN 5 AND 25 AND discord_user_id NOT GLOB '*[^0-9]*')),
  discord_username TEXT, discord_email TEXT, discord_last_synced INTEGER,
- pronouns TEXT NOT NULL DEFAULT '', bio TEXT NOT NULL DEFAULT '', directory_hidden INTEGER NOT NULL DEFAULT 0 CHECK(directory_hidden IN(0,1)),
  discord_checkin_notify INTEGER NOT NULL DEFAULT 0 CHECK(discord_checkin_notify IN(0,1)),
  payment_status TEXT GENERATED ALWAYS AS(CASE WHEN confirmed != 1 THEN NULL WHEN paypal_subscription_id IS NOT NULL THEN 'ActivePaypal' WHEN stripe_subscription_state IN('active','trialing') THEN 'ActiveStripe' WHEN non_billable=1 THEN 'ActiveNonBillable' ELSE NULL END) VIRTUAL,
  access_status TEXT GENERATED ALWAYS AS(CASE WHEN confirmed != 1 AND non_billable != 1 THEN 'UnconfirmedEmail' WHEN waiver IS NULL AND non_billable != 1 THEN 'MissingWaiver' WHEN payment_status IS NULL AND non_billable != 1 THEN 'PaymentInactive' WHEN fob_id IS NULL THEN 'MissingKeyFob' WHEN root_family_member IS NOT NULL AND root_family_member_active=0 THEN 'FamilyInactive' ELSE 'Ready' END) VIRTUAL
@@ -29,8 +28,8 @@ BEGIN UPDATE members SET version=OLD.version+1 WHERE id=NEW.id; END;
 CREATE INDEX members_access ON members(access_status);
 CREATE VIEW active_keyfobs AS SELECT fob_id FROM members WHERE access_status='Ready';
 CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data)));
-INSERT INTO settings VALUES(1,1,'{"site_name":"Conway","referral_sources":["Friend or member","Social media","Web search","Open house","Other"],"discounts":[{"id":"student","label":"Student","coupon_id":""},{"id":"family","label":"Family","coupon_id":""}],"donations":[],"monthly_price_id":"","yearly_price_id":"","discord_guild_id":"","discord_role_id":"","discord_leadership_channel_id":"","discord_badge_channel_id":"","signup_notify_enabled":false,"badge_notify_enabled":false,"access_denied_enabled":false,"notification_templates":{"signup":"New member: {name}","discount":"Discount request: {name} ({discount_type})","badge":"{name} checked in","denied":"Access denied: {access_status}. Visit {site_url}"},"waiver_version":0}');
-CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, member INTEGER REFERENCES members(id) ON DELETE CASCADE, csrf_token TEXT NOT NULL, expires INTEGER NOT NULL, signup TEXT);
+INSERT INTO settings VALUES(1,1,'{"site_name":"Conway","discounts":[{"id":"student","label":"Student","coupon_id":""},{"id":"family","label":"Family","coupon_id":""}],"monthly_price_id":"","yearly_price_id":"","waiver_version":0}');
+CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, member INTEGER REFERENCES members(id) ON DELETE CASCADE, csrf_token TEXT NOT NULL, expires INTEGER NOT NULL);
 CREATE INDEX sessions_expires ON sessions(expires);
 CREATE TRIGGER identity_sessions AFTER UPDATE OF discord_user_id ON members WHEN OLD.discord_user_id IS NOT NEW.discord_user_id
 BEGIN DELETE FROM sessions WHERE member=NEW.id; END;
@@ -45,7 +44,7 @@ CREATE INDEX swipes_time ON fob_swipes(timestamp);
 CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN('pending','processing','completed','dead')), attempts INTEGER NOT NULL DEFAULT 0, available_at INTEGER NOT NULL DEFAULT(unixepoch()), lease_until INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL DEFAULT(unixepoch()), completed INTEGER, dedupe_key TEXT UNIQUE);
 CREATE INDEX jobs_due ON jobs(status,available_at);
 CREATE TABLE stripe_events (id TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL, processed INTEGER);
-CREATE TABLE donations (id TEXT PRIMARY KEY, member INTEGER REFERENCES members(id) ON DELETE SET NULL, amount INTEGER NOT NULL, currency TEXT NOT NULL, status TEXT NOT NULL, created INTEGER NOT NULL);
+
 CREATE TABLE notification_state (member INTEGER REFERENCES members(id) ON DELETE CASCADE, kind TEXT NOT NULL, last_sent INTEGER NOT NULL, PRIMARY KEY(member,kind));
 CREATE TABLE rate_limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
 

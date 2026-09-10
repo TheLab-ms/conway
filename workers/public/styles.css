@@ -157,7 +157,6 @@ pre {
     font: 0.85rem/1.6 var(--mono);
 }
 conway-app,
-member-card,
 qr-code {
     display: block;
 }
@@ -537,32 +536,6 @@ tr:hover td {
     align-items: center;
     margin-top: 1.2rem;
 }
-.directory-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1.2rem;
-}
-.member-card {
-    height: 100%;
-    border-top: 2px solid #44664e;
-}
-.member-card h2 {
-    overflow-wrap: anywhere;
-    margin-bottom: 0.35rem;
-}
-.member-card .bio {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    margin-top: 1.3rem;
-    font-size: 0.95rem;
-}
-.member-card footer {
-    font: 0.75rem var(--mono);
-    border-top: 1px solid var(--line);
-    padding-top: 1rem;
-    margin-top: 1.2rem;
-    color: var(--muted);
-}
 .document {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -683,9 +656,6 @@ details[open] > summary {
         flex: 1;
         justify-content: flex-end;
     }
-    .directory-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
     .workspace {
         padding: 2.5rem 1.5rem 4rem;
     }
@@ -714,8 +684,7 @@ details[open] > summary {
     .workspace {
         padding: 2rem 1rem 3rem;
     }
-    .grid,
-    .directory-grid {
+    .grid {
         grid-template-columns: 1fr;
     }
     .panel {

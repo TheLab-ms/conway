@@ -72,7 +72,7 @@ describe('versioned mutations through the bound MembershipCoordinator', () => {
         const admin = await member({ leadership: 1 });
         const target = await member();
         const headers = await login(admin.id);
-        await env.DB.prepare("UPDATE members SET bio='Concurrent profile update' WHERE id=?").bind(target.id).run();
+        await env.DB.prepare("UPDATE members SET name_override='Concurrent profile update' WHERE id=?").bind(target.id).run();
         expect((await api(`/api/admin/members/${target.id}`, 'DELETE', headers, { version: target.version })).status).toBe(409);
         expect(await env.DB.prepare("SELECT count(*) n FROM member_events WHERE event='MemberDeleted'").first('n')).toBe(0);
         const current = (await read(target.id))!;

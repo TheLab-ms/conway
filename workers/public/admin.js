@@ -106,7 +106,7 @@ export async function members(app, signal) {
     );
 }
 
-const booleanFields = ['confirmed', 'leadership', 'non_billable', 'bill_annually', 'directory_hidden', 'discord_checkin_notify'];
+const booleanFields = ['confirmed', 'leadership', 'non_billable', 'bill_annually', 'discord_checkin_notify'];
 const nullableFields = ['name_override', 'discord_user_id', 'fob_id', 'root_family_member', 'discount_type', 'discount_status'];
 const numberFields = ['fob_id', 'root_family_member'];
 
@@ -154,7 +154,6 @@ export async function memberEditor(app, id, signal) {
                 hint: 'The primary member ID, not an email. Blank removes the family link.',
             }),
         ),
-        field('Referral source', 'heard_about', member.heard_about, { maxlength: 300 }),
         field('Leadership notes', 'admin_notes', member.admin_notes, {
             type: 'textarea',
             maxlength: 10000,
@@ -178,9 +177,6 @@ export async function memberEditor(app, id, signal) {
                 el(
                     'div',
                     { class: 'form-fields' },
-                    field('Pronouns', 'pronouns', member.pronouns, { maxlength: 100 }),
-                    field('Bio', 'bio', member.bio, { type: 'textarea', maxlength: 4000 }),
-                    check('Hidden from directory', 'directory_hidden', member.directory_hidden),
                     check('Discord check-in notifications', 'discord_checkin_notify', member.discord_checkin_notify),
                     field('Discount type', 'discount_type', member.discount_type, {
                         choices: [
@@ -205,7 +201,7 @@ export async function memberEditor(app, id, signal) {
     const editor = form(fields, isNew ? 'Create member' : 'Save member', async (data) => {
         const body = Object.fromEntries(data);
         for (const key of booleanFields) {
-            if (isNew && ['directory_hidden', 'discord_checkin_notify'].includes(key)) continue;
+            if (isNew && key === 'discord_checkin_notify') continue;
             body[key] = data.has(key);
         }
         for (const key of nullableFields) if (key in body && body[key] === '') body[key] = null;
@@ -339,20 +335,10 @@ function parseRows(value, columns, label) {
 
 export async function configEditor(app, signal) {
     const config = await api('/api/admin/config', { signal });
-    const templateNames = {
-        signup: 'New member',
-        discount: 'Discount request',
-        badge: 'Fob check-in',
-        denied: 'Access denied',
-    };
     const editor = form(
         [
             el('p', { class: 'notice' }, `Editing configuration version ${config.version}. Saving uses optimistic concurrency; another leader's changes will not be overwritten.`),
             field('Site name', 'site_name', config.site_name, { required: true, maxlength: 200 }),
-            field('Referral sources', 'referral_sources', (config.referral_sources || []).join('\n'), {
-                type: 'textarea',
-                hint: 'One source per line.',
-            }),
             el(
                 'div',
                 { class: 'grid' },
@@ -363,67 +349,14 @@ export async function configEditor(app, signal) {
                 type: 'textarea',
                 hint: 'One per line: id | member-facing label | Stripe coupon ID. Use no pipe characters within values.',
             }),
-            field('Donation options', 'donations', (config.donations || []).map((item) => [item.price_id, item.label].join(' | ')).join('\n'), {
-                type: 'textarea',
-                hint: 'One per line: Stripe price ID | member-facing label.',
-            }),
-            el(
-                'details',
-                { open: true },
-                el('summary', {}, 'Discord & notifications'),
-                el(
-                    'div',
-                    { class: 'form-fields' },
-                    field('Discord server ID', 'discord_guild_id', config.discord_guild_id, {
-                        inputmode: 'numeric',
-                        pattern: '[0-9]*',
-                    }),
-                    field('Membership role ID', 'discord_role_id', config.discord_role_id, {
-                        inputmode: 'numeric',
-                        pattern: '[0-9]*',
-                    }),
-                    field('Leadership channel ID', 'discord_leadership_channel_id', config.discord_leadership_channel_id, { inputmode: 'numeric', pattern: '[0-9]*' }),
-                    field('Check-in channel ID', 'discord_badge_channel_id', config.discord_badge_channel_id, { inputmode: 'numeric', pattern: '[0-9]*' }),
-                    check('Send new member notifications', 'signup_notify_enabled', config.signup_notify_enabled),
-                    check('Send fob check-in notifications', 'badge_notify_enabled', config.badge_notify_enabled),
-                    check('Send access-denied notifications', 'access_denied_enabled', config.access_denied_enabled),
-                ),
-            ),
-            el(
-                'details',
-                {},
-                el('summary', {}, 'Notification templates'),
-                el('p', { class: 'hint' }, 'Plain-text templates. Keep the existing placeholder names supported by the notification service; no HTML is rendered.'),
-                el(
-                    'div',
-                    { class: 'form-fields' },
-                    Object.entries(templateNames).map(([key, label]) =>
-                        field(`${label} template`, `template_${key}`, config.notification_templates?.[key], {
-                            type: 'textarea',
-                            maxlength: 2000,
-                        }),
-                    ),
-                ),
-            ),
         ],
         'Save configuration',
         async (data) => {
             const body = { version: config.version };
-            for (const key of [
-                'site_name',
-                'monthly_price_id',
-                'yearly_price_id',
-                'discord_guild_id',
-                'discord_role_id',
-                'discord_leadership_channel_id',
-                'discord_badge_channel_id',
-            ])
-                body[key] = data.get(key).trim();
-            body.referral_sources = lines(data.get('referral_sources'));
+            body.site_name = data.get('site_name').trim();
+            body.monthly_price_id = data.get('monthly_price_id').trim();
+            body.yearly_price_id = data.get('yearly_price_id').trim();
             body.discounts = parseRows(data.get('discounts'), ['id', 'label', 'coupon_id'], 'Discount options');
-            body.donations = parseRows(data.get('donations'), ['price_id', 'label'], 'Donation options');
-            for (const key of ['signup_notify_enabled', 'badge_notify_enabled', 'access_denied_enabled']) body[key] = data.has(key);
-            body.notification_templates = Object.fromEntries(Object.keys(templateNames).map((key) => [key, data.get(`template_${key}`)]));
             await api('/api/admin/config', { method: 'PUT', body });
             state.config = await api('/api/config');
             app.navigate('/admin/config', 'Configuration saved.');
@@ -432,18 +365,8 @@ export async function configEditor(app, signal) {
     return el(
         'div',
         { class: 'narrow' },
-        heading('Space configuration', 'Nonsecret settings only. Credentials, trusted kiosk IPs, and automation controls belong in the deployment environment.'),
-        panel(
-            'Settings',
-            editor,
-            el(
-                'div',
-                { class: 'section-gap' },
-                button('Reload latest configuration', () => {
-                    if (confirm('Discard unsaved edits and load the latest configuration?')) app.navigate('/admin/config');
-                }),
-            ),
-        ),
+        heading('Space configuration', 'Site name, payment prices, and discount options.'),
+        panel('Settings', editor),
         el('p', { class: 'hint section-gap' }, 'Waiver content is versioned separately. ', link('Edit the waiver', '/admin/waiver')),
     );
 }

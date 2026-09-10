@@ -13,15 +13,14 @@ import sys
 
 
 SCHEMA = Path(__file__).resolve().parents[1] / "migrations/0001_core.sql"
-MEMBER_FIELDS = """id created email confirmed name name_override heard_about admin_notes
+MEMBER_FIELDS = """id created email confirmed name name_override admin_notes
 waiver fob_id fob_last_seen leadership non_billable discount_type discount_status
 discount_request_id bill_annually root_family_member root_family_member_active
 stripe_customer_id stripe_subscription_id stripe_subscription_state
 stripe_cancellation_reason stripe_last_payment_error paypal_subscription_id paypal_price
-discord_user_id discord_username discord_email discord_last_synced pronouns bio
-directory_hidden discord_checkin_notify""".split()
-PROFILE_DEFAULTS = {"pronouns": "", "bio": "", "directory_hidden": 0,
-                    "discord_checkin_notify": 0}
+discord_user_id discord_username discord_email discord_last_synced
+discord_checkin_notify""".split()
+PROFILE_DEFAULTS = {"discord_checkin_notify": 0}
 IMAGES = {"discord_avatar", "profile_picture"}
 GENERATED = {"identifier", "payment_status", "access_status"}
 DISCOUNTS = [("military", "Military"), ("retired", "Retired"),
@@ -29,8 +28,6 @@ DISCOUNTS = [("military", "Military"), ("retired", "Retired"),
              ("student", "Student"), ("educator", "Educator"),
              ("emeritus", "Emeritus"), ("family", "Family")]
 CONFIG_MAP = {
-    "members_config": {"referral_sources_json": "referral_sources"},
-    "stripe_config": {"donation_items_json": "donations"},
     "discord_config": {
         "guild_id": "discord_guild_id", "role_id": "discord_role_id",
         "leadership_channel_id": "discord_leadership_channel_id",
@@ -298,17 +295,7 @@ def migrate(source, output, settings_path=None, review_path=None):
                 for col in sorted(allowed):
                     val = rows[-1][col]
                     try:
-                        if col == "referral_sources_json":
-                            items = json.loads(val)
-                            if not isinstance(items, list) or any(set(i) != {"label"} for i in items):
-                                raise ValueError()
-                            val = [i["label"] for i in items]
-                        elif col == "donation_items_json":
-                            items = json.loads(val)
-                            if not isinstance(items, list) or any(set(i) != {"name", "price_id"} for i in items):
-                                raise ValueError()
-                            val = [{"price_id": i["price_id"], "label": i["name"]} for i in items]
-                        elif col.endswith("enabled"):
+                        if col.endswith("enabled"):
                             if val not in (0, 1):
                                 raise ValueError()
                             val = bool(val)
@@ -317,8 +304,7 @@ def migrate(source, output, settings_path=None, review_path=None):
                         block("invalid_config_value", table, field=col)
         # These settings were flags, Stripe lookup keys/metadata or Go templates,
         # not durable equivalent values in the legacy DB. Require explicit input.
-        required = {"site_name", "monthly_price_id", "yearly_price_id", "discounts",
-                    "signup_notify_enabled", "notification_templates"}
+        required = {"site_name", "monthly_price_id", "yearly_price_id", "discounts"}
         supplied = json.loads(Path(settings_path).read_text()) if settings_path else {}
         if not isinstance(supplied, dict):
             block("settings_not_object")
@@ -334,15 +320,9 @@ def migrate(source, output, settings_path=None, review_path=None):
                 settings[field] = val
         try:
             string_fields = [k for k, v in settings.items() if k not in
-                             {"discounts", "donations", "referral_sources", "notification_templates", "waiver_version",
-                              "signup_notify_enabled", "badge_notify_enabled", "access_denied_enabled"}]
+                             {"discounts", "waiver_version"}]
             valid = all(isinstance(settings[k], str) for k in string_fields)
-            valid &= all(type(settings[k]) is bool for k in ("signup_notify_enabled", "badge_notify_enabled", "access_denied_enabled"))
-            valid &= isinstance(settings["referral_sources"], list) and all(isinstance(v, str) for v in settings["referral_sources"])
-            valid &= set(settings["notification_templates"]) == {"signup", "discount", "badge", "denied"}
-            valid &= all(isinstance(v, str) and "{{" not in v for v in settings["notification_templates"].values())
-            for field, keys in (("discounts", {"id", "label", "coupon_id"}), ("donations", {"price_id", "label"})):
-                valid &= isinstance(settings[field], list) and all(set(v) == keys and all(isinstance(x, str) for x in v.values()) for v in settings[field])
+            valid &= isinstance(settings["discounts"], list) and all(set(v) == {"id", "label", "coupon_id"} and all(isinstance(x, str) for x in v.values()) for v in settings["discounts"])
             ids = [d["id"] for d in settings["discounts"]]
             valid &= len(ids) == len(set(ids)) and set(k for k, _ in DISCOUNTS) <= set(ids)
             valid &= all(not settings[k] or re.fullmatch(r"price_[A-Za-z0-9]+", settings[k])
@@ -390,7 +370,7 @@ def migrate(source, output, settings_path=None, review_path=None):
             fob = row["fob_id"]
             if fob is not None and (type(fob) is not int or not 1 <= fob <= 4294967295):
                 block("invalid_fob", "members", mid, "fob_id")
-            for field in ("confirmed", "leadership", "non_billable", "bill_annually", "directory_hidden", "discord_checkin_notify"):
+            for field in ("confirmed", "leadership", "non_billable", "bill_annually", "discord_checkin_notify"):
                 if type(row[field]) is not int or row[field] not in (0, 1):
                     block("invalid_boolean", "members", mid, field)
             for field, refs in (("waiver", waivers), ("root_family_member", members)):

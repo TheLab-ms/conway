@@ -40,7 +40,11 @@ test('anonymous scanner QR, clipboard and separate phone confirmation replace a 
         await kiosk.getByRole('button', { name: 'Copy enrollment link' }).click();
         await expect(kiosk.getByText('Enrollment link copied.', { exact: true })).toBeVisible();
         expect(await kiosk.evaluate(() => navigator.clipboard.readText())).toBe(url);
-        await kiosk.evaluate(() => { navigator.clipboard.writeText = async () => { throw new DOMException('Denied', 'NotAllowedError'); }; });
+        await kiosk.evaluate(() => {
+            navigator.clipboard.writeText = async () => {
+                throw new DOMException('Denied', 'NotAllowedError');
+            };
+        });
         await kiosk.getByRole('button', { name: 'Copy enrollment link' }).click();
         await expect(kiosk.getByText('Clipboard unavailable.', { exact: false })).toBeVisible();
         await expect(kiosk.locator('.claim-link')).toHaveAttribute('href', url);
@@ -63,7 +67,9 @@ test('anonymous scanner QR, clipboard and separate phone confirmation replace a 
         await expect(page.getByRole('alert')).toContainText('expired or already used');
         expect(sql('SELECT fob_id FROM members WHERE id=2')).toEqual([{ fob_id: null }]);
         expect(sql('SELECT claimed_by FROM enrollment_claims')).toEqual([{ claimed_by: 1 }]);
-    } finally { await kioskContext.close(); }
+    } finally {
+        await kioskContext.close();
+    }
 });
 
 test('actual kiosk IP enforcement rejects scans and polling from an untrusted address', async ({ page, context }) => {
@@ -86,10 +92,14 @@ for (const scenario of ['expired', 'unknown', 'invalid', 'owned']) {
         await login(2);
         const token = scenario === 'invalid' ? 'not-a-token' : 'a'.repeat(64);
         const now = Math.floor(Date.now() / 1000);
-        if (['expired', 'owned'].includes(scenario)) sql(
-            'INSERT INTO enrollment_claims(token_hash,fob_id,created,expires) VALUES(?,?,?,?)',
-            hash(token), scenario === 'owned' ? 103 : 202, now, now + (scenario === 'expired' ? -1 : 300),
-        );
+        if (['expired', 'owned'].includes(scenario))
+            sql(
+                'INSERT INTO enrollment_claims(token_hash,fob_id,created,expires) VALUES(?,?,?,?)',
+                hash(token),
+                scenario === 'owned' ? 103 : 202,
+                now,
+                now + (scenario === 'expired' ? -1 : 300),
+            );
         await page.goto(`/fobs/bind?token=${token}`);
         if (scenario === 'invalid') {
             await expect(page.getByRole('heading', { name: 'Enrollment link needed' })).toBeVisible();
@@ -98,7 +108,11 @@ for (const scenario of ['expired', 'unknown', 'invalid', 'owned']) {
             await confirm(page);
             await expect(page.getByRole('alert')).toContainText(scenario === 'owned' ? 'Conflicting member identity, fob' : 'expired or already used');
         }
-        expect(sql('SELECT id,fob_id FROM members ORDER BY id')).toEqual([{ id: 1, fob_id: 101 }, { id: 2, fob_id: null }, { id: 3, fob_id: 103 }]);
+        expect(sql('SELECT id,fob_id FROM members ORDER BY id')).toEqual([
+            { id: 1, fob_id: 101 },
+            { id: 2, fob_id: null },
+            { id: 3, fob_id: 103 },
+        ]);
         expect(sql('SELECT * FROM enrollment_claims WHERE claimed_by IS NOT NULL')).toEqual([]);
         if (scenario === 'owned') {
             sql('UPDATE members SET fob_id=NULL WHERE id=3');
@@ -129,7 +143,9 @@ test('reset, expiration and SPA navigation stop polling and remove stale QR code
     await page.clock.install();
     await page.goto('/kiosk');
     let polls = 0;
-    page.on('request', (request) => { if (request.url().includes('/api/kiosk/claims/')) polls++; });
+    page.on('request', (request) => {
+        if (request.url().includes('/api/kiosk/claims/')) polls++;
+    });
     await scan(page);
     await expect.poll(() => polls).toBeGreaterThan(0);
     await page.getByRole('button', { name: 'Enroll another fob' }).click();

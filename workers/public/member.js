@@ -1,22 +1,5 @@
 import { api, state, el, field, check, link, panel, empty, badge, date, displayName, form, heading, safeReturn, checkoutURL } from './lib.js';
 
-class MemberCard extends HTMLElement {
-    set member(member) {
-        this.replaceChildren(
-            el(
-                'article',
-                { class: 'panel member-card' },
-                el('h2', {}, displayName(member)),
-                member.pronouns && el('p', { class: 'muted' }, member.pronouns),
-                member.leadership ? badge('Leadership', 'good') : badge('Member'),
-                el('p', { class: 'bio' }, member.bio || 'This member has not added a bio yet.'),
-                member.discord_username && el('footer', {}, `Discord / ${member.discord_username}`),
-            ),
-        );
-    }
-}
-customElements.define('member-card', MemberCard);
-
 export function welcome() {
     return el(
         'div',
@@ -42,7 +25,7 @@ export function welcome() {
                 null,
                 el('p', { class: 'number' }, '01 / JOIN'),
                 el('h2', {}, 'Meet your community'),
-                el('p', { class: 'muted' }, 'Use your Discord account to join and introduce yourself in the member directory.'),
+                el('p', { class: 'muted' }, 'Use your Discord account to join the community.'),
             ),
             panel(
                 null,
@@ -55,55 +38,6 @@ export function welcome() {
                 el('p', { class: 'number' }, '03 / MAKE'),
                 el('h2', {}, 'Open the door'),
                 el('p', { class: 'muted' }, 'Link your access fob at the space. Your dashboard keeps the next steps clear.'),
-            ),
-        ),
-    );
-}
-
-export function signup(app) {
-    const info = state.session.signup;
-    if (!info)
-        return el(
-            'div',
-            { class: 'narrow' },
-            heading('Join the community', 'Your Discord account is your sign-in identity.'),
-            panel(
-                'Start with Discord',
-                el('p', {}, 'We will bring you back here to finish creating your membership.'),
-                link('Continue with Discord', `/login/discord?return_to=${encodeURIComponent('/signup' + location.search)}`, 'button'),
-            ),
-        );
-    return el(
-        'div',
-        { class: 'narrow' },
-        heading('A little about you', 'Finish your membership profile. Your waiver and billing come next.'),
-        panel(
-            'Create membership',
-            el('p', { class: 'muted' }, `Discord connected: ${info.discord_user_id}. ${info.email || ''}`),
-            form(
-                [
-                    field('Full name', 'name', '', { required: true, autocomplete: 'name', maxlength: 200 }),
-                    field(
-                        'How did you hear about us?',
-                        'heard_about',
-                        '',
-                        state.config.referral_sources?.length
-                            ? {
-                                  choices: [['', 'Select a source'], ...state.config.referral_sources],
-                                  required: true,
-                              }
-                            : { maxlength: 500 },
-                    ),
-                ],
-                'Create membership',
-                async (data) => {
-                    const result = await api('/api/signup', {
-                        method: 'POST',
-                        body: Object.fromEntries(data),
-                    });
-                    await app.refreshSession();
-                    app.navigate(safeReturn(result.return_to));
-                },
             ),
         ),
     );
@@ -170,20 +104,6 @@ export async function dashboard(app, signal) {
                     ),
                 ),
             ),
-            el(
-                'div',
-                { class: 'stack' },
-                panel(
-                    'Made by members',
-                    el('p', { class: 'muted' }, 'Find familiar names, discover shared interests, and introduce yourself. No profile photos, just people and what they make.'),
-                    link('Explore the directory', '/directory', 'button secondary'),
-                ),
-                panel(
-                    'Support the space',
-                    el('p', { class: 'muted' }, 'A little extra helps keep a shared place for making available to everyone.'),
-                    link('Make a donation', '/donations', 'button secondary'),
-                ),
-            ),
         ),
     );
 }
@@ -193,9 +113,9 @@ export async function profile(app, signal) {
     return el(
         'div',
         { class: 'narrow' },
-        heading('Your profile', 'Introduce yourself in your own words. Member profiles are text only.'),
+        heading('Your profile', 'Manage your membership details.'),
         panel(
-            'Community profile',
+            'Membership details',
             form(
                 [
                     field('Name', 'name', member.name, {
@@ -203,16 +123,6 @@ export async function profile(app, signal) {
                         autocomplete: 'name',
                         maxlength: 200,
                     }),
-                    field('Pronouns', 'pronouns', member.pronouns, {
-                        maxlength: 100,
-                        placeholder: 'Optional',
-                    }),
-                    field('About you', 'bio', member.bio, {
-                        type: 'textarea',
-                        maxlength: 4000,
-                        hint: 'Interests, projects, and things you enjoy making. Plain text only.',
-                    }),
-                    check('Hide my profile from the member directory', 'directory_hidden', member.directory_hidden),
                     check('Allow Discord check-in notifications when I use my fob', 'discord_checkin_notify', member.discord_checkin_notify),
                 ],
                 'Save profile',
@@ -221,9 +131,6 @@ export async function profile(app, signal) {
                         method: 'PATCH',
                         body: {
                             name: data.get('name'),
-                            pronouns: data.get('pronouns'),
-                            bio: data.get('bio'),
-                            directory_hidden: data.has('directory_hidden'),
                             discord_checkin_notify: data.has('discord_checkin_notify'),
                         },
                     });
@@ -248,48 +155,6 @@ export async function profile(app, signal) {
                 el('p', { class: 'hint' }, 'Need to change your Discord linkage? Contact leadership so your existing membership stays connected.'),
             ),
         ),
-    );
-}
-
-export async function directory(app, signal) {
-    const { members } = await api('/api/directory', { signal });
-    const cards = el('div', { class: 'directory-grid' });
-    const count = el('p', { class: 'hint', role: 'status' });
-    const search = field('Find a member', 'search', '', {
-        type: 'search',
-        placeholder: 'Search names, interests, or Discord usernames',
-        autocomplete: 'off',
-    });
-    const render = (query) => {
-        const visible = members.filter((member) =>
-            [displayName(member), member.bio, member.pronouns, member.discord_username].join(' ').toLowerCase().includes(query.toLowerCase()),
-        );
-        count.textContent = `${visible.length} ${visible.length === 1 ? 'member' : 'members'}`;
-        cards.replaceChildren(
-            ...visible.map((member) => {
-                const card = el('member-card');
-                card.member = member;
-                return card;
-            }),
-        );
-        if (!visible.length)
-            cards.append(
-                empty(
-                    members.length
-                        ? 'No members match your search. Try a different name or interest.'
-                        : 'The directory is quiet for now. Visible member profiles will appear here.',
-                ),
-            );
-    };
-    search.querySelector('input').addEventListener('input', (event) => render(event.target.value));
-    render('');
-    return el(
-        'div',
-        {},
-        heading('People, not profiles.', 'A community of curious minds and capable hands.', link('Edit your introduction', '/profile', 'button secondary')),
-        el('div', { class: 'toolbar' }, search),
-        count,
-        cards,
     );
 }
 
@@ -363,7 +228,7 @@ export async function billing(app, signal) {
     return el(
         'div',
         {},
-        heading('Membership & billing', 'Keep your membership moving. Payment details stay with the payment provider.', link('Make a donation', '/donations', 'button secondary')),
+        heading('Membership & billing', 'Keep your membership moving. Payment details stay with the payment provider.'),
         el(
             'div',
             { class: 'grid' },
@@ -422,41 +287,6 @@ export async function billing(app, signal) {
                         ),
                     ),
             ),
-        ),
-    );
-}
-
-export function donations() {
-    const choices = state.config.donations || [];
-    const donate = choices.length
-        ? form(
-              [
-                  field('Donation amount', 'price_id', choices[0].price_id, {
-                      choices: choices.map((item) => [item.price_id, item.label]),
-                      required: true,
-                  }),
-                  el('p', { class: 'hint' }, 'You will review the amount and payment details on Stripe before making a donation. A donation does not replace membership dues.'),
-              ],
-              'Continue to donation',
-              async (data) => {
-                  const result = await api('/api/billing/donation', {
-                      method: 'POST',
-                      body: { price_id: data.get('price_id') },
-                  });
-                  location.assign(checkoutURL(result.url));
-                  return 'Opening secure donation checkout...';
-              },
-          )
-        : empty('No donation options are configured yet. Thank you for wanting to support the space.');
-    if (!state.config.stripe_enabled) donate.querySelector('button')?.setAttribute('disabled', '');
-    return el(
-        'div',
-        { class: 'narrow' },
-        heading('Keep the space making.', 'Support the shared tools, shared knowledge, and possibilities that bring us together.'),
-        panel(
-            'Make a donation',
-            !state.config.stripe_enabled && el('p', { class: 'notice warn' }, 'Online donations are currently unavailable. Please contact leadership.'),
-            donate,
         ),
     );
 }

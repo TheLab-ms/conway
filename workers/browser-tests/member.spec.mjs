@@ -1,36 +1,19 @@
 import { test, expect, sql } from './fixtures.mjs';
 
-test('profile persists preferences, directory privacy, search and text-only content', async ({ page, login }) => {
+test('profile persists preferences without directory fields', async ({ page, login }) => {
     await login();
     await page.getByRole('link', { name: 'Edit profile', exact: true }).click();
     await page.getByLabel('Name', { exact: true }).fill('Alex Updated');
-    await page.getByLabel('Pronouns').fill('they/them');
-    await page.getByLabel('About you').fill('<img src=x onerror=window.unsafe=true> Woodworking');
+    await expect(page.locator('[name="pronouns"],[name="bio"],[name="directory_hidden"]')).toHaveCount(0);
     await page.getByLabel('Allow Discord check-in').check();
     await page.getByRole('button', { name: 'Save profile' }).click();
     await expect(page.getByRole('status')).toContainText('Your profile has been saved.');
     await page.reload();
-    await expect(page.getByLabel('Pronouns')).toHaveValue('they/them');
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Alex Updated');
     await expect(page.getByLabel('Allow Discord check-in')).toBeChecked();
-    await page.goto('/directory');
-    await expect(page.locator('member-card').first()).toContainText('Alex Updated');
-    await page.getByLabel('Find a member').fill('wood');
-    await expect(page.locator('member-card')).toHaveCount(1);
-    await expect(page.locator('member-card')).toContainText('<img src=x');
-    await expect(page.locator('main img')).toHaveCount(0);
-    await page.getByLabel('Find a member').fill('no-such-member');
-    await expect(page.getByText('No members match your search.', { exact: false })).toBeVisible();
-    await page.goto('/profile');
-    await page.getByLabel('Hide my profile').check();
-    await page.getByRole('button', { name: 'Save profile' }).click();
-    await expect(page.getByRole('status')).toContainText('saved');
-    await login(2);
-    await page.goto('/directory');
-    await expect(page.locator('member-card')).toHaveCount(1);
-    await expect(page.locator('member-card')).toContainText('Robin Leader');
-    sql('UPDATE members SET directory_hidden=1');
-    await page.reload();
-    await expect(page.getByText('The directory is quiet for now.', { exact: false })).toBeVisible();
+    await page.goto('/admin/members/2');
+    await expect(page.getByRole('button', { name: 'Save member', exact: true })).toBeVisible();
+    await expect(page.locator('[name="pronouns"],[name="bio"],[name="directory_hidden"]')).toHaveCount(0);
 });
 
 test('waiver requires every consent, records a signature and updates onboarding', async ({ page, login }) => {
@@ -99,18 +82,22 @@ test('discount request, leadership family approval and explicit removal', async 
     await page.getByRole('button', { name: 'Remove discount' }).click();
     await expect(page.getByText('Your discount has been removed.')).toBeVisible();
     // Family relationships are managed separately by leadership.
-    expect(sql('SELECT discount_type,discount_status,root_family_member FROM members WHERE id=2')[0]).toEqual({ discount_type: null, discount_status: null, root_family_member: 1 });
+    expect(sql('SELECT discount_type,discount_status,root_family_member FROM members WHERE id=2')[0]).toEqual({
+        discount_type: null,
+        discount_status: null,
+        root_family_member: 1,
+    });
 });
 
 test('expired sessions and failed saves preserve drafts; retry reloads real data', async ({ page, login }) => {
     await login(2);
     await page.goto('/profile');
-    await page.getByLabel('About you').fill('Keep this draft');
+    await page.getByLabel('Name', { exact: true }).fill('Keep this draft');
     sql('UPDATE sessions SET expires=0');
     await page.getByRole('button', { name: 'Save profile' }).click();
     await expect(page.getByRole('alert')).toContainText('Session expired');
-    await expect(page.getByLabel('About you')).toHaveValue('Keep this draft');
-    expect(sql('SELECT bio FROM members WHERE id=2')[0].bio).toBe('');
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Keep this draft');
+    expect(sql('SELECT name FROM members WHERE id=2')[0].name).toBe('Sam Member');
     await page.goto('/profile');
     await expect(page.locator('main').getByRole('link', { name: 'Continue with Discord' })).toBeVisible();
     await login();
@@ -134,16 +121,28 @@ test('real SPA history, security policies and unknown routes', async ({ page, lo
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your profile');
     await page.goForward();
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Hello,');
+    await expect(page.locator('a[href="/directory"],member-card')).toHaveCount(0);
+    await page.goto('/directory');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('This page is off the map.');
     await page.goto('/does-not-exist');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('This page is off the map.');
 });
 
 for (const [path, title] of [
-    ['/dashboard', 'Hello, Alex Maker.'], ['/profile', 'Your profile'], ['/directory', 'People, not profiles.'],
-    ['/waiver', 'Read. Understand. Make.'], ['/billing', 'Membership & billing'], ['/donations', 'Keep the space making.'],
-    ['/kiosk', 'A key to your space.'], ['/fobs/bind', 'Link your fob'], ['/admin/members', 'Membership desk'],
-    ['/admin/members/new', 'Add a member'], ['/admin/members/2', 'Sam Member'], ['/admin/config', 'Space configuration'],
-    ['/admin/waiver', 'Waiver publishing'], ['/admin/events', 'Audit trail'], ['/admin/swipes', 'At the door'], ['/admin/jobs', 'Background jobs'],
+    ['/dashboard', 'Hello, Alex Maker.'],
+    ['/profile', 'Your profile'],
+    ['/waiver', 'Read. Understand. Make.'],
+    ['/billing', 'Membership & billing'],
+    ['/kiosk', 'A key to your space.'],
+    ['/fobs/bind', 'Link your fob'],
+    ['/admin/members', 'Membership desk'],
+    ['/admin/members/new', 'Add a member'],
+    ['/admin/members/2', 'Sam Member'],
+    ['/admin/config', 'Space configuration'],
+    ['/admin/waiver', 'Waiver publishing'],
+    ['/admin/events', 'Audit trail'],
+    ['/admin/swipes', 'At the door'],
+    ['/admin/jobs', 'Background jobs'],
 ]) {
     test(`mobile deep link ${path} loads with labeled controls and no overflow`, async ({ page, login }) => {
         await login();
@@ -151,7 +150,7 @@ for (const [path, title] of [
         await page.goto(path);
         await expect(page.getByRole('heading', { level: 1 })).toHaveText(title);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), path).toBe(true);
-        expect(await page.locator('input,select,textarea').evaluateAll(nodes => nodes.every(node => node.labels.length)), path).toBe(true);
+        expect(await page.locator('input,select,textarea').evaluateAll((nodes) => nodes.every((node) => node.labels.length)), path).toBe(true);
         await expect(page.locator('[style],style,script:not([src])')).toHaveCount(0);
     });
 }

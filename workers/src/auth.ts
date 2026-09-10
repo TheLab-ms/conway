@@ -6,12 +6,6 @@ const PREAUTH_AGE = 60 * 60;
 const OAUTH_AGE = 10 * 60;
 const OPAQUE = /^[a-f0-9]{64}$/;
 const SUPPORT = 'This email is already associated with a membership. Contact leadership to link your Discord account.';
-interface Signup {
-    email: string;
-    discord_user_id: string;
-    discord_username: string;
-    return_to: string;
-}
 
 function localReturn(value: string | null, env: Env): string {
     if (!value || value.length > 2048 || !value.startsWith('/') || value.startsWith('//') || /[\\\x00-\x20\x7f]|%(?:0[0-9a-f]|1[0-9a-f]|5c|7f)/i.test(value)) return '/dashboard';
@@ -35,7 +29,6 @@ function redirect(location: string): Response {
 }
 
 async function rateLimit(request: Request, env: Env, kind: 'oauth' | 'anonymous'): Promise<void> {
-    // CF supplies this header; missing IPs share a fail-closed bucket, not a forwarded header.
     const key = `auth:${kind}:${await hash(request.headers.get('CF-Connecting-IP') || 'unknown')}`;
     const time = now();
     const result = await env.DB.prepare(
@@ -86,7 +79,6 @@ async function discordJSON(url: string, init: RequestInit): Promise<Record<strin
         if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid Discord JSON');
         return data as Record<string, unknown>;
     } catch {
-        // Never expose provider responses, authorization codes, or access tokens.
         throw new HttpError(502, 'Discord sign-in could not be completed. Please start again.');
     } finally {
         clearTimeout(timer);
@@ -106,18 +98,15 @@ export async function authRoute(request: Request, env: Env): Promise<Response | 
                 csrf_token: randomToken(),
                 expires: now() + PREAUTH_AGE,
                 member: null,
-                signup: null,
             };
-            await env.DB.prepare('INSERT INTO sessions (token_hash, member, csrf_token, expires, signup) VALUES (?, NULL, ?, ?, NULL)')
+            await env.DB.prepare('INSERT INTO sessions (token_hash, member, csrf_token, expires) VALUES (?, NULL, ?, ?)')
                 .bind(current.token_hash, current.csrf_token, current.expires)
                 .run();
         }
         const member = current.member === null ? null : await env.DB.prepare('SELECT * FROM members WHERE id = ?').bind(current.member).first<Member>();
-        const pending: Signup | null = current.member === null && current.signup ? JSON.parse(current.signup) : null;
         const response = json({
             member: member ? memberView(member) : null,
             csrf_token: current.csrf_token,
-            signup: pending ? { email: pending.email, discord_user_id: pending.discord_user_id } : null,
         });
         if (token) response.headers.set('Set-Cookie', cookieHeader(env, 'conway_session', token, PREAUTH_AGE));
         return response;
@@ -149,7 +138,6 @@ export async function authRoute(request: Request, env: Env): Promise<Response | 
             browser = cookie(request, 'conway_oauth');
         if (!state || !browser || !OPAQUE.test(state) || !OPAQUE.test(browser) || url.searchParams.getAll('state').length !== 1)
             throw new HttpError(400, 'Invalid or expired Discord sign-in. Please start again.');
-        // DELETE RETURNING makes redemption one-use even across concurrent callbacks.
         const pending = await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash = ? AND browser_hash = ? AND expires > ? RETURNING return_to')
             .bind(await hash(state), await hash(browser), now())
             .first<{ return_to: string }>();
@@ -198,20 +186,14 @@ export async function authRoute(request: Request, env: Env): Promise<Response | 
         )
             throw new HttpError(403, 'Verify your email in Discord before signing in.');
         const email = user.email.toLowerCase();
-        // Email is contact information only. It must never identify or link a member.
         const member = await env.DB.prepare('SELECT * FROM members WHERE discord_user_id = ?').bind(user.id).first<Member>();
         if (!member && (await env.DB.prepare('SELECT id FROM members WHERE email = ?').bind(email).first())) throw new HttpError(409, SUPPORT);
-        let returnTo = localReturn(pending.return_to, env);
-        const returnURL = new URL(returnTo, env.SITE_URL);
-        if (returnURL.pathname === '/signup') returnTo = localReturn(returnURL.searchParams.get('return_to'), env);
-        const signup: Signup | null = member ? null : { email, discord_user_id: user.id, discord_username: user.username, return_to: returnTo };
+        const returnTo = localReturn(pending.return_to, env);
         const old = await session(request, env),
             fresh = randomToken(),
             freshHash = await hash(fresh);
-        const age = member ? SESSION_AGE : PREAUTH_AGE;
-        const statements = [];
-        if (member)
-            statements.push(
+        if (member) {
+            const statements = [
                 env.DB.prepare('UPDATE members SET discord_username = ?, discord_email = ?, discord_last_synced = ? WHERE id = ? AND discord_user_id = ?').bind(
                     user.username,
                     email,
@@ -219,81 +201,42 @@ export async function authRoute(request: Request, env: Env): Promise<Response | 
                     member.id,
                     user.id,
                 ),
-            );
-        // Guard linkage again inside the transaction, in case leadership changed it during OAuth.
-        statements.push(
-            member
-                ? env.DB.prepare(
-                      `INSERT INTO sessions (token_hash, member, csrf_token, expires, signup)
-      SELECT ?, id, ?, ?, NULL FROM members WHERE id = ? AND discord_user_id = ?`,
-                  ).bind(freshHash, randomToken(), now() + age, member.id, user.id)
-                : env.DB.prepare('INSERT INTO sessions (token_hash, member, csrf_token, expires, signup) VALUES (?, NULL, ?, ?, ?)').bind(
-                      freshHash,
-                      randomToken(),
-                      now() + age,
-                      JSON.stringify(signup),
-                  ),
-        );
-        if (old)
-            statements.push(env.DB.prepare('DELETE FROM sessions WHERE token_hash = ? AND EXISTS (SELECT 1 FROM sessions WHERE token_hash = ?)').bind(old.token_hash, freshHash));
-        const results = await env.DB.batch(statements);
-        if (results[member ? 1 : 0].meta.changes !== 1) throw new HttpError(409, 'Membership linkage changed. Please sign in again.');
-        const response = redirect(member ? returnTo : '/signup?return_to=' + encodeURIComponent(returnTo));
-        response.headers.append('Set-Cookie', cookieHeader(env, 'conway_session', fresh, age));
-        response.headers.append('Set-Cookie', cookieHeader(env, 'conway_oauth', '', 0));
-        return response;
-    }
-
-    if (url.pathname === '/api/signup' && request.method === 'POST') {
-        const current: Session | null = await session(request, env);
-        if (!current || current.member !== null || !current.signup) throw new HttpError(409, 'No pending signup. Please sign in with Discord again.');
-        const input = await body(request);
-        if (
-            typeof input.name !== 'string' ||
-            !input.name.trim() ||
-            input.name.trim().length > 200 ||
-            /[\x00-\x1f\x7f]/.test(input.name) ||
-            typeof input.heard_about !== 'string' ||
-            input.heard_about.trim().length > 500 ||
-            /[\x00-\x1f\x7f]/.test(input.heard_about)
-        )
-            throw new HttpError(400, 'Provide your name (up to 200 characters) and how you heard about us (up to 500 characters).');
-        const pending: Signup = JSON.parse(current.signup);
-        const fresh = randomToken();
-        // No preflight identity lookup can authorize this insert. Both statements run in
-        // one D1 transaction, and changes() gates rotation on THIS request's new member.
-        const result = await env.DB.batch([
-            env.DB.prepare(
-                `INSERT INTO members (email, confirmed, name, heard_about, discord_user_id, discord_username, discord_email, discord_last_synced)
-        SELECT ?, 1, ?, ?, ?, ?, ?, ? FROM sessions
-        WHERE token_hash = ? AND member IS NULL AND signup = ? AND expires > ?
-        AND NOT EXISTS (SELECT 1 FROM members WHERE email = ? OR discord_user_id = ?) RETURNING id`,
-            ).bind(
-                pending.email,
-                input.name.trim(),
-                input.heard_about.trim(),
-                pending.discord_user_id,
-                pending.discord_username,
-                pending.email,
-                now(),
-                current.token_hash,
-                current.signup,
-                now(),
-                pending.email,
-                pending.discord_user_id,
-            ),
-            env.DB.prepare(
-                `UPDATE sessions SET token_hash = ?, member = (SELECT id FROM members WHERE discord_user_id = ?),
-        signup = NULL, csrf_token = ?, expires = ?
-        WHERE token_hash = ? AND member IS NULL AND signup = ? AND changes() = 1`,
-            ).bind(await hash(fresh), pending.discord_user_id, randomToken(), now() + SESSION_AGE, current.token_hash, current.signup),
-        ]);
-        if (result[0].results.length !== 1 || result[1].meta.changes !== 1) {
-            if (await env.DB.prepare('SELECT id FROM members WHERE email = ?').bind(pending.email).first()) throw new HttpError(409, SUPPORT);
-            throw new HttpError(409, 'Signup was already completed or expired. Please sign in with Discord again.');
+                env.DB.prepare(
+                    `INSERT INTO sessions (token_hash, member, csrf_token, expires)
+      SELECT ?, id, ?, ? FROM members WHERE id = ? AND discord_user_id = ?`,
+                ).bind(freshHash, randomToken(), now() + SESSION_AGE, member.id, user.id),
+            ];
+            if (old)
+                statements.push(
+                    env.DB.prepare('DELETE FROM sessions WHERE token_hash = ? AND EXISTS (SELECT 1 FROM sessions WHERE token_hash = ?)').bind(old.token_hash, freshHash),
+                );
+            const results = await env.DB.batch(statements);
+            if (results[1].meta.changes !== 1) throw new HttpError(409, 'Membership linkage changed. Please sign in again.');
+        } else {
+            const result = await env.DB.batch([
+                env.DB.prepare(
+                    `INSERT INTO members (email, confirmed, name, discord_user_id, discord_username, discord_email, discord_last_synced)
+      SELECT ?, 1, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM members WHERE email = ? OR discord_user_id = ?) RETURNING id`,
+                ).bind(email, user.username, user.id, user.username, email, now(), email, user.id),
+            ]);
+            const row = result[0].results[0] as { id: number } | undefined;
+            if (!row) throw new HttpError(409, SUPPORT);
+            const statements = [
+                env.DB.prepare(
+                    `INSERT INTO sessions (token_hash, member, csrf_token, expires)
+      SELECT ?, id, ?, ? FROM members WHERE id = ? AND discord_user_id = ?`,
+                ).bind(freshHash, randomToken(), now() + SESSION_AGE, row.id, user.id),
+            ];
+            if (old)
+                statements.push(
+                    env.DB.prepare('DELETE FROM sessions WHERE token_hash = ? AND EXISTS (SELECT 1 FROM sessions WHERE token_hash = ?)').bind(old.token_hash, freshHash),
+                );
+            const results = await env.DB.batch(statements);
+            if (results[0].meta.changes !== 1) throw new HttpError(409, 'Membership linkage changed. Please sign in again.');
         }
-        const response = json({ return_to: localReturn(pending.return_to, env) });
-        response.headers.set('Set-Cookie', cookieHeader(env, 'conway_session', fresh, SESSION_AGE));
+        const response = redirect(returnTo);
+        response.headers.append('Set-Cookie', cookieHeader(env, 'conway_session', fresh, SESSION_AGE));
+        response.headers.append('Set-Cookie', cookieHeader(env, 'conway_oauth', '', 0));
         return response;
     }
 

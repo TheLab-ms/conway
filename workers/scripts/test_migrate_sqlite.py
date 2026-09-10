@@ -23,24 +23,16 @@ class MigrationTests(unittest.TestCase):
         self.settings.write_text(json.dumps({
             "site_name": "The Lab", "monthly_price_id": "price_monthly", "yearly_price_id": "price_yearly",
             "discounts": [{"id": k, "label": v, "coupon_id": "coupon_" + k} for k, v in migration.DISCOUNTS],
-            "signup_notify_enabled": False,
-            "notification_templates": {"signup": "New: {name}", "discount": "{discount_type}",
-                                       "badge": "{name}", "denied": "{access_status}"},
         }))
         with sqlite3.connect(self.source) as db:
             db.executescript((ROOT / "modules/members/schema.sql").read_text())
             # Exercise additive migrations from directory, payment, and fobapi.
             db.executescript("""
                 ALTER TABLE members ADD COLUMN profile_picture BLOB;
-                ALTER TABLE members ADD COLUMN bio TEXT;
-                ALTER TABLE members ADD COLUMN pronouns TEXT;
-                ALTER TABLE members ADD COLUMN directory_hidden INTEGER DEFAULT 0;
                 ALTER TABLE members ADD COLUMN discord_checkin_notify INTEGER DEFAULT 0;
                 CREATE TABLE waiver_content(version INTEGER PRIMARY KEY,created INTEGER,content TEXT);
                 CREATE TABLE fob_clients(id INTEGER PRIMARY KEY,ip_address TEXT,door_name TEXT,last_seen INTEGER);
                 ALTER TABLE fob_swipes ADD COLUMN fob_client INTEGER REFERENCES fob_clients(id);
-                CREATE TABLE members_config(version INTEGER PRIMARY KEY,created INTEGER,referral_sources_json TEXT);
-                CREATE TABLE stripe_config(version INTEGER PRIMARY KEY,created INTEGER,api_key TEXT,webhook_key TEXT,donation_items_json TEXT);
                 CREATE TABLE discord_config(version INTEGER PRIMARY KEY,created INTEGER,client_id TEXT,client_secret TEXT,bot_token TEXT,
                     guild_id TEXT,role_id TEXT,leadership_channel_id TEXT,badge_notify_channel_id TEXT,
                     badge_notify_enabled INTEGER,access_denied_enabled INTEGER,signup_message_template TEXT,approval_bot_enabled INTEGER);
@@ -55,14 +47,12 @@ class MigrationTests(unittest.TestCase):
                     VALUES(40,102,'leader@example.org','Leader',1,1,1,'123456789012345678',123,11);
                 INSERT INTO members(id,created,email,name,confirmed,non_billable,fob_id,root_family_member)
                     VALUES(2,103,'family@example.org','Family',1,1,456,40);
-                UPDATE members SET waiver=11,bio='Biography',pronouns='they/them',discord_avatar=X'CAFEBABE',profile_picture=X'DEADBEEF',
-                    admin_notes='O''Brien\nAdmin note',name_override='Display',heard_about='Open house',discord_checkin_notify=1 WHERE id=40;
+                UPDATE members SET waiver=11,discord_avatar=X'CAFEBABE',profile_picture=X'DEADBEEF',
+                    admin_notes='O''Brien\nAdmin note',name_override='Display',discord_checkin_notify=1 WHERE id=40;
                 INSERT INTO members(id,created,email,name,confirmed) VALUES(100,104,'unlinked@example.org','Unlinked',0);
                 INSERT INTO fob_clients VALUES(9,'192.0.2.10','Front door',300);
                 INSERT INTO fob_swipes(uid,timestamp,fob_id,member,allowed,fob_client) VALUES('legacy-swipe',300,123,40,1,9);
                 INSERT INTO member_events(id,created,member,important,event,details) VALUES(88,301,40,0,'LegacyEvent','preserve details');
-                INSERT INTO members_config VALUES(1,100,'[{"label":"Old"}]'),(2,200,'[{"label":"Open house"},{"label":"Friend"}]');
-                INSERT INTO stripe_config VALUES(1,100,'sk_live_SYNTHETICSECRET','whsec_SYNTHETICSECRET','[{"name":"Materials","price_id":"price_donate"}]');
                 INSERT INTO discord_config VALUES(1,100,'999999999999999999','SYNTHETIC-CLIENT-SECRET','SYNTHETIC-BOT-SECRET',
                     '222222222222222222','333333333333333333','444444444444444444','555555555555555555',1,1,'{{ .Name }}',1);
                 INSERT INTO triggers VALUES(7,'Timed rule',1,'timed','SELECT remote_effect(''SYNTHETIC-BOT-SECRET'')');
@@ -118,10 +108,10 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(output.stat().st_mode & 0o777, 0o700)
         db = self.target(output)
         self.assertEqual(db.execute("SELECT id FROM members ORDER BY id").fetchall(), [(2,), (40,), (100,)])
-        self.assertEqual(db.execute("SELECT waiver,bio,pronouns,fob_last_seen,discord_checkin_notify,admin_notes FROM members WHERE id=40").fetchone(),
-                         (11, "Biography", "they/them", 300, 1, "O'Brien\nAdmin note"))
+        self.assertEqual(db.execute("SELECT waiver,fob_last_seen,discord_checkin_notify,admin_notes FROM members WHERE id=40").fetchone(),
+                         (11, 300, 1, "O'Brien\nAdmin note"))
         self.assertEqual(db.execute("SELECT root_family_member,root_family_member_active,access_status FROM members WHERE id=2").fetchone(), (40, 1, "Ready"))
-        self.assertEqual(db.execute("SELECT discord_user_id,bio,pronouns FROM members WHERE id=100").fetchone(), (None, "", ""))
+        self.assertEqual(db.execute("SELECT discord_user_id FROM members WHERE id=100").fetchone(), (None,))
         self.assertEqual(db.execute("SELECT id FROM waivers ORDER BY id").fetchall(), [(11,), (12,), (13,)])
         self.assertEqual(json.loads(db.execute("SELECT agreements FROM waiver_versions WHERE version=2").fetchone()[0]), ["New agreement", "Second agreement"])
         self.assertEqual(db.execute("SELECT id,event,details FROM member_events").fetchall(), [(88, "LegacyEvent", "preserve details")])
@@ -130,10 +120,7 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(db.execute("SELECT automation_enabled FROM runtime_control").fetchone()[0], 1)
         self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
         settings = json.loads(db.execute("SELECT data FROM settings").fetchone()[0])
-        self.assertEqual(settings["referral_sources"], ["Open house", "Friend"])
-        self.assertEqual(settings["donations"], [{"label": "Materials", "price_id": "price_donate"}])
         self.assertEqual(settings["waiver_version"], 2)
-        self.assertTrue(settings["badge_notify_enabled"])
         db.executescript((output / "verify.sql").read_text())
         db.execute("INSERT INTO members(email) VALUES('new@example.org')")
         self.assertEqual(db.execute("SELECT id FROM members WHERE email='new@example.org'").fetchone()[0], 1001)
@@ -303,9 +290,6 @@ class MigrationTests(unittest.TestCase):
     def test_json_escaped_secret_settings_block(self):
         with sqlite3.connect(self.source) as db:
             db.execute("UPDATE discord_config SET bot_token=?", ('private"quoted\\credential',))
-        settings = json.loads(self.settings.read_text())
-        settings["notification_templates"]["signup"] = 'prefix private"quoted\\credential suffix'
-        self.settings.write_text(json.dumps(settings))
         self.assert_blocked("secret_in_preserved_data")
 
     def test_legacy_effect_trigger_is_only_inventoried(self):
