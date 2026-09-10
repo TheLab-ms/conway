@@ -849,7 +849,8 @@ export class MembershipCoordinator {
             if (fields.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(fields.email))) throw new HttpError(400, 'Invalid contact email');
             if (fields.discord_user_id && !/^\d{5,25}$/.test(String(fields.discord_user_id))) throw new HttpError(400, 'Invalid Discord ID');
             if (fields.discount_status && !['approved', 'requested'].includes(String(fields.discount_status))) throw new HttpError(400, 'Invalid discount status');
-            if (fields.discount_type && !cfg.discounts.some((item) => item.id === fields!.discount_type)) throw new HttpError(400, 'Unknown discount type');
+            if (fields.discount_type && fields.discount_type !== member.discount_type && !cfg.discounts.some((item) => item.id === fields!.discount_type))
+                throw new HttpError(400, 'Unknown discount type');
             if (fields.discount_type === null) {
                 fields.discount_status = null;
                 fields.discount_request_id = null;
@@ -983,7 +984,8 @@ export class MembershipCoordinator {
         if (!this.env.STRIPE_SECRET_KEY) throw new HttpError(503, 'Stripe is not configured');
         const cfg = await settings(this.env);
         const price = input.donation ? cfg.donations.find((item) => item.price_id === input.price_id)?.price_id : input.annual ? cfg.yearly_price_id : cfg.monthly_price_id;
-        if (!price) throw new HttpError(400, 'Selected Stripe price is not configured');
+        // Existing customers must be reconciled before deciding whether they need a price or just the portal.
+        if (!price && (input.donation || !member.stripe_customer_id)) throw new HttpError(400, 'Selected Stripe price is not configured');
         if (!member.stripe_customer_id) {
             const slot = `customer:${member.id}`;
             const prior = await this.state.storage.get<Mutation>(slot);
@@ -1007,16 +1009,22 @@ export class MembershipCoordinator {
             // Also discover a just-completed checkout whose webhook has not arrived yet.
             await reconcileStripe(this.env, member);
             member = (await this.env.DB.prepare('SELECT * FROM members WHERE id = ?').bind(member.id).first<Member>())!;
-            await this.env.DB.prepare('UPDATE members SET bill_annually = ? WHERE id = ? AND bill_annually != ?')
-                .bind(input.annual ? 1 : 0, member.id, input.annual ? 1 : 0)
-                .run();
         }
         const portal = !input.donation && member.stripe_subscription_state && !['canceled', 'incomplete_expired'].includes(member.stripe_subscription_state);
+        if (!portal && !price) throw new HttpError(400, 'Selected Stripe price is not configured');
         if (!portal && !input.donation && member.discount_type === 'family' && member.discount_status !== 'requested' && !(await familyEligible(this.env, member))) {
             throw new HttpError(409, 'Family discount requires a linked active primary member');
         }
         const coupon =
             !input.donation && member.discount_type && member.discount_status !== 'requested' ? cfg.discounts.find((item) => item.id === member.discount_type)?.coupon_id : '';
+        if (!portal && !input.donation && member.discount_type && member.discount_status !== 'requested' && !coupon) {
+            throw new HttpError(400, 'Your discount coupon is not configured. Contact leadership before starting checkout.');
+        }
+        if (!input.donation) {
+            await this.env.DB.prepare('UPDATE members SET bill_annually = ? WHERE id = ? AND bill_annually != ?')
+                .bind(input.annual ? 1 : 0, member.id, input.annual ? 1 : 0)
+                .run();
+        }
         const form: Record<string, string> = portal
             ? { customer: member.stripe_customer_id!, return_url: this.env.SITE_URL }
             : {
@@ -1026,7 +1034,7 @@ export class MembershipCoordinator {
                   cancel_url: this.env.SITE_URL,
                   client_reference_id: String(member.id),
                   'metadata[conway_member_id]': String(member.id),
-                  'line_items[0][price]': price,
+                  'line_items[0][price]': price!,
                   'line_items[0][quantity]': '1',
                   ...(input.donation
                       ? {

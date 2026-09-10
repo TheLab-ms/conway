@@ -1,0 +1,33 @@
+{
+    // Resolved by run.mjs; never use this test-only worker for deployment.
+    "extends": "../wrangler.jsonc",
+    "name": "conway-browser-tests",
+    "main": "worker.ts",
+    "d1_databases": [
+        {
+            "binding": "DB",
+            "database_name": "conway-browser-tests",
+            "database_id": "00000000-0000-0000-0000-000000000001",
+            "migrations_dir": "../migrations"
+        }
+    ],
+    "queues": {
+        "producers": [{ "binding": "JOBS", "queue": "conway-browser-tests-jobs" }],
+        "consumers": [{ "queue": "conway-browser-tests-jobs", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 3 }]
+    },
+    "triggers": { "crons": [] },
+    "vars": {
+        "SITE_URL": "http://127.0.0.1:8799",
+        "AUTOMATION_ENABLED": "false",
+        "KIOSK_IPS": "192.0.2.10",
+        "EDGE_URL": "",
+        "EDGE_TOKEN": "browser-test-edge-token",
+        "DISCORD_CLIENT_ID": "browser-test-client",
+        "DISCORD_CLIENT_SECRET": "browser-test-secret",
+        "DISCORD_BOT_TOKEN": "browser-test-bot",
+        "DISCORD_PUBLIC_KEY": "0000000000000000000000000000000000000000000000000000000000000000",
+        "STRIPE_SECRET_KEY": "sk_test_browser_only",
+        "STRIPE_WEBHOOK_SECRET": "whsec_browser_only"
+    },
+    "observability": { "enabled": false }
+}

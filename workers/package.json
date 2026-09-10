@@ -12,14 +12,16 @@
         "typecheck": "tsc --noEmit && tsc -p test/tsconfig.json && tsc -p test/tsconfig.config.json",
         "test": "vitest run",
         "test:integrations": "node --test src/integrations.test.mjs",
-        "test:browser": "node browser-tests/run.mjs",
+        "test:browser": "playwright test --config browser-tests/playwright.config.mjs",
         "db:local": "wrangler d1 migrations apply conway --local",
         "deploy": "wrangler deploy"
     },
     "devDependencies": {
+        "@playwright/test": "^1.58.2",
         "@cloudflare/vitest-pool-workers": "0.22.0",
         "@cloudflare/workers-types": "5.20260908.1",
         "@types/node": "^22.0.0",
+        "jsqr": "^1.4.0",
         "prettier": "^3.9.6",
         "typescript": "~5.9.2",
         "vitest": "~4.1.0",

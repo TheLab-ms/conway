@@ -6,3 +6,5 @@ coverage/
 migration-output/
 __pycache__/
 *.pyc
+browser-tests/.state/
+browser-tests/test-results/

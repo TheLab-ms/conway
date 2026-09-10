@@ -22,8 +22,10 @@ the access-controller firmware is replaced by this directory.
 
 ## Local Development
 
-Requires Node **22.12+**, npm, and Python **3.10+** with SQLite **3.37+** for offline
-migration/auth tests. Browser checks require Chrome or Chromium.
+Requires Node **22.22+ or 24**, npm, and Python **3.10+** with SQLite **3.37+** for
+offline migration/auth tests. Browser fixtures use `node:sqlite` and `globSync`;
+install Chromium with `npx playwright install chromium` after `npm ci`, or set
+`CHROME=/path/to/chromium`.
 Run commands in `workers/`:
 
 ```sh
@@ -238,6 +240,12 @@ state. Run edge checks separately in `conwayedge/`: `go test -race ./...` and
 `go vet ./...`. The scoped CI workflow runs these checks without deployment
 credentials. See [test/README.md](test/README.md) and
 [browser-tests/README.md](browser-tests/README.md) for harness boundaries.
-Browser tests use actual Chrome with mocked APIs; backend tests use actual
+Browser tests are isolated in `browser-tests/` and use Playwright with real local
+Wrangler APIs, assets, D1 and Durable Objects. `npm run test:browser` automatically
+starts a fresh server at `http://127.0.0.1:8799`, with no server reuse, one
+Playwright worker and no retries. Provider calls are stubbed in the test Worker;
+OAuth consent redirects and hosted Stripe pages are intercepted. Fixtures use
+real hashed sessions and reset D1 in isolated `.state/`; no production secrets
+or development `.dev.vars` are needed or loaded. Backend tests likewise use real
 workerd/D1/DO bindings with mocked providers. Neither proves live Discord OAuth,
 Stripe settlement, remote D1 capacity, production migration, or physical hardware.
