@@ -21,10 +21,12 @@ test.beforeEach(async ({ page }) => {
     );
 });
 
-async function checkout(page, frequency = 'monthly') {
+async function checkout(page) {
     await page.goto('/billing');
-    await page.getByLabel('Billing frequency').selectOption(frequency);
-    await page.getByRole('button', { name: 'Continue to secure billing' }).click();
+    await expect(page.getByLabel('Billing frequency')).toHaveCount(0);
+    const request = page.waitForRequest((request) => request.url().endsWith('/api/billing/checkout') && request.method() === 'POST');
+    await page.getByRole('button', { name: 'Continue to Stripe' }).click();
+    expect((await request).postDataJSON()).toEqual({});
     await expect(page).toHaveURL(/^https:\/\/(checkout|billing)\.stripe\.com\//);
     await expect(page.getByRole('heading', { name: 'Hosted Stripe test page' })).toBeVisible();
     return new URL(page.url());
@@ -35,7 +37,8 @@ for (const [frequency, price, annual] of [
     ['annual', 'price_year', 1],
 ]) {
     test(`${frequency} membership uses real checkout and persists billing identity`, async ({ page, billingMember }) => {
-        const url = await checkout(page, frequency);
+        sql('UPDATE members SET bill_annually=? WHERE id=?', annual, billingMember);
+        const url = await checkout(page);
         expect(url.hostname).toBe('checkout.stripe.com');
         expect(Object.fromEntries(url.searchParams)).toMatchObject({
             mode: 'subscription',
@@ -57,14 +60,37 @@ for (const [frequency, price, annual] of [
     });
 }
 
-test('same selection reuses checkout; annual change expires the earlier session', async ({ page, billingMember }) => {
+test('stored preference reuses checkout; admin annual change revokes the earlier session', async ({ page, billingMember, login }) => {
     const monthly = await checkout(page);
     expect((await checkout(page)).href).toBe(monthly.href);
-    const annual = await checkout(page, 'annual');
+    await login();
+    await page.goto(`/admin/members/${billingMember}`);
+    await page.getByLabel('Annual billing').check();
+    const response = page.waitForResponse((response) => response.url().endsWith(`/api/admin/members/${billingMember}`) && response.request().method() === 'PATCH');
+    await page.getByRole('button', { name: 'Save member', exact: true }).click();
+    expect((await response).status()).toBe(200);
+    await expect(page.locator('.global-notice')).toHaveText('Member saved.');
+    await login(billingMember);
+    const annual = await checkout(page);
     expect(annual.pathname).not.toBe(monthly.pathname);
     expect(annual.searchParams.get('line_items[0][price]')).toBe('price_year');
     expect(sql('SELECT bill_annually FROM members WHERE id=?', billingMember)[0].bill_annually).toBe(1);
 });
+
+for (const bill_annually of [0, 1]) {
+    test(`member cannot override stored bill_annually=${bill_annually}`, async ({ page, billingMember }) => {
+        sql('UPDATE members SET bill_annually=? WHERE id=?', bill_annually, billingMember);
+        const session = await (await page.request.get('/api/session')).json();
+        const headers = { Origin: 'http://127.0.0.1:8799', 'X-CSRF-Token': session.csrf_token };
+        for (const data of [{ annual: !bill_annually }, { bill_annually: 1 - bill_annually }]) {
+            expect((await page.request.post('/api/billing/checkout', { headers, data })).status()).toBe(400);
+        }
+        expect((await page.request.patch('/api/profile', { headers, data: { bill_annually: 1 - bill_annually } })).status()).toBe(400);
+        const url = await checkout(page);
+        expect(url.searchParams.get('line_items[0][price]')).toBe(bill_annually ? 'price_year' : 'price_month');
+        expect(sql('SELECT bill_annually FROM members WHERE id=?', billingMember)[0].bill_annually).toBe(bill_annually);
+    });
+}
 
 test('approved student coupon is submitted to Stripe', async ({ page, billingMember }) => {
     sql("UPDATE members SET discount_type='student',discount_status='approved' WHERE id=?", billingMember);
@@ -109,7 +135,7 @@ test('missing membership price fails closed with an actionable error', async ({ 
     sql("UPDATE settings SET data=json_set(data,'$.monthly_price_id','') WHERE id=1");
     await page.goto('/billing');
     const response = page.waitForResponse((response) => response.url().endsWith('/api/billing/checkout') && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Continue to secure billing' }).click();
+    await page.getByRole('button', { name: 'Continue to Stripe' }).click();
     expect((await response).status()).toBe(400);
     await expect(page.getByRole('alert')).toContainText('Selected Stripe price is not configured');
     await expect(page).toHaveURL(/\/billing$/);
@@ -121,7 +147,7 @@ test('existing customer without a subscription still needs a configured price', 
     sql("UPDATE settings SET data=json_set(data,'$.monthly_price_id','') WHERE id=1");
     await page.goto('/billing');
     const response = page.waitForResponse((response) => response.url().endsWith('/api/billing/checkout') && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Continue to secure billing' }).click();
+    await page.getByRole('button', { name: 'Continue to Stripe' }).click();
     expect((await response).status()).toBe(400);
     await expect(page.getByRole('alert')).toContainText('Selected Stripe price is not configured');
     await expect(page).toHaveURL(/\/billing$/);
@@ -139,14 +165,11 @@ for (const [configuration, update] of [
             if (cached) expect((await checkout(page)).searchParams.get('discounts[0][coupon]')).toBe('coupon_student');
             sql(`UPDATE settings SET data=${update} WHERE id=1`);
             await page.goto('/billing');
-            const frequency = cached ? 'monthly' : 'annual';
-            await page.getByLabel('Billing frequency').selectOption(frequency);
             const response = page.waitForResponse((response) => response.url().endsWith('/api/billing/checkout') && response.request().method() === 'POST');
-            await page.getByRole('button', { name: 'Continue to secure billing' }).click();
+            await page.getByRole('button', { name: 'Continue to Stripe' }).click();
             expect((await response).status()).toBe(400);
             await expect(page.getByRole('alert')).toContainText('Your discount coupon is not configured');
             await expect(page).toHaveURL(/\/billing$/);
-            await expect(page.getByLabel('Billing frequency')).toHaveValue(frequency);
             expect(sql('SELECT discount_type,discount_status,bill_annually,payment_status FROM members WHERE id=?', billingMember)[0]).toEqual({
                 discount_type: 'student',
                 discount_status: 'approved',
@@ -162,7 +185,7 @@ test('coupon removed at Stripe is rejected without falling back to full price', 
     sql("UPDATE settings SET data=json_set(data,'$.discounts[0].coupon_id','coupon_removed') WHERE id=1");
     await page.goto('/billing');
     const response = page.waitForResponse((response) => response.url().endsWith('/api/billing/checkout') && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Continue to secure billing' }).click();
+    await page.getByRole('button', { name: 'Continue to Stripe' }).click();
     expect((await response).status()).toBe(502);
     await expect(page.getByRole('alert')).toContainText('Stripe HTTP 404');
     await expect(page).toHaveURL(/\/billing$/);
@@ -175,7 +198,7 @@ test('unrelated leadership edits preserve an unchanged obsolete discount', async
     sql("UPDATE members SET discount_type='obsolete',discount_status='approved',discount_request_id='original-request' WHERE id=?", billingMember);
     await login();
     await page.goto(`/admin/members/${billingMember}`);
-    await page.getByText('Profile & discount fields', { exact: true }).click();
+    await page.getByText('Discount settings', { exact: true }).click();
     await expect(page.getByLabel('Discount type', { exact: true })).toHaveValue('obsolete');
     await page.getByLabel('Leadership notes').fill('Updated without changing billing');
     const response = page.waitForResponse((response) => response.url().endsWith(`/api/admin/members/${billingMember}`) && response.request().method() === 'PATCH');
@@ -189,19 +212,19 @@ test('unrelated leadership edits preserve an unchanged obsolete discount', async
         discount_request_id: 'original-request',
     });
     await page.reload();
-    await page.getByText('Profile & discount fields', { exact: true }).click();
+    await page.getByText('Discount settings', { exact: true }).click();
     await expect(page.getByLabel('Discount type', { exact: true })).toHaveValue('obsolete');
     await expect(page.getByLabel('Discount status', { exact: true })).toHaveValue('approved');
 });
 
-test('provider errors preserve the selection and allow retry', async ({ page, billingMember }) => {
+test('provider errors preserve the stored preference and allow retry', async ({ page, billingMember }) => {
+    sql('UPDATE members SET bill_annually=1 WHERE id=?', billingMember);
     sql("UPDATE settings SET data=json_set(data,'$.yearly_price_id','price_error') WHERE id=1");
     await page.goto('/billing');
-    await page.getByLabel('Billing frequency').selectOption('annual');
-    await page.getByRole('button', { name: 'Continue to secure billing' }).click();
+    await page.getByRole('button', { name: 'Continue to Stripe' }).click();
     await expect(page.getByRole('alert')).toContainText('Stripe HTTP 503');
-    await expect(page.getByLabel('Billing frequency')).toHaveValue('annual');
-    await expect(page.getByRole('button', { name: 'Continue to secure billing' })).toBeEnabled();
+    expect(sql('SELECT bill_annually FROM members WHERE id=?', billingMember)[0].bill_annually).toBe(1);
+    await expect(page.getByRole('button', { name: 'Continue to Stripe' })).toBeEnabled();
     expect(sql('SELECT payment_status FROM members WHERE id=?', billingMember)[0].payment_status).toBeNull();
 });
 

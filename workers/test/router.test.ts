@@ -98,13 +98,11 @@ describe('member profile', () => {
         const headers = await login(row.id);
         const response = await api('/api/profile', 'PATCH', headers, {
             name: ' After ',
-            discord_checkin_notify: false,
         });
         expect(response.status).toBe(200);
         expect(await response.json()).toMatchObject({
             id: row.id,
             name: 'After',
-            discord_checkin_notify: 0,
         });
         expect(await (await api('/api/member', 'GET', headers)).json()).not.toHaveProperty('admin_notes');
         expect((await (await api('/api/session', 'GET', headers)).json<{ member: Member }>()).member).not.toHaveProperty('admin_notes');
@@ -120,7 +118,7 @@ describe('member profile', () => {
         { fob_id: 1 },
         { id: 9 },
         {},
-        { discord_checkin_notify: 'false' },
+        { name: false },
     ])('rejects unauthorized/invalid profile fields %j atomically', async (data) => {
         const row = await member({ name: 'Original' });
         expect((await api('/api/profile', 'PATCH', await login(row.id), data)).status).toBe(400);
@@ -218,6 +216,26 @@ describe('admin configuration and CRUD', () => {
                 event,
             })),
         );
+    });
+
+    it('searches Discord handles case-insensitively with matching counts and access filters', async () => {
+        const { headers } = await leader();
+        const ready = await member({ discord_username: 'maker.handle', confirmed: 1, non_billable: 1, fob_id: 99 });
+        const unconfirmed = await member({ discord_username: 'other.MAKER', confirmed: 0 });
+        await member({ discord_username: null });
+        for (const [search, status, ids] of [
+            ['MaKeR', '', [unconfirmed.id, ready.id]],
+            ['MaKeR', 'Ready', [ready.id]],
+            ['maker.handle', '', [ready.id]],
+            ['missing.handle', '', []],
+        ] as const) {
+            const query = new URLSearchParams({ search, status });
+            const response = await api(`/api/admin/members?${query}`, 'GET', headers);
+            expect(response.status).toBe(200);
+            const list = await response.json<{ members: Member[]; total: number }>();
+            expect(list.total).toBe(ids.length);
+            expect(list.members.map((row) => row.id)).toEqual(ids);
+        }
     });
 
     it('maps duplicate Discord/email/fob identities to 409 and leaves existing members unchanged', async () => {

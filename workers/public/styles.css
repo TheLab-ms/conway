@@ -188,33 +188,6 @@ qr-code {
     min-height: 88px;
     padding: 1rem 2.5rem;
 }
-.brand {
-    color: var(--text);
-    text-decoration: none;
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-    font-size: 1.2rem;
-    font-weight: 780;
-    letter-spacing: -0.04em;
-}
-.brand-mark {
-    display: grid;
-    place-items: center;
-    width: 38px;
-    height: 38px;
-    border: 2px solid var(--green);
-    color: var(--green);
-    font: 700 23px var(--mono);
-    transform: rotate(-3deg);
-}
-.brand small {
-    display: block;
-    font: 0.62rem var(--mono);
-    letter-spacing: 0.17em;
-    text-transform: uppercase;
-    margin-top: 5px;
-}
 .primary-nav {
     display: flex;
     align-items: center;
@@ -250,14 +223,6 @@ qr-code {
     max-width: 1240px;
     margin: auto;
     padding: 3.4rem 2.5rem 5rem;
-    min-height: calc(100vh - 180px);
-}
-.eyebrow {
-    font: 0.75rem var(--mono);
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--green);
-    margin-bottom: 1rem;
 }
 .page-heading {
     display: flex;
@@ -278,9 +243,6 @@ qr-code {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.3rem;
-}
-.grid.thirds {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .stack {
     display: grid;
@@ -422,53 +384,6 @@ qr-code {
     margin-right: 1rem;
     animation: pulse 1s ease-in-out infinite alternate;
 }
-.hero {
-    padding: clamp(2rem, 6vw, 4.5rem);
-    border: 1px solid var(--line);
-    border-top: 3px solid var(--green);
-    border-radius: 8px;
-    background: linear-gradient(125deg, #1c3022, #141a16 70%);
-    margin-bottom: 1.5rem;
-}
-.hero h1 {
-    max-width: 13ch;
-    font-size: clamp(2.8rem, 7vw, 5rem);
-}
-.hero p {
-    max-width: 52ch;
-    color: var(--muted);
-}
-.hero .actions {
-    margin-top: 2rem;
-}
-.number {
-    font: 0.8rem var(--mono);
-    color: var(--green);
-    margin-bottom: 1.5rem;
-}
-.step-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-.step-list li {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 1.1rem 0;
-    border-bottom: 1px solid var(--line);
-}
-.step-list li:last-child {
-    border-bottom: 0;
-}
-.step-list small {
-    display: block;
-    margin-top: 0.35rem;
-}
-.step-list a {
-    white-space: nowrap;
-}
 .admin-nav {
     display: flex;
     gap: 0.4rem;
@@ -568,21 +483,29 @@ tr:hover td {
     margin: 0;
     overflow-wrap: anywhere;
 }
-.site-footer {
-    border-top: 1px solid var(--line);
-    padding: 1.5rem 2.5rem;
-    color: var(--muted);
-    font: 0.75rem var(--mono);
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-}
-.site-footer span:last-child {
-    color: var(--green);
-}
 .qr-panel {
     text-align: center;
+}
+.kiosk {
+    text-align: center;
+}
+.kiosk > .notice:not(:empty),
+.kiosk .qr-panel {
+    margin-bottom: 1.5rem;
+}
+.kiosk .actions {
+    justify-content: center;
+}
+.kiosk-scanner {
+    position: fixed;
+    left: -10000px;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
 }
 .qr-panel canvas {
     max-width: 100%;
@@ -640,11 +563,6 @@ details[open] > summary {
         scroll-behavior: auto !important;
     }
 }
-@media (min-width: 1000px) {
-    .dashboard-grid {
-        grid-template-columns: 1.3fr 1fr;
-    }
-}
 @media (max-width: 900px) {
     .header-inner {
         gap: 1rem;
@@ -658,9 +576,6 @@ details[open] > summary {
     }
     .workspace {
         padding: 2.5rem 1.5rem 4rem;
-    }
-    .grid.thirds {
-        grid-template-columns: 1fr;
     }
     .page-heading {
         flex-wrap: wrap;
@@ -699,12 +614,6 @@ details[open] > summary {
     .admin-nav a {
         padding: 0.6rem;
     }
-    .site-footer {
-        padding: 1.5rem 1rem;
-    }
-    .hero {
-        padding: 2rem 1.4rem;
-    }
     .toolbar {
         gap: 0.75rem;
     }
@@ -716,9 +625,6 @@ details[open] > summary {
     }
     .record dd {
         margin-bottom: 0.6rem;
-    }
-    .step-list li {
-        align-items: flex-start;
     }
     .pagination {
         flex-wrap: wrap;

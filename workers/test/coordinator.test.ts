@@ -11,6 +11,28 @@ const audits = (id: number) =>
         .all<{ actor: number; event: string; details: string }>();
 
 describe('versioned mutations through the bound MembershipCoordinator', () => {
+    it('only admins can change the stored billing preference and checkout rejects member selections', async () => {
+        const admin = await member({ leadership: 1 });
+        const target = await member();
+        const headers = await login(target.id);
+        const adminHeaders = await login(admin.id);
+        for (const bill_annually of [1, 0]) {
+            const current = (await read(target.id))!;
+            expect((await api('/api/profile', 'PATCH', headers, { bill_annually })).status).toBe(400);
+            expect((await api(`/api/admin/members/${target.id}`, 'PATCH', headers, { bill_annually, version: current.version })).status).toBe(403);
+            expect((await mutateMember(env, target.id, { bill_annually }, target.id, current.version)).status).toBe(403);
+            for (const input of [{ annual: Boolean(bill_annually) }, { bill_annually }]) {
+                expect((await api('/api/billing/checkout', 'POST', headers, input)).status).toBe(400);
+            }
+            expect(await read(target.id)).toEqual(current);
+            const response = await api(`/api/admin/members/${target.id}`, 'PATCH', adminHeaders, { bill_annually, version: current.version });
+            expect(response.status).toBe(200);
+            expect(await response.json()).toEqual(await read(target.id));
+            expect((await read(target.id))?.bill_annually).toBe(bill_annually);
+        }
+        expect((await audits(target.id)).results).toHaveLength(2);
+    });
+
     it.each(['PATCH', 'DELETE'])('requires a positive integer version JSON for admin %s', async (method) => {
         const admin = await member({ leadership: 1 });
         const target = await member();

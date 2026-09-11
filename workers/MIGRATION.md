@@ -61,9 +61,8 @@ The exporter consumes that backup read-only; it does not archive another copy.
 
 | Source                     | Target and behavior                                                                                                                                                                                                                                                                                                                    |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `members`                  | All contract writable fields and original IDs/creation times, names/overrides, notes/referral source, confirmation, waiver pointer, fobs/last seen, leadership, billing/discount/family/PayPal/Stripe state, Discord linkage, and profile/privacy/notification fields                                                                  |
+| `members`                  | All contract writable fields and original IDs/creation times, names/overrides, notes, confirmation, waiver pointer, fobs/last seen, leadership, billing/discount/family/PayPal/Stripe state, and Discord linkage. |
 | Target `members.version`   | Initialized explicitly to `1` and verified for every imported member. The legacy source normally has no revision column; its absence is not a blocker.                                                                                                                                                                                 |
-| Directory additive columns | `bio`/`pronouns` NULL or absent become `''`; nullable/absent privacy and notification flags become `0`. Every normalization is recorded. No other missing required member column is guessed.                                                                                                                                           |
 | `waivers`                  | Every signature, including pre-signup signatures, original ID/version/time/name/email and exact existing member links. No email-based relinking or newest-waiver substitution during import.                                                                                                                                           |
 | `waiver_content`           | Every version becomes `waiver_versions`, retaining content and created time verbatim. `agreements` is the ordered JSON list extracted with the legacy `modules/waiver/markdown.go` checkbox rules. Latest version becomes `settings.waiver_version`.                                                                                   |
 | `member_events`            | Original IDs, times, member, event and details; `actor` retained if present, otherwise NULL. The target has no `important` flag: this requires explicit archive-only review, not silent loss.                                                                                                                                          |
@@ -71,14 +70,15 @@ The exporter consumes that backup read-only; it does not archive another copy.
 | `sqlite_sequence`          | Member, waiver and event high-water marks retained so deleted historical IDs are not reused.                                                                                                                                                                                                                                           |
 | `members_config`           | Latest version's `referral_sources_json` labels become `referral_sources`.                                                                                                                                                                                                                                                             |
 | `stripe_config`            | Latest `donation_items_json` maps `name` to `label` and retains `price_id`. API/signing keys are never settings.                                                                                                                                                                                                                       |
-| `discord_config`           | Latest guild/role/leadership/badge channel IDs and badge/access-denied enable flags map to contract settings.                                                                                                                                                                                                                          |
+| `discord_config`           | Latest guild/role/leadership channel IDs and access-denied enable flag are reviewed for deployment configuration. Unsupported fields remain only in the source archive. |
 
 The source layout is intentionally discovered with `table_xinfo`: the base member
 SQL is not the whole schema. Relevant additive migrations live in members,
 directory, payment, fobapi and Discord Go modules. Missing required fields block;
 unknown columns, unsupported config and excluded tables require review. All
-historical config versions remain intact in the source archive; only the current
-nonsecret configuration maps to target singleton `settings(version=1)`.
+historical config versions remain intact in the source archive. Current supported
+Discord configuration is emitted in `report.json` under `deployment_vars` for
+operator review and Worker environment provisioning, not stored in D1 settings.
 
 **Images are omitted entirely from D1/SQL.** Neither `discord_avatar` nor
 `profile_picture` is selected or encoded. No image files or base64 exports are
@@ -131,8 +131,7 @@ acknowledging away data inconsistencies.
 
 Create a reviewed **nonsecret** settings JSON using
 `scripts/migration-settings.example.json` as the shape reference. Required fields
-are `site_name`, `monthly_price_id`, `yearly_price_id`, `discounts`,
-`signup_notify_enabled`, and `notification_templates`. The example's `REPLACE`
+are `site_name`, `monthly_price_id`, `yearly_price_id`, and `discounts`. The example's `REPLACE`
 price values intentionally block. Empty prices are allowed for intentionally
 disabled checkout, not evidence of a completed billing configuration.
 
@@ -146,9 +145,9 @@ and existing customer billing-portal behavior before enabling billing.
 
 Legacy Go signup templates (`{{ ... }}`), arbitrary Discord webhooks, approval-bot
 enable behavior and configurable timed SQL do not have equivalent target
-semantics. Translate templates explicitly into contract placeholders
-(`{name}`, `{discount_type}`, `{access_status}`, `{site_url}`), review notification
-destinations/enablement and retire or reimplement unsupported rules separately.
+semantics. Message text is defined in the Worker. Review notification
+destinations/enablement, provision `DISCORD_SIGNUP_NOTIFY_ENABLED` separately, and
+retire or reimplement unsupported rules separately.
 DB-mapped settings can be overridden only with a source-bound review item when
 their value changes. `waiver_version` is derived, not operator-overridable.
 
@@ -325,7 +324,7 @@ Keep all legacy outboxes archived, never copy/retry them into target jobs.
    interactions and webhook routes. Enable each route only when its outgoing
    implications are approved. Reconcile/ingest retained Stripe/edge events using
    stable event IDs and the application's deduplication. Do not blindly replay
-   historic signup, badge or denial notifications or webhook queues.
+   historic signup or denial notifications or webhook queues.
 6. Compare the live edge authorized set with D1 immediately before its first
    push. Confirm monotonic version allocation exceeds existing edge state;
    do not reuse a stale version or force a lower one. Provision signing seed

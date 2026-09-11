@@ -42,7 +42,7 @@ function editable(input: Input, admin: boolean): Record<string, string | number 
         name: 200,
         ...(admin ? { email: 254, admin_notes: 10000 } : {}),
     };
-    const flags = ['discord_checkin_notify', ...(admin ? ['leadership', 'non_billable', 'confirmed', 'bill_annually'] : [])];
+    const flags = admin ? ['leadership', 'non_billable', 'confirmed', 'bill_annually'] : [];
     for (const [key, value] of Object.entries(input)) {
         if (key in strings) fields[key] = text(value, key, strings[key], key !== 'email');
         else if (flags.includes(key)) fields[key] = flag(value, key);
@@ -239,8 +239,8 @@ async function adminRoute(request: Request, env: Env): Promise<Response> {
     if (path === '/api/admin/members' && method === 'GET') {
         const search = (url.searchParams.get('search') || '').slice(0, 200),
             status = url.searchParams.get('status') || '';
-        const where = `WHERE (instr(lower(name),lower(?))>0 OR instr(lower(email),lower(?))>0 OR CAST(id AS TEXT)=? OR discord_user_id=?) AND (?='' OR access_status=?)`;
-        const args = [search, search, search, search, status, status];
+        const where = `WHERE (instr(lower(name),lower(?))>0 OR instr(lower(email),lower(?))>0 OR instr(lower(discord_username),lower(?))>0 OR CAST(id AS TEXT)=? OR discord_user_id=?) AND (?='' OR access_status=?)`;
+        const args = [search, search, search, search, search, status, status];
         const [list, count] = await env.DB.batch([
             env.DB.prepare(`SELECT * FROM members ${where} ORDER BY id DESC LIMIT 50 OFFSET ?`).bind(...args, offset(url)),
             env.DB.prepare(`SELECT count(*) total FROM members ${where}`).bind(...args),

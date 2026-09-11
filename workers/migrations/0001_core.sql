@@ -18,7 +18,6 @@ CREATE TABLE members (
  stripe_cancellation_reason TEXT, stripe_last_payment_error TEXT, paypal_subscription_id TEXT, paypal_price REAL,
  discord_user_id TEXT UNIQUE CHECK(discord_user_id IS NULL OR (length(discord_user_id) BETWEEN 5 AND 25 AND discord_user_id NOT GLOB '*[^0-9]*')),
  discord_username TEXT, discord_email TEXT, discord_last_synced INTEGER,
- discord_checkin_notify INTEGER NOT NULL DEFAULT 0 CHECK(discord_checkin_notify IN(0,1)),
  payment_status TEXT GENERATED ALWAYS AS(CASE WHEN confirmed != 1 THEN NULL WHEN paypal_subscription_id IS NOT NULL THEN 'ActivePaypal' WHEN stripe_subscription_state IN('active','trialing') THEN 'ActiveStripe' WHEN non_billable=1 THEN 'ActiveNonBillable' ELSE NULL END) VIRTUAL,
  access_status TEXT GENERATED ALWAYS AS(CASE WHEN confirmed != 1 AND non_billable != 1 THEN 'UnconfirmedEmail' WHEN waiver IS NULL AND non_billable != 1 THEN 'MissingWaiver' WHEN payment_status IS NULL AND non_billable != 1 THEN 'PaymentInactive' WHEN fob_id IS NULL THEN 'MissingKeyFob' WHEN root_family_member IS NOT NULL AND root_family_member_active=0 THEN 'FamilyInactive' ELSE 'Ready' END) VIRTUAL
 ) STRICT;
@@ -88,5 +87,5 @@ BEGIN INSERT INTO jobs(kind,payload,dedupe_key) VALUES('discount',json_object('m
 CREATE TRIGGER swipe_received AFTER INSERT ON fob_swipes
 BEGIN
  UPDATE members SET fob_last_seen=MAX(COALESCE(fob_last_seen,0),NEW.timestamp) WHERE fob_id=NEW.fob_id;
- INSERT INTO jobs(kind,payload,dedupe_key) SELECT CASE WHEN NEW.allowed=1 THEN 'badge' ELSE 'denied' END,json_object('member_id',id,'swipe_id',NEW.uid),'swipe:'||NEW.uid FROM members WHERE fob_id=NEW.fob_id AND (SELECT automation_enabled FROM runtime_control WHERE id=1)=1;
+ INSERT INTO jobs(kind,payload,dedupe_key) SELECT 'denied',json_object('member_id',id,'swipe_id',NEW.uid),'swipe:'||NEW.uid FROM members WHERE fob_id=NEW.fob_id AND NEW.allowed=0 AND (SELECT automation_enabled FROM runtime_control WHERE id=1)=1;
 END;

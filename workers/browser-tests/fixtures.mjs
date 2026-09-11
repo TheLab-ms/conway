@@ -114,8 +114,8 @@ export const test = base.extend({
             const expires = Math.floor(Date.now() / 1000) + 3600;
             sql('INSERT INTO sessions(token_hash,member,csrf_token,expires) VALUES(?,?,?,?)', createHash('sha256').update(token).digest('hex'), memberId, csrf, expires);
             await context.addCookies([{ name: 'conway_session', value: token, url: 'http://127.0.0.1:8799', httpOnly: true, sameSite: 'Lax', expires }]);
-            await page.goto('/dashboard');
-            await expect(page.getByRole('heading', { level: 1 })).toContainText('Hello,');
+            await page.goto('/billing');
+            await expect(page.getByRole('heading', { level: 1 })).toHaveText('Membership & billing');
         });
     },
 });

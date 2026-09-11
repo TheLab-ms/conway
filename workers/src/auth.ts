@@ -8,7 +8,7 @@ const OPAQUE = /^[a-f0-9]{64}$/;
 const SUPPORT = 'This email is already associated with a membership. Contact leadership to link your Discord account.';
 
 function localReturn(value: string | null, env: Env): string {
-    if (!value || value.length > 2048 || !value.startsWith('/') || value.startsWith('//') || /[\\\x00-\x20\x7f]|%(?:0[0-9a-f]|1[0-9a-f]|5c|7f)/i.test(value)) return '/dashboard';
+    if (!value || value.length > 2048 || !value.startsWith('/') || value.startsWith('//') || /[\\\x00-\x20\x7f]|%(?:0[0-9a-f]|1[0-9a-f]|5c|7f)/i.test(value)) return '/billing';
     const url = new URL(value, env.SITE_URL);
     if (
         url.origin !== new URL(env.SITE_URL).origin ||
@@ -17,7 +17,7 @@ function localReturn(value: string | null, env: Env): string {
         url.pathname.startsWith('/login') ||
         url.pathname.startsWith('/api/')
     )
-        return '/dashboard';
+        return '/billing';
     return url.pathname + url.search + url.hash;
 }
 

@@ -25,18 +25,17 @@ test('member CRUD persists nullable fields and both checkbox values', async ({ p
     for (const [name, value] of Object.entries(values)) await field(page, name).fill(value);
     for (const name of ['confirmed', 'leadership', 'non_billable', 'bill_annually']) await field(page, name).check();
     await submit(page, 'Create member', 'POST', 201);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Casey C');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(values.discord_user_id);
     const { id } = sql('SELECT id FROM members WHERE email=?', values.email)[0];
-    await page.getByText('Profile & discount fields', { exact: true }).click();
-    for (const name of ['discord_checkin_notify']) await field(page, name).check();
+    await page.getByText('Discount settings', { exact: true }).click();
     await field(page, 'discount_type').selectOption('student');
     await field(page, 'discount_status').selectOption('approved');
     await submit(page, 'Save member', 'PATCH');
     await expect(page.locator('.global-notice')).toHaveText('Member saved.');
     await page.reload();
-    await page.getByText('Profile & discount fields', { exact: true }).click();
+    await page.getByText('Discount settings', { exact: true }).click();
     for (const [name, value] of Object.entries(values)) await expect(field(page, name)).toHaveValue(value);
-    const flags = ['confirmed', 'leadership', 'non_billable', 'bill_annually', 'discord_checkin_notify'];
+    const flags = ['confirmed', 'leadership', 'non_billable', 'bill_annually'];
     for (const name of flags) await expect(field(page, name)).toBeChecked();
     expect(sql('SELECT * FROM members WHERE id=?', id)[0]).toMatchObject({
         discount_type: 'student',
@@ -50,20 +49,70 @@ test('member CRUD persists nullable fields and both checkbox values', async ({ p
     }
     for (const name of flags) await field(page, name).uncheck();
     await submit(page, 'Save member', 'PATCH');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Casey Maker');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(`Member #${id}`);
     expect(sql('SELECT * FROM members WHERE id=?', id)[0]).toMatchObject({
         ...Object.fromEntries(nullable.map((name) => [name, null])),
         ...Object.fromEntries(flags.map((name) => [name, 0])),
     });
     await page.reload();
-    await page.getByText('Profile & discount fields', { exact: true }).click();
+    await page.getByText('Discount settings', { exact: true }).click();
     for (const name of nullable) await expect(field(page, name)).toHaveValue('');
     for (const name of flags) await expect(field(page, name)).not.toBeChecked();
     await field(page, 'confirmation').fill(String(id));
     await submit(page, 'Delete member permanently', 'DELETE');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Membership desk');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Members');
     expect(sql('SELECT id FROM members WHERE id=?', id)).toEqual([]);
-    await expect(page.getByRole('link', { name: 'Casey Maker', exact: true })).toHaveCount(0);
+    await expect(page.locator(`tbody a[href="/admin/members/${id}"]`)).toHaveCount(0);
+});
+
+for (const [username, discordId, label] of [
+    ['sam', '223456789012345678', 'sam'],
+    [null, '223456789012345678', '223456789012345678'],
+    [null, null, 'Member #2'],
+])
+    test(`admin member identity uses ${label} instead of billing names`, async ({ page, login }) => {
+        sql('UPDATE members SET discord_username=?,discord_user_id=?,name_override=? WHERE id=2', username, discordId, 'Override Name');
+        await login();
+        await page.goto('/admin/members');
+        const memberLink = page.locator('tbody a[href="/admin/members/2"]');
+        await expect(memberLink).toHaveText(label);
+        const row = rows(page).filter({ has: page.locator('a[href="/admin/members/2"]') });
+        for (const text of ['Sam Member', 'sam@example.test', 'Override Name']) await expect(row).not.toContainText(text);
+        await memberLink.click();
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText(label);
+        await expect(field(page, 'discord_user_id')).toHaveValue(discordId || '');
+    });
+
+test('billing information stays below Discord identity and saves with existing validation', async ({ page, login }) => {
+    await login();
+    await page.goto('/admin/members/2');
+    const billing = page.getByRole('region', { name: 'Billing information', exact: true });
+    await expect(billing.getByRole('heading', { name: 'Billing information', exact: true })).toBeVisible();
+    await expect(billing.getByLabel('Full name', { exact: true })).toHaveValue('Sam Member');
+    await expect(billing.getByLabel('Billing email', { exact: true })).toHaveValue('sam@example.test');
+    await expect(billing.locator('[name="name"]')).toHaveAttribute('required', '');
+    await expect(billing.locator('[name="name"]')).toHaveAttribute('maxlength', '200');
+    await expect(billing.locator('[name="email"]')).toHaveAttribute('required', '');
+    await expect(billing.locator('[name="email"]')).toHaveAttribute('type', 'email');
+    await expect(billing.locator('[name="email"]')).toHaveAttribute('maxlength', '254');
+    await expect(field(page, 'discord_user_id')).toHaveAttribute('pattern', '[0-9]{5,25}');
+    expect(
+        await billing.evaluate((section) => Boolean(document.querySelector('[name="discord_user_id"]').compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING)),
+    ).toBe(true);
+    await billing.getByLabel('Full name', { exact: true }).fill('Sam Billing');
+    await billing.getByLabel('Billing email', { exact: true }).fill('billing@example.test');
+    await billing.getByLabel('Non-billable membership', { exact: true }).check();
+    await billing.getByLabel('Annual billing', { exact: true }).check();
+    await submit(page, 'Save member', 'PATCH');
+    await expect(page.locator('.global-notice')).toHaveText('Member saved.');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('sam');
+    expect(sql('SELECT name,email,discord_user_id,non_billable,bill_annually FROM members WHERE id=2')[0]).toEqual({
+        name: 'Sam Billing',
+        email: 'billing@example.test',
+        discord_user_id: '223456789012345678',
+        non_billable: 1,
+        bill_annually: 1,
+    });
 });
 
 test('duplicate email, Discord identity, and fob are rejected without overwriting records', async ({ page, login }) => {
@@ -140,7 +189,7 @@ test('family roots and Stripe subscription history cannot be deleted', async ({ 
 });
 
 test('identity relink revokes all target sessions but keeps the editing leader signed in', async ({ page, login }) => {
-    for (const token of ['sam-session-one', 'sam-session-two']) sql('INSERT INTO sessions VALUES(?,2,?,unixepoch()+3600,NULL)', token, token);
+    for (const token of ['sam-session-one', 'sam-session-two']) sql('INSERT INTO sessions(token_hash,member,csrf_token,expires) VALUES(?,2,?,unixepoch()+3600)', token, token);
     await login();
     await page.goto('/admin/members/2');
     await field(page, 'discord_user_id').fill('523456789012345678');
@@ -194,7 +243,7 @@ test('member search, all six access statuses, and 50-row pagination', async ({ p
         await field(page, 'search').fill(search);
         await button(page, 'Apply filters').click();
         await expect(rows(page)).toHaveCount(1);
-        await expect(rows(page)).toContainText('Sam Member');
+        await expect(rows(page).getByRole('link', { name: 'sam', exact: true })).toBeVisible();
     }
     await field(page, 'search').fill('no-such-member');
     await button(page, 'Apply filters').click();

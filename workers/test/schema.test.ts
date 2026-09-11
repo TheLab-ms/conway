@@ -225,8 +225,9 @@ describe('transactional trigger outbox', () => {
         });
     });
 
-    it('deduplicates swipes, never moves last-seen backwards, and emits badge/denied jobs', async () => {
+    it('deduplicates and audits all swipes, never moves last-seen backwards, and only notifies denials', async () => {
         const row = await member({ fob_id: 42 });
+        await env.DB.prepare('DELETE FROM jobs').run();
         const swipe = (uid: string, timestamp: number, allowed: number) =>
             env.DB.prepare('INSERT INTO fob_swipes (uid,timestamp,fob_id,member,allowed) VALUES (?,?,42,?,?) ON CONFLICT(uid) DO NOTHING')
                 .bind(uid, timestamp, row.id, allowed)
@@ -235,10 +236,11 @@ describe('transactional trigger outbox', () => {
         await swipe('old', 100, 0);
         await swipe('new', 300, 1);
         expect((await getMember(row.id))?.fob_last_seen).toBe(200);
-        expect((await env.DB.prepare("SELECT kind,dedupe_key FROM jobs WHERE kind IN('badge','denied') ORDER BY id").all()).results).toEqual([
-            { kind: 'badge', dedupe_key: 'swipe:new' },
-            { kind: 'denied', dedupe_key: 'swipe:old' },
+        expect((await env.DB.prepare('SELECT uid,timestamp,member,allowed FROM fob_swipes ORDER BY timestamp').all()).results).toEqual([
+            { uid: 'old', timestamp: 100, member: row.id, allowed: 0 },
+            { uid: 'new', timestamp: 200, member: row.id, allowed: 1 },
         ]);
+        expect((await env.DB.prepare('SELECT kind,dedupe_key FROM jobs ORDER BY id').all()).results).toEqual([{ kind: 'denied', dedupe_key: 'swipe:old' }]);
     });
 
     it('rolls back member, audit, and outbox writes when a D1 batch fails', async () => {

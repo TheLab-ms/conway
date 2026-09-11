@@ -101,7 +101,7 @@ describe('Discord OAuth with only external HTTP mocked', () => {
         }
     });
 
-    async function begin(returnTo = '/dashboard') {
+    async function begin(returnTo = '/billing') {
         const response = await api(`/login/discord?return_to=${encodeURIComponent(returnTo)}`);
         expect(response.status).toBe(302);
         const target = new URL(response.headers.get('location')!);
@@ -134,7 +134,7 @@ describe('Discord OAuth with only external HTTP mocked', () => {
         });
     }
 
-    it.each(['https://evil.test', '//evil.test', '/\\evil.test', '/%2f%2fevil.test', '/login/discord', '/api/member'])(
+    it.each(['', 'https://evil.test', '//evil.test', '/\\evil.test', '/%2f%2fevil.test', '/login/discord', '/api/member'])(
         'sanitizes unsafe return URL %s in persisted OAuth state',
         async (returnTo) => {
             const { state } = await begin(returnTo);
@@ -142,19 +142,19 @@ describe('Discord OAuth with only external HTTP mocked', () => {
                 await env.DB.prepare('SELECT return_to FROM oauth_states WHERE state_hash=?')
                     .bind(await hash(state))
                     .first('return_to'),
-            ).toBe('/dashboard');
+            ).toBe('/billing');
         },
     );
 
     it('requires matching browser cookie and makes successful callback state one-use', async () => {
-        const auth = await begin('/dashboard');
+        const auth = await begin('/billing');
         const external = discord();
         const path = `/login/discord/callback?state=${auth.state}&code=code`;
         expect((await api(path, 'GET', { Cookie: `conway_oauth=${'a'.repeat(64)}` })).status).toBe(400);
         expect(external).not.toHaveBeenCalled();
         const response = await api(path, 'GET', { Cookie: auth.cookie });
         expect(response.status).toBe(302);
-        expect(response.headers.get('location')).toBe('/dashboard');
+        expect(response.headers.get('location')).toBe('/billing');
         expect(external).toHaveBeenCalledTimes(2);
         expect((await api(path, 'GET', { Cookie: auth.cookie })).status).toBe(400);
         expect(external).toHaveBeenCalledTimes(2);
@@ -179,13 +179,13 @@ describe('Discord OAuth with only external HTTP mocked', () => {
     it('authenticates existing members solely by Discord ID and creates new members directly', async () => {
         const row = await member({ email: 'old@example.test', discord_user_id: '123456789012345678' });
         const old = await login();
-        const auth = await begin('/dashboard');
+        const auth = await begin('/billing');
         discord({ email: 'different@example.test' });
         const response = await api(`/login/discord/callback?state=${auth.state}&code=code`, 'GET', {
             Cookie: `${auth.cookie}; ${old.Cookie}`,
         });
         expect(response.status).toBe(302);
-        expect(response.headers.get('location')).toBe('/dashboard');
+        expect(response.headers.get('location')).toBe('/billing');
         expect(await env.DB.prepare('SELECT email,discord_email,discord_username FROM members WHERE id=?').bind(row.id).first()).toEqual({
             email: 'old@example.test',
             discord_email: 'different@example.test',
@@ -196,13 +196,13 @@ describe('Discord OAuth with only external HTTP mocked', () => {
     });
 
     it('creates a new member directly from Discord identity', async () => {
-        const auth = await begin('/dashboard');
+        const auth = await begin('/billing');
         discord();
         const response = await api(`/login/discord/callback?state=${auth.state}&code=code`, 'GET', {
             Cookie: auth.cookie,
         });
         expect(response.status).toBe(302);
-        expect(response.headers.get('location')).toBe('/dashboard');
+        expect(response.headers.get('location')).toBe('/billing');
         const record = await env.DB.prepare('SELECT * FROM members').first<Member>();
         expect(record).toMatchObject({
             email: 'new@example.test',

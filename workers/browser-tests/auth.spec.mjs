@@ -31,7 +31,7 @@ test('Discord login rotates the anonymous session, follows return path and signs
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page.getByText('You have been signed out.')).toBeVisible();
     expect(sql('SELECT * FROM sessions WHERE member=1')).toEqual([]);
-    await page.goto('/dashboard');
+    await page.goto('/billing');
     await expect(page.locator('main').getByRole('link', { name: 'Continue with Discord' })).toBeVisible();
 });
 
@@ -41,10 +41,11 @@ test('Discord login creates a new member directly and preserves return path', as
     await page.goto(target);
     await page.locator('main').getByRole('link', { name: 'Continue with Discord' }).click();
     await expect(page).toHaveURL('http://127.0.0.1:8799' + target);
-    expect(sql("SELECT name,confirmed,discord_user_id FROM members WHERE email='new@example.test'")[0]).toEqual({
-        name: 'New Maker',
+    expect(sql("SELECT name,confirmed,discord_user_id,discord_username FROM members WHERE email='new@example.test'")[0]).toEqual({
+        name: 'newmaker',
         confirmed: 1,
         discord_user_id: '423456789012345678',
+        discord_username: 'newmaker',
     });
     await page.reload();
     await expect(page.getByRole('button', { name: /Link.*fob/i })).toBeVisible();
@@ -73,8 +74,8 @@ test('invalid OAuth callbacks and unsafe return destinations cannot authenticate
     await expect(page.locator('body')).toContainText('Invalid or expired');
     await discord(page, 'existing');
     await page.goto('/login/discord?return_to=https://evil.example');
-    await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Alex Maker');
+    await expect(page).toHaveURL(/\/billing$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Membership & billing');
 });
 
 test('ordinary members cannot reach leadership UI or APIs, and mutations require CSRF and Origin', async ({ page, login }) => {
@@ -83,6 +84,7 @@ test('ordinary members cannot reach leadership UI or APIs, and mutations require
     for (const path of ['/admin/members', '/admin/config', '/admin/waiver', '/admin/events', '/admin/swipes', '/admin/jobs']) {
         await page.goto(path);
         await expect(page.getByRole('heading', { name: 'Leadership access required' })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Back to billing' })).toHaveAttribute('href', '/billing');
         expect((await page.request.get('/api' + path)).status()).toBe(403);
     }
     const session = await (await page.request.get('/api/session')).json();

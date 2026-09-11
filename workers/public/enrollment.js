@@ -1,5 +1,5 @@
 import qrcode from './vendor/qrcode.mjs';
-import { api, state, el, field, check, link, button, panel, form, heading, notice, date, safeReturn } from './lib.js';
+import { api, state, el, check, link, button, panel, form, heading, notice, date, safeReturn } from './lib.js';
 
 class QRCode extends HTMLElement {
     set value(value) {
@@ -30,125 +30,172 @@ customElements.define('qr-code', QRCode);
 
 export function kiosk(app, signal) {
     let timer;
+    let idleTimer;
+    let expiryTimer;
     let generation = 0;
-    const claimPanel = el('div', { class: 'section-gap' });
+    const scanner = el('input', {
+        class: 'kiosk-scanner',
+        type: 'text',
+        'aria-label': 'Fob scanner',
+        tabindex: '-1',
+        autocomplete: 'off',
+        inputmode: 'none',
+        spellcheck: 'false',
+    });
+    const status = el('div', { class: 'notice', role: 'status', 'aria-live': 'polite' });
+    const claimPanel = el('div');
+    const interactive = (target) =>
+        target instanceof Element &&
+        target.closest(
+            'input, textarea, select, button, a, summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="textbox"], [tabindex]:not([tabindex="-1"])',
+        );
+    const focus = () => {
+        if (!signal.aborted && scanner.isConnected && !interactive(document.activeElement)) scanner.focus({ preventScroll: true });
+    };
     const stop = () => {
         generation++;
         clearTimeout(timer);
+        clearTimeout(idleTimer);
+        clearTimeout(expiryTimer);
     };
-    signal.addEventListener('abort', stop, { once: true });
-    const enrollmentForm = form(
-        [
-            field('Fob ID', 'fob_id', '', {
-                type: 'number',
-                min: 1,
-                max: 4294967295,
-                step: 1,
-                required: true,
-                autocomplete: 'off',
-                hint: 'Scan or enter the numeric ID of the fob you want to enroll.',
-            }),
-        ],
-        'Create enrollment QR',
-        async (data, node) => {
-            stop();
-            claimPanel.replaceChildren();
-            const fob = Number(data.get('fob_id'));
-            if (!Number.isSafeInteger(fob) || fob < 1 || fob > 4294967295) throw new Error('Enter a valid fob ID from 1 to 4294967295.');
+    const reset = (message = '', error = false) => {
+        stop();
+        scanner.value = '';
+        claimPanel.replaceChildren();
+        notice(status, message, error);
+        focus();
+    };
+    const submit = async () => {
+        clearTimeout(idleTimer);
+        if (signal.aborted || !scanner.value) return;
+        const value = scanner.value;
+        reset();
+        const current = generation;
+        try {
+            const fob = Number(value);
+            if (!/^\d+$/.test(value) || !Number.isSafeInteger(fob) || fob < 1 || fob > 4294967295) throw new Error('Fob not recognized. Scan again.');
+            notice(status, 'Reading fob...');
             const claim = await api('/api/kiosk/claims', {
                 method: 'POST',
                 body: { fob_id: fob },
                 signal,
             });
-            if (signal.aborted) return;
+            if (signal.aborted || current !== generation) return;
             const url = new URL(claim.url, location.origin);
             if (url.origin !== location.origin || url.pathname !== '/fobs/bind') throw new Error('The server returned an invalid enrollment link. Please contact leadership.');
-            const current = generation;
             const qr = el('qr-code');
             qr.value = url.href;
-            const status = el('div', { class: 'notice', role: 'status', 'aria-live': 'polite' }, 'Waiting for the member to link this fob...');
-            const expires = el('p', { class: 'hint' }, `Expires ${date(claim.expires)}. Keep this code private.`);
+            const expires = el('p', { class: 'hint' }, `Expires ${date(claim.expires)}.`);
             const copyStatus = el('p', { class: 'hint', role: 'status' });
             const copy = button('Copy enrollment link', async () => {
                 try {
                     await navigator.clipboard.writeText(url.href);
                     copyStatus.textContent = 'Enrollment link copied.';
                 } catch {
-                    copyStatus.textContent = 'Clipboard unavailable. Select and copy the link below instead.';
+                    copyStatus.textContent = 'Clipboard unavailable. Scan the QR code with your phone instead.';
                 }
-            });
-            const reset = button('Enroll another fob', () => {
-                stop();
-                claimPanel.replaceChildren();
-                node.reset();
-                node.querySelector('input').focus();
             });
             claimPanel.replaceChildren(
                 el(
                     'section',
                     { class: 'panel qr-panel' },
-                    el('h2', {}, `Link fob ${fob}`),
-                    el('p', {}, 'Scan this code with your own phone. Sign in with Discord, then confirm the link.'),
+                    el('h2', {}, 'Link your fob'),
+                    el('p', {}, 'Scan the QR code with your phone. Sign in, then confirm to link your fob.'),
                     qr,
-                    link(url.href, url.href, 'claim-link'),
+                    link('Open enrollment link', url.href, 'claim-link'),
                     expires,
-                    el('div', { class: 'actions' }, copy, reset),
+                    el(
+                        'div',
+                        { class: 'actions' },
+                        copy,
+                        button('Done', () => reset()),
+                    ),
                     copyStatus,
-                    status,
                 ),
             );
+            notice(status, '');
+            expiryTimer = setTimeout(() => reset('Code expired. Scan your fob again.'), Math.max(0, Number(claim.expires) * 1000 - Date.now()));
             const poll = async () => {
                 if (signal.aborted || current !== generation) return;
-                if (Number(claim.expires) * 1000 <= Date.now()) {
-                    claimPanel.replaceChildren(panel('Enrollment expired', el('p', {}, 'This code can no longer be used. Create a new enrollment code to try again.'), reset));
-                    return;
-                }
                 try {
                     const result = await api(`/api/kiosk/claims/${encodeURIComponent(claim.token)}`, {
                         signal,
                     });
                     if (signal.aborted || current !== generation) return;
                     if (result.claimed) {
-                        claimPanel.replaceChildren(
-                            panel(
-                                'Fob linked',
-                                el('p', { class: 'notice', role: 'status' }, `Fob ${fob} has been claimed. Building access still depends on the member's membership status.`),
-                                reset,
-                            ),
-                        );
+                        reset('Fob linked. Ready for the next scan.');
                         return;
                     }
-                    notice(status, 'Waiting for the member to link this fob...');
+                    notice(status, '');
                 } catch (error) {
                     if (signal.aborted || current !== generation) return;
-                    notice(status, error.message, true);
                     if ([401, 403, 404, 410].includes(error.status)) {
-                        qr.remove();
-                        claimPanel.querySelector('.claim-link')?.remove();
-                        copy.remove();
+                        reset(error.message, true);
                         return;
                     }
+                    notice(status, error.message, true);
                 }
                 timer = setTimeout(poll, 2500);
             };
             timer = setTimeout(poll, 1500);
-            return 'Enrollment code ready. Complete linking on your own device.';
+        } catch (error) {
+            if (!signal.aborted && current === generation) reset(error.message, true);
+        }
+    };
+    const idle = () => {
+        clearTimeout(idleTimer);
+        if (scanner.value) idleTimer = setTimeout(submit, 1000);
+    };
+    scanner.addEventListener('input', idle, { signal });
+    document.addEventListener(
+        'keydown',
+        (event) => {
+            if (signal.aborted || !scanner.isConnected || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.target !== scanner && interactive(event.target)) return;
+            if (event.key === 'Enter') {
+                if (!scanner.value) return;
+                event.preventDefault();
+                void submit();
+            } else if (event.key.length === 1 && event.target !== scanner) {
+                event.preventDefault();
+                scanner.value += event.key;
+                focus();
+                idle();
+            }
         },
+        { signal },
+    );
+    document.addEventListener(
+        'focusin',
+        (event) => {
+            if (event.target !== scanner && interactive(event.target)) {
+                clearTimeout(idleTimer);
+                scanner.value = '';
+            }
+        },
+        { signal },
+    );
+    document.addEventListener('click', focus, { signal });
+    window.addEventListener('focus', focus, { signal });
+    // The router inserts this view and focuses its heading after kiosk() returns.
+    const focusTimer = setTimeout(focus, 0);
+    signal.addEventListener(
+        'abort',
+        () => {
+            stop();
+            clearTimeout(focusTimer);
+        },
+        { once: true },
     );
     return el(
         'div',
-        { class: 'narrow' },
-        heading('A key to your space.', 'Fob enrollment / trusted on-site kiosk'),
-        panel(
-            'Enroll an access fob',
-            el(
-                'p',
-                { class: 'muted' },
-                'This page works only from a configured, trusted kiosk network address. Members should sign in on their own phone, never on the shared kiosk.',
-            ),
-            enrollmentForm,
-        ),
+        { class: 'narrow kiosk' },
+        scanner,
+        el('h1', { tabindex: '-1' }, 'Scan a key fob'),
+        el('p', {}, 'Use the fob reader to link a fob to your account.'),
+        status,
         claimPanel,
+        link('Sign waiver', '/waiver', 'button secondary'),
     );
 }
 
@@ -159,24 +206,18 @@ export function bind(app) {
             'div',
             { class: 'narrow' },
             heading('Link your fob'),
-            panel(
-                'Enrollment link needed',
-                el('p', {}, 'Scan a fresh QR code at the space enrollment kiosk. The link must contain a valid enrollment token.'),
-                link('Back to dashboard', '/dashboard', 'button secondary'),
-            ),
+            panel('Enrollment link needed', el('p', {}, 'Scan a new QR code at the kiosk.'), link('Back to billing', '/billing', 'button secondary')),
         );
     if (!state.session.member) {
         const target = safeReturn(location.pathname + location.search);
         return el(
             'div',
             { class: 'narrow' },
-            heading('Your fob, your membership.', 'Sign in on your own device to securely claim this access fob.'),
+            heading('Link your fob', 'Sign in on your phone to link this fob.'),
             panel(
                 'Sign in to continue',
                 el('p', {}, 'The enrollment link expires shortly. If it expires while you sign in, create a new code at the kiosk.'),
-                state.session.signup
-                    ? link('Finish creating membership', '/signup?return_to=' + encodeURIComponent(target), 'button')
-                    : link('Continue with Discord', '/login/discord?return_to=' + encodeURIComponent(target), 'button'),
+                link('Continue with Discord', '/login/discord?return_to=' + encodeURIComponent(target), 'button'),
             ),
         );
     }
@@ -186,7 +227,7 @@ export function bind(app) {
         heading('Link your access fob', 'Only claim a code created for the fob in your possession.'),
         panel(
             'Confirm fob enrollment',
-            el('p', {}, `This fob will be linked to ${state.session.member.name || 'your membership'}. Linking a fob does not change your membership or waiver status.`),
+            el('p', {}, `Link this fob to ${state.session.member.discord_username || 'your account'}. This does not change your membership or waiver status.`),
             state.session.member.fob_id &&
                 el('p', { class: 'notice warn' }, `Your account already has fob ${state.session.member.fob_id}. Confirm only if you intend to replace it.`),
             form(
@@ -199,7 +240,7 @@ export function bind(app) {
                 async () => {
                     await api('/api/fobs/bind', { method: 'POST', body: { token } });
                     await app.refreshSession();
-                    app.navigate('/dashboard', 'Your access fob is now linked.', true);
+                    app.navigate('/billing', 'Your access fob is now linked.', true);
                 },
             ),
         ),

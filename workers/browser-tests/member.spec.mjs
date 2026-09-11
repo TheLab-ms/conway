@@ -1,22 +1,54 @@
 import { test, expect, sql } from './fixtures.mjs';
 
-test('profile persists preferences without directory fields', async ({ page, login }) => {
+test('billing is the member home with access status and essential links, without a dashboard', async ({ page, login }) => {
+    await login(2);
+    await page.goto('/');
+    await expect(page).toHaveURL(/\/billing$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Membership & billing');
+    await expect(page.locator('.brand, footer')).toHaveCount(0);
+    await expect(page.getByText('Member workspace', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Billing', exact: true })).toHaveAttribute('aria-current', 'page');
+    const access = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Building access', exact: true }) });
+    await expect(access.getByText('MissingWaiver', { exact: true })).toBeVisible();
+    await expect(access.locator('dd').first()).toHaveText('Not linked');
+    await expect(access.locator('dd').nth(1)).toHaveText('Never');
+    await expect(page.getByRole('link', { name: 'Edit profile' })).toHaveAttribute('href', '/profile');
+    await expect(access.getByRole('link', { name: 'Review waiver' })).toHaveAttribute('href', '/waiver');
+    await expect(access.getByRole('link', { name: 'Enroll an access fob' })).toHaveAttribute('href', '/kiosk');
+    await expect(page.locator('a[href="/dashboard"], .step-list')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Your next steps' })).toHaveCount(0);
+
+    sql('UPDATE members SET non_billable=1,fob_id=202,fob_last_seen=1700000000 WHERE id=2');
+    await page.reload();
+    await expect(access.getByText('Ready', { exact: true })).toBeVisible();
+    await expect(access.locator('dd').first()).toHaveText('202');
+    const lastSeen = await page.evaluate(() => new Date(1700000000000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
+    await expect(access.locator('dd').nth(1)).toHaveText(lastSeen);
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
+    await expect(page.getByRole('heading', { name: 'Building access' })).toHaveCount(0);
+    await expect(page.locator('a[href="/dashboard"]')).toHaveCount(0);
+    await page.getByRole('link', { name: 'Go home' }).click();
+    await expect(page).toHaveURL(/\/billing$/);
+});
+
+test('profile persists name without directory fields', async ({ page, login }) => {
     await login();
     await page.getByRole('link', { name: 'Edit profile', exact: true }).click();
     await page.getByLabel('Name', { exact: true }).fill('Alex Updated');
     await expect(page.locator('[name="pronouns"],[name="bio"],[name="directory_hidden"]')).toHaveCount(0);
-    await page.getByLabel('Allow Discord check-in').check();
     await page.getByRole('button', { name: 'Save profile' }).click();
     await expect(page.getByRole('status')).toContainText('Your profile has been saved.');
     await page.reload();
     await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Alex Updated');
-    await expect(page.getByLabel('Allow Discord check-in')).toBeChecked();
     await page.goto('/admin/members/2');
     await expect(page.getByRole('button', { name: 'Save member', exact: true })).toBeVisible();
     await expect(page.locator('[name="pronouns"],[name="bio"],[name="directory_hidden"]')).toHaveCount(0);
 });
 
-test('waiver requires every consent, records a signature and updates onboarding', async ({ page, login }) => {
+test('waiver requires every consent, records a signature and updates billing access status', async ({ page, login }) => {
     await login(2);
     await expect(page.getByText('MissingWaiver', { exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'Review waiver' }).click();
@@ -29,7 +61,7 @@ test('waiver requires every consent, records a signature and updates onboarding'
     await page.getByLabel('I will follow safety rules.').check();
     await page.getByLabel('Full legal name').fill('Sam Legal Name');
     await page.getByRole('button', { name: 'Sign waiver' }).click();
-    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page).toHaveURL(/\/billing$/);
     await expect(page.getByText('PaymentInactive', { exact: true })).toBeVisible();
     expect(sql('SELECT version,name,email FROM waivers')).toEqual([{ version: 1, name: 'Sam Legal Name', email: 'sam@example.test' }]);
     await page.goto('/waiver');
@@ -37,7 +69,7 @@ test('waiver requires every consent, records a signature and updates onboarding'
     await page.getByLabel('I accept the risks.').check();
     await page.getByLabel('I will follow safety rules.').check();
     await page.getByRole('button', { name: 'Sign waiver' }).click();
-    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page).toHaveURL(/\/billing$/);
     expect(sql('SELECT * FROM waivers')).toHaveLength(1);
 });
 
@@ -105,7 +137,7 @@ test('expired sessions and failed saves preserve drafts; retry reloads real data
     await expect(page.getByText('Member not found', { exact: true })).toBeVisible();
     sql("INSERT INTO members(id,email,name) VALUES(999,'retry@example.test','Retry Member')");
     await page.getByRole('button', { name: 'Try again' }).click();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Retry Member');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Member #999');
 });
 
 test('real SPA history, security policies and unknown routes', async ({ page, login }) => {
@@ -115,33 +147,32 @@ test('real SPA history, security policies and unknown routes', async ({ page, lo
     expect(response.headers()['content-security-policy']).not.toContain('unsafe-inline');
     expect(response.headers()['referrer-policy']).toBe('no-referrer');
     expect(response.headers()['x-content-type-options']).toBe('nosniff');
-    await page.getByRole('link', { name: 'Dashboard', exact: true }).click();
-    await expect(page).toHaveURL(/\/dashboard$/);
+    await page.getByRole('link', { name: 'Billing', exact: true }).click();
+    await expect(page).toHaveURL(/\/billing$/);
     await page.goBack();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your profile');
     await page.goForward();
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Hello,');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Membership & billing');
     await expect(page.locator('a[href="/directory"],member-card')).toHaveCount(0);
     await page.goto('/directory');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('This page is off the map.');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
     await page.goto('/does-not-exist');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('This page is off the map.');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
 });
 
 for (const [path, title] of [
-    ['/dashboard', 'Hello, Alex Maker.'],
     ['/profile', 'Your profile'],
-    ['/waiver', 'Read. Understand. Make.'],
+    ['/waiver', 'Membership waiver'],
     ['/billing', 'Membership & billing'],
-    ['/kiosk', 'A key to your space.'],
+    ['/kiosk', 'Scan a key fob'],
     ['/fobs/bind', 'Link your fob'],
-    ['/admin/members', 'Membership desk'],
+    ['/admin/members', 'Members'],
     ['/admin/members/new', 'Add a member'],
-    ['/admin/members/2', 'Sam Member'],
+    ['/admin/members/2', 'sam'],
     ['/admin/config', 'Space configuration'],
     ['/admin/waiver', 'Waiver publishing'],
-    ['/admin/events', 'Audit trail'],
-    ['/admin/swipes', 'At the door'],
+    ['/admin/events', 'Audit log'],
+    ['/admin/swipes', 'Fob swipes'],
     ['/admin/jobs', 'Background jobs'],
 ]) {
     test(`mobile deep link ${path} loads with labeled controls and no overflow`, async ({ page, login }) => {
@@ -150,7 +181,8 @@ for (const [path, title] of [
         await page.goto(path);
         await expect(page.getByRole('heading', { level: 1 })).toHaveText(title);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), path).toBe(true);
-        expect(await page.locator('input,select,textarea').evaluateAll((nodes) => nodes.every((node) => node.labels.length)), path).toBe(true);
+        const labeled = await page.locator('input,select,textarea').evaluateAll((nodes) => nodes.every((node) => node.labels.length || node.getAttribute('aria-label')?.trim()));
+        expect(labeled, path).toBe(true);
         await expect(page.locator('[style],style,script:not([src])')).toHaveCount(0);
     });
 }

@@ -14,7 +14,7 @@ it('scheduled cleanup removes expired D1 auth/claim/rate-limit records without e
         ['live', now() + 3600],
     ] as const) {
         await env.DB.batch([
-            env.DB.prepare('INSERT INTO oauth_states(state_hash,browser_hash,return_to,expires) VALUES(?,?,?,?)').bind(key, key, '/dashboard', expires),
+            env.DB.prepare('INSERT INTO oauth_states(state_hash,browser_hash,return_to,expires) VALUES(?,?,?,?)').bind(key, key, '/billing', expires),
             env.DB.prepare('INSERT INTO enrollment_claims(token_hash,fob_id,created,expires) VALUES(?,42,?,?)').bind(key, now(), expires),
             env.DB.prepare('INSERT INTO rate_limits(key,count,expires) VALUES(?,1,?)').bind(key, expires),
         ]);

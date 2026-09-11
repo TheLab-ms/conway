@@ -18,9 +18,7 @@ waiver fob_id fob_last_seen leadership non_billable discount_type discount_statu
 discount_request_id bill_annually root_family_member root_family_member_active
 stripe_customer_id stripe_subscription_id stripe_subscription_state
 stripe_cancellation_reason stripe_last_payment_error paypal_subscription_id paypal_price
-discord_user_id discord_username discord_email discord_last_synced
-discord_checkin_notify""".split()
-PROFILE_DEFAULTS = {"discord_checkin_notify": 0}
+discord_user_id discord_username discord_email discord_last_synced""".split()
 IMAGES = {"discord_avatar", "profile_picture"}
 GENERATED = {"identifier", "payment_status", "access_status"}
 DISCOUNTS = [("military", "Military"), ("retired", "Retired"),
@@ -29,11 +27,9 @@ DISCOUNTS = [("military", "Military"), ("retired", "Retired"),
              ("emeritus", "Emeritus"), ("family", "Family")]
 CONFIG_MAP = {
     "discord_config": {
-        "guild_id": "discord_guild_id", "role_id": "discord_role_id",
-        "leadership_channel_id": "discord_leadership_channel_id",
-        "badge_notify_channel_id": "discord_badge_channel_id",
-        "badge_notify_enabled": "badge_notify_enabled",
-        "access_denied_enabled": "access_denied_enabled",
+        "guild_id": "DISCORD_GUILD_ID", "role_id": "DISCORD_ROLE_ID",
+        "leadership_channel_id": "DISCORD_LEADERSHIP_CHANNEL_ID",
+        "access_denied_enabled": "DISCORD_ACCESS_DENIED_ENABLED",
     },
 }
 SECRET_BINDINGS = {
@@ -232,8 +228,7 @@ def migrate(source, output, settings_path=None, review_path=None):
             if table not in tables:
                 continue
             cols = columns(src, table)
-            optional = set(PROFILE_DEFAULTS) if table == "members" else set()
-            missing = set(fields) - cols - optional
+            missing = set(fields) - cols
             if missing:
                 for field in sorted(missing):
                     block("missing_column", table, field=field)
@@ -252,10 +247,6 @@ def migrate(source, output, settings_path=None, review_path=None):
             for n, row in enumerate(read_rows(src, table, selected, order), 1):
                 if table == "members":
                     original_status[row["id"]] = {f: row.pop(f) for f in GENERATED if f in row}
-                    for f, default in PROFILE_DEFAULTS.items():
-                        if row.get(f) is None:
-                            row[f] = default
-                            report["normalizations"].append({"table": table, "row": row["id"], "field": f, "action": "null_or_absent_to_default"})
                     row = {f: row[f] for f in fields}
                 if table == "waiver_content":
                     row["agreements"] = encode([m.group(1).strip() for line in row["content"].split("\n")
@@ -298,8 +289,10 @@ def migrate(source, output, settings_path=None, review_path=None):
                         if col.endswith("enabled"):
                             if val not in (0, 1):
                                 raise ValueError()
-                            val = bool(val)
-                        settings[mapping[col]] = val
+                            val = "true" if val else "false"
+                        elif not isinstance(val, str):
+                            raise ValueError()
+                        report.setdefault("deployment_vars", {})[mapping[col]] = val
                     except (ValueError, TypeError, KeyError):
                         block("invalid_config_value", table, field=col)
         # These settings were flags, Stripe lookup keys/metadata or Go templates,
@@ -370,7 +363,7 @@ def migrate(source, output, settings_path=None, review_path=None):
             fob = row["fob_id"]
             if fob is not None and (type(fob) is not int or not 1 <= fob <= 4294967295):
                 block("invalid_fob", "members", mid, "fob_id")
-            for field in ("confirmed", "leadership", "non_billable", "bill_annually", "discord_checkin_notify"):
+            for field in ("confirmed", "leadership", "non_billable", "bill_annually"):
                 if type(row[field]) is not int or row[field] not in (0, 1):
                     block("invalid_boolean", "members", mid, field)
             for field, refs in (("waiver", waivers), ("root_family_member", members)):
@@ -437,6 +430,8 @@ def migrate(source, output, settings_path=None, review_path=None):
                     sequences[row[0]] = row[1]
         if sensitive(settings):
             block("secret_in_preserved_data", "settings")
+        if sensitive(report.get("deployment_vars", {})):
+            block("secret_in_preserved_data", "deployment_vars")
         # Revision counters belong to the new application, not legacy identity.
         for row in data["members"]:
             row["version"] = 1

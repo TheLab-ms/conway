@@ -40,10 +40,10 @@ const member = (extra = {}) => ({
     name: 'Member',
     discord_user_id: '555',
     discord_username: 'member',
-    discord_checkin_notify: 1,
     stripe_customer_id: 'cus_member',
     stripe_subscription_id: null,
     stripe_subscription_state: null,
+    bill_annually: 0,
     discount_type: null,
     discount_status: null,
     discount_request_id: null,
@@ -153,9 +153,7 @@ function harness({
         DISCORD_GUILD_ID: '111',
         DISCORD_ROLE_ID: '222',
         DISCORD_LEADERSHIP_CHANNEL_ID: '333',
-        DISCORD_CHECKIN_CHANNEL_ID: '444',
         DISCORD_SIGNUP_NOTIFY_ENABLED: 'true',
-        DISCORD_CHECKIN_NOTIFY_ENABLED: 'true',
         DISCORD_ACCESS_DENIED_ENABLED: 'true',
         EDGE_URL: 'https://edge.example.com',
         EDGE_TOKEN: 'edge_token',
@@ -346,20 +344,33 @@ test('malformed job JSON dead-letters without network effects', async () => {
     await h.internal('/job', { id: 1 });
     assert.equal(h.db.calls.find((call) => call.sql.startsWith('UPDATE jobs SET status = ?')).values[0], 'dead');
 });
-test('Discord roles follow payment status rather than waiver/fob readiness; no image fetches', async () => {
-    const requests = [];
-    const h = harness({
-        db: jobDB({ kind: 'discord_sync' }, member({ payment_status: 'ActiveStripe', access_status: 'MissingWaiver' })),
-        fetch: async (url, init) => {
-            requests.push({ url, init });
-            return init.method === 'GET' ? response({ roles: [], user: { username: 'name', avatar: 'ignored' } }) : new Response(null, { status: 204 });
-        },
+for (const [payment, roles, nick, method] of [
+    ['ActiveStripe', [], 'Guild Nickname', 'PUT'],
+    [null, ['222'], null, 'DELETE'],
+    ['ActiveStripe', ['222'], 'Guild Nickname', null],
+])
+    test(`Discord sync stores username, not nickname/global name, with role action ${method}`, async () => {
+        const requests = [];
+        const h = harness({
+            db: jobDB({ kind: 'discord_sync' }, member({ payment_status: payment, access_status: 'MissingWaiver', discord_username: 'Old Nickname' })),
+            fetch: async (url, init) => {
+                requests.push({ url, init });
+                return init.method === 'GET'
+                    ? response({ roles, nick, user: { username: 'actual.handle', global_name: 'Global Display Name', avatar: 'ignored' } })
+                    : new Response(null, { status: 204 });
+            },
+        });
+        await h.internal('/job', { id: 1 });
+        assert.equal(requests.length, method ? 2 : 1);
+        if (method) {
+            assert.equal(requests[1].init.method, method);
+            assert.ok(requests[1].url.endsWith('/guilds/111/members/555/roles/222'));
+        }
+        assert.ok(requests.every((request) => request.url.startsWith('https://discord.com/api/v10/')));
+        const update = h.db.calls.find((call) => call.sql.startsWith('UPDATE members SET discord_last_synced'));
+        assert.deepEqual(update.values, [time, 'actual.handle', 1, '555', payment]);
+        assert.match(update.sql, /WHERE id = \? AND discord_user_id = \? AND payment_status IS \?/);
     });
-    await h.internal('/job', { id: 1 });
-    assert.equal(requests.length, 2);
-    assert.equal(requests[1].init.method, 'PUT');
-    assert.ok(requests.every((request) => request.url.startsWith('https://discord.com/api/v10/')));
-});
 test('messages disable mentions, use stable nonce, and omit image payloads', async () => {
     let sent;
     const h = harness({
@@ -382,20 +393,59 @@ test('durable message receipt suppresses redelivery after a later D1 failure', a
     await h.internal('/job', { id: 1 });
     assert.ok(h.db.calls.some((call) => call.sql.startsWith("UPDATE jobs SET status = 'completed'")));
 });
-test('badge throttle uses notification state and checks allowed swipe', async () => {
+test('denied notifications require a denied swipe and respect the one-hour throttle', async () => {
     for (const [allowed, last_sent] of [
-        [0, 0],
-        [1, time - 60],
+        [1, 0],
+        [0, time - 3599],
+        [null, 0],
     ]) {
         const h = harness({
-            db: jobDB({ kind: 'badge', payload: '{"member_id":1,"swipe_id":"swipe"}' }, member(), (statement) => {
-                if (statement.sql.startsWith('SELECT allowed')) return { allowed };
+            db: jobDB({ kind: 'denied', payload: '{"member_id":1,"swipe_id":"swipe"}' }, member(), (statement) => {
+                if (statement.sql.startsWith('SELECT allowed')) {
+                    assert.deepEqual(statement.values, ['swipe', 1]);
+                    return allowed === null ? null : { allowed };
+                }
                 if (statement.sql.startsWith('SELECT last_sent')) return { last_sent };
             }),
         });
         await h.internal('/job', { id: 1 });
         assert.ok(h.db.calls.some((call) => call.sql.startsWith("UPDATE jobs SET status = 'completed'")));
     }
+});
+test('denied notifications send a DM and persist the throttle only after delivery', async () => {
+    for (const last_sent of [null, time - 3600]) {
+        const requests = [];
+        const h = harness({
+            db: jobDB({ kind: 'denied', payload: '{"member_id":1,"swipe_id":"swipe"}' }, member(), (statement) => {
+                if (statement.sql.startsWith('SELECT allowed')) return { allowed: 0 };
+                if (statement.sql.startsWith('SELECT last_sent')) return last_sent === null ? null : { last_sent };
+            }),
+            fetch: async (url, init) => {
+                requests.push({ url, body: JSON.parse(init.body) });
+                return response({ id: 'dm' });
+            },
+        });
+        await h.internal('/job', { id: 1 });
+        assert.equal(requests.length, 2);
+        assert.ok(requests[0].url.endsWith('/users/@me/channels'));
+        assert.deepEqual(requests[0].body, { recipient_id: '555' });
+        assert.ok(requests[1].url.endsWith('/channels/dm/messages'));
+        assert.match(requests[1].body.content, /your fob was denied access/);
+        assert.deepEqual(requests[1].body.allowed_mentions, { parse: [] });
+        assert.deepEqual(h.db.calls.find((call) => call.sql.startsWith('INSERT INTO notification_state')).values, [1, 'denied', time]);
+    }
+    const h = harness({
+        db: jobDB({ kind: 'denied', payload: '{"member_id":1,"swipe_id":"swipe"}' }, member(), (statement) => {
+            if (statement.sql.startsWith('SELECT allowed')) return { allowed: 0 };
+        }),
+        fetch: async (url) => (url.endsWith('/users/@me/channels') ? response({ id: 'dm' }) : response({}, 503)),
+    });
+    await h.internal('/job', { id: 1 });
+    assert.equal(
+        h.db.calls.some((call) => call.sql.startsWith('INSERT INTO notification_state')),
+        false,
+    );
+    assert.equal(h.db.calls.find((call) => call.sql.startsWith('UPDATE jobs SET status = ?')).values[0], 'pending');
 });
 test('coordinator serializes across awaited network calls and durably increases edge versions', async () => {
     let release;
@@ -580,12 +630,48 @@ test('subscription checkout events reconcile live membership and verify the chec
         }
     }
 });
+test('checkout uses the stored billing preference and rejects member overrides at both boundaries', async () => {
+    for (const bill_annually of [0, 1]) {
+        const who = member({ bill_annually });
+        const forms = [];
+        const h = harness({
+            db: database((statement) => (statement.sql === 'SELECT * FROM members WHERE id = ?' ? who : undefined)),
+            fetch: async (url, init) => {
+                if (url.includes('/subscriptions?')) return response({ data: [], has_more: false });
+                forms.push(new URLSearchParams(init.body));
+                return response({ id: 'cs_stored', url: 'https://checkout.stripe.com/stored' });
+            },
+        });
+        const checkout = (input) =>
+            h.api.integrationRoute(
+                new Request('https://members.example.com/api/billing/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(input),
+                }),
+                h.env,
+            );
+        for (const input of [{ annual: !bill_annually }, { bill_annually: 1 - bill_annually }]) {
+            await assert.rejects(checkout(input), { status: 400 });
+            assert.equal((await h.internal('/checkout', { member_id: 1, ...input })).status, 400);
+        }
+        assert.equal(h.db.calls.length, 0);
+        assert.equal(forms.length, 0);
+        assert.equal((await checkout({})).status, 200);
+        assert.equal(forms.length, 1);
+        assert.equal(forms[0].get('line_items[0][price]'), bill_annually ? 'price_year' : 'price_month');
+        assert.equal(who.bill_annually, bill_annually);
+        assert.ok(h.db.calls.every((call) => !call.sql.startsWith('UPDATE members SET bill_annually')));
+    }
+});
 test('manual checkout operates while automation disabled; only approved/admin discounts apply', async () => {
     for (const status of ['requested', 'approved', null]) {
         const forms = [];
         const h = harness({
             enabled: 'false',
-            db: database((statement) => (statement.sql === 'SELECT * FROM members WHERE id = ?' ? member({ discount_type: 'student', discount_status: status }) : undefined)),
+            db: database((statement) =>
+                statement.sql === 'SELECT * FROM members WHERE id = ?' ? member({ bill_annually: 1, discount_type: 'student', discount_status: status }) : undefined,
+            ),
             fetch: async (url, init) => {
                 if (url.includes('/subscriptions?')) return response({ data: [], has_more: false });
                 forms.push(new URLSearchParams(init.body));
@@ -598,7 +684,7 @@ test('manual checkout operates while automation disabled; only approved/admin di
                 });
             },
         });
-        assert.equal((await h.internal('/checkout', { member_id: 1, annual: true })).status, 200);
+        assert.equal((await h.internal('/checkout', { member_id: 1 })).status, 200);
         assert.equal(forms[0].get('mode'), 'subscription');
         assert.equal(forms[0].has('submit_type'), false);
         assert.ok([...forms[0].keys()].every((key) => !key.startsWith('payment_intent_data')));
@@ -631,13 +717,12 @@ test('different concurrent checkout keys share one customer and one open session
             });
         },
     });
-    const input = { member_id: 1, annual: false };
+    const input = { member_id: 1 };
     const results = await Promise.all(['request-a', 'request-b'].map((request_key) => h.internal('/checkout', { ...input, request_key })));
     assert.ok(results.every((result) => result.status === 200));
     assert.equal(customers, 1);
     assert.equal(sessions, 1);
     assert.equal((await h.internal('/checkout', { ...input, request_key: 'request-a' })).status, 200);
-    assert.equal((await h.internal('/checkout', { ...input, annual: true, request_key: 'request-a' })).status, 409);
 });
 test('ambiguous customer creation retries with the same persisted Stripe idempotency key', async () => {
     const who = member({ stripe_customer_id: null });
@@ -657,7 +742,7 @@ test('ambiguous customer creation retries with the same persisted Stripe idempot
             return response({ id: 'cs_checkout', url: 'https://checkout.stripe.com/membership' });
         },
     });
-    const input = { member_id: 1, annual: false };
+    const input = { member_id: 1 };
     assert.equal((await h.internal('/checkout', input)).status, 502);
     assert.equal((await h.internal('/checkout', input)).status, 200);
     assert.equal(keys.length, 2);
@@ -679,7 +764,7 @@ test('existing subscriptions use billing portal instead of creating a second sub
             return response({ url: 'https://billing.stripe.com/portal' });
         },
     });
-    assert.equal((await h.internal('/checkout', { member_id: 1, annual: false })).status, 200);
+    assert.equal((await h.internal('/checkout', { member_id: 1 })).status, 200);
     assert.equal(calls.length, 2);
 });
 
@@ -714,7 +799,6 @@ test('family approval SQL requires linked active primary and family checkout fai
             (
                 await blocked.internal('/checkout', {
                     member_id: 1,
-                    annual: false,
                 })
             ).status,
             409,
@@ -740,7 +824,7 @@ test('definitive Stripe validation rejection clears slot while ambiguous failure
                 return response({ id: 'cs_retry', url: 'https://checkout.stripe.com/retry' });
             },
         });
-        const input = { member_id: 1, annual: false };
+        const input = { member_id: 1 };
         assert.equal((await h.internal('/checkout', input)).status, 502);
         assert.equal(h.storage.has('checkout:1:membership'), !clears);
         assert.equal((await h.internal('/checkout', input)).status, 200);
@@ -840,7 +924,7 @@ test('post-network CAS conflict fails without claiming success and leaves checko
     assert.equal((await h.api.mutateMember(h.env, 1, { discount_type: null }, 9, 1)).status, 409);
     assert.match(h.batches[0][0].sql, /EXISTS.*actor.leadership = 1/);
     assert.match(h.batches[0][1].sql, /changes\(\) = 1/);
-    assert.equal((await h.internal('/checkout', { member_id: 1, annual: false })).status, 409);
+    assert.equal((await h.internal('/checkout', { member_id: 1 })).status, 409);
 });
 
 test('revocation expires stored and paginated live sessions before member CAS', async () => {
@@ -934,14 +1018,12 @@ test('safe physical deletion audits atomically and cached checkout cannot resurr
     const key = 'request-a';
     const hashed = Buffer.from(await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(key))).toString('hex');
     h.storage.set(`request:1:membership:${hashed}`, {
-        fingerprint: 'irrelevant',
         url: 'https://checkout.stripe.com/old',
     });
     assert.equal(
         (
             await h.internal('/checkout', {
                 member_id: 1,
-                annual: false,
                 request_key: key,
             })
         ).status,
@@ -968,7 +1050,6 @@ test('checkout waits for revocation and cannot recreate a discounted session con
     while (!entered) await new Promise((resolve) => setTimeout(resolve, 1));
     const checkout = h.internal('/checkout', {
         member_id: 1,
-        annual: false,
     });
     release();
     assert.equal((await mutation).status, 200);
@@ -979,13 +1060,11 @@ test('revoked cached request key cannot return or recreate its old discounted ch
     const h = mutationHarness({ who: member({ discount_type: 'student' }) });
     const input = {
         member_id: 1,
-        annual: false,
         request_key: 'request-old',
     };
     const digest = async (value) => Buffer.from(await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(value))).toString('hex');
     const slot = `request:1:membership:${await digest(input.request_key)}`;
     h.storage.set(slot, {
-        fingerprint: await digest(JSON.stringify({ annual: false })),
         url: 'https://checkout.stripe.com/old',
         epoch: 0,
     });
@@ -1058,7 +1137,7 @@ test('linked active family primary permits family coupon, inactive primary never
             return response({ id: 'cs_family', url: 'https://checkout.stripe.com/family' });
         },
     });
-    assert.equal((await h.internal('/checkout', { member_id: 1, annual: false })).status, 200);
+    assert.equal((await h.internal('/checkout', { member_id: 1 })).status, 200);
     assert.equal(coupon, 'coupon_family');
 });
 
@@ -1089,7 +1168,7 @@ test('definitively rejected delete clears marker after safe revocation and permi
     assert.equal((await h.api.mutateMember(h.env, 1, null, 9, 1)).status, 409);
     assert.equal(h.storage.has('mutation-pending:1'), false);
     assert.equal(h.batches.length, 0);
-    assert.equal((await h.internal('/checkout', { member_id: 1, annual: false })).status, 200);
+    assert.equal((await h.internal('/checkout', { member_id: 1 })).status, 200);
 });
 
 test('delete with unresolved subscription lookup retains pending marker', async () => {
@@ -1123,7 +1202,6 @@ test('inactive family primary does not prevent existing subscriber opening billi
     });
     const result = await h.internal('/checkout', {
         member_id: 1,
-        annual: false,
     });
     assert.equal(result.status, 200);
     assert.deepEqual(await result.json(), { url: 'https://billing.stripe.com/cancel' });

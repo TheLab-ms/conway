@@ -49,7 +49,7 @@ class ConwayApp extends HTMLElement {
                 el(
                     'main',
                     { id: 'main', class: 'workspace narrow' },
-                    heading('Workspace unavailable', 'We could not load your session and site settings.'),
+                    heading('Unable to load', 'Please try again.'),
                     el('p', { class: 'notice error', role: 'alert' }, error.message),
                     button('Try again', () => this.boot()),
                 ),
@@ -69,12 +69,7 @@ class ConwayApp extends HTMLElement {
 
     shell(path, message) {
         const current = state.session.member;
-        const navigation = current
-            ? [
-                  ['Dashboard', '/dashboard'],
-                  ['Billing', '/billing'],
-              ]
-            : [];
+        const navigation = current ? [['Billing', '/billing']] : [];
         if (current?.leadership) navigation.push(['Leadership', '/admin/members']);
         const nav = el(
             'nav',
@@ -110,13 +105,8 @@ class ConwayApp extends HTMLElement {
         this.banner = banner;
         this.content = el('div', {}, loading());
         this.replaceChildren(
-            el('header', { class: 'site-header' }, el('div', { class: 'header-inner' }, link('', current ? '/dashboard' : '/', 'brand'), nav)),
+            el('header', { class: 'site-header' }, el('div', { class: 'header-inner' }, nav)),
             el('main', { id: 'main', class: 'workspace', tabindex: '-1' }, banner, current?.leadership && path.startsWith('/admin') && admin.adminNav(path), this.content),
-            el('footer', { class: 'site-footer' }, el('span', {}, `${state.config.site_name || 'Conway'} / Member workspace`), el('span', {}, 'A shared space. A common purpose.')),
-        );
-        this.querySelector('.brand').append(
-            el('span', { class: 'brand-mark', 'aria-hidden': 'true' }, 'C'),
-            el('span', {}, state.config.site_name || 'Conway', el('small', {}, 'Membership & community')),
         );
     }
 
@@ -139,8 +129,8 @@ class ConwayApp extends HTMLElement {
             path = '/admin/members';
         }
         if (path === '/' && state.session.member) {
-            history.replaceState({}, '', '/dashboard');
-            path = '/dashboard';
+            history.replaceState({}, '', '/billing');
+            path = '/billing';
         }
         this.shell(path, message);
         const host = this.content;
@@ -153,7 +143,7 @@ class ConwayApp extends HTMLElement {
                 view = el(
                     'div',
                     { class: 'narrow' },
-                    heading('Your workspace is waiting.', 'Sign in with Discord to view your membership.'),
+                    heading('Sign in', 'Use Discord to view your membership.'),
                     panel(
                         'Members only',
                         el('p', {}, 'You will return to this page after signing in.'),
@@ -161,14 +151,8 @@ class ConwayApp extends HTMLElement {
                     ),
                 );
             } else if (path.startsWith('/admin') && !state.session.member?.leadership) {
-                view = el(
-                    'div',
-                    {},
-                    heading('Leadership access required', 'This part of the workspace is available to leadership only.'),
-                    link('Back to dashboard', '/dashboard', 'button secondary'),
-                );
+                view = el('div', {}, heading('Leadership access required'), link('Back to billing', '/billing', 'button secondary'));
             } else if (path === '/') view = member.welcome();
-            else if (path === '/dashboard') view = await member.dashboard(this, signal);
             else if (path === '/profile') view = await member.profile(this, signal);
             else if (path === '/waiver') view = await member.waiver(this, signal);
             else if (path === '/billing' || path === '/discounts') view = await member.billing(this, signal);
@@ -180,7 +164,7 @@ class ConwayApp extends HTMLElement {
             else if (path === '/admin/jobs') view = await admin.jobs(this, signal);
             else if (path === '/kiosk') view = kiosk(this, signal);
             else if (path === '/fobs/bind') view = bind(this);
-            else view = el('div', {}, heading('This page is off the map.', 'The link may be outdated, or this page may have moved.'), link('Return to workspace', '/', 'button'));
+            else view = el('div', {}, heading('Page not found'), link('Go home', '/', 'button'));
             if (version !== this.routeVersion) return;
             host.replaceChildren(view);
             const title = host.querySelector('h1');
@@ -190,7 +174,7 @@ class ConwayApp extends HTMLElement {
         } catch (error) {
             if (signal.aborted || version !== this.routeVersion) return;
             host.replaceChildren(
-                heading('Could not load this page', 'Your changes elsewhere are safe. Please try again.'),
+                heading('Could not load this page', 'Please try again.'),
                 el('p', { class: 'notice error', role: 'alert' }, error.message),
                 el(
                     'div',

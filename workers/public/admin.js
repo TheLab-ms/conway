@@ -1,4 +1,4 @@
-import { api, el, field, check, link, button, panel, empty, badge, date, displayName, form, heading, table, state } from './lib.js';
+import { api, el, field, check, link, button, panel, empty, badge, date, form, heading, table, state } from './lib.js';
 
 export function adminNav(path) {
     return el(
@@ -63,7 +63,7 @@ export async function members(app, signal) {
         { class: 'toolbar' },
         field('Search members', 'search', search, {
             type: 'search',
-            placeholder: 'Name, email, or Discord ID',
+            placeholder: 'Discord handle or ID, name, email',
         }),
         field('Access status', 'status', status, {
             choices: [
@@ -85,20 +85,22 @@ export async function members(app, signal) {
     return el(
         'div',
         {},
-        heading('Membership desk', 'Find members, review requests, and keep the community connected.', [
-            link('Export CSV', '/api/admin/export', 'button secondary'),
-            link('Add member', '/admin/members/new', 'button'),
-        ]),
+        heading('Members', 'Find members and review requests.', [link('Export CSV', '/api/admin/export', 'button secondary'), link('Add member', '/admin/members/new', 'button')]),
         filters,
         data.members.length
             ? table(
-                  ['Member', 'Access', 'Billing', 'Discount', 'Discord'],
+                  ['Member', 'Access', 'Billing', 'Discount', 'Discord ID'],
                   data.members.map((member) => [
-                      el('div', {}, link(displayName(member), `/admin/members/${member.id}`), el('p', { class: 'hint' }, `#${member.id} / ${member.email || 'No email'}`)),
+                      el(
+                          'div',
+                          {},
+                          link(member.discord_username || member.discord_user_id || `Member #${member.id}`, `/admin/members/${member.id}`),
+                          el('p', { class: 'hint' }, `#${member.id}`),
+                      ),
                       badge(member.access_status, member.access_status === 'Ready' ? 'good' : 'warn'),
                       member.payment_status || 'Inactive',
                       member.discount_type ? el('div', {}, member.discount_type, el('p', { class: 'hint' }, member.discount_status || 'Not approved')) : 'None',
-                      member.discord_username || member.discord_user_id || 'Not linked',
+                      member.discord_user_id || 'Not linked',
                   ]),
               )
             : empty('No members match these filters. Clear the search or add a new member.'),
@@ -106,7 +108,7 @@ export async function members(app, signal) {
     );
 }
 
-const booleanFields = ['confirmed', 'leadership', 'non_billable', 'bill_annually', 'discord_checkin_notify'];
+const booleanFields = ['confirmed', 'leadership', 'non_billable', 'bill_annually'];
 const nullableFields = ['name_override', 'discord_user_id', 'fob_id', 'root_family_member', 'discount_type', 'discount_status'];
 const numberFields = ['fob_id', 'root_family_member'];
 
@@ -114,29 +116,14 @@ export async function memberEditor(app, id, signal) {
     const isNew = id === 'new';
     const member = isNew ? {} : await api(`/api/admin/members/${encodeURIComponent(id)}`, { signal });
     const fields = [
-        el(
-            'div',
-            { class: 'grid' },
-            field('Full name', 'name', member.name, {
-                required: true,
-                maxlength: 200,
-                autocomplete: 'name',
-            }),
-            field('Contact email', 'email', member.email, {
-                type: 'email',
-                required: true,
-                maxlength: 254,
-                autocomplete: 'email',
-            }),
-        ),
-        field('Display name override', 'name_override', member.name_override, {
-            maxlength: 200,
-            hint: 'Optional leadership override. Leave blank to use the member name.',
-        }),
         field('Discord user ID', 'discord_user_id', member.discord_user_id, {
             inputmode: 'numeric',
             pattern: '[0-9]{5,25}',
             hint: 'Paste the numeric Discord user ID, not a username. This is the sign-in identity. Verify ownership before linking.',
+        }),
+        field('Display name override', 'name_override', member.name_override, {
+            maxlength: 200,
+            hint: 'Optional leadership override. Leave blank to use the member name.',
         }),
         el(
             'div',
@@ -159,13 +146,27 @@ export async function memberEditor(app, id, signal) {
             maxlength: 10000,
             hint: 'Internal notes. Do not store passwords, tokens, or payment card details.',
         }),
+        el('div', { class: 'grid' }, check('Membership confirmed', 'confirmed', member.confirmed), check('Leadership access', 'leadership', member.leadership)),
         el(
-            'div',
-            { class: 'grid' },
-            check('Membership confirmed', 'confirmed', member.confirmed),
-            check('Leadership access', 'leadership', member.leadership),
-            check('Non-billable membership', 'non_billable', member.non_billable),
-            check('Annual billing preference', 'bill_annually', member.bill_annually),
+            'section',
+            { class: 'form-fields', 'aria-label': 'Billing information' },
+            el('h3', {}, 'Billing information'),
+            el(
+                'div',
+                { class: 'grid' },
+                field('Full name', 'name', member.name, {
+                    required: true,
+                    maxlength: 200,
+                    autocomplete: 'name',
+                }),
+                field('Billing email', 'email', member.email, {
+                    type: 'email',
+                    required: true,
+                    maxlength: 254,
+                    autocomplete: 'email',
+                }),
+            ),
+            el('div', { class: 'grid' }, check('Non-billable membership', 'non_billable', member.non_billable), check('Annual billing', 'bill_annually', member.bill_annually)),
         ),
     ];
     if (!isNew)
@@ -173,11 +174,10 @@ export async function memberEditor(app, id, signal) {
             el(
                 'details',
                 {},
-                el('summary', {}, 'Profile & discount fields'),
+                el('summary', {}, 'Discount settings'),
                 el(
                     'div',
                     { class: 'form-fields' },
-                    check('Discord check-in notifications', 'discord_checkin_notify', member.discord_checkin_notify),
                     field('Discount type', 'discount_type', member.discount_type, {
                         choices: [
                             ['', 'No discount'],
@@ -201,7 +201,6 @@ export async function memberEditor(app, id, signal) {
     const editor = form(fields, isNew ? 'Create member' : 'Save member', async (data) => {
         const body = Object.fromEntries(data);
         for (const key of booleanFields) {
-            if (isNew && key === 'discord_checkin_notify') continue;
             body[key] = data.has(key);
         }
         for (const key of nullableFields) if (key in body && body[key] === '') body[key] = null;
@@ -219,7 +218,7 @@ export async function memberEditor(app, id, signal) {
         'div',
         {},
         heading(
-            isNew ? 'Add a member' : displayName(member),
+            isNew ? 'Add a member' : member.discord_username || member.discord_user_id || `Member #${member.id}`,
             isNew ? 'Create a membership record. Discord is the only sign-in identity.' : `Member #${member.id} / joined ${date(member.created)}`,
             link('Back to members', '/admin/members', 'button secondary'),
         ),
@@ -443,7 +442,7 @@ export async function activity(app, kind, signal) {
         'div',
         {},
         heading(
-            isEvents ? 'Audit trail' : 'At the door',
+            isEvents ? 'Audit log' : 'Fob swipes',
             isEvents ? 'Membership changes and administrative actions, in order.' : 'Fob activity recorded by the access controllers.',
             button('Refresh', () => app.navigate(location.pathname + location.search)),
         ),

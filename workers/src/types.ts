@@ -15,9 +15,7 @@ export interface Env {
     DISCORD_GUILD_ID: string;
     DISCORD_ROLE_ID: string;
     DISCORD_LEADERSHIP_CHANNEL_ID: string;
-    DISCORD_CHECKIN_CHANNEL_ID: string;
     DISCORD_SIGNUP_NOTIFY_ENABLED: string;
-    DISCORD_CHECKIN_NOTIFY_ENABLED: string;
     DISCORD_ACCESS_DENIED_ENABLED: string;
     STRIPE_SECRET_KEY: string;
     STRIPE_WEBHOOK_SECRET: string;
@@ -56,7 +54,6 @@ export interface Member {
     discord_username: string | null;
     discord_email: string | null;
     discord_last_synced: number | null;
-    discord_checkin_notify: number;
 }
 export interface Settings {
     version: number;

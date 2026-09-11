@@ -8,11 +8,11 @@ The only generated graphic is a locally rendered enrollment QR code.
 ## Scope
 
 - Discord-only signup/login, opaque sessions, CSRF protection, and leadership-assisted identity linking.
-- Membership dashboard, versioned waivers, text profiles and private-by-choice directory.
+- Billing home with membership and fob access status, versioned waivers, and member profiles.
 - Stripe subscriptions, billing portal, configured donations, discounts and family relationships.
 - Kiosk fob enrollment, ordered edge access snapshots, deduplicated swipe history.
 - Leadership member administration, audit, CSV export, settings, waiver publishing and failed-job retry.
-- Discord roles, signup/discount notifications, signed leadership approvals, opt-in check-ins and denied-access messages.
+- Discord roles, signup/discount notifications, signed leadership approvals and denied-access messages.
 
 Legacy PayPal entitlements are retained as data, not a new PayPal integration.
 Email login/delivery, Google login, OAuth-provider services, member images, SQL
@@ -84,8 +84,8 @@ onboarding is opened. Existing waiver evidence remains valid after publication.
 Template placeholders are `{name}`, `{site_name}`, `{site_url}`, `{member_id}`,
 `{discount}`, `{discount_type}`, `{request_id}`, `{reason}`, and `{access_status}`.
 They are simple text substitutions, not Go templates, Markdown rendering or SQL.
-Discord messages disable automatic mentions. Check-in notification throttles are
-four hours; denied-access DMs are throttled for one hour independently of swipes.
+Discord messages disable automatic mentions. Denied-access DMs are throttled for
+one hour; all swipes remain in the access audit regardless of notification delivery.
 
 ## Provider Setup
 

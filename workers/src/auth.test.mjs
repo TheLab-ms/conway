@@ -113,6 +113,7 @@ const origin = 'https://members.example.com';
 const user = {
     id: '123456789012345678',
     username: 'a.member',
+    global_name: 'Friendly Display Name',
     email: 'Discord@Example.com',
     verified: true,
 };
@@ -233,16 +234,17 @@ test('session exposes sanitized member after Discord callback creates member', a
 test('OAuth start stores hashes, fixes callback and scope, and restricts return paths', async (t) => {
     const h = await harness(t);
     const cases = [
-        ['/fobs/bind?token=abc%20def&next=%2Fdashboard#claim', '/fobs/bind?token=abc%20def&next=%2Fdashboard#claim'],
-        ['/dashboard', '/dashboard'],
-        ['https://evil.example', '/dashboard'],
-        ['//evil.example', '/dashboard'],
-        ['/\\evil.example', '/dashboard'],
-        ['/%2fevil.example', '/dashboard'],
-        ['/a/..//evil.example', '/dashboard'],
-        ['/x\r\nLocation: evil', '/dashboard'],
-        ['/login/discord', '/dashboard'],
-        ['/api/logout', '/dashboard'],
+        ['/fobs/bind?token=abc%20def&next=%2Fbilling#claim', '/fobs/bind?token=abc%20def&next=%2Fbilling#claim'],
+        ['/billing', '/billing'],
+        ['', '/billing'],
+        ['https://evil.example', '/billing'],
+        ['//evil.example', '/billing'],
+        ['/\\evil.example', '/billing'],
+        ['/%2fevil.example', '/billing'],
+        ['/a/..//evil.example', '/billing'],
+        ['/x\r\nLocation: evil', '/billing'],
+        ['/login/discord', '/billing'],
+        ['/api/logout', '/billing'],
     ];
     for (const [input, expected] of cases) {
         const started = await h.start(input);
@@ -312,7 +314,7 @@ test('existing Discord-ID login rotates old session without overwriting primary 
     assert.equal(member.discord_email, 'discord@example.com');
     assert.equal(member.name, 'Existing Name');
     const firstCookie = cookies(first);
-    const second = await h.callback(await h.start('/dashboard', firstCookie), firstCookie);
+    const second = await h.callback(await h.start('/billing', firstCookie), firstCookie);
     assert.notEqual(cookieValue(cookies(second), 'conway_session'), cookieValue(firstCookie, 'conway_session'));
     assert.equal(
         await h.db
@@ -356,6 +358,7 @@ test('strict Discord identity and verified email validation rejects unsafe provi
 
 test('remote fetch is bounded, redirect-disabled, timed, and does not expose credentials', async (t) => {
     const scenarios = [
+        () => new Response(null, { status: 302, headers: { Location: 'https://example.test/redirect' } }),
         () => new Response('private_token secret', { status: 400 }),
         () => new Response('not JSON', { headers: { 'Content-Type': 'application/json' } }),
         () => Response.json({ access_token: 'bad\r\ntoken', token_type: 'Bearer' }),
@@ -377,7 +380,7 @@ test('remote fetch is bounded, redirect-disabled, timed, and does not expose cre
         const started = await h.start();
         await assert.rejects(h.callback(started), (error) => error.status === 502 && !/private_token|secret|one_use_code/.test(error.message));
         assert.equal(h.calls.length, 1);
-        assert.equal(h.calls[0].init.redirect, 'error');
+        assert.equal(h.calls[0].init.redirect, 'manual');
         assert.ok(h.calls[0].init.signal);
         const submitted = new URLSearchParams(h.calls[0].init.body);
         assert.equal(submitted.get('redirect_uri'), origin + '/login/discord/callback');
@@ -386,10 +389,10 @@ test('remote fetch is bounded, redirect-disabled, timed, and does not expose cre
     }
 });
 
-test('Discord callback creates a new member directly from identity', async (t) => {
+test('Discord callback creates a new member with username rather than global display name', async (t) => {
     const h = await harness(t);
-    const response = await h.callback(await h.start('/dashboard'));
-    assert.equal(response.headers.get('Location'), '/dashboard');
+    const response = await h.callback(await h.start('/billing'));
+    assert.equal(response.headers.get('Location'), '/billing');
     const member = await h.db.prepare('SELECT * FROM members').first();
     assert.ok(member);
     assert.equal(member.email, 'discord@example.com');
@@ -403,11 +406,14 @@ test('Discord callback creates a new member directly from identity', async (t) =
     assert.ok((await h.db.prepare("SELECT count(*) AS n FROM jobs WHERE kind = 'signup'").first()).n >= 1);
 });
 
-test('Discord callback authenticates existing member by Discord ID', async (t) => {
+test('Discord callback authenticates by Discord ID and replaces cached nickname with username', async (t) => {
     const h = await harness(t);
-    await h.db.prepare('INSERT INTO members (email, discord_user_id, name) VALUES (?, ?, ?)').bind('old@example.com', user.id, 'Existing').run();
-    const response = await h.callback(await h.start('/dashboard'));
-    assert.equal(response.headers.get('Location'), '/dashboard');
+    await h.db
+        .prepare('INSERT INTO members (email, discord_user_id, name, discord_username) VALUES (?, ?, ?, ?)')
+        .bind('old@example.com', user.id, 'Existing', 'Guild Nickname')
+        .run();
+    const response = await h.callback(await h.start('/billing'));
+    assert.equal(response.headers.get('Location'), '/billing');
     const member = await h.db.prepare('SELECT * FROM members WHERE discord_user_id = ?').bind(user.id).first();
     assert.equal(member.email, 'old@example.com');
     assert.equal(member.name, 'Existing');

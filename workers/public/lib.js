@@ -103,7 +103,6 @@ export const date = (value) =>
               timeStyle: 'short',
           })
         : 'Never';
-export const displayName = (member) => member.name_override || member.name || member.identifier || 'Member';
 export function notice(node, message, error = false) {
     node.className = `notice form-status${error ? ' error' : ''}`;
     node.setAttribute('role', error ? 'alert' : 'status');
@@ -141,7 +140,7 @@ export function heading(title, subtitle, action) {
     return el(
         'div',
         { class: 'page-heading' },
-        el('div', {}, el('p', { class: 'eyebrow' }, 'Member workspace'), el('h1', { tabindex: '-1' }, title), subtitle && el('p', {}, subtitle)),
+        el('div', {}, el('h1', { tabindex: '-1' }, title), subtitle && el('p', {}, subtitle)),
         action && el('div', { class: 'actions' }, action),
     );
 }
@@ -175,7 +174,7 @@ export function table(headers, rows) {
         ),
     );
 }
-export function safeReturn(value, fallback = '/dashboard') {
+export function safeReturn(value, fallback = '/billing') {
     if (
         typeof value !== 'string' ||
         !value ||

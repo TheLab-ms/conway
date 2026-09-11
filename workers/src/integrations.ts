@@ -270,12 +270,11 @@ export async function integrationRoute(request: Request, env: Env): Promise<Resp
     }
     const member = await requireMember(request, env);
     const input = await body<ObjectData>(request);
-    if (typeof input.annual !== 'boolean') throw new HttpError(400, 'Invalid checkout selection');
+    if (Object.keys(input).length) throw new HttpError(400, 'Checkout does not accept member selections');
     const suppliedKey = request.headers.get('Idempotency-Key');
     if (suppliedKey !== null && !/^[A-Za-z0-9_-]{8,128}$/.test(suppliedKey)) throw new HttpError(400, 'Invalid idempotency key');
     return coordinated(env, 'stripe', '/checkout', {
         member_id: member.id,
-        annual: input.annual,
         request_key: suppliedKey,
     });
 }
@@ -471,7 +470,7 @@ async function discordJob(env: Env, job: Job, payload: ObjectData, state: Durabl
         )
             .bind(
                 now(),
-                guildMember?.nick || guildMember?.user?.global_name || guildMember?.user?.username || member.discord_username || '',
+                guildMember?.user?.username || member.discord_username || '',
                 member.id,
                 member.discord_user_id,
                 member.payment_status,
@@ -480,25 +479,21 @@ async function discordJob(env: Env, job: Job, payload: ObjectData, state: Durabl
         return;
     }
     if (!member) return;
-    if (!['signup', 'discount', 'badge', 'denied'].includes(job.kind)) throw new DeliveryError(`Unknown job kind: ${job.kind}`, true);
+    if (!['signup', 'discount', 'denied'].includes(job.kind)) throw new DeliveryError(`Unknown job kind: ${job.kind}`, true);
     if (job.kind === 'signup' && env.DISCORD_SIGNUP_NOTIFY_ENABLED !== 'true') return;
     if (job.kind === 'discount' && (typeof payload.request_id !== 'string' || member.discount_request_id !== payload.request_id || member.discount_status !== 'requested')) return;
-    if (job.kind === 'badge' && (env.DISCORD_CHECKIN_NOTIFY_ENABLED !== 'true' || !member.discord_checkin_notify)) return;
     if (job.kind === 'denied' && (env.DISCORD_ACCESS_DENIED_ENABLED !== 'true' || !member.discord_user_id)) return;
-    let interval = 0;
-    if (job.kind === 'badge' || job.kind === 'denied') {
+    if (job.kind === 'denied') {
         if (typeof payload.swipe_id !== 'string') throw new DeliveryError('Missing swipe ID', true);
         const swipe = await env.DB.prepare('SELECT allowed FROM fob_swipes WHERE uid = ? AND member = ?').bind(payload.swipe_id, member.id).first<{ allowed: number }>();
-        if (!swipe || Boolean(swipe.allowed) !== (job.kind === 'badge')) return;
-        interval = job.kind === 'badge' ? 4 * 3600 : 3600;
+        if (!swipe || swipe.allowed !== 0) return;
         const last = await env.DB.prepare('SELECT last_sent FROM notification_state WHERE member = ? AND kind = ?').bind(member.id, job.kind).first<{ last_sent: number }>();
-        if (last && last.last_sent > now() - interval) return;
+        if (last && last.last_sent > now() - 3600) return;
     }
     const displayName = member.name_override || member.name || member.discord_username || `Member ${member.id}`;
     const defaults: Record<string, string> = {
         signup: '{name} joined {site_name}.',
         discount: '{name} requested the {discount} discount. Request: {request_id}',
-        badge: '{name} just badged into the makerspace.',
         denied: 'Hi {name}, your fob was denied access. {reason} {site_url}',
     };
     const variables: Record<string, string> = {
@@ -514,7 +509,7 @@ async function discordJob(env: Env, job: Job, payload: ObjectData, state: Durabl
     };
     const template = defaults[job.kind];
     const content = template.replace(/\{([a-z_]+)\}/g, (token, key: string) => variables[key] ?? token).slice(0, 2000);
-    let channel = job.kind === 'badge' ? env.DISCORD_CHECKIN_CHANNEL_ID : env.DISCORD_LEADERSHIP_CHANNEL_ID;
+    let channel = env.DISCORD_LEADERSHIP_CHANNEL_ID;
     if (job.kind === 'denied') {
         const dm = await discord(env, '/users/@me/channels', 'POST', {
             recipient_id: member.discord_user_id,
@@ -540,7 +535,7 @@ async function discordJob(env: Env, job: Job, payload: ObjectData, state: Durabl
         // Survives a later D1 failure; Discord's nonce covers the narrow send/receipt crash window.
         await state.storage.put(receipt, now());
     }
-    if (interval)
+    if (job.kind === 'denied')
         await env.DB.prepare(
             `INSERT INTO notification_state (member, kind, last_sent) VALUES (?, ?, ?)
     ON CONFLICT(member, kind) DO UPDATE SET last_sent = excluded.last_sent`,
@@ -812,7 +807,7 @@ export class MembershipCoordinator {
                 admin_notes: 10000,
             };
             const nullable = ['name_override', 'discord_user_id', 'discount_type', 'discount_status', 'discount_request_id'];
-            const flags = ['discord_checkin_notify', 'leadership', 'non_billable', 'confirmed', 'bill_annually'];
+            const flags = ['leadership', 'non_billable', 'confirmed', 'bill_annually'];
             for (const [key, value] of Object.entries(fields)) {
                 if (Object.hasOwn(strings, key)) {
                     if (typeof value !== 'string' || value.length > strings[key]) throw new HttpError(400, `Invalid ${key}`);
@@ -939,7 +934,7 @@ export class MembershipCoordinator {
     }
 
     private async checkout(input: ObjectData): Promise<Response> {
-        if (!Number.isSafeInteger(input.member_id) || input.member_id < 1 || typeof input.annual !== 'boolean') {
+        if (!Number.isSafeInteger(input.member_id) || input.member_id < 1 || Object.keys(input).some((key) => !['member_id', 'request_key'].includes(key))) {
             throw new HttpError(400, 'Invalid checkout request');
         }
         let member = await this.env.DB.prepare('SELECT * FROM members WHERE id = ?').bind(input.member_id).first<Member>();
@@ -947,22 +942,19 @@ export class MembershipCoordinator {
         if (await this.state.storage.get<boolean>(`mutation-pending:${member.id}`)) throw new HttpError(409, 'Member billing change is pending; retry the member change first');
         const requestSlot = input.request_key ? `request:${input.member_id}:membership:${await hash(input.request_key)}` : '';
         const epoch = (await this.state.storage.get<number>(`checkout-epoch:${member.id}`)) || 0;
-        const requestFingerprint = await hash(JSON.stringify({ annual: input.annual }));
         if (requestSlot) {
             const previous = await this.state.storage.get<{
-                fingerprint: string;
                 url: string;
                 epoch?: number;
             }>(requestSlot);
             if (previous) {
-                if (previous.fingerprint !== requestFingerprint) throw new HttpError(409, 'Idempotency key was already used for another selection');
                 if ((previous.epoch || 0) !== epoch) throw new HttpError(409, 'Checkout was revoked; start a new checkout request');
                 // Never replay a cached URL before checking current membership, pricing, and live session status.
             }
         }
         if (!this.env.STRIPE_SECRET_KEY) throw new HttpError(503, 'Stripe is not configured');
         const cfg = await settings(this.env);
-        const price = input.annual ? cfg.yearly_price_id : cfg.monthly_price_id;
+        const price = member.bill_annually ? cfg.yearly_price_id : cfg.monthly_price_id;
         // Existing customers must be reconciled before deciding whether they need a price or just the portal.
         if (!price && !member.stripe_customer_id) throw new HttpError(400, 'Selected Stripe price is not configured');
         if (!member.stripe_customer_id) {
@@ -996,9 +988,6 @@ export class MembershipCoordinator {
         if (!portal && member.discount_type && member.discount_status !== 'requested' && !coupon) {
             throw new HttpError(400, 'Your discount coupon is not configured. Contact leadership before starting checkout.');
         }
-        await this.env.DB.prepare('UPDATE members SET bill_annually = ? WHERE id = ? AND bill_annually != ?')
-            .bind(input.annual ? 1 : 0, member.id, input.annual ? 1 : 0)
-            .run();
         const form: Record<string, string> = portal
             ? { customer: member.stripe_customer_id!, return_url: this.env.SITE_URL }
             : {
@@ -1026,7 +1015,6 @@ export class MembershipCoordinator {
                         if (typeof session.url !== 'string' || !session.url.startsWith('https://')) throw new DeliveryError('Invalid Stripe checkout URL');
                         if (requestSlot)
                             await this.state.storage.put(requestSlot, {
-                                fingerprint: requestFingerprint,
                                 url: session.url,
                                 epoch,
                             });
@@ -1049,7 +1037,6 @@ export class MembershipCoordinator {
         if (typeof session.url !== 'string' || !session.url.startsWith('https://')) throw new DeliveryError('Invalid Stripe checkout URL');
         if (requestSlot)
             await this.state.storage.put(requestSlot, {
-                fingerprint: requestFingerprint,
                 url: session.url,
                 epoch,
             });
