@@ -69,24 +69,13 @@ class ConwayApp extends HTMLElement {
 
     shell(path, message) {
         const current = state.session.member;
-        const navigation = current ? [['Billing', '/billing']] : [];
-        if (current?.leadership) navigation.push(['Leadership', '/admin/members']);
-        const nav = el(
-            'nav',
-            { class: 'primary-nav', 'aria-label': 'Main navigation' },
-            navigation.map(([text, href]) =>
-                el(
-                    'a',
-                    {
-                        href,
-                        'aria-current': path === href || (text === 'Leadership' && path.startsWith('/admin')) ? 'page' : null,
-                    },
-                    text,
-                ),
-            ),
-        );
-        if (current)
-            nav.append(
+        const account =
+            current &&
+            el(
+                'div',
+                { class: 'account-actions actions' },
+                el('span', { class: 'muted' }, current.discord_username || current.name),
+                path === '/billing' ? link('Edit profile', '/profile') : link('Your membership', '/billing'),
                 button('Sign out', async (event) => {
                     const control = event.currentTarget;
                     control.disabled = true;
@@ -100,13 +89,11 @@ class ConwayApp extends HTMLElement {
                     }
                 }),
             );
-        else nav.append(link('Sign in with Discord', '/login/discord?return_to=' + encodeURIComponent(safeReturn(path + location.search)), 'button secondary'));
         const banner = el('div', { class: 'global-notice notice', role: 'status', 'aria-live': 'polite' }, message);
         this.banner = banner;
         this.content = el('div', {}, loading());
         this.replaceChildren(
-            el('header', { class: 'site-header' }, el('div', { class: 'header-inner' }, nav)),
-            el('main', { id: 'main', class: 'workspace', tabindex: '-1' }, banner, current?.leadership && path.startsWith('/admin') && admin.adminNav(path), this.content),
+            el('main', { id: 'main', class: 'workspace', tabindex: '-1' }, banner, current?.leadership && path.startsWith('/admin') && admin.adminNav(path), this.content, account),
         );
     }
 
@@ -155,7 +142,7 @@ class ConwayApp extends HTMLElement {
             } else if (path === '/') view = member.welcome();
             else if (path === '/profile') view = await member.profile(this, signal);
             else if (path === '/waiver') view = await member.waiver(this, signal);
-            else if (path === '/billing' || path === '/discounts') view = await member.billing(this, signal);
+            else if (path === '/billing') view = await member.billing(this, signal);
             else if (path === '/admin/members') view = await admin.members(this, signal);
             else if (/^\/admin\/members\/(new|\d+)$/.test(path)) view = await admin.memberEditor(this, path.split('/').pop(), signal);
             else if (path === '/admin/config') view = await admin.configEditor(this, signal);

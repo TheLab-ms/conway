@@ -206,8 +206,8 @@ describe('transactional trigger outbox', () => {
         expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM jobs').first('n')).toBe(4);
     });
 
-    it('enqueues a discount request once and clears discount metadata on payment lapse', async () => {
-        const row = await member({ confirmed: 1, stripe_subscription_state: 'active' });
+    it.each(['active', 'trialing'])('enqueues a discount request once and preserves it when %s payment lapses', async (stripe_subscription_state) => {
+        const row = await member({ confirmed: 1, stripe_subscription_state });
         const update = env.DB.prepare("UPDATE members SET discount_type='student',discount_status='requested',discount_request_id='request-1' WHERE id=?").bind(row.id);
         await update.run();
         await update.run();
@@ -219,6 +219,25 @@ describe('transactional trigger outbox', () => {
         ]);
         await env.DB.prepare("UPDATE members SET stripe_subscription_state='canceled' WHERE id=?").bind(row.id).run();
         expect(await getMember(row.id)).toMatchObject({
+            payment_status: null,
+            discount_type: 'student',
+            discount_status: 'requested',
+            discount_request_id: 'request-1',
+        });
+        expect(await env.DB.prepare("SELECT count(*) n FROM jobs WHERE kind='discount'").first('n')).toBe(1);
+    });
+
+    it.each(['approved', null])('still clears granted discount metadata on payment lapse (status: %s)', async (discount_status) => {
+        const row = await member({
+            confirmed: 1,
+            stripe_subscription_state: 'active',
+            discount_type: 'student',
+            discount_status,
+            discount_request_id: 'granted-request',
+        });
+        await env.DB.prepare("UPDATE members SET stripe_subscription_state='canceled' WHERE id=?").bind(row.id).run();
+        expect(await getMember(row.id)).toMatchObject({
+            payment_status: null,
             discount_type: null,
             discount_status: null,
             discount_request_id: null,

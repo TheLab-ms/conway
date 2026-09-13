@@ -206,7 +206,11 @@ export function bind(app) {
             'div',
             { class: 'narrow' },
             heading('Link your fob'),
-            panel('Enrollment link needed', el('p', {}, 'Scan a new QR code at the kiosk.'), link('Back to billing', '/billing', 'button secondary')),
+            panel(
+                'Enrollment link needed',
+                el('p', {}, 'Visit the space on Tuesday night to get your key fob. Scan the fob with the kiosk reader, then scan the QR code on its screen with your phone.'),
+                link('Back to billing', '/billing', 'button secondary'),
+            ),
         );
     if (!state.session.member) {
         const target = safeReturn(location.pathname + location.search);
@@ -240,7 +244,7 @@ export function bind(app) {
                 async () => {
                     await api('/api/fobs/bind', { method: 'POST', body: { token } });
                     await app.refreshSession();
-                    app.navigate('/billing', 'Your access fob is now linked.', true);
+                    app.navigate('/billing', 'Your key fob is linked. Check below for any remaining membership steps.', true);
                 },
             ),
         ),

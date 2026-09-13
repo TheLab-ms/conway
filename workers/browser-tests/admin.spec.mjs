@@ -11,7 +11,7 @@ async function submit(page, label, method, status = 200) {
 
 test('member CRUD persists nullable fields and both checkbox values', async ({ page, login }) => {
     await login();
-    await page.getByRole('link', { name: 'Leadership', exact: true }).click();
+    await page.goto('/admin');
     await page.getByRole('link', { name: 'Add member', exact: true }).click();
     const values = {
         name: 'Casey Maker',

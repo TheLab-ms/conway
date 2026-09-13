@@ -660,6 +660,7 @@ test('checkout uses the stored billing preference and rejects member overrides a
         assert.equal((await checkout({})).status, 200);
         assert.equal(forms.length, 1);
         assert.equal(forms[0].get('line_items[0][price]'), bill_annually ? 'price_year' : 'price_month');
+        assert.equal(forms[0].has('discounts[0][coupon]'), false);
         assert.equal(who.bill_annually, bill_annually);
         assert.ok(h.db.calls.every((call) => !call.sql.startsWith('UPDATE members SET bill_annually')));
     }
@@ -684,14 +685,74 @@ test('manual checkout operates while automation disabled; only approved/admin di
                 });
             },
         });
-        assert.equal((await h.internal('/checkout', { member_id: 1 })).status, 200);
+        const result = await h.internal('/checkout', { member_id: 1 });
+        if (status === 'requested') {
+            assert.equal(result.status, 409);
+            assert.match((await result.json()).error, /pending approval/);
+            assert.equal(forms.length, 0);
+            continue;
+        }
+        assert.equal(result.status, 200);
         assert.equal(forms[0].get('mode'), 'subscription');
         assert.equal(forms[0].has('submit_type'), false);
         assert.ok([...forms[0].keys()].every((key) => !key.startsWith('payment_intent_data')));
         assert.equal(forms[0].get('line_items[0][price]'), 'price_year');
-        assert.equal(forms[0].get('discounts[0][coupon]'), status === 'requested' ? null : 'coupon_student');
+        assert.equal(forms[0].get('discounts[0][coupon]'), 'coupon_student');
         assert.equal(forms[0].get('subscription_data[metadata][conway_member_id]'), '1');
     }
+});
+test('pending discounts block new and lapsed subscription checkout without financial writes', async () => {
+    for (const discount_type of ['student', 'family']) {
+        for (const stripe_customer_id of [null, 'cus_member']) {
+            for (const stripe_subscription_state of [null, 'canceled', 'incomplete_expired']) {
+                const who = member({ stripe_customer_id, stripe_subscription_state, discount_type, discount_status: 'requested' });
+                const calls = [];
+                const h = harness({
+                    db: database((statement) => (statement.sql === 'SELECT * FROM members WHERE id = ?' ? who : undefined)),
+                    fetch: async (url, init) => {
+                        calls.push({ url, method: init.method });
+                        assert.ok(url.includes('/subscriptions?'));
+                        return response({ data: [], has_more: false });
+                    },
+                });
+                const result = await h.internal('/checkout', { member_id: 1 });
+                assert.equal(result.status, 409);
+                assert.deepEqual(await result.json(), { error: 'Your discount request is pending approval. Wait for approval before starting payment.' });
+                assert.equal(calls.length, stripe_customer_id ? 1 : 0);
+                assert.ok(calls.every((call) => call.method === 'GET'));
+                assert.equal(h.storage.size, 0);
+                assert.ok(h.db.calls.every((call) => call.method === 'first'));
+            }
+        }
+    }
+});
+test('pending discount blocks cached open checkout reuse with old, new, or absent request keys', async () => {
+    const who = member();
+    const calls = [];
+    const h = harness({
+        db: database((statement) => (statement.sql === 'SELECT * FROM members WHERE id = ?' ? who : undefined)),
+        fetch: async (url, init) => {
+            calls.push({ url, method: init.method });
+            if (url.includes('/subscriptions?')) return response({ data: [], has_more: false });
+            return response({ id: 'cs_cached', url: 'https://checkout.stripe.com/cached', status: 'open', expires_at: time + 3600 });
+        },
+    });
+    const input = { member_id: 1, request_key: 'request-old' };
+    assert.equal((await h.internal('/checkout', input)).status, 200);
+    assert.equal(new URLSearchParams(h.storage.get('checkout:1:membership').form).has('discounts[0][coupon]'), false);
+    // Simulate a pre-existing full-price session for a pending member, without an epoch revocation masking the hold.
+    who.discount_type = 'student';
+    who.discount_status = 'requested';
+    const stored = structuredClone([...h.storage]);
+    calls.length = 0;
+    for (const request_key of ['request-old', 'request-new', undefined]) {
+        const result = await h.internal('/checkout', { member_id: 1, request_key });
+        assert.equal(result.status, 409);
+        assert.match((await result.json()).error, /pending approval/);
+    }
+    assert.equal(calls.length, 3);
+    assert.ok(calls.every((call) => call.method === 'GET' && call.url.includes('/subscriptions?')));
+    assert.deepEqual([...h.storage], stored);
 });
 test('different concurrent checkout keys share one customer and one open session', async () => {
     const who = member({ stripe_customer_id: null });
@@ -766,6 +827,44 @@ test('existing subscriptions use billing portal instead of creating a second sub
     });
     assert.equal((await h.internal('/checkout', { member_id: 1 })).status, 200);
     assert.equal(calls.length, 2);
+});
+
+test('pending discounts preserve reconciled subscriber portal access and cached portal reuse', async () => {
+    for (const status of ['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'paused']) {
+        // No local subscription yet: the live lookup must discover it before applying the hold.
+        const who = member({ discount_type: 'family', discount_status: 'requested' });
+        const calls = [];
+        const h = harness({
+            db: database((statement) => {
+                if (statement.sql === 'SELECT * FROM members WHERE id = ?') return { ...who };
+                if (statement.sql.startsWith('UPDATE members SET stripe_subscription_id')) {
+                    who.stripe_subscription_id = statement.values[0];
+                    who.stripe_subscription_state = statement.values[1];
+                }
+            }),
+            fetch: async (url, init) => {
+                calls.push({ url, method: init.method });
+                if (url.includes('/subscriptions?'))
+                    return response({
+                        data: [{ id: 'sub_existing', status, customer: 'cus_member', created: 1, metadata: { conway_member_id: '1' } }],
+                        has_more: false,
+                    });
+                assert.ok(url.endsWith('/billing_portal/sessions'));
+                assert.deepEqual(Object.fromEntries(new URLSearchParams(init.body)), { customer: 'cus_member', return_url: h.env.SITE_URL });
+                return response({ url: 'https://billing.stripe.com/portal' });
+            },
+        });
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const result = await h.internal('/checkout', { member_id: 1, request_key: 'request-portal' });
+            assert.equal(result.status, 200);
+            assert.deepEqual(await result.json(), { url: 'https://billing.stripe.com/portal' });
+        }
+        assert.equal(who.stripe_subscription_state, status);
+        assert.equal(who.discount_status, 'requested');
+        assert.equal(calls.filter((call) => call.method === 'POST').length, 1);
+        assert.equal(calls.filter((call) => call.url.includes('/subscriptions?')).length, 2);
+        assert.ok(h.db.calls.every((call) => !call.sql.includes('root_family_member IS NULL')));
+    }
 });
 
 test('family approval SQL requires linked active primary and family checkout fails closed', async () => {
@@ -917,6 +1016,43 @@ test('self discount requests validate configuration and generate server request 
     assert.equal((await h.api.mutateDiscount(h.env, 1, 'student', 1)).status, 200);
     assert.equal(h.current().discount_status, 'requested');
     assert.match(h.current().discount_request_id, /^[A-Za-z0-9_-]+$/);
+});
+
+test('approval releases the pending payment hold and checkout applies the approved coupon', async () => {
+    const forms = [];
+    const h = mutationHarness({
+        who: member({ discount_type: 'student', discount_status: 'requested' }),
+        fetch: async (url, init) => {
+            if (url.includes('/subscriptions?') || url.includes('/checkout/sessions?')) return response({ data: [], has_more: false });
+            assert.ok(url.endsWith('/checkout/sessions'));
+            forms.push(new URLSearchParams(init.body));
+            return response({ id: 'cs_approved', url: 'https://checkout.stripe.com/approved' });
+        },
+    });
+    const input = { member_id: 1, request_key: 'request-approval' };
+    assert.equal((await h.internal('/checkout', input)).status, 409);
+    assert.equal(forms.length, 0);
+    assert.equal((await h.api.mutateMember(h.env, 1, { discount_status: 'approved' }, 9, 1)).status, 200);
+    const result = await h.internal('/checkout', input);
+    assert.equal(result.status, 200);
+    assert.deepEqual(await result.json(), { url: 'https://checkout.stripe.com/approved' });
+    assert.equal(forms.length, 1);
+    assert.equal(forms[0].get('discounts[0][coupon]'), 'coupon_student');
+});
+
+test('approved discount without configured coupon never falls back to full-price checkout', async () => {
+    const h = harness({
+        db: database((statement) => (statement.sql === 'SELECT * FROM members WHERE id = ?' ? member({ discount_type: 'unconfigured', discount_status: 'approved' }) : undefined)),
+        fetch: async (url, init) => {
+            assert.equal(init.method, 'GET');
+            assert.ok(url.includes('/subscriptions?'));
+            return response({ data: [], has_more: false });
+        },
+    });
+    const result = await h.internal('/checkout', { member_id: 1 });
+    assert.equal(result.status, 400);
+    assert.match((await result.json()).error, /discount coupon is not configured/);
+    assert.equal(h.storage.size, 0);
 });
 
 test('post-network CAS conflict fails without claiming success and leaves checkout blocked', async () => {

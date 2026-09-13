@@ -952,6 +952,9 @@ export class MembershipCoordinator {
                 // Never replay a cached URL before checking current membership, pricing, and live session status.
             }
         }
+        if (!member.stripe_customer_id && member.discount_status === 'requested') {
+            throw new HttpError(409, 'Your discount request is pending approval. Wait for approval before starting payment.');
+        }
         if (!this.env.STRIPE_SECRET_KEY) throw new HttpError(503, 'Stripe is not configured');
         const cfg = await settings(this.env);
         const price = member.bill_annually ? cfg.yearly_price_id : cfg.monthly_price_id;
@@ -980,6 +983,10 @@ export class MembershipCoordinator {
         await reconcileStripe(this.env, member);
         member = (await this.env.DB.prepare('SELECT * FROM members WHERE id = ?').bind(member.id).first<Member>())!;
         const portal = member.stripe_subscription_state && !['canceled', 'incomplete_expired'].includes(member.stripe_subscription_state);
+        // Reconcile first to preserve portal access, but never reuse or create a subscription checkout while pending.
+        if (!portal && member.discount_status === 'requested') {
+            throw new HttpError(409, 'Your discount request is pending approval. Wait for approval before starting payment.');
+        }
         if (!portal && !price) throw new HttpError(400, 'Selected Stripe price is not configured');
         if (!portal && member.discount_type === 'family' && member.discount_status !== 'requested' && !(await familyEligible(this.env, member))) {
             throw new HttpError(409, 'Family discount requires a linked active primary member');

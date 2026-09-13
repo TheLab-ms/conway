@@ -58,6 +58,9 @@ test('anonymous scanner QR, clipboard and separate phone confirmation replace a 
         expect(sql('SELECT claimed_by FROM enrollment_claims')).toEqual([{ claimed_by: null }]);
         await confirm(page);
         await expect(page).toHaveURL(`${baseURL}/billing`);
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your membership');
+        await expect(page.getByText('Your key fob is linked. Check below for any remaining membership steps.')).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Your membership is active', exact: true })).toBeVisible();
         expect(sql('SELECT fob_id FROM members WHERE id=1')).toEqual([{ fob_id: 202 }]);
         expect(sql('SELECT claimed_by FROM enrollment_claims')).toEqual([{ claimed_by: 1 }]);
         await expect(kiosk.getByText('Fob linked. Ready for the next scan.', { exact: true })).toBeVisible();
@@ -110,6 +113,9 @@ for (const scenario of ['expired', 'unknown', 'invalid', 'owned']) {
         await page.goto(`/fobs/bind?token=${token}`);
         if (scenario === 'invalid') {
             await expect(page.getByRole('heading', { name: 'Enrollment link needed' })).toBeVisible();
+            await expect(page.getByText('Visit the space on Tuesday night', { exact: false })).toContainText('Scan the fob with the kiosk reader, then scan the QR code on its screen with your phone.');
+            await expect(page.locator('a[href="/kiosk"], nav')).toHaveCount(0);
+            await expect(page.getByRole('link', { name: 'Your membership', exact: true })).toHaveAttribute('href', '/billing');
             await expect(page.getByRole('checkbox')).toHaveCount(0);
         } else {
             await confirm(page);
@@ -125,6 +131,9 @@ for (const scenario of ['expired', 'unknown', 'invalid', 'owned']) {
             sql('UPDATE members SET fob_id=NULL WHERE id=3');
             await confirm(page);
             await expect(page).toHaveURL(`${baseURL}/billing`);
+            await expect(page.getByRole('link', { name: 'Sign membership waiver' })).toBeVisible();
+            await expect(page.getByRole('button', { name: 'Start membership payment' })).toBeEnabled();
+            await expect(page.getByRole('heading', { name: 'Your membership is active', exact: true })).toHaveCount(0);
             expect(sql('SELECT fob_id FROM members WHERE id=2')).toEqual([{ fob_id: 103 }]);
             expect(sql('SELECT claimed_by FROM enrollment_claims')).toEqual([{ claimed_by: 2 }]);
         }

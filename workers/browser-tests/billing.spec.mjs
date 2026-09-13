@@ -25,7 +25,7 @@ async function checkout(page) {
     await page.goto('/billing');
     await expect(page.getByLabel('Billing frequency')).toHaveCount(0);
     const request = page.waitForRequest((request) => request.url().endsWith('/api/billing/checkout') && request.method() === 'POST');
-    await page.getByRole('button', { name: 'Continue to Stripe' }).click();
+    await page.getByRole('button', { name: /^(Start membership payment|Manage billing)$/ }).click();
     expect((await request).postDataJSON()).toEqual({});
     await expect(page).toHaveURL(/^https:\/\/(checkout|billing)\.stripe\.com\//);
     await expect(page.getByRole('heading', { name: 'Hosted Stripe test page' })).toBeVisible();
@@ -112,6 +112,52 @@ test('active subscriber opens the real billing portal flow', async ({ page, bill
 });
 
 for (const tracked of [true, false]) {
+    test(`pending discount preserves ${tracked ? 'known' : 'unreconciled'} subscription management`, async ({ page, billingMember }) => {
+        sql(
+            "UPDATE members SET stripe_customer_id=?,stripe_subscription_id=?,stripe_subscription_state=?,discount_type='student',discount_status='requested',discount_request_id='pending' WHERE id=?",
+            `cus_active_${billingMember}`,
+            tracked ? `sub_${billingMember}` : null,
+            tracked ? 'active' : null,
+            billingMember,
+        );
+        await page.goto('/billing');
+        await expect(page.getByRole('button', { name: 'Start membership payment' })).toHaveCount(0);
+        await page.getByRole('button', { name: tracked ? 'Manage billing' : 'Check existing billing' }).click();
+        await expect(page).toHaveURL(/^https:\/\/billing\.stripe\.com\//);
+        expect(sql('SELECT discount_status FROM members WHERE id=?', billingMember)[0].discount_status).toBe('requested');
+    });
+}
+
+test('checking existing billing cannot start payment for a pending applicant', async ({ page, billingMember }) => {
+    sql(
+        "UPDATE members SET stripe_customer_id=?,discount_type='student',discount_status='requested',discount_request_id='pending' WHERE id=?",
+        `cus_member_${billingMember}`,
+        billingMember,
+    );
+    await page.goto('/billing');
+    await page.getByRole('button', { name: 'Check existing billing' }).click();
+    await expect(page.getByRole('alert')).toContainText('Wait for approval before starting payment');
+    await expect(page).toHaveURL(/\/billing$/);
+    expect(sql('SELECT stripe_subscription_id,discount_status FROM members WHERE id=?', billingMember)[0]).toEqual({ stripe_subscription_id: null, discount_status: 'requested' });
+});
+
+for (const kind of ['nonbillable', 'paypal', 'unconfirmed']) {
+    test(`${kind} member is not asked to start a new payment`, async ({ page, billingMember }) => {
+        sql(
+            'UPDATE members SET confirmed=0,non_billable=?,paypal_subscription_id=?,fob_id=404 WHERE id=?',
+            kind === 'nonbillable' ? 1 : 0,
+            kind === 'paypal' ? 'paypal_existing' : null,
+            billingMember,
+        );
+        await page.goto('/billing');
+        await expect(page.getByRole('button', { name: 'Start membership payment' })).toHaveCount(0);
+        await expect(page.getByText('Eligible for a discount?', { exact: true })).toHaveCount(0);
+        if (kind === 'nonbillable') await expect(page.getByRole('heading', { name: 'Your membership is active' })).toBeVisible();
+        else await expect(page.getByText('Contact leadership to confirm your account', { exact: false })).toBeVisible();
+    });
+}
+
+for (const tracked of [true, false]) {
     test(`${tracked ? 'tracked' : 'newly discovered'} subscriber can open the portal without configured prices or coupon`, async ({ page, billingMember }) => {
         sql(
             "UPDATE members SET stripe_customer_id=?,stripe_subscription_id=?,stripe_subscription_state=?,discount_type='student',discount_status='approved' WHERE id=?",
@@ -135,7 +181,7 @@ test('missing membership price fails closed with an actionable error', async ({ 
     sql("UPDATE settings SET data=json_set(data,'$.monthly_price_id','') WHERE id=1");
     await page.goto('/billing');
     const response = page.waitForResponse((response) => response.url().endsWith('/api/billing/checkout') && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Continue to Stripe' }).click();
+    await page.getByRole('button', { name: 'Start membership payment' }).click();
     expect((await response).status()).toBe(400);
     await expect(page.getByRole('alert')).toContainText('Selected Stripe price is not configured');
     await expect(page).toHaveURL(/\/billing$/);
@@ -147,7 +193,7 @@ test('existing customer without a subscription still needs a configured price', 
     sql("UPDATE settings SET data=json_set(data,'$.monthly_price_id','') WHERE id=1");
     await page.goto('/billing');
     const response = page.waitForResponse((response) => response.url().endsWith('/api/billing/checkout') && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Continue to Stripe' }).click();
+    await page.getByRole('button', { name: 'Start membership payment' }).click();
     expect((await response).status()).toBe(400);
     await expect(page.getByRole('alert')).toContainText('Selected Stripe price is not configured');
     await expect(page).toHaveURL(/\/billing$/);
@@ -166,7 +212,7 @@ for (const [configuration, update] of [
             sql(`UPDATE settings SET data=${update} WHERE id=1`);
             await page.goto('/billing');
             const response = page.waitForResponse((response) => response.url().endsWith('/api/billing/checkout') && response.request().method() === 'POST');
-            await page.getByRole('button', { name: 'Continue to Stripe' }).click();
+            await page.getByRole('button', { name: 'Start membership payment' }).click();
             expect((await response).status()).toBe(400);
             await expect(page.getByRole('alert')).toContainText('Your discount coupon is not configured');
             await expect(page).toHaveURL(/\/billing$/);
@@ -185,7 +231,7 @@ test('coupon removed at Stripe is rejected without falling back to full price', 
     sql("UPDATE settings SET data=json_set(data,'$.discounts[0].coupon_id','coupon_removed') WHERE id=1");
     await page.goto('/billing');
     const response = page.waitForResponse((response) => response.url().endsWith('/api/billing/checkout') && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Continue to Stripe' }).click();
+    await page.getByRole('button', { name: 'Start membership payment' }).click();
     expect((await response).status()).toBe(502);
     await expect(page.getByRole('alert')).toContainText('Stripe HTTP 404');
     await expect(page).toHaveURL(/\/billing$/);
@@ -221,16 +267,16 @@ test('provider errors preserve the stored preference and allow retry', async ({ 
     sql('UPDATE members SET bill_annually=1 WHERE id=?', billingMember);
     sql("UPDATE settings SET data=json_set(data,'$.yearly_price_id','price_error') WHERE id=1");
     await page.goto('/billing');
-    await page.getByRole('button', { name: 'Continue to Stripe' }).click();
+    await page.getByRole('button', { name: 'Start membership payment' }).click();
     await expect(page.getByRole('alert')).toContainText('Stripe HTTP 503');
     expect(sql('SELECT bill_annually FROM members WHERE id=?', billingMember)[0].bill_annually).toBe(1);
-    await expect(page.getByRole('button', { name: 'Continue to Stripe' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Start membership payment' })).toBeEnabled();
     expect(sql('SELECT payment_status FROM members WHERE id=?', billingMember)[0].payment_status).toBeNull();
 });
 
 test('no discount options leaves no misleading forms', async ({ page, billingMember }) => {
     sql("UPDATE settings SET data=json_set(data,'$.discounts',json('[]')) WHERE id=1");
     await page.goto('/billing');
-    await expect(page.getByText('There are no discounts available to request at the moment.')).toBeVisible();
+    await expect(page.getByText('Eligible for a discount?', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Request discount' })).toHaveCount(0);
 });

@@ -60,7 +60,7 @@ CREATE TRIGGER family_link AFTER UPDATE OF root_family_member ON members
 BEGIN UPDATE members SET root_family_member_active=IIF(NEW.root_family_member IS NULL,NULL,(SELECT payment_status IS NOT NULL FROM members WHERE id=NEW.root_family_member)) WHERE id=NEW.id; END;
 CREATE TRIGGER family_payment AFTER UPDATE OF confirmed,non_billable,stripe_subscription_state,paypal_subscription_id ON members
 BEGIN UPDATE members SET root_family_member_active=NEW.payment_status IS NOT NULL WHERE root_family_member=NEW.id; END;
-CREATE TRIGGER discount_lapse AFTER UPDATE ON members WHEN OLD.payment_status IS NOT NULL AND NEW.payment_status IS NULL
+CREATE TRIGGER discount_lapse AFTER UPDATE ON members WHEN OLD.payment_status IS NOT NULL AND NEW.payment_status IS NULL AND NEW.discount_status IS NOT 'requested'
 BEGIN UPDATE members SET discount_type=NULL,discount_status=NULL,discount_request_id=NULL WHERE id=NEW.id; END;
 CREATE TRIGGER waiver_signed AFTER INSERT ON waivers
 BEGIN UPDATE members SET waiver=NEW.id WHERE email=NEW.email; END;

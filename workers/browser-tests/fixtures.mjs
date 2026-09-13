@@ -82,6 +82,21 @@ function reset() {
     }
 }
 
+export async function discord(page, code) {
+    // Execute the real login handler; only stand in for Discord's consent redirect.
+    await page.route(/\/login\/discord(?:\?|$)/, async (route) => {
+        const response = await route.fetch({ maxRedirects: 0 });
+        expect(response.status()).toBe(302);
+        const authorization = new URL(response.headers().location);
+        expect(authorization.origin).toBe('https://discord.com');
+        expect(authorization.searchParams.get('scope')).toBe('identify email');
+        const callback = new URL(authorization.searchParams.get('redirect_uri'));
+        callback.searchParams.set('state', authorization.searchParams.get('state'));
+        callback.searchParams.set(code === 'cancel' ? 'error' : 'code', code);
+        await route.fulfill({ response, headers: { ...response.headers(), location: callback.href } });
+    });
+}
+
 export const test = base.extend({
     _database: [
         async ({}, use) => {
@@ -115,7 +130,7 @@ export const test = base.extend({
             sql('INSERT INTO sessions(token_hash,member,csrf_token,expires) VALUES(?,?,?,?)', createHash('sha256').update(token).digest('hex'), memberId, csrf, expires);
             await context.addCookies([{ name: 'conway_session', value: token, url: 'http://127.0.0.1:8799', httpOnly: true, sameSite: 'Lax', expires }]);
             await page.goto('/billing');
-            await expect(page.getByRole('heading', { level: 1 })).toHaveText('Membership & billing');
+            await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your membership');
         });
     },
 });

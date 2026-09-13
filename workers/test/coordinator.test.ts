@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
+import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it, vi } from 'vitest';
-import { mutateDiscount, mutateMember } from '../src/integrations';
+import { MembershipCoordinator, mutateDiscount, mutateMember } from '../src/integrations';
 import type { Member } from '../src/types';
 import { api, login, member } from './fixtures';
 
@@ -279,6 +280,79 @@ describe('versioned mutations through the bound MembershipCoordinator', () => {
             discount_request_id: null,
         });
         expect((await audits(target.id)).results).toHaveLength(2);
+    });
+
+    it.each(['student', 'family'])('holds new member payment after a %s discount request without contacting Stripe', async (discount_type) => {
+        const target = await member();
+        const headers = await login(target.id);
+        expect((await api('/api/discount', 'POST', headers, { discount_type })).status).toBe(200);
+        const pending = (await read(target.id))!;
+        expect(pending.discount_status).toBe('requested');
+        const external = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+            throw new Error('Pending discount must not contact Stripe for a new member');
+        });
+        try {
+            for (const requestHeaders of [headers, { ...headers, 'Idempotency-Key': 'request-pending' }]) {
+                const response = await api('/api/billing/checkout', 'POST', requestHeaders, {});
+                expect(response.status).toBe(409);
+                expect(await response.json()).toEqual({ error: 'Your discount request is pending approval. Wait for approval before starting payment.' });
+            }
+            expect(await read(target.id)).toEqual(pending);
+            expect(external).not.toHaveBeenCalled();
+        } finally {
+            external.mockRestore();
+        }
+    });
+
+    it.each(['active', 'trialing'])('keeps the pending payment hold when checkout reconciles local %s to canceled in D1', async (stripe_subscription_state) => {
+        const target = await member({
+            confirmed: 1,
+            stripe_customer_id: 'cus_pending',
+            stripe_subscription_id: 'sub_pending',
+            stripe_subscription_state,
+            discount_type: 'student',
+            discount_status: 'requested',
+            discount_request_id: 'request-pending',
+        });
+        expect(target.payment_status).toBe('ActiveStripe');
+        await env.DB.prepare("UPDATE settings SET data=json_set(data,'$.monthly_price_id','price_month') WHERE id=1").run();
+        const external = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+            expect(String(input)).toContain('https://api.stripe.com/v1/subscriptions?');
+            expect(init?.method).toBe('GET');
+            return Response.json({
+                data: [{ id: 'sub_pending', customer: 'cus_pending', status: 'canceled', created: 1 }],
+                has_more: false,
+            });
+        });
+        try {
+            const stub = env.COORDINATOR.get(env.COORDINATOR.idFromName('stripe'));
+            await runInDurableObject(stub, async (_instance, state) => {
+                // Use real DO storage and D1 triggers, with only Stripe's secret and HTTP response supplied by the test.
+                const coordinator = new MembershipCoordinator(state, { ...env, STRIPE_SECRET_KEY: 'sk_test' });
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    const response = await coordinator.fetch(
+                        new Request('https://coordinator.internal/checkout', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ member_id: target.id, request_key: 'request-pending' }),
+                        }),
+                    );
+                    expect(response.status).toBe(409);
+                    expect(await response.json()).toEqual({ error: 'Your discount request is pending approval. Wait for approval before starting payment.' });
+                }
+                expect(await state.storage.get(`checkout:${target.id}:membership`)).toBeUndefined();
+            });
+            expect(await read(target.id)).toMatchObject({
+                stripe_subscription_state: 'canceled',
+                payment_status: null,
+                discount_type: 'student',
+                discount_status: 'requested',
+                discount_request_id: 'request-pending',
+            });
+            expect(external).toHaveBeenCalledTimes(2);
+        } finally {
+            external.mockRestore();
+        }
     });
 
     it('updates member revision monotonically for nested payment-lapse and waiver triggers', async () => {

@@ -52,7 +52,9 @@ are needed or loaded. Never deploy the test Worker.
 - Login/signup, session rotation and expiry, safe return paths, leadership authorization, CSRF and Origin checks.
 - Profile persistence and directory privacy; waiver consent/versioning; discount requests and family approval.
 - Member CRUD, identity conflicts, stale-write protection, deletion safeguards, session revocation, settings, CSV, pagination, audit/swipes and dead-job retry.
-- Checkout reuse/replacement, billing portal, donations, coupons and fail-closed configuration/provider errors through real D1/DO coordination.
+- Checkout reuse/replacement, billing portal, coupons and fail-closed configuration/provider errors through real D1/DO coordination.
+- Online Discord signup to waiver, optional Student request, pending-payment block, direct-entry leadership approval, coupon/standard checkout, and real kiosk binding to Ready. Stripe settlement alone is explicitly simulated by updating D1 subscription state; returning from checkout does not mark payment active.
+- Slim membership pages without global navigation or leaked admin links, collapsed pre-payment discount requests, pending withdrawal, and pending/active mobile layouts.
 - Kiosk IP checks with supplied test headers, QR decoding, clipboard, separate kiosk/phone contexts, one-use claims, expiration, rate limits and polling cleanup.
 - SPA deep links/history, mobile layout checks, security headers and text-only rendering; uncaught browser exceptions and CSP/security console errors fail tests.
 

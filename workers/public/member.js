@@ -1,19 +1,21 @@
-import { api, state, el, field, check, link, panel, empty, badge, date, form, heading, checkoutURL } from './lib.js';
+import { api, state, el, field, check, link, panel, empty, form, heading, checkoutURL } from './lib.js';
 
 export function welcome() {
     return el(
         'div',
         { class: 'narrow' },
-        heading('Membership', 'Sign in with Discord to manage your membership and building access.'),
+        heading('Become a member', 'Start online. Meet us at the space on Tuesday night.'),
         panel(
             null,
             el(
-                'div',
-                { class: 'actions' },
-                link('Continue with Discord', '/login/discord?return_to=%2Fbilling', 'button'),
-                link('Enroll an access fob', '/kiosk', 'button secondary'),
+                'ol',
+                { class: 'onboarding-list' },
+                el('li', {}, 'Sign up with Discord and sign the membership waiver.'),
+                el('li', {}, 'Start your membership payment, or request a discount if you are eligible. Wait for approval before paying if you request a discount.'),
+                el('li', {}, 'Come to the space on Tuesday night to get your key fob. Leadership will review any discount request with you in person.'),
             ),
-            el('p', { class: 'hint section-gap' }, 'New members can create an account by signing in.'),
+            link('Continue with Discord', '/login/discord?return_to=%2Fbilling', 'button'),
+            el('p', { class: 'hint section-gap' }, 'Already a member? Use the same button to sign in.'),
         ),
     );
 }
@@ -112,91 +114,138 @@ export async function billing(app, signal) {
     const member = await api('/api/member', { signal });
     const config = state.config;
     const discounts = config.discounts || [];
-    const checkout = form([el('p', { class: 'hint' }, 'Review the price and terms on Stripe before confirming.')], 'Continue to Stripe', async () => {
-        const result = await api('/api/billing/checkout', {
-            method: 'POST',
-            body: {},
-        });
-        location.assign(checkoutURL(result.url));
-        return 'Opening Stripe...';
-    });
-    if (!config.stripe_enabled) checkout.querySelector('button[type=submit]').disabled = true;
+    const pending = member.discount_status === 'requested';
+    const subscriber = member.stripe_subscription_state && !['canceled', 'incomplete_expired'].includes(member.stripe_subscription_state);
+    const needsPayment = !member.payment_status && !member.non_billable && !member.paypal_subscription_id && Boolean(member.confirmed);
+    const needsWaiver = !member.non_billable && !member.waiver;
+    const needsVisit = !member.fob_id || pending;
+    const ready = member.access_status === 'Ready';
+    const discountLabel = discounts.find((item) => item.id === member.discount_type)?.label || 'Membership discount';
+    const checkout =
+        (subscriber || (pending && member.stripe_customer_id) || (needsPayment && !pending)) &&
+        form(
+            [
+                el(
+                    'p',
+                    { class: 'hint' },
+                    subscriber
+                        ? 'Update your payment method, view invoices, or cancel through Stripe.'
+                        : pending
+                          ? 'Already paid? Check for an existing Stripe subscription. This will not start a new payment while your discount is pending.'
+                          : 'Review your membership price and recurring payment terms on Stripe before confirming.',
+                ),
+            ],
+            subscriber ? 'Manage billing' : pending ? 'Check existing billing' : 'Start membership payment',
+            async () => {
+                const result = await api('/api/billing/checkout', {
+                    method: 'POST',
+                    body: {},
+                });
+                location.assign(checkoutURL(result.url));
+                return 'Opening Stripe...';
+            },
+        );
+    if (checkout && !config.stripe_enabled) checkout.querySelector('button[type=submit]').disabled = true;
     return el(
         'div',
-        {},
-        heading('Membership & billing', 'Manage your membership and building access.', link('Edit profile', '/profile', 'button secondary')),
+        { class: 'narrow' },
+        heading('Your membership'),
         panel(
-            'Building access',
-            el('p', { class: 'status-value' }, badge(member.access_status || 'Not ready', member.access_status === 'Ready' ? 'good' : 'warn')),
-            el('p', { class: 'hint' }, 'Access depends on your membership, waiver, and fob.'),
+            ready ? 'Your membership is active' : needsVisit && !needsWaiver && (!needsPayment || pending) ? 'Visit us Tuesday night' : 'Finish setting up your membership',
             el(
-                'dl',
-                { class: 'record' },
-                el('dt', {}, 'Access fob'),
-                el('dd', { class: 'mono' }, member.fob_id ?? 'Not linked'),
-                el('dt', {}, 'Last seen'),
-                el('dd', {}, date(member.fob_last_seen)),
+                'p',
+                { class: 'muted' },
+                ready ? 'Your key fob is ready to use at the space.' : 'Building access will be ready once your membership requirements are complete and your key fob is linked.',
             ),
-            el('div', { class: 'actions' }, link('Review waiver', '/waiver', 'button secondary'), link('Enroll an access fob', '/kiosk', 'button secondary')),
-        ),
-        el(
-            'div',
-            { class: 'grid section-gap' },
-            panel(
-                'Your membership',
-                el('p', { class: 'status-value' }, member.payment_status || 'Not active'),
+            !member.non_billable && !member.confirmed && el('p', { class: 'notice warn' }, 'Contact leadership to confirm your account before building access can be enabled.'),
+            needsWaiver && el('div', { class: 'section-gap' }, link('Sign membership waiver', '/waiver', 'button')),
+            member.root_family_member &&
+                !member.root_family_member_active &&
+                el('p', { class: 'notice warn' }, 'Your family membership needs an active primary member. Ask leadership to review your family link.'),
+            needsVisit &&
                 el(
-                    'dl',
-                    { class: 'record' },
-                    el('dt', {}, 'Subscription'),
-                    el('dd', {}, member.stripe_subscription_state || (member.paypal_subscription_id ? 'Legacy PayPal membership' : 'Not set up')),
-                    el('dt', {}, 'Discount'),
-                    el('dd', {}, member.discount_type ? `${member.discount_type} / ${member.discount_status || 'Not approved'}` : 'None'),
-                    el('dt', {}, 'Family membership'),
-                    el('dd', {}, member.root_family_member ? `Linked to member #${member.root_family_member}` : 'Not linked'),
-                ),
-                member.stripe_last_payment_error && el('p', { class: 'notice error', role: 'alert' }, member.stripe_last_payment_error),
-                member.stripe_cancellation_reason && el('p', { class: 'hint' }, `Cancellation: ${member.stripe_cancellation_reason}`),
-                !config.stripe_enabled && el('p', { class: 'notice warn' }, 'Online payments are not available right now. Please contact leadership.'),
-                checkout,
-            ),
-            panel(
-                'Discounts & family membership',
-                el('p', { class: 'muted' }, 'Leadership approves discounts and links family memberships.'),
-                member.discount_status === 'requested'
-                    ? el('p', { class: 'notice' }, `Your ${member.discount_type} request is waiting for review. Remove the pending request before choosing a different discount.`)
-                    : discounts.length
-                      ? form(
-                            [
-                                field('Discount to request', 'discount_type', member.discount_type || '', {
-                                    required: true,
-                                    choices: [['', 'Choose a discount'], ...discounts.map((item) => [item.id, item.label])],
-                                }),
-                            ],
-                            'Request discount',
-                            async (data) => {
-                                await api('/api/discount', {
-                                    method: 'POST',
-                                    body: { discount_type: data.get('discount_type') },
-                                });
-                                app.navigate('/billing', 'Discount requested. Leadership will review your request.');
-                            },
-                        )
-                      : empty('There are no discounts available to request at the moment.'),
-                member.discount_type &&
-                    el(
-                        'div',
-                        { class: 'section-gap' },
-                        form(
-                            [check('I understand removing this discount may change my membership price or family access.', 'confirm', false, { required: true })],
-                            'Remove discount',
-                            async () => {
-                                await api('/api/discount', { method: 'DELETE' });
-                                app.navigate('/billing', 'Your discount has been removed.');
-                            },
+                    'div',
+                    { class: 'section-gap' },
+                    el('h3', {}, 'Meet us at the space on Tuesday night'),
+                    !member.fob_id && el('p', {}, 'Ask leadership for your key fob. They will help you link it to your account using the on-site kiosk and your phone.'),
+                    pending && el('p', {}, `${discountLabel} request pending. Leadership will review your eligibility with you in person.`),
+                    pending &&
+                        el(
+                            'p',
+                            {},
+                            subscriber
+                                ? 'Your existing subscription is unchanged. Discuss any billing adjustment with leadership; you can still manage billing below.'
+                                : 'Wait for approval before paying. After the review, return here to start payment with your approved discount.',
                         ),
+                    pending &&
+                        form([], 'Withdraw discount request', async () => {
+                            await api('/api/discount', { method: 'DELETE' });
+                            app.navigate(
+                                '/billing',
+                                subscriber
+                                    ? 'Discount request withdrawn. Your existing subscription is unchanged.'
+                                    : 'Discount request withdrawn. You can now pay the standard membership price.',
+                            );
+                        }),
+                ),
+            member.discount_type &&
+                !pending &&
+                el('p', { class: 'section-gap' }, `${discountLabel} approved.${needsPayment && !subscriber ? ' Your discount will be included when you start payment.' : ''}`),
+            !member.discount_type &&
+                needsPayment &&
+                !subscriber &&
+                discounts.length > 0 &&
+                el(
+                    'details',
+                    { class: 'section-gap' },
+                    el('summary', {}, 'Eligible for a discount?'),
+                    el('p', {}, 'Request it before paying. Leadership will review your eligibility on Tuesday night, including linking a primary member for a family discount.'),
+                    form(
+                        [
+                            field('Discount to request', 'discount_type', '', {
+                                required: true,
+                                choices: [['', 'Choose a discount'], ...discounts.map((item) => [item.id, item.label])],
+                            }),
+                        ],
+                        'Request discount',
+                        async (data) => {
+                            await api('/api/discount', {
+                                method: 'POST',
+                                body: { discount_type: data.get('discount_type') },
+                            });
+                            app.navigate('/billing', 'Discount requested. Meet with leadership on Tuesday night for review.');
+                        },
                     ),
-            ),
+                ),
+            member.discount_type &&
+                !pending &&
+                needsPayment &&
+                !subscriber &&
+                el(
+                    'details',
+                    { class: 'section-gap' },
+                    el('summary', {}, 'No longer eligible for this discount?'),
+                    form(
+                        [check('I understand removing this discount may change my membership price or family access.', 'confirm', false, { required: true })],
+                        'Remove discount',
+                        async () => {
+                            await api('/api/discount', { method: 'DELETE' });
+                            app.navigate('/billing', 'Your discount has been removed.');
+                        },
+                    ),
+                ),
+            member.stripe_last_payment_error &&
+                el('p', { class: 'notice error', role: 'alert' }, 'Your last payment failed. Update your payment method in Stripe, or contact leadership for help.'),
+            member.paypal_subscription_id &&
+                !subscriber &&
+                el('p', { class: 'hint section-gap' }, 'Your membership is billed through PayPal. Contact leadership for billing changes.'),
+            checkout &&
+                el(
+                    'div',
+                    { class: 'section-gap' },
+                    !config.stripe_enabled && el('p', { class: 'notice warn' }, 'Online payments are not available right now. Please contact leadership.'),
+                    checkout,
+                ),
         ),
     );
 }
